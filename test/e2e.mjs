@@ -166,5 +166,46 @@ if (await page.locator("#gameStop").isVisible().catch(() => false)) {
   await page.click("#gameStop");
   await page.waitForTimeout(600);
 }
+console.log("== 返回主界面：每个页面都要出得去 ==");
+const HOME = (process.env.BASE || "http://127.0.0.1:5173") + "/";
+// 编辑器：顶栏按钮，且未保存的改动必须先落盘
+await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
+await page.waitForFunction(() => !document.getElementById("loading"), { timeout: 60000 });
+await page.waitForTimeout(2500);
+ok("编辑器顶栏有返回主界面按钮", await page.locator("#btnHome").isVisible());
+ok("文件菜单第一项是返回主界面",
+  (await page.evaluate(() => {
+    document.getElementById("menuLogo").click();
+    return [...document.querySelectorAll(".tb-left .worldlist .witem b")].map((b) => b.textContent)[0];
+  })).includes("返回主界面"));
+await page.evaluate(() => { window.__editor.state.dirty = true; });
+await page.click("#btnHome");
+await page.waitForURL(HOME, { timeout: 15000 });
+ok("编辑器可返回工作台", page.url() === HOME, page.url());
+ok("返回前脏状态已存盘（世界 API 仍读得到 199 实体）",
+  await page.evaluate(async () => {
+    const r = await fetch("/api/world/216d665d3ca92bd1b9a2").then((x) => x.json());
+    return (r.meta?.entities || []).length === 199;
+  }));
+
+// VOXA：品牌位与菜单都要能回
+await page.goto((process.env.BASE || "http://127.0.0.1:5173") + "/voxa", { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(2000);
+ok("VOXA 品牌位是返回链接", await page.locator("a.vx-brand[href='/']").isVisible());
+await page.click("#vxMenu");
+await page.waitForTimeout(200);
+ok("VOXA 菜单有返回主界面", await page.locator('#vxMenuPanel [data-act="home"]').isVisible());
+await page.click('#vxMenuPanel [data-act="home"]');
+await page.waitForURL(HOME, { timeout: 15000 });
+ok("VOXA 可返回工作台", page.url() === HOME, page.url());
+
+// 文档站：本地服务里要露出返回入口
+await page.goto((process.env.BASE || "http://127.0.0.1:5173") + "/docs/", { waitUntil: "load" });
+await page.waitForTimeout(800);
+ok("文档站有返回工作台且本地可见", await page.locator(".nav .home").isVisible());
+await page.click(".nav .home");
+await page.waitForURL(HOME, { timeout: 15000 });
+ok("文档站可返回工作台", page.url() === HOME, page.url());
+
 await browser.close();
 console.log("== 测试完成（截图在 test/out/*.png） ==");

@@ -18,7 +18,7 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
 <header id="vxTop">
   <div class="vx-left">
     <button id="vxMenu" class="vx-ico" title="菜单：历史 / 导入 / 导出 / 语言">☰</button>
-    <span class="vx-brand">VOXA</span>
+    <a class="vx-brand" href="/" title="返回主界面（工作台）">VOXA</a>
     <input id="vxName" class="vx-name" value="未命名模型" spellcheck="false" title="文件命名"/>
   </div>
   <nav class="vx-tabs">
@@ -32,6 +32,8 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
     <button id="vxPublish" class="vx-btn primary" title="导出为世界可用的 mesh/xxx.vb">导出到世界</button>
   </div>
   <div id="vxMenuPanel" class="vx-menu">
+    <div class="vx-menu-sec">导航</div>
+    <button data-act="home">返回主界面（工作台）</button>
     <div class="vx-menu-sec">文件</div>
     <button data-act="new">新建模型</button>
     <button data-act="save">保存 (.voxa)</button>

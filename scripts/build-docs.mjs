@@ -16,6 +16,8 @@ const DOCS_LIST = [
   ["physics", "物理与单位制"],
   ["testing", "测试与验证"],
   ["packaging", "便携包与发布"],
+  ["dependencies", "依赖清单"],
+  ["credits", "致谢"],
   ["windows", "Windows 支持说明"],
 ];
 
@@ -229,6 +231,7 @@ const NAV = `<header class="nav">
     <span><b>DAO3 编辑器复刻</b><i>开发文档</i></span>
   </a>
   <nav class="links">
+    <a href="#top">概览</a>
     <a href="./#tour">界面</a>
     <a href="./#proof">验证</a>
     <a href="./#start">上手</a>
@@ -236,6 +239,7 @@ const NAV = `<header class="nav">
     <a href="./#docs">文档</a>
     <a href="./#download">下载</a>
   </nav>
+  <a class="home" href="/" hidden>返回工作台</a>
   <a class="gh" href="https://github.com/deepseekv5/dao3" rel="noopener">
     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 .2a8 8 0 0 0-2.5 15.6c.4.1.5-.2.5-.4v-1.4c-2 .4-2.5-.5-2.7-1-.1-.3-.5-1-.8-1.2-.3-.1-.7-.5 0-.6.6-.1 1.1.6 1.3.9.8 1.3 2 .9 2.5.7.1-.6.3-1 .6-1.2-2-.2-4.1-1-4.1-4.4 0-1 .3-1.8.9-2.4-.1-.3-.4-1.2.1-2.5 0 0 .8-.2 2.5 1a7.5 7.5 0 0 1 4.5 0c1.7-1.2 2.5-1 2.5-1 .5 1.3.2 2.2.1 2.5.6.6.9 1.4.9 2.4 0 3.4-2.1 4.2-4.1 4.4.3.3.6.8.6 1.7v2.5c0 .2.1.5.5.4A8 8 0 0 0 8 .2z"/></svg>
     <span>deepseekv5/dao3</span>
@@ -279,6 +283,11 @@ function page({ file, title, body, toc, prev, next }) {
 </head>
 <body>
 ${NAV}
+<script>
+// 本站同时是 GitHub Pages 站点和本地应用里的 /docs。Pages 上 "/" 是用户主页不是工作台，
+// 所以"返回工作台"只在本地服务里出现。
+if (!/github\\.io$/i.test(location.hostname)) { const a = document.querySelector(".nav .home"); if (a) a.hidden = false; }
+</script>
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b>${DOCS_LIST.map(

@@ -4,7 +4,8 @@ body.voxa{display:flex;flex-direction:column;height:100vh;overflow:hidden;backgr
 /* ---------------- 顶栏 ---------------- */
 #vxTop{display:flex;align-items:center;gap:10px;height:44px;padding:0 10px;background:var(--bar);border-bottom:1px solid #000;box-shadow:0 1px 0 var(--divider);flex:0 0 auto;position:relative;z-index:30}
 .vx-left{display:flex;align-items:center;gap:8px;min-width:0}
-.vx-brand{font-weight:800;letter-spacing:1.6px;color:var(--primary);font-size:14px}
+.vx-brand{font-weight:800;letter-spacing:1.6px;color:var(--primary);font-size:14px;text-decoration:none}
+.vx-brand:hover{text-decoration:underline}
 .vx-name{background:#111;border:1px solid var(--grey2);color:#fff;border-radius:5px;padding:5px 9px;width:180px;font-size:12.5px}
 .vx-name:focus{outline:none;border-color:var(--primary);background:#141414}
 .vx-right{margin-left:auto;display:flex;gap:6px;align-items:center}

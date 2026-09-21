@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // start.mjs — 跨平台启动器（macOS / Windows / Linux 同一份实现）。
 //
 // 为什么把逻辑写在 Node 里而不是 shell 里：run.sh 用了 ifconfig / lsof / stat -f%i，

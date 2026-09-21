@@ -20,6 +20,7 @@ const I = window.__icons = {
   collab: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 19c.8-3.2 2.8-4.8 5.5-4.8s4.7 1.6 5.5 4.8M16.5 5.6a3.2 3.2 0 0 1 0 5.8M18.6 14.4c1 .8 1.7 2 1.9 3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   feedback: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5l1 2.2 2.4-.5 1 2.1 2.3.8-.3 2.4 1.8 1.6-1.8 1.6.3 2.4-2.3.8-1 2.1-2.4-.5-1 2.2-1-2.2-2.4.5-1-2.1-2.3-.8.3-2.4L3.8 12l1.8-1.6-.3-2.4 2.3-.8 1-2.1 2.4.5 1-2.2z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
+  home: '<svg viewBox="0 0 24 24"><path d="M4 10.5V20h5.5v-5.5h5V20H20v-9.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M2.8 11L12 3.5 21.2 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5v-15z" fill="currentColor"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" fill="currentColor"/></svg>',
   cube: '<svg viewBox="0 0 24 24"><path d="M12 3.5l7.2 4.2v8.6L12 20.5l-7.2-4.2V7.7L12 3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
@@ -712,7 +713,8 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   // ---------- logo 文件菜单 ----------
   const fileMenu = document.createElement("div");
   fileMenu.className = "worldlist"; fileMenu.style.right = "auto"; fileMenu.style.left = "0"; fileMenu.style.top = "44px";
-  [["新建世界", () => window.__openSizeModal && window.__openSizeModal()], ["保存 (Ctrl+S)", save],
+  [["返回主界面", () => $("btnHome").click()],
+   ["新建世界", () => window.__openSizeModal && window.__openSizeModal()], ["保存 (Ctrl+S)", save],
    ["导入项目包 (.zip)", () => pickFile(".zip", async (f) => { await importProject(f); })],
    ["导出项目包 (.zip) 全部内容", () => io.exportProjectZip({ world, state }).then((r) => toast(`已导出 ${r.entries} 个文件 · ${(r.bytes / 1048576).toFixed(1)} MB`))],
    ["导入 .gz 地图", () => pickFile(".gz,.json", async (f) => replace(await io.importGz(f, atlas)))],
@@ -726,6 +728,15 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   $("menuLogo").onclick = (e) => { e.stopPropagation(); fileMenu.classList.toggle("show"); };
   document.addEventListener("click", () => fileMenu.classList.remove("show"));
   function replace(w) { if (window.__replaceWorld) window.__replaceWorld(w); toast("已载入"); }
+
+  // ---------- 返回主界面 ----------
+  // 编辑器是 /edit/<id> 深链接，浏览器"后退"会退回工作台列表项之前的状态，
+  // 而且未保存的改动会直接丢——所以先补存档再走。
+  $("btnHome").onclick = async () => {
+    if (window.__game && window.__game.running && stopPlay) stopPlay();
+    if (state.dirty) { await save(); }
+    location.href = "/";
+  };
 
   // ---------- 世界库 ----------
   $("btnWorlds").onclick = async (e) => {

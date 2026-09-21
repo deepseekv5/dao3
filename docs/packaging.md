@@ -81,13 +81,61 @@ cd .. && zip -qr DAO3-便携包.zip DAO3-便携包
 `start.mjs` 启动前会检查图集；缺图集且拿不到上游纹理时，
 直接打印一条 `git clone` 命令并退出，而不是启动一个白屏服务。
 
+## 便携包之上还有三件交付物
+
+| 产物 | 由谁产出 | 为什么 |
+|---|---|---|
+| `DAO3-portable-v1.0.0.zip` | `build-portable.mjs` → `zip-dir.mjs` | 三端通用，解压即用；保留不动 |
+| `DAO3-1.0.0.dmg` | `build-installers.mjs` 用系统 `hdiutil` | macOS 用户习惯挂载磁盘镜像而不是解压 |
+| `DAO3-Setup-1.0.0.exe` | Inno Setup 6，**只在 CI 的 windows-latest 上编译** | Inno Setup 没有 macOS 版；在 mac 上"生成" .exe 只能是假的 |
+
+`build-installers.mjs` 不重新打包内容，只把已经过授权扫描的便携包目录原样搬进 `.dmg`，
+并额外写一份 `请先读我.txt` 说明 Gatekeeper 的处理办法（未做开发者签名，首次要右键→打开）。
+产出后会**真的挂载一次**并断言 `启动-macOS.command` 存在且带可执行位——
+只检查"文件在"是不够的，`.command` 丢了执行位就是双击没反应。
+
+Windows 那侧本仓库只提供 `installer/dao3.iss`（CRLF + UTF-8，Inno Setup 要求），
+编译交给 `.github/workflows/release.yml`。runner 上没有 Inno Setup 时工作流**显式失败**，
+不静默跳过。
+
+## GitHub Packages
+
+包名是 `@deepseekv5/dao3-editor-clone`。必须带 scope 且 scope 等于 owner，
+这是 GitHub Packages 的 npm registry 硬规定，`dao3-editor-clone` 这种裸名会被拒。
+
+```bash
+npx @deepseekv5/dao3-editor-clone            # 直接起服务并打开浏览器
+npm i -g @deepseekv5/dao3-editor-clone       # 装成全局命令 dao3-editor
+```
+
+`package.json` 的 `bin` 指向 `start.mjs`（带 `#!/usr/bin/env node` 且 `chmod +x`）。
+
+## 发布前的分发审计：`npm run check:dist`
+
+以前这段是手写 `find` + `grep`，容易漏，而且**漏的方向很危险**：
+`package.json` 的 `files` 里写一句 `"public"`，npm 就会把 `public/assets/` 整个吞进去——
+`files` 存在时 npm **不看 `.gitignore`**。这一条真的让 60 个未授权素材进了 tarball 候选。
+
+现在 `scripts/check-distribution.mjs` 一次扫三处，任何一处越界就退出码 1：
+
+```bash
+npm run check:dist
+# ok   git 跟踪的文件: 477 个文件 | 素材越界 0 | 疑似凭据 0
+# ok   npm tarball:   485 个文件 | 素材越界 0 | 疑似凭据 0
+# ok   便携包目录:     489 个文件 | 素材越界 0 | 疑似凭据 0
+```
+
+规则一律**锚定到产物根**：顶层 `vendor/` 是上游仓库自己的 clone（禁止入库），
+而 `public/vendor/three/` 是随包分发的 MIT three.js——两者都叫 vendor，
+用子串匹配会误报，用前缀匹配才对。
+
+工作流的 `portable` job 会跑同一个脚本，所以"本地查过"和"发出去的东西"是同一份判据。
+
 发布前建议跑一遍：
 
 ```bash
-npm test                       # 77 条断言
-node scripts/build-portable.mjs
-# 确认包里没有任何素材泄漏：
-find ../DAO3-便携包 -type f \( -name '*.mp3' -o -name '*.glb' -o -name '*.gltf' -o -name '*.gz' -o -name '*.raw' \)
-# 应为空
-grep -rl "ghp_\|DAO3_TOKEN=" ../DAO3-便携包    # 应为空
+npm test && npm run test:e2e     # 77 + 35 条断言
+npm run package                  # 便携包 + zip
+npm run installers               # .dmg（macOS 上）+ dao3.iss
+npm run check:dist               # 三处分发面一起审
 ```

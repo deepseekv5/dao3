@@ -153,6 +153,10 @@ class VoxaApp {
   }
   menu(act) {
     switch (act) {
+      case "home":
+        // 不需要离开前确认：dirty() 每次都 saveLocal() 落 localStorage，没有未保存态
+        location.href = "/";
+        break;
       case "new": if (confirm("新建模型会清空当前内容？")) { this.doc = newDoc(); this.activePart = null; this.seedStarterPart(); this.view.setDoc(this.doc); this.renderAll(); } break;
       case "save": this.save(); break;
       case "open": this.pickFile(".voxa,.json", (f) => this.openFile(f)); break;

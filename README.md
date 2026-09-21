@@ -63,7 +63,7 @@ node start.mjs --port=5173 --no-open
 ## 它到底"兼容"到什么程度
 
 不是"看着像"，是有断言可查的。`test/runtime_parity.mjs` 用真实浏览器驱动运行时，
-**103 条断言全绿**（默认执行 98 条，另 5 条需 `RACING_ZIP` 夹具），覆盖：
+**112 条断言全绿**（默认执行 107 条，另 5 条需 `RACING_ZIP` 夹具），覆盖：
 
 - **单位制**：官方 `walkSpeed 0.22 格/tick`、`64ms/tick`、`gravity -0.1`、
   `jumpPower 0.96`——在现搭的确定性平台上量出来的位移/跳跃高度必须落在官方量级
@@ -85,7 +85,7 @@ node start.mjs --port=5173 --no-open
 
 ```bash
 npm test          # 77 条断言（需先起服务）
-npm run test:e2e  # 26 条端到端断言（含免责声明门禁、建图、运行模式）
+npm run test:e2e  # 35 条端到端断言（免责声明门禁、建图、运行模式、每页返回主界面）
 npm run audit:api # 官方 API 面覆盖率
 ```
 
@@ -140,6 +140,8 @@ docs/          介绍站与开发文档（GitHub Pages 源）
 - [物理与单位制](docs/physics.md) — 为什么是"格/tick"，碰撞判据的官方依据
 - [测试与验证](docs/testing.md) — 怎么在后台标签页里确定性地推进 tick
 - [便携包与发布](docs/packaging.md) — 打包、三端启动、素材授权切分
+- [依赖清单](docs/dependencies.md) — 真的在跑的第三方代码只有 three.js r160；其余是 Node 内置
+- [致谢](docs/credits.md) — 公开类型声明为什么是兼容层的前提，以及与官方的授权边界
 - [Windows 支持说明](docs/windows.md) — 已审计项与未在 Windows 实机的边界
 
 上面这些 `.md` 在 GitHub 上直接可读；介绍站（`deepseekv5.github.io/dao3`）用的是同一批内容，

@@ -17,6 +17,7 @@
     <span><b>DAO3 编辑器复刻</b><i>开发文档</i></span>
   </a>
   <nav class="links">
+    <a href="#top">概览</a>
     <a href="./#tour">界面</a>
     <a href="./#proof">验证</a>
     <a href="./#start">上手</a>
@@ -24,15 +25,21 @@
     <a href="./#docs">文档</a>
     <a href="./#download">下载</a>
   </nav>
+  <a class="home" href="/" hidden>返回工作台</a>
   <a class="gh" href="https://github.com/deepseekv5/dao3" rel="noopener">
     <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M8 .2a8 8 0 0 0-2.5 15.6c.4.1.5-.2.5-.4v-1.4c-2 .4-2.5-.5-2.7-1-.1-.3-.5-1-.8-1.2-.3-.1-.7-.5 0-.6.6-.1 1.1.6 1.3.9.8 1.3 2 .9 2.5.7.1-.6.3-1 .6-1.2-2-.2-4.1-1-4.1-4.4 0-1 .3-1.8.9-2.4-.1-.3-.4-1.2.1-2.5 0 0 .8-.2 2.5 1a7.5 7.5 0 0 1 4.5 0c1.7-1.2 2.5-1 2.5-1 .5 1.3.2 2.2.1 2.5.6.6.9 1.4.9 2.4 0 3.4-2.1 4.2-4.1 4.4.3.3.6.8.6 1.7v2.5c0 .2.1.5.5.4A8 8 0 0 0 8 .2z"/></svg>
     <span>deepseekv5/dao3</span>
   </a>
 </header>
+<script>
+// 本站同时是 GitHub Pages 站点和本地应用里的 /docs。Pages 上 "/" 是用户主页不是工作台，
+// 所以"返回工作台"只在本地服务里出现。
+if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(".nav .home"); if (a) a.hidden = false; }
+</script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="architecture.html">架构与数据流</a><a href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><a class="on" href="testing.html">测试与验证</a><a href="packaging.html">便携包与发布</a><a href="windows.html">Windows 支持说明</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#关键技巧一后台标签页没有-raf必须手动推-tick">关键技巧一：后台标签页没有 rAF，必须手动推 tick</a><a class="t2" href="#关键技巧二夹具不能依赖地图内容">关键技巧二：夹具不能依赖地图内容</a><a class="t2" href="#关键技巧三渲染要可证伪不能只看没报错">关键技巧三：渲染要可证伪，不能只看&quot;没报错&quot;</a><a class="t2" href="#关键技巧四全新上下文会撞上首启门禁要走过去而不是绕过去">关键技巧四：全新上下文会撞上首启门禁，要走过去而不是绕过去</a><a class="t2" href="#77-+-26-条断言覆盖什么">77 + 26 条断言覆盖什么</a><a class="t2" href="#一条硬规矩测试绝不能写进默认地图">一条硬规矩：测试绝不能写进默认地图</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="architecture.html">架构与数据流</a><a href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><a class="on" href="testing.html">测试与验证</a><a href="packaging.html">便携包与发布</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#关键技巧一后台标签页没有-raf必须手动推-tick">关键技巧一：后台标签页没有 rAF，必须手动推 tick</a><a class="t2" href="#关键技巧二夹具不能依赖地图内容">关键技巧二：夹具不能依赖地图内容</a><a class="t2" href="#关键技巧三渲染要可证伪不能只看没报错">关键技巧三：渲染要可证伪，不能只看&quot;没报错&quot;</a><a class="t2" href="#关键技巧四全新上下文会撞上首启门禁要走过去而不是绕过去">关键技巧四：全新上下文会撞上首启门禁，要走过去而不是绕过去</a><a class="t2" href="#77-+-35-条断言覆盖什么">77 + 35 条断言覆盖什么</a><a class="t2" href="#一条硬规矩测试绝不能写进默认地图">一条硬规矩：测试绝不能写进默认地图</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/testing.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -41,7 +48,7 @@
 <p>判断标准只有一条：<b>在真实浏览器里把功能跑出来</b>，而不是类型检查通过。 所以本项目的回归套件是驱动真页面的，截图和断言同源。</p>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm start &amp;                      # 起本地服务
 npm test                         # test/runtime_parity.mjs · 77 条断言
-npm run test:e2e                 # test/e2e.mjs · 26 条端到端断言（截图落在 test/out/）</code></pre></div>
+npm run test:e2e                 # test/e2e.mjs · 35 条端到端断言（截图落在 test/out/）</code></pre></div>
 <p>套件需要 <code>playwright-core</code> + 一个 Chromium。它<b>不是</b>项目依赖 （运行时零依赖是硬要求），测试自己可移植地找：</p>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm i -D playwright-core &amp;&amp; npx playwright install chromium
 # 或指向已有安装：
@@ -66,8 +73,8 @@ CHROME=/path/to/chrome PLAYWRIGHT_MODULE=/path/to/playwright-core node test/runt
 <h2 id="关键技巧四全新上下文会撞上首启门禁要走过去而不是绕过去">关键技巧四：全新上下文会撞上首启门禁，要走过去而不是绕过去</h2>
 <p>playwright 每次给的是干净 <code>localStorage</code>，于是免责声明遮罩会挡在编辑器前面。 用 <code>addInitScript</code> 预置 <code>dao3_disclaimer_ack</code> 当然能让测试变绿，但那样就永远 测不到&quot;首启用户实际看到什么&quot;——遮罩吃掉点击时，症状是 <code>#sizeOk</code> 超时 30s， 排查起来完全看不出根因。</p>
 <p>所以 <code>test/e2e.mjs</code> 把这一步当成被测对象：断言未勾选时「进入」禁用 → 勾选 → 断言可用 → 点掉 → 断言遮罩移除且 <code>localStorage</code> 记住 → reload 断言不再打扰。 6 条断言，顺带把后面所有点击的路径清干净。</p>
-<h2 id="77-+-26-条断言覆盖什么">77 + 26 条断言覆盖什么</h2>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>组</th><th>内容</th></tr></thead><tbody><tr><td>单位制</td><td>行走 0.22 格/tick、跳跃量级、tick 单调 + 64ms 换算、<code>GameTickEvent</code> 字段</td></tr><tr><td>碰撞</td><td>玻璃挡人、单帧 5 格不隧穿、1 格墙走不上去但跳得过、实体盒按盒心、踏步不白送高度</td></tr><tr><td>方块</td><td>旋转码进网格（turn t 的世界面 = 第 (d−t) mod 4 个面）、批量写不逐格重建、只读 <code>shape/VoxelTypes</code></td></tr><tr><td>粒子</td><td><code>color0..4</code> 按 /1000 归一、<code>size0..4</code> 五阶段、逐粒子尺寸与颜色</td></tr><tr><td>玩家</td><td><code>scale</code> 同时放大盒与人偶、<code>spectator</code> 穿墙、<code>color/metalness/emissive/shininess</code> 即时生效、<code>showName</code></td></tr><tr><td>相机</td><td><code>cameraFreezedAxis</code> 八种取值逐个、FOLLOW 转身体 vs RELATIVE 刚性对齐、RELATIVE+冻结Y</td></tr><tr><td>世界</td><td><code>sunPhase</code> 0..1、<code>say ≠ Chat</code>、<code>searchBox</code> 完全包含、<code>raycast</code>、临时聊天、克隆、选择器过滤</td></tr><tr><td>客户端</td><td>UI 默认值对齐官方、<code>richText</code> 只放行 font/stroke、<code>UiScale</code> 拒负值、<code>pointerLockEvents</code> 事件名、<code>rendering3d</code> 冻结最后一帧、按端裁剪沙箱</td></tr><tr><td>建图</td><td>重新生成地形后出生点回到新图中心（旧 <code>initialPosition</code> 不许把玩家拽回旧坐标）、首启门禁走完才能操作</td></tr><tr><td>数据</td><td>导出 <code>player.json</code> 恰好官方 41 键、导出→导入回环、CID 校验、音效衰减参数不丢</td></tr><tr><td>官方模板</td><td>取到官方 <code>index.js</code>、零改动运行、<code>#报名点 / .检查点 / #加速道具</code> 可查、报名后换车与速度覆盖</td></tr></tbody></table></div>
+<h2 id="77-+-35-条断言覆盖什么">77 + 35 条断言覆盖什么</h2>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>组</th><th>内容</th></tr></thead><tbody><tr><td>单位制</td><td>行走 0.22 格/tick、跳跃量级、tick 单调 + 64ms 换算、<code>GameTickEvent</code> 字段</td></tr><tr><td>碰撞</td><td>玻璃挡人、单帧 5 格不隧穿、1 格墙走不上去但跳得过、实体盒按盒心、踏步不白送高度</td></tr><tr><td>方块</td><td>旋转码进网格（turn t 的世界面 = 第 (d−t) mod 4 个面）、批量写不逐格重建、只读 <code>shape/VoxelTypes</code></td></tr><tr><td>粒子</td><td><code>color0..4</code> 按 /1000 归一、<code>size0..4</code> 五阶段、逐粒子尺寸与颜色</td></tr><tr><td>玩家</td><td><code>scale</code> 同时放大盒与人偶、<code>spectator</code> 穿墙、<code>color/metalness/emissive/shininess</code> 即时生效、<code>showName</code></td></tr><tr><td>相机</td><td><code>cameraFreezedAxis</code> 八种取值逐个、FOLLOW 转身体 vs RELATIVE 刚性对齐、RELATIVE+冻结Y</td></tr><tr><td>世界</td><td><code>sunPhase</code> 0..1、<code>say ≠ Chat</code>、<code>searchBox</code> 完全包含、<code>raycast</code>、临时聊天、克隆、选择器过滤</td></tr><tr><td>客户端</td><td>UI 默认值对齐官方、<code>richText</code> 只放行 font/stroke、<code>UiScale</code> 拒负值、<code>pointerLockEvents</code> 事件名、<code>rendering3d</code> 冻结最后一帧、按端裁剪沙箱</td></tr><tr><td>建图</td><td>重新生成地形后出生点回到新图中心（旧 <code>initialPosition</code> 不许把玩家拽回旧坐标）、首启门禁走完才能操作</td></tr><tr><td>导航</td><td>编辑器/VOXA/文档站都能返回工作台；编辑器返回前必须把脏状态存盘</td></tr><tr><td>数据</td><td>导出 <code>player.json</code> 恰好官方 41 键、导出→导入回环、CID 校验、音效衰减参数不丢</td></tr><tr><td>官方模板</td><td>取到官方 <code>index.js</code>、零改动运行、<code>#报名点 / .检查点 / #加速道具</code> 可查、报名后换车与速度覆盖</td></tr></tbody></table></div>
 <h2 id="一条硬规矩测试绝不能写进默认地图">一条硬规矩：测试绝不能写进默认地图</h2>
 <p><code>server.js</code> 首次启动会 <code>ensureSeed()</code> 生成示例世界；编辑器有 30 秒自动保存。 两者叠加的后果是：<b>跑一次自动化测试，就把测试残留固化进地图存档</b>。 历史上真发生过（<code>gameRules</code> 被写回、实体数从 199 变成 200）。</p>
 <p>防线有三道：</p>

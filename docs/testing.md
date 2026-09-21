@@ -6,7 +6,7 @@
 ```bash
 npm start &                      # 起本地服务
 npm test                         # test/runtime_parity.mjs · 77 条断言
-npm run test:e2e                 # test/e2e.mjs · 26 条端到端断言（截图落在 test/out/）
+npm run test:e2e                 # test/e2e.mjs · 35 条端到端断言（截图落在 test/out/）
 ```
 
 套件需要 `playwright-core` + 一个 Chromium。它**不是**项目依赖
@@ -70,7 +70,7 @@ playwright 每次给的是干净 `localStorage`，于是免责声明遮罩会挡
 断言可用 → 点掉 → 断言遮罩移除且 `localStorage` 记住 → reload 断言不再打扰。
 6 条断言，顺带把后面所有点击的路径清干净。
 
-## 77 + 26 条断言覆盖什么
+## 77 + 35 条断言覆盖什么
 
 | 组 | 内容 |
 |---|---|
@@ -83,6 +83,7 @@ playwright 每次给的是干净 `localStorage`，于是免责声明遮罩会挡
 | 世界 | `sunPhase` 0..1、`say ≠ Chat`、`searchBox` 完全包含、`raycast`、临时聊天、克隆、选择器过滤 |
 | 客户端 | UI 默认值对齐官方、`richText` 只放行 font/stroke、`UiScale` 拒负值、`pointerLockEvents` 事件名、`rendering3d` 冻结最后一帧、按端裁剪沙箱 |
 | 建图 | 重新生成地形后出生点回到新图中心（旧 `initialPosition` 不许把玩家拽回旧坐标）、首启门禁走完才能操作 |
+| 导航 | 编辑器/VOXA/文档站都能返回工作台；编辑器返回前必须把脏状态存盘 |
 | 数据 | 导出 `player.json` 恰好官方 41 键、导出→导入回环、CID 校验、音效衰减参数不丢 |
 | 官方模板 | 取到官方 `index.js`、零改动运行、`#报名点 / .检查点 / #加速道具` 可查、报名后换车与速度覆盖 |
 

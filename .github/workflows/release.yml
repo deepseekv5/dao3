@@ -1,0 +1,134 @@
+name: 构建安装包并发布
+
+# 打 tag（v1.2.3）即产出三件交付物：便携包 zip、macOS .dmg、Windows 安装程序 .exe，
+# 挂到对应 Release，并把包发到 GitHub Packages（npm registry）。
+#
+# 为什么 Windows 那一步必须在 CI 里做：Inno Setup 只有 Windows 版，
+# 在 macOS 上"生成"一个 .exe 只能是假的。
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要发布的版本号（留空则用 package.json 的 version）"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------- 便携包 --
+  portable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 构建便携包与文档
+        run: |
+          node scripts/build-docs.mjs
+          node scripts/build-portable.mjs "$GITHUB_WORKSPACE/DAO3-便携包"
+      - name: 审计分发内容（素材越界 / 凭据）
+        run: node scripts/check-distribution.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable
+          path: |
+            DAO3-便携包
+            DAO3-便携包-v*.zip
+
+  # ---------------------------------------------------------------- macOS --
+  dmg:
+    needs: portable
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable
+      - name: 产出 .dmg（挂载并校验可执行位）
+        run: |
+          node scripts/build-installers.mjs "$PWD/DAO3-便携包" "$PWD/dist"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: dist/*.dmg
+
+  # --------------------------------------------------------------- Windows --
+  windows-installer:
+    needs: portable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: portable
+      - name: 用 Inno Setup 编译安装程序
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            Write-Host "runner 上没有 Inno Setup，显式失败而不是跳过"
+            exit 1
+          }
+          # build-installers.mjs 会写出 installer/dao3.iss（内容含真实版本号）
+          node scripts/build-installers.mjs "$PWD\DAO3-便携包" "$PWD\dist" | Out-Null
+          & $iscc "installer\dao3.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Move-Item -Force "DAO3-便携包\Output\DAO3-Setup-*.exe" dist\
+          Get-ChildItem dist\*.exe | ForEach-Object { "产物: $($_.Name) $([math]::Round($_.Length/1MB,2))MB" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*.exe
+
+  # ---------------------------------------------------------------- 发布 --
+  release:
+    needs: [portable, dmg, windows-installer]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          path: assets
+          merge-multiple: false
+      - name: 建 Release 并挂三件交付物
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          zip_f=$(ls assets/portable/DAO3-便携包-v*.zip | head -1)
+          dmg_f=$(ls assets/dmg/*.dmg | head -1)
+          exe_f=$(ls assets/windows-installer/*.exe | head -1)
+          ls -l "$zip_f" "$dmg_f" "$exe_f"
+          notes="便携包 zip / macOS .dmg / Windows 安装程序 exe 三件同内容，按平台挑一件。"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$zip_f" "$dmg_f" "$exe_f" --clobber
+          else
+            gh release create "$TAG" "$zip_f" "$dmg_f" "$exe_f" --title "$TAG" --notes "$notes"
+          fi
+      - name: 发布到 GitHub Packages（npm registry）
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # GitHub Packages 只接受以 owner 命名的 scoped 包，鉴权走 .npmrc 而不是环境变量
+          printf '@deepseekv5:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' \
+            "$NODE_AUTH_TOKEN" > "$RUNNER_TEMP/.npmrc"
+          npm publish --userconfig "$RUNNER_TEMP/.npmrc" --registry=https://npm.pkg.github.com
+          rm -f "$RUNNER_TEMP/.npmrc"

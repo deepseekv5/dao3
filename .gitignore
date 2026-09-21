@@ -9,10 +9,13 @@ official-project/*
 server/data/
 
 # ── 上游参考仓库（Apache-2.0，但体积 200MB+，不镜像）─────────────────
-# 整个 vendor/ 都是各上游仓库自己的 clone（各自带 .git），作为嵌套仓库无法、也不应入库。
-# 其中可再分发的两张小表已复制到 data/upstream/（随 LICENSE 一起走）。
-# 重建图集时再按 README 里的 git clone 取回纹理。
-vendor/
+# 顶层 vendor/ 里每个子目录都是各上游仓库自己的 clone（带 .git），作为嵌套仓库
+# 无法、也不应入库。其中可再分发的两张小表已复制到 data/upstream/（随 LICENSE 一起走）。
+#
+# 必须写成 /vendor/：gitignore 的 "vendor/" 会匹配**任意层级**同名目录，
+# 于是把随包分发的 MIT three.js（public/vendor/）也一起吞掉 —— 那会让 clone 出来的
+# 仓库没有渲染器、整个应用白屏。锚定到根目录才不会误伤。
+/vendor/
 
 # ── 本地状态与产物 ──────────────────────────────────────────────────
 tmp/
