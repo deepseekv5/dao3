@@ -115,11 +115,17 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           TAG="v${VERSION}"
           echo "发布 $TAG"
-          zip_f=$(ls assets/portable/DAO3-便携包-v*.zip | head -1)
+          zip_src=$(ls assets/portable/DAO3-便携包-v*.zip | head -1)
+          # GitHub 会把 release 资产名里的非 ASCII 字符剥掉：
+          # "DAO3-便携包-v1.0.2.zip" 上传后变成 "DAO3-.-v1.0.2.zip"。
+          # zip **内部**条目名带 UTF-8 标记所以中文文件名没问题，只有资产名必须 ASCII。
+          zip_f="DAO3-portable-v${VERSION}.zip"
+          cp "$zip_src" "$zip_f"
           dmg_f=$(ls assets/dmg/*.dmg | head -1)
           exe_f=$(ls assets/windows-installer/*.exe | head -1)
           ls -l "$zip_f" "$dmg_f" "$exe_f"
           notes="便携包 zip / macOS .dmg / Windows 安装程序 exe 三件同内容，按平台挑一件。"
+          notes="$notes"$'\n\n'"GitHub Packages（npm）：npx @deepseekv5/dao3-editor-clone"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$zip_f" "$dmg_f" "$exe_f" --clobber
           else
