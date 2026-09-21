@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DAO3 编辑器复刻</title>
+<meta name="description" content="dao3.fun 编辑器与运行时的本地独立实现。全部代码自己写，依据官方公开文档与类型声明做到接口兼容。"/>
+<link rel="stylesheet" href="/css/disclaimer.css"/>
+<link rel="icon" type="image/svg+xml" href="/img/arena.svg"/>
+<link rel="stylesheet" href="/css/site.css"/>
+</head>
+<body class="sp">
+
+<header class="sp-top">
+  <a class="sp-brand" href="/">DAO3 编辑器复刻</a>
+  <nav class="sp-nav">
+    <a href="#what">是什么</a><a href="#compat">兼容</a><a href="#how">怎么做的</a><a href="#run">跑起来</a><a href="#limits">边界</a>
+  </nav>
+  <a class="sp-open" href="/edit/216d665d3ca92bd1b9a2">打开示例地图 →</a>
+</header>
+
+<main>
+
+<section id="what">
+  <h1>在本地跑一套 dao3.fun 的编辑器、运行时和建模器</h1>
+  <p class="say">全部代码是这个仓库自己写的。参照的是官方公开的东西：<code>box3-product-document</code> 文档、<code>GameAPI.d.ts</code> 类型声明、<code>docs.dao3.fun</code>，以及官方开源的方块图集仓库。目标是<b>读得懂官方导出的地图、跑得动官方写法的脚本</b>，不是复刻源码，也拿不到源码。</p>
+  <p class="say">用途很具体：拆开学引擎的分层怎么做、把玩法脚本丢进去看它到底怎么跑、离线搭图不依赖网络。数据全在你这台机器上。</p>
+  <dl class="facts">
+    <div><dt>方块</dt><dd>383 种，含 11 种流体和 15 种序列帧动画方块</dd></div>
+    <div><dt>tick</dt><dd>64 ms 定步长，官方 <code>on*/next*</code> 通道与取消语义</dd></div>
+    <div><dt>API 面</dt><dd>World 111 个成员，运行时逐个探测到 329/329</dd></div>
+    <div><dt>示例图</dt><dd>256×128×256，152 万体素，199 个官方实体</dd></div>
+  </dl>
+</section>
+
+<section id="compat" class="alt">
+  <h2>兼容到什么程度</h2>
+  <table>
+    <thead><tr><th>对象</th><th>格式或接口</th><th>情况</th></tr></thead>
+    <tbody>
+      <tr><td>官方地图包</td><td><code>.zip</code> — code / project / build / mesh / audio</td><td class="ok">导入、导出都通</td></tr>
+      <tr><td>Unity 侧地图</td><td><code>.gz</code> — gzip(JSON VoxelPayload)</td><td class="ok">双向</td></tr>
+      <tr><td>体素模型</td><td><code>.vox</code> MagicaVoxel 二进制块</td><td class="ok">导入、导出</td></tr>
+      <tr><td>模型资产</td><td><code>.glb</code> / <code>.gltf</code>，官方 <code>mesh/*.vb</code> 按文件名解析</td><td class="ok">支持</td></tr>
+      <tr><td>玩法脚本</td><td>GameAPI.d.ts 的 World / Player / Entity / Voxels</td><td class="ok">对齐</td></tr>
+      <tr><td>方块行为</td><td>block-spec 的 velocity / fluid / mass / friction / anim</td><td class="ok">构建期合成</td></tr>
+      <tr><td>联机、商城、云存档</td><td>官方平台服务</td><td class="no">没有，也不打算做</td></tr>
+    </tbody>
+  </table>
+  <p class="note">示例地图里那份赛道能完整跑通：按 <code>E</code> 在报名点报名，人物换成汽车模型，依次过 5 个官方检查点，跑满 3 圈出成绩结算。</p>
+</section>
+
+<section id="how">
+  <h2>怎么做的</h2>
+  <div class="cols">
+    <div>
+      <h3>渲染</h3>
+      <p>three.js r160。区块按 16³ 合批，分成不透明、透明、自发光、空气墙四个网格桶。方块接缝和序列帧动画都由 <code>onBeforeCompile</code> 注进去的 shader 驱动，播放和切换都不会触发重编译。</p>
+      <h3>数据</h3>
+      <p>构建期脚本把官方方块 ID 表、渲染规则和 16×16 贴图合成一张图集，顺带算出每个方块的碰撞、质量、摩擦、速度、流体和动画帧。地图以 gzip JSON 存在 <code>server/data/worlds/</code>。</p>
+    </div>
+    <div>
+      <h3>运行时</h3>
+      <p>固定步长累加器驱动 tick，物理、区域、环境、定时器、脚本回调分段跑，每段各自捕获异常——一个子系统炸了不会把整个循环带走。实体接触检测用 AABB 扫描剪枝，官方那张图 199 个实体同时在里面也不卡。</p>
+      <h3>怎么算验证过</h3>
+      <p>不看编译过不过。用浏览器驱动真实页面，读像素和状态数值：按住 W 一秒走了多远、抽屉在启动时是不是 <code>display:none</code>、关掉模型层之后画面像素和差多少。编译通过但面板宽度是 0，不算做完。</p>
+    </div>
+  </div>
+</section>
+
+<section id="run" class="alt">
+  <h2>跑起来</h2>
+  <p>要 Node 18 以上。一条命令：首次会自动构建方块图集，然后清掉本项目遗留的旧实例、挑一个空闲端口起服务。</p>
+  <pre>./run.sh</pre>
+  <p>首页可以直接创建地图，也能把示例的「赛车模板」复制一份出来改，原件不动。别的项目占了默认端口就顺延，不会去杀别人的进程。</p>
+  <pre>PORT=8080 ./run.sh                          # 指定端口
+node scripts/build-block-atlas.mjs          # 改了贴图或 spec 之后重建图集
+node scripts/import-official-project.mjs    # 从仓库内的官方数据重建示例地图
+node scripts/fetch-official-audio.mjs       # 补齐 40 个官方音效</pre>
+</section>
+
+<section id="limits">
+  <h2>边界</h2>
+  <ul class="plain">
+    <li>不是官方产品，和 box3lab 没有任何隶属、授权或背书关系。页面上提到官方名称，只是为了说清楚兼容对象是谁。</li>
+    <li>方块贴图、方块 ID 表、地图数据、模型和音频素材的著作权在 box3lab 和相应权利人手里。这个项目把它们放在本机，用途限于学习、技术研究和兼容性验证。</li>
+    <li>代码部分你可以按自己的判断用。但要把带官方素材或官方地图数据的任何东西分发出去、公开镜像、或者长得像官方产品，请先取得权利人许可。</li>
+    <li>还没有做完的：VOXA 的拖拽 gizmo 和蒙皮权重、下水后的屏幕染色、官方体素分块的逐格比对（分块是私有二进制编码，没逆向出来）。</li>
+  </ul>
+</section>
+
+<section class="sp-disc">
+  <h2>免责声明</h2>
+  <p>本项目是对 dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的独立兼容实现。全部代码由本仓库自行编写，未复制、未反编译、未分发任何官方源代码；实现依据为官方公开发布的文档、类型声明与开源图集仓库，属于接口与数据格式层面的兼容，而非代码同源。方块贴图、方块 ID 表、地图数据、模型与音频素材的著作权归 box3lab 及其权利人所有，仅在本机用于学习、技术研究与兼容性验证，未经权利人许可不得用于商业分发、公开镜像或冒充官方产品。本项目与 box3lab / 神奇代码岛官方无任何隶属、授权或背书关系。</p>
+</section>
+
+</main>
+
+<footer class="sp-foot">
+  <span>DAO3 编辑器复刻 · 本地运行 · 数据不出机器</span>
+  <div><a href="/">创作台</a><a href="/voxa">VOXA</a><a href="/edit/216d665d3ca92bd1b9a2">示例地图</a><a href="#" data-disclaimer>免责声明</a></div>
+</footer>
+
+<script type="module" src="/js/disclaimer.js"></script>
+<script type="module">
+const links = [...document.querySelectorAll(".sp-nav a")];
+const secs = links.map((a) => document.querySelector(a.getAttribute("href"))).filter(Boolean);
+addEventListener("scroll", () => {
+  const y = scrollY + innerHeight * .32;
+  let cur = null;
+  secs.forEach((s, i) => { if (s.offsetTop <= y) cur = links[i]; });
+  links.forEach((l) => l.classList.toggle("on", l === cur));
+}, { passive: true });
+</script>
+</body>
+</html>

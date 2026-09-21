@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>神奇代码岛</title>
+<link rel="icon" type="image/svg+xml" href="/img/arena.svg"/>
+<link rel="stylesheet" href="/css/editor.css"/>
+<link rel="stylesheet" href="/css/disclaimer.css"/>
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js"}}</script>
+<script>window.__errs=[];window.addEventListener("error",e=>window.__errs.push((e.message||e.error||("load-fail "+(e.target&&e.target.src||e.target&&e.target.href||"")))+" @ "+(e.filename||"")+":"+(e.lineno||"")),true);window.addEventListener("unhandledrejection",e=>window.__errs.push("reject: "+(e.reason&&e.reason.stack||e.reason)));</script>
+</head>
+<body>
+<div id="loading"><div class="load-logo"></div><div class="load-bar"><i></i></div><span>正在启动容器…</span></div>
+
+<!-- 顶部菜单栏 -->
+<header id="topbar">
+  <div class="tb-left">
+    <div class="logo" id="menuLogo">
+      <svg viewBox="0 0 32 32" width="26" height="26"><path d="M16 2 3 9v14l13 7 13-7V9L16 2z" fill="none" stroke="#fc8308" stroke-width="2.4"/><path d="M16 9l5 12h-3l-1-2.4h-2L14 21h-3l5-12zm0 4.2-1 2.6h2l-1-2.6z" fill="#fc8308"/></svg>
+      <span class="caret"></span>
+    </div>
+    <nav class="tabs">
+      <button class="mtab active" data-menu="build">搭建</button><i class="div"></i>
+      <button class="mtab" data-menu="model">模型</button><i class="div"></i>
+      <button class="mtab" data-menu="script">脚本</button><i class="div"></i>
+      <button class="mtab" data-menu="ui">界面</button><i class="div"></i>
+      <button class="mtab" data-menu="store">商城</button><i class="div"></i>
+      <button class="mtab" data-menu="player">玩家</button>
+    </nav>
+  </div>
+  <div class="tb-center">
+    <button id="undo" class="tb-ico" title="撤销 (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h10a6 6 0 0 1 0 12h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    <button id="redo" class="tb-ico" title="重做 (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9h-10a6 6 0 0 0 0 12h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    <span id="saveState" class="savestate"></span>
+  </div>
+  <div class="tb-right">
+    <button id="btnWorlds" class="tb-ico" title="世界库" data-ico="doc"></button>
+    <button class="tb-ico" title="协作" data-ico="collab"></button>
+    <button class="tb-ico" title="反馈" data-ico="feedback"></button>
+    <button id="btnSettings" class="tb-ico" title="设置" data-ico="settings"></button>
+    <button id="btnPublish" class="play" title="运行游戏（玩家将出现在地图中心，脚本全量执行）" data-ico="play"></button>
+    <div id="worldList" class="worldlist"></div>
+  </div>
+</header>
+
+<!-- 主体 -->
+<main id="stage">
+  <canvas id="viewport"></canvas>
+
+  <!-- 左上浮动：方块库 / 场景 卡片 -->
+  <aside id="libCard" class="float-card">
+    <div class="lc-tabs">
+      <button class="lc-tab active" data-lc="terrain"><span class="i" data-ico="cube"></span>地形</button>
+      <button class="lc-tab" data-lc="scene"><span class="i" data-ico="tree"></span>场景</button>
+    </div>
+    <div class="lc-add"><button id="lcAdd" class="round">＋</button><span>添加</span></div>
+    <div class="lc-search"><span data-ico="search"></span><input id="blockSearch" placeholder="搜索"/></div>
+    <div class="lc-body">
+      <div class="lc-rail" id="catRail"></div>
+      <div class="lc-grid" id="blockLib"></div>
+    </div>
+    <div class="lc-foot"><span data-ico="grid"></span><input id="zoomSlider" type="range" min="1" max="4" step="1" value="1"/><b id="zoomVal">1x</b></div>
+    <!-- 场景 tab 内容：全局变换 -->
+    <div class="lc-scene" id="globalToolbar"></div>
+  </aside>
+
+  <!-- 中央浮动编辑工具条 -->
+  <div id="editToolbar" class="float-toolbar">
+    <button class="ft" data-tool="place" title="放置方块 (B)" data-ico="cube"></button>
+    <button class="ft" data-tool="break" title="破坏方块 (E)" data-ico="break"></button>
+    <button class="ft" data-tool="paint" title="刷色 (G)" data-ico="paint"></button>
+    <button class="ft" data-tool="fill" title="油漆桶填充 (F)" data-ico="fill"></button>
+    <button class="ft" data-tool="eyedropper" title="吸管取色 (M)" data-ico="pick"></button>
+    <button class="ft" data-tool="line" title="线建造 (L)" data-ico="line"></button>
+    <button class="ft" data-tool="box" title="盒建造 (R)" data-ico="box"></button>
+    <button class="ft" data-tool="boxBreak" title="盒删除 (X)" data-ico="boxBreak"></button>
+    <button class="ft" data-tool="extrude" title="面拉伸 (T)" data-ico="extrude"></button>
+    <button class="ft" data-tool="select" title="框选 (S)" data-ico="select"></button>
+    <button class="ft" data-tool="move" title="移动选区" data-ico="move"></button>
+    <button class="ft" data-tool="sphere" title="球体笔刷" data-ico="cube"></button>
+    <button class="ft" data-tool="sphereH" title="空心球" data-ico="cube"></button>
+    <button class="ft" data-tool="radius" title="半径笔刷" data-ico="cube"></button>
+    <button class="ft" data-tool="cylinder" title="圆柱" data-ico="cube"></button>
+    <button class="ft" data-tool="flatten" title="平整" data-ico="grid"></button>
+    <button class="ft" data-tool="array" title="阵列" data-ico="cube"></button>
+    <span class="ft-sep"></span>
+    <div id="editModeSeg" class="mode-seg" title="编辑视角：全局轨道视角 / 角色视角（可在角色下建造并飞行）">
+      <button id="modeGlobal" class="msb active">全局</button><button id="modeRole" class="msb">角色</button>
+    </div>
+    <button class="ft" id="fpEdit" title="角色视角编辑：WASD 移动，鼠标转身，K 起飞/降落，左键按当前工具操作，Esc 退出" data-ico="fp"></button>
+    <button class="ft" id="ortho" title="透视/正交 (O)" data-ico="ortho"></button>
+    <button class="ft active" id="edges" title="边缘线" data-ico="edges"></button>
+    <button class="ft active" id="grid" title="网格" data-ico="grid"></button>
+    <button class="ft" id="resetView" title="重置视角" data-ico="home"></button>
+  </div>
+
+  <!-- 右侧：导览 + 属性 -->
+  <aside id="rightPanel">
+    <section class="rp-sec">
+      <div class="rp-head"><span class="caret"></span> 导览</div>
+      <div class="rp-tabs"><button class="active" data-rp="model">模型</button><button data-rp="ui">界面</button><input id="treeSearch" class="rp-search" placeholder="搜索"/></div>
+      <div id="hierarchy" class="rp-tree"></div>
+    </section>
+    <section class="rp-sec grow">
+      <div class="rp-head"><span class="caret"></span> 属性</div>
+      <div class="rp-props">
+        <div class="pp-rail">
+          <button class="pp-ico active" data-tab="basic" title="基本" data-ico="doc"></button>
+          <button class="pp-ico" data-tab="look" title="外观" data-ico="color"></button>
+          <button class="pp-ico" data-tab="world" title="世界" data-ico="settings"></button>
+          <button class="pp-ico" data-tab="fx" title="特效" data-ico="fx"></button>
+          <button class="pp-ico" data-tab="sound" title="音效" data-ico="sound"></button>
+        </div>
+        <div class="pp-body">
+          <div class="pp-tab" data-tab="basic">
+            <div class="pp-sub">基本</div>
+            <div class="frow"><label>名字</label><input id="worldName" class="finput" value="神岛示例世界" spellcheck="false"/></div>
+            <div class="frow"><label>标签</label><button class="ftag">添加标签</button></div>
+            <div class="frow"><label>方块</label><span id="propBlock" class="fval">grass</span></div>
+            <div class="frow"><label>ID</label><span id="propId" class="fval">127</span></div>
+            <div class="frow dim"><label>发光</label><span id="propGlow" class="fval">否</span></div>
+            <div class="pp-sub">位置</div>
+            <div class="pos3" id="posSliders"></div>
+            <div class="pp-sub">旋转 <span class="caret"></span></div>
+            <div class="quat"><label>旋转 (四元数 Quaternion):</label><div class="finput mono" id="quatVal">0.000, 0.000, 0.000, 1.000</div></div>
+          </div>
+          <div class="pp-tab hidden" data-tab="look"><div id="terrain" class="terrain"></div></div>
+          <div class="pp-tab hidden" data-tab="world" id="worldTab"></div>
+          <div class="pp-tab hidden" data-tab="fx"><div id="fxPane"></div></div>
+          <div class="pp-tab hidden" data-tab="sound"><div id="sndPane"></div></div>
+        </div>
+      </div>
+    </section>
+  </aside>
+
+  <div id="modelPanel" class="float-card model-panel">
+  <div class="lc-tabs"><button class="lc-tab active"><span class="i" data-ico="cube"></span>模型</button></div>
+  <div class="lc-add"><button id="modelImport" class="round">＋</button><span>导入 .glb / .gltf</span></div>
+  <div class="lc-add"><button id="modelFromVoxels" class="round">▣</button><span>把选区转为体素模型</span></div>
+  <div class="lc-add"><a href="/voxa" target="_blank" rel="noopener" class="round" title="在新标签页打开 VOXA 体素模型编辑器">◇</a><span>用 VOXA 建模（部件 / 骨骼 / 动画）</span></div>
+  <div id="modelList" class="model-list"></div>
+  <div class="model-hint">点选后到场景点击放置。名称为 #id 或 .tag 的模型会成为实体标记（运行时可用 world.querySelector 查询）。</div>
+</div>
+
+<!-- 实体属性卡：独立于「模型」页签，任何模式下选中模型都能改 -->
+<div id="propCard" class="float-card prop-card">
+  <div class="lc-tabs">
+    <button class="lc-tab active"><span class="i" data-ico="cube"></span>实体属性</button>
+    <button id="propClose" class="lc-tab pc-close" title="收起属性卡">×</button>
+  </div>
+  <div id="entProps" class="ent-props"></div>
+</div>
+</main>
+
+<div id="hud"><span id="coords">—</span><span class="hud-sep">·</span><span>体素 <b id="blockCount">0</b></span></div>
+<div id="ctxmenu"><button data-c="rename">重命名</button><button data-c="copy">复制</button><button data-c="delete">删除</button></div>
+
+<!-- 运行模式 HUD（对齐官方：第三人称跟随 + 准星 + 交互提示 + 头顶名牌 + 🐞 控制台） -->
+<div id="playEntry">
+  <div class="pe-top">
+    <span id="gameTitle" class="pe-title">运行中</span>
+    <span class="pe-hint">WASD 移动 · 鼠标视角 · Shift 跑 · Ctrl 蹲 · Space 跳/二段跳 · E 交互 · 左键 A · 右键 B · V 视角 · ` 控制台</span>
+    <div class="pe-actions">
+      <button id="gameStoreBtn" class="pe-store" title="商品列表（world.products()）" hidden>商店</button>
+      <button id="gameStop" class="play stop" data-ico="stop" title="返回编辑器"></button>
+    </div>
+  </div>
+  <div id="gameStore" class="game-store"></div>
+  <div id="gameCross"></div>
+  <div id="gameLockHint">点击画面锁定视角（未锁定时可按住左/右键拖动转视角）· Esc 释放</div>
+  <div class="pe-readout"><span id="gameCoords" class="game-coords">X 0  Y 0  Z 0</span><span id="gameState" class="game-state">follow</span></div>
+  <div id="gameNameTags" class="name-tags"></div>
+  <div id="gameInteract"></div>
+  <div id="gameVitals">
+    <div class="vit-name"><b id="vitName">玩家</b><span id="vitState"></span></div>
+    <div class="vit-bar"><i id="vitHp"></i></div>
+  </div>
+  <div id="gameChatInput"><input id="chatBox" maxlength="200" placeholder="说点什么…（Enter 发送，Esc 取消）" spellcheck="false"/></div>
+  <div id="gameDead"><div class="dead-card"><b>你已倒下</b><button id="btnRespawn" class="playbtn">重生</button></div></div>
+  <div id="gameChat"></div>
+  <div id="gameDialog"></div>
+  <div id="gameConsole"></div>
+  <div id="gameHudSettings" class="game-hud-settings">
+    <div class="gh-row"><span>日照</span><input id="ghSun" type="range" min="0" max="4" step="0.05" value="2.4"><em>2.4</em></div>
+    <div class="gh-row"><span>环境光</span><input id="ghAmbient" type="range" min="0" max="1" step="0.01" value="0.22"><em>0.22</em></div>
+    <div class="gh-row"><span>曝光</span><input id="ghExposure" type="range" min="0.4" max="2" step="0.02" value="1.12"><em>1.12</em></div>
+    <div class="gh-row"><span>视场角</span><input id="ghFov" type="range" min="0.05" max="1.6" step="0.01" value="0.25"><em>0.25</em></div>
+    <div class="gh-row"><span>镜头距离</span><input id="ghDist" type="range" min="1" max="30" step="0.5" value="8.5"><em>8.5</em></div>
+    <div class="gh-btns">
+      <button id="ghSpawn" title="将当前点设为出生点">设出生点</button>
+      <button id="ghDay" title="白天">白天</button>
+      <button id="ghNight" title="夜晚">夜晚</button>
+      <button id="ghReset" title="重置为世界设置">重置</button>
+      <button id="ghSound" title="声音开关">声音:开</button>
+      <button id="ghConsole" title="调试控制台（反引号键）">控制台</button>
+    </div>
+  </div>
+</div>
+<div id="gameUIWidgets" class="uiw-host"></div>
+<div id="gameHint">运行模式 · 玩家已出现在地图中心 · WASD 移动 · V 切换视角 · 按顶部停止按钮或 Esc 返回编辑器 · 按 H 打开设置</div>
+
+<!-- 触屏操控（官方 Gamepad 图槽：摇杆 / 跳 / 蹲 / 跑 / 飞行 / A / B / 交互） -->
+<div id="touchUI">
+  <div id="joyBase"><div id="joyKnob"></div></div>
+  <div id="tbtns">
+    <button id="tInteract" title="交互">E</button>
+    <button id="tActionA" title="动作 A">A</button>
+    <button id="tActionB" title="动作 B">B</button>
+    <button id="tFly" title="飞行">飞</button>
+    <button id="tCrouch" title="蹲下">蹲</button>
+    <button id="tRun" title="奔跑">跑</button>
+    <button id="tJump" title="跳跃 / 二段跳">跳</button>
+  </div>
+</div>
+
+<!-- 新建世界尺寸弹窗 -->
+<div id="sizeModal" class="modal">
+  <div class="modal-box">
+    <div class="modal-title">新建世界</div>
+    <div class="mode-row" id="genMode">
+      <button data-mode="flat" class="active">超平坦</button>
+      <button data-mode="demo">示例地形</button>
+      <button data-mode="empty">空白</button>
+    </div>
+    <div class="size-presets" id="sizePresets">
+      <button data-s="64,64">64 × 64</button>
+      <button data-s="100,100" class="active">100 × 100</button>
+      <button data-s="128,128">128 × 128</button>
+      <button data-s="256,256">256 × 256</button>
+    </div>
+    <div class="size-custom">
+      <label>宽 X<input id="szX" type="number" min="8" max="256" value="100"></label>
+      <label>深 Z<input id="szZ" type="number" min="8" max="256" value="100"></label>
+      <label id="thickWrap">厚度<input id="szT" type="number" min="1" max="64" value="5"></label>
+      <label>高度 Y<input id="szY" type="number" min="8" max="128" value="64"></label>
+    </div>
+    <div class="modal-actions"><button id="sizeCancel">取消</button><button id="sizeOk" class="primary">生成</button></div>
+  </div>
+</div>
+
+<!-- 脚本独立界面（点顶部「脚本」进入，覆盖整个视图；返回编辑器点「搭建」或左上返回） -->
+<div id="scriptScreen" class="script-screen">
+  <div class="ss-head">
+    <button id="scriptBack" class="ss-back" title="返回搭建界面"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>返回编辑器</button>
+    <b>脚本</b>
+    <span class="ss-dim">官方 GameAPI · 多文件 · 语法高亮</span>
+    <span class="ss-spacer"></span>
+    <button id="scriptExample" title="载入示例脚本">载入示例</button>
+    <button id="scriptGenEntities" title="按脚本里 #id / .tag 引用生成实体标记">按脚本生成实体</button>
+    <button id="scriptRun" class="primary" title="在当前地图上执行 sb 方块沙箱">运行</button>
+    <button id="scriptPlay" class="play-ss" title="进入完整运行模式（官方 GameAPI）"><svg viewBox="0 0 24 24" width="13" height="13"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>运行游戏</button>
+  </div>
+  <div class="ss-body">
+    <div class="ss-files">
+      <div class="ss-files-head"><span>文件</span>
+        <button id="scriptNew" title="新建脚本文件">＋</button>
+        <button id="scriptRename" title="重命名">✎</button>
+        <button id="scriptDel" title="删除">－</button>
+      </div>
+      <div id="scriptFiles"></div>
+    </div>
+    <div class="code-area">
+      <div class="code-gutter" id="scriptGutter">1</div>
+      <div class="code-editor">
+        <pre id="scriptHi" aria-hidden="true"><code id="scriptHiCode"></code></pre>
+        <textarea id="scriptCode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      </div>
+    </div>
+    <div class="ss-console">
+      <div class="ss-console-head">控制台</div>
+      <div id="scriptOut" class="scriptout"></div>
+      <div class="ss-console-tip">运行游戏时脚本报错也会显示在这里；运行期间修改不会保存。</div>
+    </div>
+  </div>
+</div>
+
+<!-- 模型库面板（模型模式时显示在左卡片位置）-->
+
+<div id="toast"></div>
+
+<!-- 玩家设置（顶部「玩家」tab）：数值口径与官方 GameAPI 一致（每 tick / 64ms） -->
+<div id="playerPanel" class="modal">
+  <div class="modal-box">
+    <div class="modal-title">玩家设置</div>
+    <div class="frow"><label>名字</label><input id="plName" class="finput" value="玩家" spellcheck="false"/></div>
+    <div class="pp-sub">移动（格 / tick）</div>
+    <div class="frow"><label>行走速度</label><input id="plWalk" type="number" step="0.01" min="0.01" max="4" value="0.22"/></div>
+    <div class="frow"><label>奔跑速度</label><input id="plRun" type="number" step="0.01" min="0.01" max="8" value="0.4"/></div>
+    <div class="frow"><label>蹲行速度</label><input id="plCrouch" type="number" step="0.01" min="0.01" max="4" value="0.1"/></div>
+    <div class="frow"><label>跳跃力度</label><input id="plJump" type="number" step="0.02" min="0" max="4" value="0.96"/></div>
+    <div class="frow"><label>二段跳力度</label><input id="plJump2" type="number" step="0.02" min="0" max="4" value="0.9"/></div>
+    <div class="pp-sub">镜头</div>
+    <div class="frow"><label>视角模式</label><select id="plCam" class="finput">
+      <option value="follow">第三人称跟随 FOLLOW</option>
+      <option value="fps">第一人称 FPS</option>
+      <option value="fixed">固定机位 FIXED</option>
+      <option value="relative">相对机位 RELATIVE</option>
+    </select></div>
+    <div class="frow"><label>冻结轴</label><select id="plFreeze" class="finput">
+      <option value="">不冻结 NONE</option>
+      <option value="x">锁俯仰 X</option>
+      <option value="y">锁绕行 Y</option>
+      <option value="z">锁翻滚 Z</option>
+      <option value="xy">锁俯仰+绕行 XY</option>
+      <option value="xz">XZ</option>
+      <option value="yz">YZ</option>
+      <option value="xyz">完全锁定 XYZ</option>
+    </select></div>
+    <div class="frow"><label>镜头距离</label><input id="plDist" type="number" step="0.5" min="1" max="40" value="8.5"/></div>
+    <div class="frow"><label>垂直视场角</label><input id="plFov" type="number" step="0.01" min="0.05" max="1.8" value="0.25"/></div>
+    <div class="pp-sub">能力</div>
+    <div class="frow"><label>允许飞行</label><input id="plFly" type="checkbox"/></div>
+    <div class="frow"><label>允许跳跃</label><input id="plEnableJump" type="checkbox" checked/></div>
+    <div class="frow"><label>允许二段跳</label><input id="plEnableDouble" type="checkbox" checked/></div>
+    <div class="frow"><label>隐身</label><input id="plInvisible" type="checkbox"/></div>
+    <div class="frow"><label>幽灵（穿墙）</label><input id="plSpectator" type="checkbox"/></div>
+    <div class="pp-sub">外观（官方 scale / color / metalness …）</div>
+    <div class="frow"><label>体型缩放</label><input id="plScale" type="number" step="0.05" min="0.1" max="8" value="1"/></div>
+    <div class="frow"><label>本体颜色</label><input id="plColor" type="color" value="#f2c27d"/></div>
+    <div class="frow"><label>发光强度</label><input id="plEmissive" type="number" step="0.1" min="0" max="16" value="0"/></div>
+    <div class="frow"><label>金属度</label><input id="plMetal" type="number" step="0.05" min="0" max="4" value="0"/></div>
+    <div class="frow"><label>光泽度</label><input id="plShine" type="number" step="0.05" min="0" max="4" value="0"/></div>
+    <div class="frow"><label>显示名字</label><input id="plShowName" type="checkbox" checked/></div>
+    <div class="frow"><label>头顶指示器</label><input id="plShowInd" type="checkbox"/></div>
+    <div class="pp-sub">玩家音效（官方 playerSounds 14 槽）</div>
+    <div id="plSounds" class="pp-grid"></div>
+    <div class="pp-sub">环境音（官方 ambientSound 5 槽）</div>
+    <div id="plAmbient" class="pp-grid"></div>
+    <div class="pp-sub">皮肤（官方 skin / skinInvisible）</div>
+    <div id="plSkin" class="pp-grid"></div>
+    <div class="pp-sub">虚拟按键图标（官方 gamepad）</div>
+    <div id="plPad" class="pp-grid"></div>
+    <div class="modal-actions"><button id="plReset">恢复官方默认</button><button id="plOk" class="primary">完成</button></div>
+    <div class="ss-console-tip" style="border:none">速度单位为官方口径的「格 / tick（64ms）」：默认行走 0.22、奔跑 0.4。保存到世界 meta，运行游戏时生效；脚本仍可实时覆盖。</div>
+  </div>
+</div>
+
+<!-- 界面编辑器（顶部「界面」tab）：控件拖放 + 属性 + 运行时渲染 -->
+<div id="uiScreen" class="script-screen">
+  <div class="ss-head">
+    <button id="uiBack" class="ss-back" title="返回搭建界面"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>返回编辑器</button>
+    <b>界面编辑器</b>
+    <span class="ss-dim">拖动摆放控件 · 保存到世界 · 运行游戏时显示 · 脚本用 world.onUIPress('id', cb) 响应按钮</span>
+    <span class="ss-spacer"></span>
+    <button id="uiAddButton">＋ 按钮</button>
+    <button id="uiAddText">＋ 文本</button>
+    <button id="uiAddImage">＋ 图片</button>
+    <button id="uiDel" title="删除选中控件">删除选中</button>
+  </div>
+  <div class="ss-body">
+    <div class="ss-files" id="uiListPane">
+      <div class="ss-files-head"><span>控件</span></div>
+      <div id="uiList"></div>
+    </div>
+    <div class="ui-stage-wrap"><div id="uiStage" class="ui-stage"></div></div>
+    <div class="ss-console" id="uiPropsPane">
+      <div class="ss-console-head">属性</div>
+      <div id="uiProps" class="ui-props"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 商城（商品）编辑器 -->
+<div id="storeScreen" class="script-screen">
+  <div class="ss-head">
+    <button id="storeBack" class="ss-back" title="返回搭建界面"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>返回编辑器</button>
+    <b>商城</b>
+    <span class="ss-dim">本地商品表 · 随世界与项目包保存 · 脚本用 world.products() 读取、world.onPlayerPurchaseSuccess(cb) 响应购买成功</span>
+    <span class="ss-spacer"></span>
+    <button id="storeAdd">＋ 新建商品</button>
+  </div>
+  <div class="ss-body">
+    <div class="ss-files"><div class="ss-files-head"><span>商品</span></div><div id="storeList"></div></div>
+    <div class="ss-console" style="flex:1"><div class="ss-console-head">商品属性</div><div id="storeProps" class="ui-props"></div></div>
+  </div>
+</div>
+
+<script type="module" src="/js/disclaimer.js"></script>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>

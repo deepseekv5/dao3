@@ -1,0 +1,17 @@
+DAO3 编辑器复刻
+Copyright 2026 DAO3 编辑器复刻 contributors
+
+本产品的代码部分采用 Apache License 2.0 授权（见 LICENSE）。
+
+第三方素材的来源、授权与"哪些内容刻意不随本仓库分发"，
+完整列在 THIRD_PARTY_NOTICES.md，分发本软件时必须一并保留该文件。
+
+其中：
+  - Three.js（MIT, © 2010-2023 Three.js Authors）
+  - Box3Blocks-unityPackage / ArenaPro-CLI / box3-product-document
+    （Apache License 2.0, © 2026 神岛实验室）—— 本仓库仅含构建所需的
+    block-id.json 与 block-spec.json，以及由上游纹理派生的方块图集
+  - dao3.fun 在线游戏素材（音效、赛道模型、官方地图数据）
+    未获再分发授权，不随本仓库分发，需使用者以自有权限自行取回
+
+本项目与 box3lab / 神奇代码岛官方无任何隶属、授权或背书关系。

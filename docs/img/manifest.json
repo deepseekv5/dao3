@@ -1,0 +1,52 @@
+{
+ "base": "http://127.0.0.1:5321",
+ "viewport": {
+  "width": 1440,
+  "height": 900
+ },
+ "scale": 2,
+ "captured": "2026-09-21T13:36:24.878Z",
+ "shots": [
+  {
+   "name": "workbench",
+   "kb": 361
+  },
+  {
+   "name": "editor-build",
+   "kb": 1391
+  },
+  {
+   "name": "block-library",
+   "kb": 60
+  },
+  {
+   "name": "editor-model",
+   "kb": 1398
+  },
+  {
+   "name": "editor-script",
+   "kb": 488
+  },
+  {
+   "name": "editor-ui",
+   "kb": 365
+  },
+  {
+   "name": "editor-player",
+   "kb": 401
+  },
+  {
+   "name": "editor-run",
+   "kb": 216
+  },
+  {
+   "name": "run-store",
+   "kb": 256
+  },
+  {
+   "name": "voxa",
+   "kb": 413
+  }
+ ],
+ "pageErrors": []
+}

@@ -1,0 +1,29 @@
+{
+  "name": "dao3-editor-clone",
+  "version": "1.0.0",
+  "private": false,
+  "description": "dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、20 TPS 定步长物理、体素编辑、VOXA 建模、项目包导入导出。零第三方运行时依赖。",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=18" },
+  "main": "server.js",
+  "scripts": {
+    "start": "node start.mjs",
+    "serve": "node server.js",
+    "build:atlas": "node scripts/build-block-atlas.mjs",
+    "audit:api": "node scripts/api-audit.mjs",
+    "test": "node test/runtime_parity.mjs",
+    "test:e2e": "node test/e2e.mjs",
+    "package": "node scripts/build-portable.mjs",
+    "build:docs": "node scripts/build-docs.mjs",
+    "fetch:official": "node scripts/fetch-official-project.mjs"
+  },
+  "files": [
+    "server.js", "start.mjs", "public", "scripts", "docs",
+    "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
+    "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"
+  ],
+  "keywords": ["voxel", "editor", "game-engine", "dao3", "box3", "gameapi", "three.js"],
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,32 @@
+# ── 不可再分发的第三方内容 ──────────────────────────────────────────
+# 这些来自 dao3.fun 的内容服务（游戏素材与地图数据），版权归 box3lab 及其权利人，
+# 没有再分发授权。仓库只保留 official-project/cids.json 这份哈希清单，
+# 由使用者用自有权限执行 `npm run fetch:official` 自行取回。
+public/data/assets/
+public/assets/
+official-project/*
+!official-project/cids.json
+server/data/
+
+# ── 上游参考仓库（Apache-2.0，但体积 200MB+，不镜像）─────────────────
+# 整个 vendor/ 都是各上游仓库自己的 clone（各自带 .git），作为嵌套仓库无法、也不应入库。
+# 其中可再分发的两张小表已复制到 data/upstream/（随 LICENSE 一起走）。
+# 重建图集时再按 README 里的 git clone 取回纹理。
+vendor/
+
+# ── 本地状态与产物 ──────────────────────────────────────────────────
+tmp/
+node_modules/
+test/out/
+run.pid
+run.out
+*.log
+.DS_Store
+
+# ── 任何凭据 ────────────────────────────────────────────────────────
+.env
+.env.*
+*token*
+*令牌*
+*.pem
+*.key

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DAO3 工作台 · 体素世界创作台</title>
+<meta name="description" content="dao3.fun 编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、383 种方块、VOXA 体素建模、项目包导入导出。"/>
+<link rel="stylesheet" href="/css/disclaimer.css"/>
+<link rel="icon" type="image/svg+xml" href="/img/arena.svg"/>
+<link rel="stylesheet" href="/css/home.css"/>
+</head>
+<body class="wb">
+
+<div class="wb-app">
+
+  <!-- ---------------- 左侧导航栏 ---------------- -->
+  <aside class="wb-rail">
+    <a class="wb-mark" href="/" title="DAO3 编辑器复刻">
+      <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M16 2 3 9v14l13 7 13-7V9L16 2z" fill="none" stroke="#fc8308" stroke-width="2.4"/><path d="M16 9l5 12h-3l-1-2.4h-2L14 21h-3l5-12zm0 4.2-1 2.6h2l-1-2.6z" fill="#fc8308"/></svg>
+    </a>
+    <nav class="wb-railnav">
+      <a href="/" class="on" title="工作台"><span>▦</span><i>工作台</i></a>
+      <a href="/edit/216d665d3ca92bd1b9a2" title="打开赛车模板编辑器"><span>⌗</span><i>编辑器</i></a>
+      <a href="/voxa" title="VOXA 体素建模"><span>◈</span><i>建模</i></a>
+      <a href="/site" title="项目说明"><span>◍</span><i>说明</i></a>
+      <a href="/api/worlds" target="_blank" rel="noopener" title="世界 API"><span>{ }</span><i>API</i></a>
+    </nav>
+    <div class="wb-railfoot">
+      <button id="wbAbout" title="关于与免责" aria-label="关于">i</button>
+    </div>
+  </aside>
+
+  <!-- ---------------- 主区 ---------------- -->
+  <div class="wb-body">
+
+    <header class="wb-top">
+      <div class="wb-crumb">
+        <h1>工作台</h1>
+        <span id="wbSub">本地项目 · 数据不出机器</span>
+      </div>
+      <div class="wb-tools">
+        <label class="wb-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="q" type="search" placeholder="搜索项目 / ID / 尺寸" autocomplete="off" spellcheck="false"/>
+          <kbd>/</kbd>
+        </label>
+        <div class="wb-seg" id="viewSeg" role="group" aria-label="视图切换">
+          <button data-view="table" class="on" title="表格视图">☰</button>
+          <button data-view="grid" title="卡片视图">▦</button>
+        </div>
+        <button id="btnReload" class="wb-ico" title="重新载入列表 (R)">↻</button>
+        <div class="wb-sep"></div>
+        <button id="btnImport" class="wb-btn">导入地图</button>
+        <button id="btnNew" class="wb-btn primary">＋ 新建世界</button>
+        <input id="htFile" type="file" accept=".gz,.json,.vox,.zip" hidden/>
+      </div>
+    </header>
+
+    <div class="wb-scroll">
+
+      <!-- 指标条 -->
+      <section class="wb-metrics" id="metrics" aria-label="资源指标">
+        <div class="mt loading"><span>—</span><em>世界</em></div>
+      </section>
+
+      <!-- 起点 -->
+      <section class="wb-sec">
+        <div class="wb-sech">
+          <h2>新建起点</h2>
+          <p>复制官方模板会生成新 id，原模板不改动</p>
+        </div>
+        <div class="wb-starts" id="startGrid"></div>
+      </section>
+
+      <!-- 项目 -->
+      <section class="wb-sec">
+        <div class="wb-sech">
+          <h2>世界项目</h2>
+          <div class="wb-filters" id="filters">
+            <button data-f="all" class="on">全部</button>
+            <button data-f="entity">有实体</button>
+            <button data-f="script">有脚本</button>
+            <button data-f="zone">有区域</button>
+            <button data-f="big">体素 &gt; 100k</button>
+          </div>
+          <label class="wb-sortlb">排序
+            <select id="sort">
+              <option value="mtime">最近修改</option>
+              <option value="created">创建时间</option>
+              <option value="name">名称 A→Z</option>
+              <option value="blockCount">体素量</option>
+              <option value="size">存档体积</option>
+              <option value="entities">实体数</option>
+            </select>
+          </label>
+        </div>
+        <div id="worldGrid" class="wb-table"><div class="wb-empty">正在读取本地世界…</div></div>
+      </section>
+
+      <footer class="wb-foot">
+        <span>本仓库是 dao3.fun 的<b>独立兼容实现</b>：代码自行编写，未复制官方源代码。方块图集、地图与素材版权归 box3lab 及其权利人所有，仅供本地学习与兼容性研究。</span>
+        <a href="#" data-disclaimer>免责声明</a>
+        <a href="/site">项目说明</a>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<!-- 新建世界 -->
+<div id="newModal" class="wb-modal">
+  <div class="wb-mbox">
+    <h3>新建世界</h3>
+    <div class="wb-mgrid">
+      <label class="span2">名称<input id="newName" value="我的新世界" maxlength="40"/></label>
+      <label>宽 X<input id="newX" type="number" value="100" min="8" max="256"/></label>
+      <label>深 Z<input id="newZ" type="number" value="100" min="8" max="256"/></label>
+      <label>高 Y<input id="newY" type="number" value="32" min="8" max="128"/></label>
+      <label>厚度 T<input id="newT" type="number" value="5" min="1" max="64"/></label>
+      <label class="span2">起点
+        <select id="newMode">
+          <option value="flat" selected>超平坦平台</option>
+          <option value="demo">起伏地形 + 小木屋</option>
+          <option value="empty">空白世界</option>
+          <option value="template">复制「赛车模板」</option>
+        </select>
+      </label>
+    </div>
+    <p class="wb-mhint">厚度仅对「超平坦平台」生效。世界尺寸决定体素上限，越大编辑器越吃内存。</p>
+    <div class="wb-mbtns"><button id="newCancel" class="wb-btn">取消</button><button id="newOk" class="wb-btn primary">创建并打开</button></div>
+  </div>
+</div>
+
+<div id="importTip" class="wb-tip" hidden></div>
+
+<script type="module" src="/js/disclaimer.js"></script>
+<script type="module" src="/js/home.js"></script>
+</body>
+</html>
