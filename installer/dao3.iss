@@ -22,7 +22,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputBaseFilename=DAO3-Setup-{#MyAppVersion}
 ; 显式指定输出目录，否则落在脚本所在目录的 Output 下，CI 里靠猜路径搬文件
-OutputDir=..dist
+OutputDir=..\dist
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

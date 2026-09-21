@@ -136,7 +136,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputBaseFilename=DAO3-Setup-{#MyAppVersion}
 ; 显式指定输出目录，否则落在脚本所在目录的 Output\ 下，CI 里靠猜路径搬文件
-OutputDir=..\dist
+OutputDir=..\\dist
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -176,6 +176,11 @@ Filename: "{app}\\启动-Windows.bat"; Description: "立即启动 {#MyAppName}";
 Type: filesandordirs; Name: "{app}\\server\\data"
 `;
   const file = path.join(dir, "dao3.iss");
+  // 这段模板字面量里全是 Windows 反斜杠路径。JS 会把 "\d" 静默吞成 "d"，
+  // 于是 OutputDir 变成 ..dist（一个真叫这个名字的目录），Inno 照样"编译成功"，
+  // 只是产物落在别处。所以生成完立刻按预期值回读校验。
+  const expect = ['OutputDir=..\\dist', '#define SrcDir "..\\DAO3-便携包"', 'Source: "{#SrcDir}\\*"'];
+  for (const e of expect) if (!iss.includes(e)) throw new Error("dao3.iss 反斜杠被吞，缺少: " + e);
   // Inno Setup 要求 CRLF，且中文消息文件按 UTF-8 读取
   fs.writeFileSync(file, iss.replace(/\n/g, "\r\n"), "utf8");
   return { file: path.relative(ROOT, file), bytes: fs.statSync(file).size };
