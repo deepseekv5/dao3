@@ -144,5 +144,12 @@ jobs:
           # GitHub Packages 只接受以 owner 命名的 scoped 包，鉴权走 .npmrc 而不是环境变量
           printf '@deepseekv5:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' \
             "$NODE_AUTH_TOKEN" > "$RUNNER_TEMP/.npmrc"
-          npm publish --userconfig "$RUNNER_TEMP/.npmrc" --registry=https://npm.pkg.github.com
+          VERSION=$(node -p "require('./package.json').version")
+          # GitHub Packages 不允许覆盖同版本，重跑会 E409。
+          # 发布必须可重入：已经存在就当作成功，而不是让整条流水线红掉。
+          if npm view "@deepseekv5/dao3-editor-clone@$VERSION" version --userconfig "$RUNNER_TEMP/.npmrc" >/dev/null 2>&1; then
+            echo "@deepseekv5/dao3-editor-clone@$VERSION 已在 registry 里，跳过发布"
+          else
+            npm publish --userconfig "$RUNNER_TEMP/.npmrc" --registry=https://npm.pkg.github.com
+          fi
           rm -f "$RUNNER_TEMP/.npmrc"
