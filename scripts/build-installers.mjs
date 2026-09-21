@@ -120,7 +120,9 @@ function writeIss() {
 #define MyAppVersion "${VERSION}"
 #define MyAppPublisher "deepseekv5"
 #define MyAppURL "https://deepseekv5.github.io/dao3/"
-#define SrcDir "DAO3-便携包"
+; Source: 条目是相对**脚本所在目录**（installer\\）解析的，不是仓库根。
+; 上一版写 "DAO3-便携包\\*" 于是去找 installer\\DAO3-便携包，报 "No files found"。
+#define SrcDir "..\\DAO3-便携包"
 
 [Setup]
 AppId={{8E4C2F7A-6B1D-4F3C-9A5E-7D2C1B0A9F65}

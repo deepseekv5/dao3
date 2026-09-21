@@ -108,9 +108,13 @@ jobs:
       - name: 建 Release 并挂三件交付物
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # 版本号只从 package.json 来，并且经环境变量传给 shell：
+          # 直接内插 ${{ github.ref_name }} 会把 ref 内容送进命令行。
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+          echo "发布 $TAG"
           zip_f=$(ls assets/portable/DAO3-便携包-v*.zip | head -1)
           dmg_f=$(ls assets/dmg/*.dmg | head -1)
           exe_f=$(ls assets/windows-installer/*.exe | head -1)
@@ -119,8 +123,13 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$zip_f" "$dmg_f" "$exe_f" --clobber
           else
-            gh release create "$TAG" "$zip_f" "$dmg_f" "$exe_f" --title "$TAG" --notes "$notes"
+            gh release create "$TAG" "$zip_f" "$dmg_f" "$exe_f" --title "$TAG" --notes "$notes" --target "$(git rev-parse HEAD)"
           fi
+          # tag 与 release 必须成对；dispatch 触发时 tag 可能还不存在
+          git fetch --tags --force
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || {
+            git tag -a "$TAG" -m "v$TAG" && git push origin "refs/tags/$TAG"
+          }
       - name: 发布到 GitHub Packages（npm registry）
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
