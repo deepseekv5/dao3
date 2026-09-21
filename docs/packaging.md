@@ -85,9 +85,9 @@ cd .. && zip -qr DAO3-便携包.zip DAO3-便携包
 
 | 产物 | 由谁产出 | 为什么 |
 |---|---|---|
-| `DAO3-portable-v1.0.0.zip` | `build-portable.mjs` → `zip-dir.mjs` | 三端通用，解压即用；保留不动 |
-| `DAO3-1.0.0.dmg` | `build-installers.mjs` 用系统 `hdiutil` | macOS 用户习惯挂载磁盘镜像而不是解压 |
-| `DAO3-Setup-1.0.0.exe` | Inno Setup 6，**只在 CI 的 windows-latest 上编译** | Inno Setup 没有 macOS 版；在 mac 上"生成" .exe 只能是假的 |
+| `DAO3-portable-v{{VER}}.zip` | `build-portable.mjs` → `zip-dir.mjs` | 三端通用，解压即用；保留不动 |
+| `DAO3-{{VER}}.dmg` | `build-installers.mjs` 用系统 `hdiutil` | macOS 用户习惯挂载磁盘镜像而不是解压 |
+| `DAO3-Setup-{{VER}}.exe` | Inno Setup 6，**只在 CI 的 windows-latest 上编译** | Inno Setup 没有 macOS 版；在 mac 上"生成" .exe 只能是假的 |
 
 `build-installers.mjs` 不重新打包内容，只把已经过授权扫描的便携包目录原样搬进 `.dmg`，
 并额外写一份 `请先读我.txt` 说明 Gatekeeper 的处理办法（未做开发者签名，首次要右键→打开）。

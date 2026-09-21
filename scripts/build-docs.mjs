@@ -310,6 +310,17 @@ ${FOOT}
 }
 
 let built = 0;
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+
+// index.src.html → index.html：下载区的三个链接里带版本号，
+// 手写一次就会在下一次发版后变成死链。占位符 + 构建期替换是唯一不会腐烂的写法。
+const src = path.join(DOCS, "index.src.html");
+if (fs.existsSync(src)) {
+  const html = fs.readFileSync(src, "utf8").replace(/\{\{VER\}\}/g, VERSION);
+  if (/\{\{VER\}\}/.test(html)) throw new Error("index.src.html 替换后仍残留 {{VER}}");
+  fs.writeFileSync(path.join(DOCS, "index.html"), `<!-- Generated from index.src.html by scripts/build-docs.mjs (v${VERSION}) — do not edit. -->\n` + html);
+  console.log(`index.src.html -> index.html  (v${VERSION})`);
+}
 for (let n = 0; n < DOCS_LIST.length; n++) {
   const [file, fallback] = DOCS_LIST[n];
   const src = path.join(DOCS, `${file}.md`);
@@ -317,7 +328,7 @@ for (let n = 0; n < DOCS_LIST.length; n++) {
     console.warn(`skip ${file}.md (missing)`);
     continue;
   }
-  const { html, toc, title } = parse(fs.readFileSync(src, "utf8"));
+  const { html, toc, title } = parse(fs.readFileSync(src, "utf8").replace(/\{\{VER\}\}/g, VERSION));
   const out = page({
     file,
     title: title || fallback,

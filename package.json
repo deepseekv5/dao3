@@ -1,16 +1,25 @@
 {
   "name": "@deepseekv5/dao3-editor-clone",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": false,
   "description": "dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、20 TPS 定步长物理、体素编辑、VOXA 建模、项目包导入导出。零第三方运行时依赖。",
   "type": "module",
   "license": "Apache-2.0",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "main": "server.js",
-  "bin": { "dao3-editor": "start.mjs" },
-  "repository": { "type": "git", "url": "git+https://github.com/deepseekv5/dao3.git" },
+  "bin": {
+    "dao3-editor": "start.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseekv5/dao3.git"
+  },
   "homepage": "https://deepseekv5.github.io/dao3/",
-  "publishConfig": { "registry": "https://npm.pkg.github.com" },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "start": "node start.mjs",
     "serve": "node server.js",
@@ -25,16 +34,42 @@
     "fetch:official": "node scripts/fetch-official-project.mjs"
   },
   "files": [
-    "server.js", "start.mjs", "scripts", "docs", "data",
+    "server.js",
+    "start.mjs",
+    "scripts",
+    "docs",
+    "data",
     "official-project/cids.json",
-    "public/index.html", "public/editor.html", "public/voxa.html", "public/site.html",
-    "public/js", "public/css", "public/img", "public/vendor",
-    "public/data/thumbnails", "public/data/block-atlas.json", "public/data/block-atlas.png",
-    "public/data/api-members.json", "public/data/api-methods.json",
-    "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
-    "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"
+    "public/index.html",
+    "public/editor.html",
+    "public/voxa.html",
+    "public/site.html",
+    "public/js",
+    "public/css",
+    "public/img",
+    "public/vendor",
+    "public/data/thumbnails",
+    "public/data/block-atlas.json",
+    "public/data/block-atlas.png",
+    "public/data/api-members.json",
+    "public/data/api-methods.json",
+    "run.sh",
+    "run-win.ps1",
+    "启动-Windows.bat",
+    "启动-macOS.command",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.md"
   ],
-  "keywords": ["voxel", "editor", "game-engine", "dao3", "box3", "gameapi", "three.js"],
+  "keywords": [
+    "voxel",
+    "editor",
+    "game-engine",
+    "dao3",
+    "box3",
+    "gameapi",
+    "three.js"
+  ],
   "dependencies": {},
   "devDependencies": {}
 }

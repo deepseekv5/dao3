@@ -17,7 +17,9 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.resolve(process.argv[2] || path.join(ROOT, "..", "DAO3-便携包"));
 
-const VERSION = "1.0.0";
+// 版本号只有一个来源：package.json。写死在这里会让 zip 与 .dmg 的版号各说各话。
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+if (!VERSION) { console.error("package.json 缺 version"); process.exit(1); }
 
 // 顶层文件：原样复制
 const FILES = [
