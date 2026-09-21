@@ -42,6 +42,18 @@ function buildDmg() {
 
   // 只复制，不重新打包：便携包已经过授权扫描，装进去的东西必须和 zip 完全一致
   fs.cpSync(PKG, path.join(stage, APP), { recursive: true });
+
+  // actions/upload-artifact@v4 不保留 Unix 权限位，所以从 CI 产物做出来的 .dmg 里
+  // 启动-macOS.command 会丢掉可执行位——双击没反应。这里按扩展名补回来，
+  // 本地构建（权限本来就对）走同一条路径也无害。
+  const fixExec = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { fixExec(p); continue; }
+      if (/\.(sh|command|bash|zsh)$/.test(e.name)) fs.chmodSync(p, 0o755);
+    }
+  };
+  fixExec(path.join(stage, APP));
   fs.writeFileSync(
     path.join(stage, "请先读我.txt"),
     [
@@ -121,6 +133,8 @@ DefaultDirName={autopf}\\DAO3
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputBaseFilename=DAO3-Setup-{#MyAppVersion}
+; 显式指定输出目录，否则落在脚本所在目录的 Output\ 下，CI 里靠猜路径搬文件
+OutputDir=..\dist
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -129,8 +143,16 @@ PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\\启动-Windows.bat
 
 [Languages]
+; Inno Setup 官方发行包只带少数几种 .isl，简体中文是**非官方翻译**，
+; windows-latest 上就没有 ChineseSimplified.isl —— 直接引用会在编译期报
+; "Couldn't open include file"。所以先探测，缺了就退回英文消息，
+; 应用界面本身仍是简体中文，不受影响。
+#define ZhIsl "compiler:Languages\\ChineseSimplified.isl"
+#if FileExists(ZhIsl)
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\\ChineseSimplified.isl"
+#else
 Name: "english"; MessagesFile: "compiler:Default.isl"
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务："

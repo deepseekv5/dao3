@@ -3,7 +3,7 @@
 ; 输入是 build-portable.mjs 产出的便携包目录，不在本机伪造。
 
 #define MyAppName "DAO3 编辑器复刻"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "deepseekv5"
 #define MyAppURL "https://deepseekv5.github.io/dao3/"
 #define SrcDir "DAO3-便携包"
@@ -19,6 +19,8 @@ DefaultDirName={autopf}\DAO3
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputBaseFilename=DAO3-Setup-{#MyAppVersion}
+; 显式指定输出目录，否则落在脚本所在目录的 Output 下，CI 里靠猜路径搬文件
+OutputDir=..dist
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -27,8 +29,16 @@ PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\启动-Windows.bat
 
 [Languages]
+; Inno Setup 官方发行包只带少数几种 .isl，简体中文是**非官方翻译**，
+; windows-latest 上就没有 ChineseSimplified.isl —— 直接引用会在编译期报
+; "Couldn't open include file"。所以先探测，缺了就退回英文消息，
+; 应用界面本身仍是简体中文，不受影响。
+#define ZhIsl "compiler:Languages\ChineseSimplified.isl"
+#if FileExists(ZhIsl)
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+#else
 Name: "english"; MessagesFile: "compiler:Default.isl"
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务："
