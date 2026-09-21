@@ -69,6 +69,8 @@ const REQUIRED = [
   "public/vendor/three/LICENSE", "public/vendor/utils/BufferGeometryUtils.js",
   "public/data/block-atlas.png", "public/data/block-atlas.json",
   "data/upstream/block-id.json", "data/upstream/block-spec.json", "data/upstream/LICENSE.Box3Blocks.txt",
+  // 缺了它，fetch:official 在新克隆上直接退出——文档承诺的取回路径就是空的
+  "official-project/cids.json",
   "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
   "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md",
 ];

@@ -82,10 +82,24 @@ const uiTree = readJson(path.join(OFF, "uiTree.raw"));
 const screenChildren = (uiTree.DEFAULT_SCREEN_ID || {}).childrenIds || [];
 if (!screenChildren.length) meta.ui = [];
 
+// 地图脚本不是 CID 可寻址的（cids.json 里没有它），所以只能等用户自己带进来：
+// 官方编辑器导出的项目包 .zip 解出的 code-index.js / code-clientIndex.js 放这儿即可。
+// 之前这里完全不读，导致 fetch 出来的地图永远 0 脚本，竞速逻辑整段消失。
+const scripts = [];
+for (const [file, name] of [["code-index.js", "index.js"], ["code-clientIndex.js", "clientIndex.js"]]) {
+  const p = path.join(OFF, file);
+  if (!fs.existsSync(p)) continue;
+  const code = fs.readFileSync(p, "utf8");
+  if (code.trim()) scripts.push({ name, code });
+}
+if (scripts.length) meta.scripts = scripts;
+else console.warn("未找到地图脚本（code-index.js / code-clientIndex.js）——"
+  + "官方项目包 .zip 里带着两个文件，导入项目包即可一并恢复竞速逻辑。");
+
 fs.writeFileSync(SEED, zlib.gzipSync(Buffer.from(JSON.stringify(world), "utf8"), { level: 9 }));
 console.log(JSON.stringify({
   world: WORLD_ID, entities: entities.length, groups: groups.length,
   tagged: entities.filter((e) => e.tags.length).map((e) => e.name + ":" + e.tags.join("|")),
-  meshesUsed: usedMeshes.length, missingMeshFiles: missing,
+  meshesUsed: usedMeshes.length, missingMeshFiles: missing, scripts: scripts.map((s) => s.name),
   spawn: meta.player.initialPosition, gravity: physics.gravity, airFriction: physics.velocityDamping,
 }, null, 1));
