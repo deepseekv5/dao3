@@ -9,7 +9,7 @@ dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的**本地独立
 
 | | |
 |---|---|
-| 在线文档 / 介绍站 | <https://deepseekv5.github.io/dao3/> |
+| 在线文档 / 介绍站 | <https://deepseekv5.github.io/dao3/> · 文档中心 <https://deepseekv5.github.io/dao3/documentation.html> |
 | 运行时要求 | Node.js ≥ 18，**零第三方依赖**（只用 Node 内置模块） |
 | 授权 | Apache-2.0（代码）· 素材来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
 | 与官方关系 | 无任何隶属、授权或背书关系 |
@@ -143,20 +143,33 @@ public/js/
   home.js      工作台：指标、项目表、复制/改名/导出/删除、导入
 scripts/       图集构建、API 审计、官方数据取回、便携包打包、截图
 test/          真实浏览器回归套件
-docs/          介绍站与开发文档（GitHub Pages 源）
+docs/          介绍站、文档中心与开发文档（GitHub Pages 源）
 ```
 
 ---
 
 ## 开发文档
 
-全部在 [docs/](docs/) 下，同时也是[介绍站](https://deepseekv5.github.io/dao3/)的内容：
+**文档中心**：<https://deepseekv5.github.io/dao3/documentation.html>
+——独立落地页，侧边栏在每一页都常驻，下面的 9 篇按「入门 / 内核 / 交付」三组列出、
+每篇一句话摘要，并给出源码仓库与 Releases 入口。它由 `docs/documentation.src.html` 生成，
+侧边栏与摘要在 `scripts/build-docs.mjs` 里从文档清单注入，不要直接编辑生成出来的 `documentation.html`。
+
+正文全部在 [docs/](docs/) 下，同时也是[介绍站](https://deepseekv5.github.io/dao3/)的内容：
+
+**入门**
 
 - [架构与数据流](docs/architecture.md) — 编辑器/运行时如何共享一份世界状态
+- [测试与验证](docs/testing.md) — 怎么在后台标签页里确定性推进 tick
+
+**内核**
+
 - [官方 API 兼容层](docs/api-compat.md) — 329 个成员怎么对账，哪些语义容易踩错
 - [数据格式](docs/data-format.md) — `.gz` payload、`project.json` 21 键、`compat.json` 的边界
 - [物理与单位制](docs/physics.md) — 为什么是"格/tick"，碰撞判据的官方依据
-- [测试与验证](docs/testing.md) — 怎么在后台标签页里确定性地推进 tick
+
+**交付**
+
 - [便携包与发布](docs/packaging.md) — 打包、三端启动、素材授权切分
 - [依赖清单](docs/dependencies.md) — 真的在跑的第三方代码只有 three.js r160；其余是 Node 内置
 - [致谢](docs/credits.md) — 公开类型声明为什么是兼容层的前提，以及与官方的授权边界
@@ -164,15 +177,18 @@ docs/          介绍站与开发文档（GitHub Pages 源）
 
 上面这些 `.md` 在 GitHub 上直接可读；介绍站（`deepseekv5.github.io/dao3`）用的是同一批内容，
 由 `scripts/build-docs.mjs` 编译成 `docs/*.html`（与站点共用 `docs/site.css`）。
-**改文档请改 `.md`，不要改生成的 `.html`。**
+**改文档请改 `.md`（介绍站首页与文档中心改 `docs/index.src.html`、`docs/documentation.src.html`），
+不要改生成的 `.html`。**
 
 ```bash
 npm run build:atlas   # 重建方块图集（需先 clone 上游纹理，见文档）
-npm run build:docs    # docs/*.md -> docs/*.html（介绍站与开发文档）
+npm run build:docs    # docs/*.md -> docs/*.html（介绍站、文档中心与各篇正文页）
 npm run package       # 生成便携包
 ```
 
-跑起来后本地也能看：`./run.sh` 之后访问 <http://127.0.0.1:5321/docs/>。
+本地起服务后同源可读：`./run.sh`（或 `node start.mjs`）会打印实际地址，
+后面接 `/docs/` 是介绍站、`/docs/documentation.html` 是文档中心；
+默认端口 5173，被占用时自动顺延。
 
 ---
 

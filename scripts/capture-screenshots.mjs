@@ -39,12 +39,39 @@ const errs = [];
 page.on("pageerror", (e) => errs.push(String(e.message || e)));
 
 const shots = [];
+// DPR2 拍出来是 2880×1800，而站内最大显示宽度只有 1126px —— 超采样 2.5 倍，
+// 光图片就给 Pages 压上 5MB。拍完在浏览器里降采样回 1440 宽再落盘：
+// 显示尺寸下仍是 1.3x 超采样，肉眼不掉清晰度，体积降一半以上。零依赖。
+const MAX_W = 1440;
+async function downscale(file) {
+  const b64 = fs.readFileSync(file).toString("base64");
+  // evaluate 里跑的是浏览器上下文，看不到 Node 侧的 MAX_W，必须当参数传进去
+  const out = await page.evaluate(async ([src, maxW]) => {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = "data:image/png;base64," + src; });
+    if (img.naturalWidth <= maxW) return null;
+    const w = maxW, h = Math.round(img.naturalHeight * (maxW / img.naturalWidth));
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const cx = cv.getContext("2d");
+    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
+    cx.drawImage(img, 0, 0, w, h);
+    // 不能直接回传 ArrayBuffer：过 evaluate 边界会被序列化成普通对象。转 base64 字符串。
+    const blob = await new Promise((r) => cv.toBlob(r, "image/png"));
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }, [b64, MAX_W]);
+  if (out) fs.writeFileSync(file, Buffer.from(out, "base64"));
+}
 async function shot(name, opts = {}) {
   const file = path.join(OUT, name + ".png");
   await page.screenshot({ path: file, fullPage: !!opts.full });
+  const raw = fs.statSync(file).size;
+  await downscale(file);
   const kb = +(fs.statSync(file).size / 1024).toFixed(0);
   shots.push({ name, kb });
-  console.log(`  ✓ ${name}.png  ${kb}KB`);
+  console.log(`  ✓ ${name}.png  ${kb}KB${raw !== fs.statSync(file).size ? `（原 ${+(raw / 1024).toFixed(0)}KB）` : ""}`);
 }
 const click = async (sel, wait = 900) => {
   const el = await page.waitForSelector(sel, { timeout: 20000 }).catch(() => null);

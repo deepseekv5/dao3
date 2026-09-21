@@ -35,6 +35,7 @@ code, pre { font-family: var(--mono); }
 .links { display: flex; gap: 2px; margin-left: 8px; flex-wrap: wrap; }
 .links a { padding: 6px 11px; border-radius: 7px; font-size: 13px; color: var(--fg3); transition: .13s; }
 .links a:hover { color: var(--fg); background: rgba(255, 255, 255, .06); }
+.links a.on { color: var(--primary); background: var(--primary-dim); }
 .gh {
   margin-left: auto; display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px; border-radius: 8px;
   font-size: 12.5px; color: var(--fg2); background: var(--bg2); border: 1px solid var(--line); font-family: var(--mono);
@@ -192,6 +193,8 @@ section { margin: 0 0 66px; }
 .doclist a, .toc a { display: block; padding: 5px 10px; border-radius: 7px; font-size: 12.5px; color: var(--fg2); line-height: 1.5; border-left: 2px solid transparent; }
 .doclist a:hover { color: var(--fg); background: rgba(255, 255, 255, .05); }
 .doclist a.on { color: var(--primary); background: var(--primary-dim); border-left-color: var(--primary); font-weight: 600; }
+/* 侧栏分组小标题（入门 / 内核 / 交付）：排版沿用上面的标签，只拉开间距 */
+.doclist .grp { margin-top: 13px; }
 .toc a { font-size: 12px; color: var(--fg3); padding: 4px 10px; }
 .toc a.t3 { padding-left: 22px; font-size: 11.5px; }
 .toc a:hover { color: var(--primary); background: none; }
@@ -222,6 +225,19 @@ section { margin: 0 0 66px; }
 .doc-body blockquote p { margin: 0; color: var(--fg2); font-size: 13.5px; }
 .doc-body .tbl-wrap { margin: 0 0 18px; }
 .doc-body .tbl td:last-child { white-space: normal; }
+
+/* 文档中心（documentation.html）在正文里复用介绍站的 .dc 卡片与 .btn 入口。
+   .doc-body a 会把所有链接刷成主色并加下划线，这里把样式还回给卡片和按钮。 */
+.doc-body .cta { margin: 0 0 30px; }
+.doc-body .btn { border-bottom: none; color: var(--fg); }
+.doc-body .btn:hover { border-bottom: none; }
+.doc-body .btn.primary { color: #1a1000; }
+.doc-body .docs { margin: 0 0 22px; }
+.doc-body .dc { border-bottom: 1px solid var(--line); }
+.doc-body .dc b { color: var(--fg); }
+.doc-body .dc span { color: var(--fg3); }
+.doc-body .dc:hover { border-color: rgba(252, 131, 8, .4); }
+.doc-body .dc:hover b { color: var(--primary); }
 
 .code { position: relative; margin: 0 0 18px; border-radius: 10px; border: 1px solid var(--line); background: #0a0a0b; overflow: hidden; }
 .code pre { margin: 0; padding: 14px 16px; overflow-x: auto; }

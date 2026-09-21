@@ -12,7 +12,9 @@ export class VoxaView {
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x1a1d22);
+    // 官方 VoxaEdit 视口是纯黑底 + 暗灰地面网格 + 贯穿网格的红(X)/蓝(Z)轴，
+    // 不是 Arena 编辑器那种深蓝渐变。参照 vendor/box3-product-document/voxa/public/QQ20241113-*.png
+    this.scene.background = new THREE.Color(0x000000);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 4000);
     this.camera.position.set(28, 24, 34);
     this.controls = new OrbitControls(this.camera, canvas);
@@ -23,9 +25,11 @@ export class VoxaView {
     const key = new THREE.DirectionalLight(0xffffff, 1.5);
     key.position.set(30, 50, 20);
     this.scene.add(key, new THREE.AmbientLight(0xffffff, 0.35));
-    this.grid = new THREE.GridHelper(64, 64, 0x4a5058, 0x2c3138);
+    this.grid = new THREE.GridHelper(64, 64, 0x3a3a3a, 0x1e1e1e);
     this.scene.add(this.grid);
-    this.axes = new THREE.AxesHelper(12);
+    // 轴要拉满网格宽度，官方视口里红/蓝轴线是穿过整个地面的
+    this.axes = new THREE.AxesHelper(64);
+    this.axes.material.depthTest = false;
     this.scene.add(this.axes);
     this.root = new THREE.Group();
     this.scene.add(this.root);
@@ -218,7 +222,8 @@ export class VoxaView {
     for (const p of this.doc.parts) {
       const box = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.BoxGeometry(p.size[0], p.size[1], p.size[2])),
-        new THREE.LineBasicMaterial({ color: p === this.activePart ? 0xfc8308 : 0x5a6472 }));
+        // 官方部件框是细白线（选中态更亮），不是 Arena 的橙色
+        new THREE.LineBasicMaterial({ color: p === this.activePart ? 0xe8e8e8 : 0x565656 }));
       box.position.set(p.pos[0] + p.size[0] / 2, p.pos[1] + p.size[1] / 2, p.pos[2] + p.size[2] / 2);
       box.userData.partId = p.id;
       const bone = p.bone && this.boneNodes.get(p.bone);

@@ -22,7 +22,7 @@
     <a href="./#proof">验证</a>
     <a href="./#start">上手</a>
     <a href="./#matrix">能力</a>
-    <a href="./#docs">文档</a>
+    <a class="on" href="documentation.html">文档</a>
     <a href="./#download">下载</a>
   </nav>
   <a class="home" href="/" hidden>返回工作台</a>
@@ -38,12 +38,12 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 </script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="architecture.html">架构与数据流</a><a class="on" href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><a href="testing.html">测试与验证</a><a href="packaging.html">便携包与发布</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a class="on" href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
     <nav class="toc"><b>本页内容</b><a class="t2" href="#怎么保证没漏而不是看着不少">怎么保证&quot;没漏&quot;而不是&quot;看着不少&quot;</a><a class="t2" href="#沙箱按端裁剪">沙箱按端裁剪</a><a class="t2" href="#逐字段对账时踩过的坑都是看起来实现了的假接口">逐字段对账时踩过的坑（都是&quot;看起来实现了&quot;的假接口）</a><a class="t2" href="#事件通道">事件通道</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/api-compat.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
-    <p class="crumb"><a href="./">概览</a> / <a href="./#docs">文档</a> / <span>官方 API 兼容层</span></p>
+    <p class="crumb"><a href="./">概览</a> / <a href="documentation.html">文档中心</a> / <span>官方 API 兼容层</span></p>
     <h1>官方 API 兼容层</h1>
 <p>依据两份官方公开的类型声明：</p>
 <div class="code"><pre><code>vendor/ArenaPro-CLI/server/types/GameAPI.d.ts     GameWorld 111 个成员 · GameEntity · GamePlayer · GameVoxels
@@ -64,7 +64,7 @@ vendor/ArenaPro-CLI/client/types/ClientAPI.d.ts   UiNode 树 · InputSystem · C
 <h2 id="事件通道">事件通道</h2>
 <p><code>on*</code> 返回 token（<code>cancel/resume/active</code> 三个方法），<code>next*</code> 是一次性 Promise。 <code>world</code> 与 <code>entity/player</code> 两级都有通道，接触类事件要<b>两边都 fire</b>。</p>
 <p><code>onVoxelSeparate</code> 需要&quot;曾经接触&quot;的追踪集合才能触发：只维护当前接触数组的话， 那条通道就是死的。所以现在每个实体带 <code>_voxelSeen</code>，每 tick 结束比对。</p>
-    <nav class="pager"><a href="architecture.html"><small>上一篇</small><b>架构与数据流</b></a><a class="next" href="data-format.html"><small>下一篇</small><b>数据格式</b></a></nav>
+    <nav class="pager"><a href="testing.html"><small>上一篇</small><b>测试与验证</b></a><a class="next" href="data-format.html"><small>下一篇</small><b>数据格式</b></a></nav>
   </article>
 </main>
 <footer class="foot">
@@ -74,6 +74,7 @@ vendor/ArenaPro-CLI/client/types/ClientAPI.d.ts   UiNode 树 · InputSystem · C
   </div>
   <div class="fl">
     <a href="./">介绍站</a>
+    <a href="documentation.html">文档中心</a>
     <a href="https://github.com/deepseekv5/dao3">源码仓库</a>
     <a href="https://github.com/deepseekv5/dao3/releases">下载</a>
     <a href="https://github.com/deepseekv5/dao3/issues">问题反馈</a>

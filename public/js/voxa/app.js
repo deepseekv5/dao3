@@ -32,6 +32,43 @@ const TOOLS = {
   eyedropper: { label: "吸管", hint: "取色" },
 };
 
+// 官方编辑工具栏是**左侧竖排纯图标**，且内容随模式变化（部件 6 个 / 体素 11 个 / 动画 3 个）。
+// 这里用内联 SVG 而不是位图切图：矢量在任意 DPR 下都不糊，也不必带一堆小 png。
+const VICO = {
+  move: '<path d="M12 3v18M3 12h18M12 3l-2.6 2.6M12 3l2.6 2.6M12 21l-2.6-2.6M12 21l2.6-2.6M3 12l2.6-2.6M3 12l2.6 2.6M21 12l-2.6-2.6M21 12l-2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  select: '<path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2.4"/><path d="M8 11l2.4 2.4L15 8.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  wand: '<path d="M5 19L16 8M14 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2zM19 12l.7 1.4 1.4.7-1.4.7-.7 1.4-.7-1.4-1.4-.7 1.4-.7.7-1.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  line: '<path d="M5 19L19 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="5" cy="19" r="1.9" fill="currentColor"/><circle cx="19" cy="5" r="1.9" fill="currentColor"/>',
+  lineDel: '<path d="M5 19L19 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity=".55"/><path d="M14 4l6 6M20 4l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  face: '<path d="M4 8l8-4 8 4-8 4-8-4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 8v8l8 4 8-4V8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  faceDel: '<path d="M4 8l8-4 8 4-8 4-8-4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" opacity=".55"/><path d="M13 12l7 7M20 12l-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  extrude: '<path d="M12 20V6M12 6l-4 4M12 6l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  paint: '<path d="M15.5 3.5l5 5-9.8 9.8-5.7 1.2 1.2-5.7 9.3-10.3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  bucket: '<path d="M12 4.5L6.5 15H17.5L12 4.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 4.5v10.5M19 17c1 1.4 1.5 2.2 1.5 2.8a1.5 1.5 0 0 1-3 0c0-.6.5-1.4 1.5-2.8z" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+  eyedropper: '<path d="M13 4l7 16-4.6-4.6L10.4 20 12 6.5 13 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  rot: '<path d="M12 5.5a6.5 6.5 0 1 1-6.2 8.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 2.6l3 2.9-3 2.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  scale: '<path d="M5 19L19 5M19 5h-6M19 5v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="3.5" y="15.5" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+  partNew: '<rect x="4" y="4" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M17 17.5h4M19 15.5v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+  partDup: '<rect x="3.5" y="7" width="10" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 7V5a1.5 1.5 0 0 1 1.5-1.5h7A2 2 0 0 1 18 5.5v7a1.5 1.5 0 0 1-1.5 1.5H15" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  bone: '<path d="M7 17.5a2.4 2.4 0 1 1-2.3-3.2 2.4 2.4 0 1 1 3.2-2.3L14 6.2a2.4 2.4 0 1 1 3.1-3.1 2.4 2.4 0 1 1 2.3 3.2 2.4 2.4 0 1 1-3.2 2.3L10 15.4a2.4 2.4 0 1 1-3 2.1z" fill="none" stroke="currentColor" stroke-width="1.5"/>',
+  person: '<circle cx="12" cy="6" r="2.8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.5 21v-4.2a5.5 5.5 0 0 1 11 0V21M9 12.5l3 2 3-2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+  run: '<circle cx="14" cy="5" r="2.2" fill="currentColor"/><path d="M13 8.5l-3.4 2.2.8 4.1-2.9 5.4M13 8.5l3.6 1.6 2.9-1.1M9.6 10.7L6 12.4M10.4 14.8l4.2 1.2 1.3 4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+  cube: '<path d="M12 3.5l7.2 4.2v8.6L12 20.5l-7.2-4.2V7.7L12 3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  shirt: '<path d="M8.5 4L5 6l1.6 3.2L8.5 8v11h7V8l1.9 1.2L19 6l-3.5-2a3.5 3.5 0 0 1-7 0z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  scissors: '<circle cx="6.5" cy="17.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="6.5" cy="6.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.6 8.2L19 18M8.6 15.8L19 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  local: '<path d="M12 12V4M12 12H4M12 12l7 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/>',
+  world: '<circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.6 12h16.8M12 3.6c2.6 2.4 2.6 14.4 0 16.8M12 3.6c-2.6 2.4-2.6 14.4 0 16.8" fill="none" stroke="currentColor" stroke-width="1.4"/>',
+  undo: '<path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h10a6 6 0 0 1 0 12h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  redo: '<path d="M15 14l5-5-5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9H10a6 6 0 0 0 0 12h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  chart: '<path d="M4 20V9M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  bulb: '<path d="M9 17h6M10 20h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 3a6 6 0 0 1 3.6 10.8V15H8.4v-1.2A6 6 0 0 1 12 3z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  box: '<path d="M12 4.5l6.5 3.8v7.4L12 19.5l-6.5-3.8V8.3L12 4.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  grid: '<path d="M3 9h18M3 15h18M9 3v18M15 3v18" stroke="currentColor" stroke-width="1.5"/>',
+  target: '<circle cx="12" cy="12" r="7.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/><path d="M12 1.8v3.2M12 19v3.2M1.8 12H5M19 12h3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  folder: '<path d="M3.5 6.5h6l2 2.5h9V19a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 19V6.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+};
+const svgIco = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${VICO[k] || ""}</svg>`;
+
 class VoxaApp {
   constructor() {
     this.doc = this.loadLocal() || newDoc();
@@ -40,6 +77,8 @@ class VoxaApp {
     this.view = new VoxaView($("vxCanvas"), this.doc);
     this.mode = "model";
     this.tool = "build";
+    this.inPart = false;   // 官方分「部件层 / 体素层」两档，双击部件才进入体素层
+    this.space = "local";  // 局部 / 世界坐标
     this.activePart = this.doc.parts[0] || null;
     this.activeBone = this.doc.bones[0] || null;
     this.color = this.doc.palette[0];
@@ -132,14 +171,16 @@ class VoxaApp {
     $("phMode").onchange = () => { this.doc.physics.mode = $("phMode").value; refreshPhysics(this.doc); this.renderPhysics(); };
     $("phPos").onchange = () => { this.doc.physics.center = parseVec($("phPos").value, this.doc.physics.center); this.dirty(); };
     $("phSize").onchange = () => { this.doc.physics.size = parseVec($("phSize").value, this.doc.physics.size); this.dirty(); };
-    $("vxAnimNew").onclick = () => { this.doc.anims.push(newAnim("anim" + (this.doc.anims.length + 1))); this.doc.curAnim = this.doc.anims.length - 1; this.renderTimeline(); };
-    $("vxAnimDel").onclick = () => { if (this.doc.anims.length <= 1) return; this.doc.anims.splice(this.doc.curAnim, 1); this.doc.curAnim = 0; this.renderTimeline(); };
-    $("vxAnimSel").onchange = () => { this.doc.curAnim = Number($("vxAnimSel").value); this.renderTimeline(); };
+    $("vxAnimNew").onclick = () => { this.doc.anims.push(newAnim("anim" + (this.doc.anims.length + 1))); this.doc.curAnim = this.doc.anims.length - 1; this.renderTimeline(); this.dirty(); };
+    $("vxAnimDel").onclick = () => { if (this.doc.anims.length <= 1) return; this.doc.anims.splice(this.doc.curAnim, 1); this.doc.curAnim = 0; this.renderTimeline(); this.dirty(); };
     $("vxPlay").onclick = () => { this.playing = 1; };
     $("vxPlayRev").onclick = () => { this.playing = -1; };
+    $("vxToStart").onclick = () => { this.playing = 0; this.setFrame(0); };
+    $("vxToEnd").onclick = () => { this.playing = 0; this.setFrame(Math.max(0, this.view.frameBounds())); };
     $("vxSpeed").onclick = () => { this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 0.5 : 1; $("vxSpeed").textContent = this.speed + "x"; };
     $("vxKey").onclick = () => this.keyframe();
     $("vxScrub").oninput = () => { this.setFrame(Number($("vxScrub").value)); };
+    this.wireChrome();
     window.addEventListener("keydown", (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
       const k = e.key.toLowerCase();
@@ -150,6 +191,151 @@ class VoxaApp {
       if (k === "delete" && this.selection.length) this.applySelectionOp("erase");
     });
     window.addEventListener("resize", () => this.view.resize());
+  }
+  /** 官方把镜像/旋转/翻转放在顶栏、把撤销重做和视口开关放在底栏，这里接上这些新位置 */
+  wireChrome() {
+    document.querySelectorAll("[data-vico]").forEach((el) => { el.innerHTML = svgIco(el.dataset.vico); });
+
+    // 顶栏：镜像 / 旋转 / 翻转 的 X Y Z
+    const op = (kind, axisIdx) => {
+      if (!this.inPart) return this.tip("请先双击部件进入体素编辑");
+      this.voxOp((p) => transformVoxels(p, kind, axisIdx));
+      this.syncSizeBoxes();
+    };
+    const bind = (gid, kind) => {
+      $(gid).querySelectorAll("button[data-axis]").forEach((b) => {
+        b.onclick = () => op(kind, ["x", "y", "z"].indexOf(b.dataset.axis));
+      });
+    };
+    bind("grpMirror", "mirror"); bind("grpRotate", "rot"); bind("grpFlip", "flip");
+
+    // 部件框大小：三个数字框直接改 activePart.size
+    for (const [id, i] of [["boxX", 0], ["boxY", 1], ["boxZ", 2]]) {
+      $(id).onchange = () => {
+        const p = this.activePart; if (!p) return;
+        this.snapshot("部件框大小");
+        p.size[i] = Math.max(1, Math.min(128, Math.round(Number($(id).value) || 1)));
+        this.view.rebuildBoxes(); this.syncSizeBoxes(); this.renderProps();
+      };
+    }
+    $("vxCrop").onclick = () => {
+      const p = this.activePart; if (!p) return this.tip("请先选中部件");
+      this.snapshot("裁剪"); autoCrop(p); this.view.rebuild(); this.renderProps(); this.syncSizeBoxes();
+    };
+
+    $("vxBack").onclick = () => this.setInPart(false);
+    // 官方：双击部件进入体素编辑
+    this.view.canvas.addEventListener("dblclick", (ev) => {
+      const hit = this.view.pickVoxel(ev);
+      if (hit && hit.part) { this.activePart = hit.part; this.view.setActivePart(hit.part); this.renderParts(); }
+      if (this.activePart) this.setInPart(true);
+    });
+
+    // 局部 / 世界坐标
+    const setSpace = (s) => {
+      this.space = s;
+      $("spLocal").classList.toggle("on", s === "local");
+      $("spWorld").classList.toggle("on", s === "world");
+      $("propSpace").textContent = s === "local" ? "局" : "世";
+      this.renderProps();
+    };
+    $("spLocal").onclick = () => setSpace("local");
+    $("spWorld").onclick = () => setSpace("world");
+    $("propSpace").onclick = () => setSpace(this.space === "local" ? "world" : "local");
+
+    // 底栏
+    $("uUndo").onclick = () => this.undo();
+    $("uRedo").onclick = () => this.redo();
+    $("vxProj").onchange = () => this.view.setOrtho($("vxProj").value === "ortho");
+    $("vxEdge").onchange = () => this.setEdges($("vxEdge").value === "show");
+    const tgl = (id, fn) => { const b = $(id); b.onclick = () => { const on = !b.classList.contains("on"); b.classList.toggle("on", on); fn(on); }; };
+    tgl("uBone", (on) => this.view.setBoneVisible(on));
+    tgl("uBox", (on) => this.view.setBoxesVisible(on));
+    tgl("uGrid", (on) => { this.view.grid.visible = on; });
+    tgl("uGlow", (on) => this.setGlow(on));
+    tgl("uStat", (on) => { $("vxStat").style.display = on ? "" : "none"; });
+    $("uReset").onclick = () => this.view.focus();
+    $("vxZoom").oninput = () => {
+      const pct = Number($("vxZoom").value);
+      $("vxZoomVal").textContent = pct + "%";
+      this.view.camera.zoom = Math.max(0.2, pct / 100);
+      this.view.camera.updateProjectionMatrix();
+    };
+
+    // 面板折叠
+    document.querySelectorAll(".vx-sect-h .tri").forEach((t) => {
+      t.onclick = () => t.closest(".vx-sect").classList.toggle("closed");
+    });
+
+    this.wireHsv();
+    setSpace("local");
+  }
+
+  /** 色板下方的 HSV 取色块 + 色相条 + HEX/RGB，对齐官方色板 */
+  wireHsv() {
+    const cv = $("hsvArea"), ctx = cv.getContext("2d");
+    const knob = document.createElement("span"); knob.className = "knob"; $("vxHsv").appendChild(knob);
+    const paint = (hue) => {
+      const w = cv.width, h = cv.height;   // 别写反：反了只会画出左边一条 96px 的方块
+      const base = ctx.createLinearGradient(0, 0, w, 0);
+      base.addColorStop(0, "#fff"); base.addColorStop(1, `hsl(${hue},100%,50%)`);
+      ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+      const sh = ctx.createLinearGradient(0, 0, 0, h);
+      sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "#000");
+      ctx.fillStyle = sh; ctx.fillRect(0, 0, w, h);
+    };
+    const at = (e) => {
+      const c = this.color; if (!c) return;
+      const r = cv.getBoundingClientRect();
+      const x = clamp((e.clientX - r.left) / r.width, 0, 1), y = clamp((e.clientY - r.top) / r.height, 0, 1);
+      const hue = Number($("vxHue").value);
+      const [R, G, B] = hsvToRgb(hue / 360, x, 1 - y);
+      c.hex = rgb255ToHex(R, G, B);
+      knob.style.left = (x * 100) + "%"; knob.style.top = (y * 100) + "%";
+      this.applyColorEdit();
+    };
+    cv.addEventListener("pointerdown", (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); at(e); });
+    cv.addEventListener("pointermove", (e) => { if (e.buttons === 1) at(e); });
+    $("vxHue").oninput = () => { paint(Number($("vxHue").value)); this.syncColorFields(); };
+    for (const id of ["cHex", "cR", "cG", "cB"]) {
+      $(id).onchange = () => {
+        const c = this.color; if (!c) return;
+        if (id === "cHex") { if (/^#[0-9a-fA-F]{6}$/.test($(id).value)) c.hex = $(id).value.toLowerCase(); }
+        else {
+          const [R, G, B] = hexTo255(c.hex);
+          const v = { cR: R, cG: G, cB: B };
+          v[id] = clamp(Math.round(Number($(id).value) || 0), 0, 255);
+          c.hex = rgb255ToHex(v.cR, v.cG, v.cB);
+        }
+        this.applyColorEdit();
+      };
+    }
+    $("vxGlow").oninput = (e) => {
+      const c = this.color; if (!c) return;
+      c.emissive = Number(e.target.value) / 100;
+      $("vxGlowVal").textContent = Math.round(c.emissive * 100) + "%";
+      this.view.rebuildPart && this.view.rebuildPart(this.activePart);
+      this.snapshot("发光");
+      this.renderPalette(true);
+    };
+    this._paintHsv = paint;
+    this._knob = knob;
+  }
+  applyColorEdit() {
+    this.syncColorFields();
+    this.view.rebuildPart && this.view.rebuildPart(this.activePart);
+    this.renderPalette(true);
+  }
+  syncColorFields() {
+    const c = this.color; if (!c) return;
+    const [R, G, B] = hexTo255(c.hex);
+    $("cHex").value = c.hex.toUpperCase();
+    $("cR").value = R; $("cG").value = G; $("cB").value = B;
+    const hue = rgbHue(R, G, B);
+    $("vxHue").value = hue;
+    this._paintHsv && this._paintHsv(hue);
+    const [x, y] = rgbToSv(R, G, B);
+    if (this._knob) { this._knob.style.left = (x * 100) + "%"; this._knob.style.top = (y * 100) + "%"; }
   }
   menu(act) {
     switch (act) {
@@ -187,52 +373,93 @@ class VoxaApp {
   }
   applyMode() {
     const anim = this.mode === "anim", phys = this.mode === "physics";
+    const vox = this.mode !== "anim" && this.mode !== "physics" && this.inPart;
     $("vxTimeline").classList.toggle("show", anim);
     $("vxPhysics").classList.toggle("show", phys);
-    $("vxVoxOps").style.display = this.mode === "model" ? "" : "none";
+    // 顶栏的镜像/旋转/翻转/部件框大小只属于体素层，坐标系切换属于部件层与动画层
+    for (const id of ["grpMirror", "grpRotate", "grpFlip", "grpSize"]) $(id).hidden = !vox;
+    $("grpSpace").hidden = vox || phys;
+    $("vxBack").hidden = !vox;
+    $("sectPalette").style.display = phys ? "none" : "";
+    $("sectProps").style.display = anim && !this.activePart ? "" : "";
+    $("vxVoxOps").style.display = vox ? "" : "none";
     if (anim) { this.renderTimeline(); this.setFrame(this.frame); }
     if (phys) { refreshPhysics(this.doc); this.renderPhysics(); }
     if (this.mode === "skin") this.loadSkinTemplate(true);
     this.buildTools();
+    this.syncSizeBoxes();
+  }
+  /** 把当前部件框尺寸回填到顶栏的三个数字框 */
+  syncSizeBoxes() {
+    const p = this.activePart;
+    if (!p) return;
+    $("boxX").value = p.size[0]; $("boxY").value = p.size[1]; $("boxZ").value = p.size[2];
   }
 
-  /* ---------------- 工具条 ---------------- */
+  /* ---------------- 编辑工具栏（左侧竖排图标） ---------------- */
+  // 官方三套竖栏内容不同：部件层 6 个、体素层 11 个、动画层 3 个，
+  // 且体素层要先「进入部件」才出现（视口左上角的 ← 返回 就是退出）。
+  static RAIL_PART = [
+    ["move", "move"], ["rot", "rot"], ["scale", "scale"], ["-", "-"],
+    ["partNew", "newPart"], ["partDup", "dupPart"], ["bone", "addBone"], ["enter", "enterPart"],
+  ];
+  static RAIL_VOXEL = [
+    ["move", "move"], ["select", "select"], ["wand", "wand"], ["line", "line"], ["lineDel", "lineDel"],
+    ["face", "face"], ["faceDel", "faceDel"], ["extrude", "extrude"], ["bucket", "bucket"],
+    ["paint", "paint"], ["eyedropper", "eyedropper"],
+  ];
+  static RAIL_ANIM = [["move", "move"], ["rot", "rot"], ["scale", "scale"]];
+
   buildTools() {
     const host = $("vxTools");
     host.innerHTML = "";
-    const list = this.mode === "anim" ? ["move", "rot", "scale"]
-      : this.mode === "skin" ? ["move"]
-        : this.mode === "physics" ? []
-          : Object.keys(TOOLS);
-    for (const id of list) {
+    const list = this.mode === "anim" ? VoxaApp.RAIL_ANIM
+      : this.mode === "physics" ? []
+        : this.mode === "skin" ? (this.inPart ? VoxaApp.RAIL_VOXEL : VoxaApp.RAIL_PART)
+          : (this.inPart ? VoxaApp.RAIL_VOXEL : VoxaApp.RAIL_PART);
+    for (const [ico, act] of list) {
+      if (ico === "-") {
+        const s = document.createElement("span"); s.className = "vx-sep"; host.appendChild(s); continue;
+      }
       const b = document.createElement("button");
-      b.className = "vx-tool" + (this.tool === id ? " active" : "");
-      b.textContent = TOOLS[id].label;
-      b.title = TOOLS[id].hint;
-      b.onclick = () => this.setTool(id);
+      const isTool = !!TOOLS[act];
+      b.className = "vx-tool" + (isTool && this.tool === act ? " active" : "");
+      b.innerHTML = svgIco(ico);
+      b.title = isTool ? TOOLS[act].label + " · " + TOOLS[act].hint : ({
+        newPart: "新建部件", dupPart: "复制部件", addBone: "创建独立骨骼", enterPart: "进入部件（体素编辑）",
+      }[act] || act);
+      b.onclick = () => this.railAct(act);
       host.appendChild(b);
     }
-    if (this.mode === "model") {
-      const sep = document.createElement("span");
-      sep.className = "vx-sep";
-      host.appendChild(sep);
-      for (const [label, fn] of [["透视/正交", () => this.view.setOrtho(!this.view.ortho)], ["边缘线", () => this.toggleEdges()], ["恢复视角", () => this.view.focus()]]) {
-        const b = document.createElement("button");
-        b.className = "vx-tool";
-        b.textContent = label;
-        b.onclick = fn;
-        host.appendChild(b);
-      }
-    }
+  }
+  railAct(act) {
+    if (TOOLS[act]) return this.setTool(act);
+    if (act === "enterPart") return this.setInPart(true);
+    if (act === "newPart") return $("vxAddPart").click();
+    if (act === "dupPart") return $("vxDupPart").click();
+    if (act === "addBone") return $("vxAddBone").click();
+  }
+  setInPart(on) {
+    if (on && !this.activePart) return this.tip("先选中一个部件");
+    this.inPart = !!on;
+    if (on && !TOOLS[this.tool]) this.tool = "build";
+    if (!on && this.inPart === false && ["build", "erase", "line", "lineDel", "face", "faceDel", "paint", "bucket", "wand", "extrude"].includes(this.tool)) this.tool = "move";
+    this.applyMode();
+    this.tip(on ? "已进入部件：" + this.activePart.name : "已返回部件列表");
   }
   setTool(id) { this.tool = id; this.buildTools(); this.tip(TOOLS[id] ? TOOLS[id].hint : id); }
-  toggleEdges() {
-    this._edges = !this._edges;
+  setEdges(on) {
+    this._edges = !!on;
     for (const n of this.view.partNodes.values()) {
       if (!n.mesh) continue;
       n.mesh.material.wireframe = this._edges;
       if (n.emissive) n.emissive.material.wireframe = this._edges;
     }
+  }
+  toggleEdges() { this.setEdges(!this._edges); }
+  /** 底栏的发光开关：隐藏 emissive 层即可实时看到关掉自发光的效果 */
+  setGlow(on) {
+    for (const n of this.view.partNodes.values()) if (n.emissive) n.emissive.visible = !!on;
   }
 
   /* ---------------- 指针交互 ---------------- */
@@ -431,38 +658,26 @@ class VoxaApp {
     };
     walk(null, 0);
   }
-  renderPalette() {
+  renderPalette(keepFields) {
     const host = $("vxPalette");
     host.innerHTML = "";
     for (const c of this.doc.palette) {
       const el = document.createElement("div");
       el.className = "vx-swatch" + (c === this.color ? " active" : "");
       el.style.background = c.hex;
-      el.title = `${c.hex} 发光 ${(c.emissive * 100).toFixed(0)}%`;
+      el.title = `${c.hex} 发光 ${((c.emissive || 0) * 100).toFixed(0)}%`;
       if ((c.emissive || 0) > 0.02) el.classList.add("glow");
       el.onclick = () => { this.color = c; this.renderPalette(); this.renderProps(); };
       el.oncontextmenu = (e) => {
         e.preventDefault();
         const inp = document.createElement("input");
         inp.type = "color"; inp.value = c.hex;
-        inp.oninput = () => { c.hex = inp.value; el.style.background = c.hex; this.view.rebuild(); };
+        inp.oninput = () => { c.hex = inp.value; el.style.background = c.hex; this.view.rebuild(); this.syncColorFields(); };
         inp.click();
       };
       host.appendChild(el);
     }
-    if (this.color) {
-      const box = document.createElement("div");
-      box.className = "vx-color-edit";
-      box.innerHTML = `<label>发光 <input id="vxGlow" type="range" min="0" max="1" step="0.01" value="${this.color.emissive || 0}"/></label>
-        <em id="vxGlowVal">${((this.color.emissive || 0) * 100).toFixed(0)}%</em>`;
-      host.appendChild(box);
-      box.querySelector("#vxGlow").oninput = (e) => {
-        this.color.emissive = Number(e.target.value);
-        box.querySelector("#vxGlowVal").textContent = (this.color.emissive * 100).toFixed(0) + "%";
-        this.snapshot("发光");
-        this.view.rebuild();
-      };
-    }
+    if (!keepFields) this.syncColorFields();
   }
   renderProps() {
     const host = $("vxProps");
@@ -499,16 +714,13 @@ class VoxaApp {
   renderVoxOps() {
     const host = $("vxVoxOps");
     host.innerHTML = "";
-    const AX = ["X", "Y", "Z"];
-    const mk = (label, fn) => { const b = document.createElement("button"); b.textContent = label; b.onclick = fn; host.appendChild(b); };
-    AX.forEach((a, i) => mk("镜像" + a, () => this.voxOp((p) => transformVoxels(p, "mirror", i))));
-    AX.forEach((a, i) => mk("旋转" + a + "90°", () => this.voxOp((p) => transformVoxels(p, "rot", i))));
-    AX.forEach((a, i) => mk("翻转" + a, () => this.voxOp((p) => transformVoxels(p, "flip", i))));
-    host.appendChild(btnRow([
-      ["选区改色", () => this.applySelectionOp("paint")],
-      ["选区删除", () => this.applySelectionOp("erase")],
-      ["选区保留", () => this.applySelectionOp("crop")],
-    ]));
+    // 镜像/旋转/翻转已按官方口径移到顶栏，这里只留选区操作
+    for (const [label, fn] of [["选区改色", "paint"], ["选区删除", "erase"], ["选区保留", "crop"]]) {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.onclick = () => this.applySelectionOp(fn);
+      host.appendChild(b);
+    }
   }
   voxOp(fn) {
     if (!this.activePart) return this.tip("请先选中部件");
@@ -524,28 +736,52 @@ class VoxaApp {
     $("phSize").value = ph.size.map((v) => +v.toFixed(2)).join(", ");
   }
   renderTimeline() {
-    const sel = $("vxAnimSel");
-    sel.innerHTML = "";
+    // 官方动画面板：左列「动画列表」，右侧骨骼节点轨道 + 秒刻度尺
+    const list = $("vxAnimList");
+    list.innerHTML = "";
     this.doc.anims.forEach((a, i) => {
-      const o = document.createElement("option");
-      o.value = i;
-      o.textContent = a.name;
-      sel.appendChild(o);
+      const row = document.createElement("div");
+      row.className = "vx-item" + (i === this.doc.curAnim ? " active" : "");
+      const nm = document.createElement("span"); nm.className = "vi-name"; nm.textContent = a.name;
+      row.appendChild(nm);
+      row.onclick = () => { this.doc.curAnim = i; this.renderTimeline(); };
+      row.ondblclick = () => {
+        nm.contentEditable = "true"; nm.focus();
+        nm.onblur = () => { a.name = nm.textContent.trim() || a.name; nm.contentEditable = "false"; this.renderTimeline(); };
+      };
+      list.appendChild(row);
     });
-    sel.value = this.doc.curAnim;
+    if (!this.doc.anims.length) {
+      const empty = document.createElement("button");
+      empty.className = "ap-create"; empty.innerHTML = "＋ 创建动画";
+      empty.onclick = () => $("vxAnimNew").click();
+      const wrap = document.createElement("div"); wrap.className = "ap-empty"; wrap.appendChild(empty);
+      list.appendChild(wrap);
+    }
+
+    const anim = curAnim(this.doc);
     const max = Math.max(24, this.view.frameBounds());
     $("vxScrub").max = max;
     $("vxFrameMax").textContent = max;
+
+    const ruler = $("vxRuler");
+    ruler.innerHTML = "";
+    for (let s = 0; s <= Math.ceil(max / 24); s++) {
+      const t = document.createElement("span");
+      t.className = "tick"; t.style.left = (s * 24 / max * 100) + "%"; t.textContent = s + "s";
+      ruler.appendChild(t);
+    }
+    const head = document.createElement("span"); head.className = "playhead"; head.id = "playhead";
+    ruler.appendChild(head);
+
     const host = $("vxTracks");
     host.innerHTML = "";
-    const anim = curAnim(this.doc);
-    const rows = this.doc.bones.filter((b) => anim.tracks[b.id] && anim.tracks[b.id].length);
+    const rows = this.doc.bones.filter((b) => anim && anim.tracks[b.id] && anim.tracks[b.id].length);
     for (const b of rows) {
       const row = document.createElement("div");
       row.className = "tl-row";
-      row.innerHTML = `<span class="tl-bone">${esc(b.name)}</span>`;
-      const lane = document.createElement("div");
-      lane.className = "tl-lane";
+      const lab = document.createElement("span"); lab.className = "tl-bone"; lab.textContent = b.name;
+      const lane = document.createElement("div"); lane.className = "tl-lane";
       for (const k of anim.tracks[b.id]) {
         const cell = document.createElement("button");
         cell.className = "tl-key" + (k.f === this.frame ? " active" : "");
@@ -561,7 +797,7 @@ class VoxaApp {
         };
         lane.appendChild(cell);
       }
-      row.appendChild(lane);
+      row.appendChild(lab); row.appendChild(lane);
       host.appendChild(row);
     }
     if (!rows.length) host.innerHTML = '<div class="vx-empty">选中骨骼并移动它，然后点 ◆ 创建帧</div>';
@@ -570,6 +806,11 @@ class VoxaApp {
     this.frame = Math.max(0, f);
     $("vxScrub").value = this.frame;
     $("vxFrameNum").textContent = this.frame;
+    const max = Math.max(1, Number($("vxScrub").max) || 24);
+    const head = $("playhead");
+    if (head) head.style.left = (this.frame / max * 100) + "%";
+    const t = this.frame / 24;
+    $("vxTimeText").textContent = String(Math.floor(t)).padStart(2, "0") + ":" + String(Math.round((t % 1) * 60)).padStart(2, "0");
     this.view.applyPose(this.doc, curAnim(this.doc), this.frame);
   }
   _tickPlay() {
@@ -959,6 +1200,38 @@ function btnRow(pairs) {
   return d;
 }
 function boneOpacityOf(bone) { return bone._op ?? 1; }
+
+/* HSV 取色块要自己算。注意 model.js 的 hexToRgb/rgbToHex 走的是 **0..1** 分量
+   （直接喂给 three.js 材质），而官方色板上的 R/G/B 显示的是 0..255。
+   混用会把颜色全部压成白色，所以这里自带一对 0..255 的版本，命名上区分开。 */
+function hexTo255(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  if (!m) return [255, 255, 255];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgb255ToHex(r, g, b) {
+  const h = (v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+function hsvToRgb(h, s, v) {
+  const i = Math.floor(h * 6), f = h * 6 - i;
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  const c = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];
+  return [Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255)];
+}
+function rgbHue(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (!d) return 0;
+  const h = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return Math.round(h / 6) % 60;
+}
+/** 反解取色块上的圆点位置：x = 饱和度，y = 1 − 明度 */
+function rgbToSv(r, g, b) {
+  const mx = Math.max(r, g, b) / 255, mn = Math.min(r, g, b) / 255;
+  const v = mx, s = mx ? (mx - mn) / mx : 0;
+  return [Math.min(1, Math.max(0, s)), Math.min(1, Math.max(0, 1 - v))];
+}
 // V口令编解码：gzip + base64url（无 CompressionStream 时退化为不压缩）
 async function gzipBytes(u8) {
   if (typeof CompressionStream === "undefined") return u8;

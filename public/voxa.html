@@ -15,22 +15,47 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
 </script>
 </head>
 <body class="voxa">
+
+<!-- ① 全局工具栏（顶）：官方分区「全局工具栏」——模式切换 + 镜像/旋转/翻转 + 部件框大小 + 命名保存发布 -->
 <header id="vxTop">
-  <div class="vx-left">
-    <button id="vxMenu" class="vx-ico" title="菜单：历史 / 导入 / 导出 / 语言">☰</button>
-    <a class="vx-brand" href="/" title="返回主界面（工作台）">VOXA</a>
-    <input id="vxName" class="vx-name" value="未命名模型" spellcheck="false" title="文件命名"/>
+  <button id="vxMenu" class="vx-ico" title="菜单栏：历史 / 导入 / 导出 / 语言">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></g></svg>
+  </button>
+  <span class="vx-vsep"></span>
+
+  <a class="vx-brand" href="/" title="返回主界面（工作台）">VOXA</a>
+  <span class="vx-vsep"></span>
+
+  <div class="vx-modegroup" id="vxModes">
+    <button class="vx-tab active" data-mode="model" title="模型编辑状态"><span class="ti" data-vico="person"></span>模型</button>
+    <button class="vx-tab" data-mode="anim" title="动画编辑状态"><span class="ti" data-vico="run"></span>动画</button>
   </div>
-  <nav class="vx-tabs">
-    <button class="vx-tab active" data-mode="model">模型</button>
-    <button class="vx-tab" data-mode="anim">动画</button>
-    <button class="vx-tab" data-mode="physics">物理</button>
-    <button class="vx-tab" data-mode="skin">换肤</button>
-  </nav>
+  <span class="vx-vsep"></span>
+  <div class="vx-modegroup secondary">
+    <button class="vx-tab" data-mode="physics" title="物理界面布局（碰撞盒）"><span class="ti" data-vico="cube"></span>物理</button>
+    <button class="vx-tab" data-mode="skin" title="换肤模式：18 节点人形模板"><span class="ti" data-vico="shirt"></span>换肤</button>
+  </div>
+
+  <!-- 体素模式独有：镜像 / 旋转 / 翻转 / 部件框大小 -->
+  <div class="vx-axisgrp" id="grpMirror" hidden><b>镜像</b><button data-axis="x">X</button><button data-axis="y">Y</button><button data-axis="z">Z</button></div>
+  <div class="vx-axisgrp" id="grpRotate" hidden><b>旋转</b><button data-axis="x">X</button><button data-axis="y">Y</button><button data-axis="z">Z</button></div>
+  <div class="vx-axisgrp" id="grpFlip" hidden><b>翻转</b><button data-axis="x">X</button><button data-axis="y">Y</button><button data-axis="z">Z</button></div>
+  <div class="vx-axisgrp" id="grpSize" hidden><b>部件框大小</b>
+    <input id="boxX" class="vx-num r" value="8"/><input id="boxY" class="vx-num g" value="8"/><input id="boxZ" class="vx-num b" value="8"/>
+    <button id="vxCrop" class="vx-ico" title="自动裁剪：让部件框贴合内容"><span class="ti" data-vico="scissors"></span></button>
+  </div>
+  <!-- 部件/动画模式独有：局部 / 世界坐标 -->
+  <div class="vx-axisgrp" id="grpSpace" hidden><b>坐标</b>
+    <button id="spLocal" class="on" title="局部坐标：以自身为坐标系"><span class="ti" data-vico="local"></span></button>
+    <button id="spWorld" title="世界坐标"><span class="ti" data-vico="world"></span></button>
+  </div>
+
   <div class="vx-right">
+    <input id="vxName" class="vx-name" value="未命名模型" spellcheck="false" title="文件命名"/>
     <button id="vxSave" class="vx-btn">保存</button>
-    <button id="vxPublish" class="vx-btn primary" title="导出为世界可用的 mesh/xxx.vb">导出到世界</button>
+    <button id="vxPublish" class="vx-btn pub" title="导出为世界可用的 mesh 并登记进模型库">发布</button>
   </div>
+
   <div id="vxMenuPanel" class="vx-menu">
     <div class="vx-menu-sec">导航</div>
     <button data-act="home">返回主界面（工作台）</button>
@@ -38,74 +63,37 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
     <button data-act="new">新建模型</button>
     <button data-act="save">保存 (.voxa)</button>
     <button data-act="open">打开 (.voxa)</button>
-    <button data-act="importVox">导入 VOX</button>
+    <button data-act="importVox">导入 vox</button>
     <button data-act="shareCode">复制 V口令（分享当前模型）</button>
     <button data-act="pasteCode">粘贴 V口令导入</button>
-    <button data-act="exportGlb">整体导出 glTF (.glb)</button>
-    <button data-act="publish">发布到线上公域</button>
+    <button data-act="exportGlb">导出 gltf (.glb)</button>
     <div class="vx-menu-sec">历史</div>
-    <button data-act="undo">撤销 (Ctrl+Z)</button>
-    <button data-act="redo">重做 (Ctrl+Shift+Z)</button>
     <button data-act="saveVersion">存为一个版本</button>
     <button data-act="versions">版本列表…</button>
     <div class="vx-menu-sec">外部部件预览</div>
     <button data-act="extLoad">载入外部参照模型…</button>
     <button data-act="extToggle">显示 / 隐藏参照</button>
     <button data-act="extClear">清除参照</button>
-    <div class="vx-menu-sec">视图</div>
-    <button data-act="toggleBones">显示 / 隐藏骨骼</button>
-    <button data-act="toggleBoxes">显示 / 隐藏部件框</button>
-    <button data-act="grid">地面网格</button>
-    <button data-act="resetView">恢复默认视角</button>
     <div class="vx-menu-sec">语言</div>
     <button data-act="lang">简体中文</button>
   </div>
 </header>
 
 <main id="vxMain">
-  <!-- 左：部件 + 骨骼 -->
-  <aside id="vxLeft">
-    <div class="vx-pane-head">部件 <button id="vxAddPart" class="vx-mini" title="新建部件">＋</button>
-      <button id="vxDupPart" class="vx-mini" title="复制部件">⧉</button>
-      <button id="vxGroup" class="vx-mini" title="编组（多部件绑定同一骨骼前必做）">⬚</button>
-    </div>
-    <div id="vxParts" class="vx-list"></div>
-    <div class="vx-pane-head">骨骼 <button id="vxAddBone" class="vx-mini" title="创建独立骨骼">＋</button>
-      <button id="vxSkinTemplate" class="vx-mini" title="载入 18 节点人形模板">人形</button>
-    </div>
-    <div id="vxBones" class="vx-tree"></div>
-    <div class="vx-pane-head">调色板 <button id="vxAddColor" class="vx-mini">＋</button>
-      <button id="vxCleanColors" class="vx-mini" title="清除未使用的颜色">🧹</button></div>
-    <div id="vxPalette" class="vx-palette"></div>
-  </aside>
+  <!-- ② 编辑工具栏（左侧竖排图标，内容随模式变化） -->
+  <nav id="vxTools" aria-label="编辑工具栏"></nav>
 
-  <!-- 中：视口 -->
+  <!-- ③ 视口窗 -->
   <section id="vxStage">
     <canvas id="vxCanvas"></canvas>
-    <div id="vxTools"></div>
-    <div id="vxGizmo"></div>
+    <button id="vxBack" hidden title="退出部件编辑，返回部件列表">← 返回</button>
     <div id="vxStat"></div>
     <div id="vxTip">右键拖动旋转视角 · 中键平移 · 左键使用当前工具</div>
-    <!-- 动画时间轴 -->
-    <div id="vxTimeline">
-      <div class="tl-head">
-        <select id="vxAnimSel" class="vx-sel"></select>
-        <button id="vxAnimNew" class="vx-mini" title="新建动画">＋</button>
-        <button id="vxAnimDel" class="vx-mini" title="删除动画">－</button>
-        <button id="vxPlay" class="vx-mini" title="播放">▶</button>
-        <button id="vxPlayRev" class="vx-mini" title="倒放">◀</button>
-        <button id="vxSpeed" class="vx-mini" title="播放速率">1x</button>
-        <button id="vxKey" class="vx-mini" title="创建帧">◆</button>
-        <span class="tl-frame">帧 <b id="vxFrameNum">0</b> / <span id="vxFrameMax">24</span></span>
-        <span class="tl-fps">24 帧/秒（固定）</span>
-      </div>
-      <div id="vxTracks" class="tl-tracks"></div>
-      <input id="vxScrub" class="tl-scrub" type="range" min="0" max="24" step="1" value="0"/>
-    </div>
-    <!-- 物理面板 -->
+    <div id="vxGizmo"></div>
+    <!-- 物理界面 -->
     <div id="vxPhysics">
       <div class="ph-row"><span>模式</span>
-        <select id="phMode" class="vx-sel"><option value="default">默认（初始模型最小包围盒）</option><option value="custom">自定义</option></select>
+        <select id="phMode" class="vx-sel"><option value="default">默认（初始模型最小外接包围盒）</option><option value="custom">自定义</option></select>
       </div>
       <div class="ph-row"><label>位置</label><input id="phPos" class="vx-vec" value="0, 0, 0"/></div>
       <div class="ph-row"><label>尺寸</label><input id="phSize" class="vx-vec" value="1, 1, 1"/></div>
@@ -113,14 +101,103 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
     </div>
   </section>
 
-  <!-- 右：属性 -->
+  <!-- ④ 右侧面板：色板 / 列表 / 参数 三段可折叠 -->
   <aside id="vxRight">
-    <div class="vx-pane-head">属性</div>
-    <div id="vxProps" class="vx-props"></div>
-    <div class="vx-pane-head">体素操作</div>
-    <div id="vxVoxOps" class="vx-voxops"></div>
+    <section class="vx-sect" id="sectPalette">
+      <header class="vx-sect-h"><i class="tri">▾</i><span>色板</span>
+        <span class="acts">
+          <button id="vxAddColor" class="vx-mini" title="增加颜色组">＋</button>
+          <button id="vxCleanColors" class="vx-mini" title="清除未使用的颜色">⌫</button>
+        </span>
+      </header>
+      <div class="vx-sect-b">
+        <div id="vxPalette" class="vx-palette"></div>
+        <div class="vx-grpline"><span class="ti" data-vico="folder"></span>Group</div>
+        <div id="vxHsv" class="vx-hsv"><canvas id="hsvArea" width="232" height="96"></canvas></div>
+        <div class="vx-hue"><span class="ti" data-vico="eyedropper"></span><input id="vxHue" type="range" min="0" max="360" step="1" value="0"/></div>
+        <div class="vx-rgb">
+          <label><input id="cHex" class="hex" maxlength="7"/><em>HEX</em></label>
+          <label><input id="cR" class="ch" type="number" min="0" max="255"/><em>R</em></label>
+          <label><input id="cG" class="ch" type="number" min="0" max="255"/><em>G</em></label>
+          <label><input id="cB" class="ch" type="number" min="0" max="255"/><em>B</em></label>
+        </div>
+        <div class="vx-glow"><span>发光</span><input id="vxGlow" type="range" min="0" max="100" step="1" value="0"/><em id="vxGlowVal">0%</em></div>
+      </div>
+    </section>
+
+    <section class="vx-sect grow" id="sectList">
+      <header class="vx-sect-h"><i class="tri">▾</i><span>列表</span>
+        <span class="acts">
+          <button id="vxAddPart" class="vx-mini" title="新建部件">＋</button>
+          <button id="vxDupPart" class="vx-mini" title="复制部件">⧉</button>
+          <button id="vxGroup" class="vx-mini" title="编组（多部件绑定同一骨骼前必做）">⬚</button>
+          <button id="vxAddBone" class="vx-mini" title="创建独立骨骼">🦴</button>
+          <button id="vxSkinTemplate" class="vx-mini" title="载入 18 节点人形模板">人</button>
+        </span>
+      </header>
+      <div class="vx-sect-b">
+        <div id="vxParts" class="vx-list"></div>
+        <div id="vxBones" class="vx-tree"></div>
+      </div>
+    </section>
+
+    <section class="vx-sect" id="sectProps">
+      <header class="vx-sect-h"><i class="tri">▾</i><span>参数</span>
+        <span class="acts"><button id="propSpace" class="vx-mini" title="切换局部 / 世界坐标">局</button></span>
+      </header>
+      <div class="vx-sect-b">
+        <div id="vxProps" class="vx-props"></div>
+        <div id="vxVoxOps" class="vx-voxops"></div>
+      </div>
+    </section>
   </aside>
 </main>
+
+<!-- ⑤ 辅助工具栏（底）：撤销重做 + 视口开关 -->
+<footer id="vxBot">
+  <button id="uUndo" class="vx-ico" title="撤销 (Ctrl+Z)"><span class="ti" data-vico="undo"></span></button>
+  <button id="uRedo" class="vx-ico" title="重做 (Ctrl+Shift+Z)"><span class="ti" data-vico="redo"></span></button>
+  <span class="vx-spacer"></span>
+  <select id="vxProj" class="vx-sel" title="切换视口窗的透视或正交显示模式"><option value="persp">透视</option><option value="ortho">正交</option></select>
+  <select id="vxEdge" class="vx-sel" title="显示 / 隐藏体素边缘线条"><option value="show">显示边缘线</option><option value="hide">隐藏边缘线</option></select>
+  <button id="uStat" class="vx-ico tgl" title="打开 / 关闭模型数据统计"><span class="ti" data-vico="chart"></span></button>
+  <button id="uGlow" class="vx-ico tgl" title="打开 / 关闭发光"><span class="ti" data-vico="bulb"></span></button>
+  <button id="uBone" class="vx-ico tgl on" title="显示 / 隐藏骨骼"><span class="ti" data-vico="bone"></span></button>
+  <button id="uBox" class="vx-ico tgl on" title="显示 / 隐藏部件框"><span class="ti" data-vico="box"></span></button>
+  <button id="uGrid" class="vx-ico tgl on" title="显示 / 隐藏视口窗地面网格"><span class="ti" data-vico="grid"></span></button>
+  <button id="uReset" class="vx-ico" title="恢复默认窗口视角"><span class="ti" data-vico="target"></span></button>
+  <input id="vxZoom" class="vx-zoom" type="range" min="20" max="200" step="5" value="100" title="视口缩放"/>
+  <em id="vxZoomVal" class="vx-zoomval">100%</em>
+</footer>
+
+<!-- ⑥ 动画面板（仅动画模式，整幅置底）：动画列表 + 骨骼节点 + 时间轴 + 播放控制 -->
+<div id="vxTimeline">
+  <div class="ap-side">
+    <header class="ap-side-h"><span>动画列表</span><button id="vxAnimNew" class="vx-mini" title="创建新动画">＋</button></header>
+    <div id="vxAnimList" class="ap-anims"></div>
+  </div>
+  <div class="ap-main">
+    <div class="ap-head">
+      <span class="ap-bonelabel">骨骼节点</span>
+      <span class="vx-spacer"></span>
+      <span class="tl-fps">24 帧/秒（固定）</span>
+      <button id="vxToStart" class="vx-mini" title="跳到起点">⏮</button>
+      <button id="vxPlayRev" class="vx-mini" title="倒放">◀</button>
+      <button id="vxPlay" class="vx-mini" title="播放">▶</button>
+      <button id="vxSpeed" class="vx-mini" title="播放速率">1x</button>
+      <button id="vxToEnd" class="vx-mini" title="跳到终点">⏭</button>
+      <button id="vxKey" class="vx-mini" title="创建帧">◆</button>
+      <b id="vxTimeText" class="ap-time">00:00</b>
+      <span class="tl-frame">帧 <b id="vxFrameNum">0</b> / <span id="vxFrameMax">24</span></span>
+      <button id="vxAnimDel" class="vx-mini" title="删除当前动画">🗑</button>
+    </div>
+    <div class="ap-body">
+      <div id="vxRuler" class="tl-ruler"></div>
+      <div id="vxTracks" class="tl-tracks"></div>
+      <input id="vxScrub" class="tl-scrub" type="range" min="0" max="24" step="1" value="0"/>
+    </div>
+  </div>
+</div>
 
 <input id="vxFile" type="file" accept=".voxa,.json,.glb,.gltf,.vox" hidden/>
 <div id="vxToast"></div>

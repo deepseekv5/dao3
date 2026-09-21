@@ -2,6 +2,8 @@
 // build-docs.mjs — docs/*.md -> docs/*.html for GitHub Pages.
 // Pages 上的 Jekyll 会跳过下划线文件、也不会把 .md 渲染成可读页面，
 // 所以这里自带一个够用的 markdown 子集解析器，输出与介绍站同一套 site.css。
+// 三件事：docs/*.md -> 各篇正文页；docs/index.src.html -> index.html；
+// docs/documentation.src.html -> documentation.html（文档中心，侧边栏与卡片摘要由这里注入）。
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,17 +11,36 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DOCS = path.join(ROOT, "docs");
 
+// 文档清单的唯一来源：[文件名, 中文标题, 分组]。
+// 数组顺序既是侧边栏顺序，也是"上一篇/下一篇"的阅读顺序，所以同一个分组的条目必须连着写。
+// 每篇的一句话摘要不在这里，它在介绍站首页的 .dc 卡片里（见 readDocCards）。
 const DOCS_LIST = [
-  ["architecture", "架构与数据流"],
-  ["api-compat", "官方 API 兼容层"],
-  ["data-format", "数据格式"],
-  ["physics", "物理与单位制"],
-  ["testing", "测试与验证"],
-  ["packaging", "便携包与发布"],
-  ["dependencies", "依赖清单"],
-  ["credits", "致谢"],
-  ["windows", "Windows 支持说明"],
+  ["architecture", "架构与数据流", "入门"],
+  ["testing", "测试与验证", "入门"],
+  ["api-compat", "官方 API 兼容层", "内核"],
+  ["data-format", "数据格式", "内核"],
+  ["physics", "物理与单位制", "内核"],
+  ["packaging", "便携包与发布", "交付"],
+  ["dependencies", "依赖清单", "交付"],
+  ["credits", "致谢", "交付"],
+  ["windows", "Windows 支持说明", "交付"],
 ];
+
+// 文档中心的分组小标题（id 用作锚点，note 是分组导读）。
+const DOC_GROUPS = [
+  ["start", "入门", "先看清整体结构，再学会怎么在真实浏览器里验证自己拿到的一切。"],
+  ["core", "内核", "接口、数据、物理三块——「兼容」具体落在这些判据上。"],
+  ["ship", "交付", "打包、依赖、授权与平台边界：能拿走什么，拿不走什么。"],
+];
+
+const GROUP_IDS = new Map(DOC_GROUPS.map(([id, name]) => [name, id]));
+
+// 分组没写导读、清单里漏了或多出条目，都是生成页与清单对不上——直接失败，别默默产出半套导航。
+{
+  const listed = DOCS_LIST.map(([, , g]) => g);
+  for (const [, g] of DOC_GROUPS) if (!listed.includes(g)) throw new Error(`DOC_GROUPS 里的「${g}」没有任何文档`);
+  for (const g of listed) if (!GROUP_IDS.has(g)) throw new Error(`「${g}」分组没有对应的 DOC_GROUPS 条目`);
+}
 
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -225,6 +246,8 @@ function parse(md) {
   return { html: html.join("\n"), toc, title };
 }
 
+// 顶栏：文档区所有页面（含文档中心）共用这一份，"文档"指向文档中心而不是介绍站的锚点，
+// 并从视觉上标出当前所在区段（.links a.on）。
 const NAV = `<header class="nav">
   <a class="brand" href="./">
     <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M16 2 3 9v14l13 7 13-7V9L16 2z" fill="none" stroke="#fc8308" stroke-width="2.4"/><path d="M16 9l5 12h-3l-1-2.4h-2L14 21h-3l5-12zm0 4.2-1 2.6h2l-1-2.6z" fill="#fc8308"/></svg>
@@ -236,7 +259,7 @@ const NAV = `<header class="nav">
     <a href="./#proof">验证</a>
     <a href="./#start">上手</a>
     <a href="./#matrix">能力</a>
-    <a href="./#docs">文档</a>
+    <a class="on" href="documentation.html">文档</a>
     <a href="./#download">下载</a>
   </nav>
   <a class="home" href="/" hidden>返回工作台</a>
@@ -246,6 +269,15 @@ const NAV = `<header class="nav">
   </a>
 </header>`;
 
+const NAV_JS = `<script>
+// 本站同时是 GitHub Pages 站点和本地应用里的 /docs。Pages 上 "/" 是用户主页不是工作台，
+// 所以"返回工作台"只在本地服务里出现。
+if (!/github\\.io$/i.test(location.hostname)) { const a = document.querySelector(".nav .home"); if (a) a.hidden = false; }
+</script>`;
+
+// 顶栏 + 那段显隐脚本永远成对出现，所以打包成一个模板给所有页面用。
+const TOP = `${NAV}\n${NAV_JS}`;
+
 const FOOT = `<footer class="foot">
   <div>
     <b>DAO3 编辑器复刻</b>
@@ -253,12 +285,62 @@ const FOOT = `<footer class="foot">
   </div>
   <div class="fl">
     <a href="./">介绍站</a>
+    <a href="documentation.html">文档中心</a>
     <a href="https://github.com/deepseekv5/dao3">源码仓库</a>
     <a href="https://github.com/deepseekv5/dao3/releases">下载</a>
     <a href="https://github.com/deepseekv5/dao3/issues">问题反馈</a>
   </div>
   <p class="disc">本页由 scripts/build-docs.mjs 从 docs/*.md 生成；要改内容请编辑 markdown 后重新运行 <code>node scripts/build-docs.mjs</code>。</p>
 </footer>`;
+
+// 常驻侧边栏的目录部分：文档中心 + 按分组排开的全部条目，当前页高亮。
+// 文档中心页与各篇正文页共用这个函数，所以侧边栏在任何一页都长得一样。
+function docListHtml(current) {
+  const title = new Map(DOCS_LIST.map(([f, t]) => [f, t]));
+  let out = `<nav class="doclist"><b>文档目录</b>`;
+  out += `<a${current === "documentation" ? ' class="on"' : ""} href="documentation.html">文档中心</a>`;
+  let last = null;
+  for (const [f, , group] of DOCS_LIST) {
+    if (group !== last) {
+      out += `<b class="grp">${esc(group)}</b>`;
+      last = group;
+    }
+    out += `<a${f === current ? ' class="on"' : ""} href="${f}.html">${esc(title.get(f))}</a>`;
+  }
+  return out + "</nav>";
+}
+
+// 摘要的唯一来源是介绍站首页的 .dc 卡片文案（不另写一套，免得两处各说各话）。
+function readDocCards(indexSrc) {
+  const map = new Map();
+  const re = /<a class="dc" href="([^"]+)"><b>([\s\S]*?)<\/b><span>([\s\S]*?)<\/span><\/a>/g;
+  for (let m; (m = re.exec(indexSrc)); ) map.set(m[1].replace(/\.html$/, ""), { title: m[2].trim(), summary: m[3].trim() });
+  return map;
+}
+
+function docSections(cards) {
+  const note = new Map(DOC_GROUPS.map(([, name, text]) => [name, text]));
+  let out = "";
+  let last = null;
+  for (const [file, title, group] of DOCS_LIST) {
+    const card = cards.get(file);
+    if (!card) {
+      throw new Error(`${file} 在 docs/index.src.html 里没有 .dc 卡片——文档中心的摘要就没处取，请加卡片或从 DOCS_LIST 删掉这篇`);
+    }
+    if (card.title !== title) {
+      throw new Error(`${file} 的标题两处不一致：DOCS_LIST="${title}" vs docs/index.src.html="${card.title}"`);
+    }
+    if (group !== last) {
+      if (last !== null) out += "    </div>\n";
+      out += `    <h2 id="${GROUP_IDS.get(group)}">${esc(group)}</h2>\n`;
+      out += `    <p>${esc(note.get(group))}</p>\n`;
+      out += `    <div class="docs">\n`;
+      last = group;
+    }
+    out += `      <a class="dc" href="${file}.html"><b>${esc(title)}</b><span>${card.summary}</span></a>\n`;
+  }
+  return out ? out + "    </div>\n" : "";
+}
 
 function page({ file, title, body, toc, prev, next }) {
   const tocHtml = toc.length
@@ -282,22 +364,15 @@ function page({ file, title, body, toc, prev, next }) {
 <link rel="stylesheet" href="site.css"/>
 </head>
 <body>
-${NAV}
-<script>
-// 本站同时是 GitHub Pages 站点和本地应用里的 /docs。Pages 上 "/" 是用户主页不是工作台，
-// 所以"返回工作台"只在本地服务里出现。
-if (!/github\\.io$/i.test(location.hostname)) { const a = document.querySelector(".nav .home"); if (a) a.hidden = false; }
-</script>
+${TOP}
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b>${DOCS_LIST.map(
-      ([f, t]) => `<a${f === file ? ' class="on"' : ""} href="${f}.html">${esc(t)}</a>`
-    ).join("")}</nav>
+    ${docListHtml(file)}
     ${tocHtml}
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/${file}.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
-    <p class="crumb"><a href="./">概览</a> / <a href="./#docs">文档</a> / <span>${esc(title)}</span></p>
+    <p class="crumb"><a href="./">概览</a> / <a href="documentation.html">文档中心</a> / <span>${esc(title)}</span></p>
     <h1>${esc(title)}</h1>
 ${body}
     ${pager}
@@ -314,13 +389,57 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf
 
 // index.src.html → index.html：下载区的三个链接里带版本号，
 // 手写一次就会在下一次发版后变成死链。占位符 + 构建期替换是唯一不会腐烂的写法。
-const src = path.join(DOCS, "index.src.html");
-if (fs.existsSync(src)) {
-  const html = fs.readFileSync(src, "utf8").replace(/\{\{VER\}\}/g, VERSION);
+const indexSrcPath = path.join(DOCS, "index.src.html");
+let indexSrc = "";
+if (fs.existsSync(indexSrcPath)) {
+  indexSrc = fs.readFileSync(indexSrcPath, "utf8");
+  const html = indexSrc.replace(/\{\{VER\}\}/g, VERSION);
   if (/\{\{VER\}\}/.test(html)) throw new Error("index.src.html 替换后仍残留 {{VER}}");
   fs.writeFileSync(path.join(DOCS, "index.html"), `<!-- Generated from index.src.html by scripts/build-docs.mjs (v${VERSION}) — do not edit. -->\n` + html);
   console.log(`index.src.html -> index.html  (v${VERSION})`);
 }
+
+// documentation.src.html → documentation.html：独立的文档中心落地页。
+// 侧边栏目录、分组卡片、卡片摘要全部由 DOCS_LIST + 介绍站卡片现场注入，
+// 这份页面手写只会和生成页跑偏；占位符缺失直接失败，不产出半套导航。
+const hubSrcPath = path.join(DOCS, "documentation.src.html");
+if (fs.existsSync(hubSrcPath)) {
+  if (!indexSrc) throw new Error("documentation.src.html 需要 index.src.html 提供各篇摘要");
+  const cards = readDocCards(indexSrc);
+  const body = () =>
+    fs
+      .readFileSync(hubSrcPath, "utf8")
+      .replace(/\{\{VER\}\}/g, VERSION)
+      .replace("{{NAV}}", () => TOP)
+      .replace("{{FOOT}}", () => FOOT)
+      .replace("{{DOC_COUNT}}", String(DOCS_LIST.length))
+      .replace("{{DOC_SECTIONS}}", () => docSections(cards));
+  const pre = body();
+  // 本页内容的目录从正文里扫 h2，分组改动时不用两处维护。
+  const items = [...pre.matchAll(/<h2 id="([^"]+)">([^<]+)<\/h2>/g)].map(
+    ([, id, text]) => `<a class="t2" href="#${id}">${text}</a>`
+  );
+  const tocHtml = items.length ? `<nav class="toc"><b>本页内容</b>${items.join("")}</nav>` : "";
+  // 侧边栏：缩进跟着 src 里的占位符走，换行时对齐 src 已有的层级而不是硬写 4 空格。
+  const srcText = fs.readFileSync(hubSrcPath, "utf8");
+  const indent = (srcText.match(/^([ \t]*)\{\{SIDEBAR\}\}\n/m) || [, "    "])[1] || "    ";
+  const sidebar = [
+    docListHtml("documentation"),
+    tocHtml,
+    `<a class="edit" href="https://github.com/deepseekv5/dao3/tree/main/docs">在 GitHub 查看 docs/</a>`,
+  ]
+    .filter(Boolean)
+    .join(`\n${indent}`);
+  const html = body().replace("{{SIDEBAR}}", () => sidebar);
+  const left = html.match(/\{\{[A-Z_]+\}\}/g);
+  if (left) throw new Error(`documentation.src.html 有未替换的占位符：${[...new Set(left)].join(", ")}`);
+  fs.writeFileSync(
+    path.join(DOCS, "documentation.html"),
+    `<!-- Generated from documentation.src.html by scripts/build-docs.mjs (v${VERSION}) — do not edit. -->\n` + html
+  );
+  console.log(`documentation.src.html -> documentation.html  (${DOCS_LIST.length} 篇 / ${DOC_GROUPS.length} 组)`);
+}
+
 for (let n = 0; n < DOCS_LIST.length; n++) {
   const [file, fallback] = DOCS_LIST[n];
   const src = path.join(DOCS, `${file}.md`);
