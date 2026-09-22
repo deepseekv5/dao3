@@ -10,16 +10,26 @@ npm run package -- /path/to/out       # 指定输出目录
 打包逻辑在 `scripts/build-portable.mjs`，是**白名单**而不是"排除一堆东西"。
 原因见下。
 
-## 为什么必须白名单：三类素材，只有两类能分发
+## 为什么必须白名单：素材分三种处置
 
-| 类别 | 内容 | 能否随包分发 |
+| 类别 | 内容 | 分发处置 |
 |---|---|---|
 | ① 本仓库代码 | `server.js` `start.mjs` `public/js` `public/css` `scripts` `test` `docs` | ✅ Apache-2.0 |
 | ② Apache-2.0 上游 | `block-id.json` `block-spec.json`（© 2026 神岛实验室）+ 由上游纹理**派生**的 `block-atlas.png` / `thumbnails/` | ✅ 保留 LICENSE 并声明派生关系 |
-| ③ 在线游戏内容 | 40 个官方音效 mp3、由 `.vb` 转换的赛道模型、官方地图数据块、本地存档 | ❌ 无任何再分发授权 |
+| ③ 在线游戏内容 | 40 个官方音效 mp3、由 `.vb` 转换的赛道模型、本地存档 | ❌ 不镜像，用自有权限按 CID 取回 |
+| ④ 官方赛车模板地图数据 | `official-project/racing-template.json.gz`（2.8MB，152 万格 / 199 实体） | ⚠️ **随包分发，但默认不落地** |
 
 ② 的完整上游仓库有 219MB，**不镜像**：只带构建真正需要的两个 JSON（268KB）。
 ③ 一律不进包，仓库只带 `official-project/cids.json` 这份 824 字节的哈希清单。
+
+④ 是仓库所有者做的决定，不是许可上的漏洞：模板著作权仍归 box3lab，不在任何开源许可之下，
+所以服务端**不会自动安装它**。首次打开工作台会弹一次确认，要求使用者声明"我有权获取并在本地
+使用这张地图，仅用于学习与兼容性研究"；确认后才 `copyFileSync` 成种子世界，决定记在
+`server/data/consent.json`，之后可在工作台「模板授权」改。**已经由用户改过的世界不会被模板覆盖**
+——只有带着 `meta.seedKind === "procedural"` 标记、从未被改动的程序化 demo 才会被替换。
+
+`check-distribution.mjs` 对这条是**双向**断言的：`.gz` 默认算越界，唯有这一个路径被显式放行；
+同时它又出现在"必需文件"清单里，哪天打包漏掉模板同样会红。
 
 `THIRD_PARTY_NOTICES.md` 把这张表写死在仓库里，`NOTICE` 要求再分发时必须一并保留。
 

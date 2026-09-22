@@ -17,16 +17,39 @@
  */
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PKG_VERSION = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version || "0"; }
+  catch { return "0"; }
+})();
 const PORT = Number(process.env.PORT || 5173);
 const HOST = process.env.HOST || "127.0.0.1";
 const PUBLIC = path.join(__dirname, "public");
 const DOCS = path.join(__dirname, "docs");
-const WORLDS = path.join(__dirname, "server", "data", "worlds");
+// ── 可写数据目录 ────────────────────────────────────────────────────────────
+// 不能假设「安装目录可写」。从 .dmg 挂载运行、装进 Program Files、放在只读网络盘上
+// 都是正常的用户行为，此时 mkdir 直接抛 ENOENT/EROFS，整个服务起不来。
+// 所以先试安装目录，不行就退到用户目录，并把实际位置打印出来（否则用户找不到自己存的图）。
+function writableDir(candidates) {
+  for (const dir of candidates) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const probe = path.join(dir, ".write-test");
+      fs.writeFileSync(probe, "");
+      fs.unlinkSync(probe);
+      return dir;
+    } catch { /* 换下一个候选 */ }
+  }
+  return null;
+}
+const HOME_DATA = path.join(os.homedir(), ".dao3-editor");
+const DATA_ROOT = writableDir([path.join(__dirname, "server", "data"), HOME_DATA]) || HOME_DATA;
+const WORLDS = path.join(DATA_ROOT, "worlds");
 fs.mkdirSync(WORLDS, { recursive: true });
 
 const MIME = {
@@ -51,8 +74,17 @@ const safeId = (id) => typeof id === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(id
 const worldPath = (id) => path.join(WORLDS, `${id}.json.gz`);
 
 // VOXA 模型文档（部件/骨骼/动画），按名字存 gzip JSON
-const MODELS = path.join(__dirname, "server", "data", "models");
+const MODELS = path.join(DATA_ROOT, "models");
 fs.mkdirSync(MODELS, { recursive: true });
+// 世界贴图/模型等上传件。安装目录只读时同样退到 DATA_ROOT，
+// 但读取时两处都要找（老包里的 public/assets/worlds 可能已有内容）。
+const ASSETS = path.join(DATA_ROOT, "assets");
+const ASSETS_IN_TREE = path.join(PUBLIC, "assets", "worlds");
+fs.mkdirSync(ASSETS, { recursive: true });
+const worldAssetDir = (id) => (fs.existsSync(path.join(ASSETS, id)) || !fs.existsSync(path.join(ASSETS_IN_TREE, id)))
+  ? path.join(ASSETS, id) : path.join(ASSETS_IN_TREE, id);
+const worldAssetExists = (id, rel = "") =>
+  fs.existsSync(path.join(ASSETS, id, rel)) || fs.existsSync(path.join(ASSETS_IN_TREE, id, rel));
 const safeModelName = (n) => typeof n === "string" && n.length > 0 && n.length <= 80 && !/[\\/\0]/.test(n) && !n.includes("..");
 const modelPath = (n) => path.join(MODELS, `${Buffer.from(String(n), "utf8").toString("hex").slice(0, 80)}.json.gz`);
 function readModel(name) {
@@ -128,7 +160,7 @@ function listWorlds() {
       entities: m.entities || 0, scripts: m.scripts || 0, zones: m.zones || 0,
       products: m.products || 0, ui: m.ui || 0,
       shape: m.shape || null, shapeArr: m.shapeArr || null,
-      cover: fs.existsSync(path.join(PUBLIC, "assets", "worlds", id, "cover.png")) ? 1 : 0,
+      cover: worldAssetExists(id, "cover.png") ? 1 : 0,
     };
   }).sort((a, b) => b.mtime - a.mtime);
 }
@@ -206,10 +238,55 @@ const DEFAULT_WORLD = {
 };
 
 /* 首次启动：若没有任何世界，则创建一个带 demo 地形的示例地图，
-   其 id 与线上编辑器链接一致，方便对照。 */
+   其 id 与线上编辑器链接一致，方便对照。
+
+   官方赛车模板（256×128×256 / 152 万格 / 199 实体）随包分发在
+   official-project/racing-template.json.gz，但**不会自动装**：它是 box3lab 的地图数据，
+   必须用户在应用内明确确认"我有权获取并使用它"之后才落地（见 /api/consent）。
+   没确认前跑的是下面这份程序化 demo 地形，功能一样可验证。 */
+const TEMPLATE_PAYLOAD = path.join(__dirname, "official-project", "racing-template.json.gz");
+const CONSENT_FILE = path.join(DATA_ROOT, "consent.json");
+const SEED_ID = "216d665d3ca92bd1b9a2";
+
+function readConsent() {
+  try { return JSON.parse(fs.readFileSync(CONSENT_FILE, "utf8")); } catch { return { racingTemplate: "unset" }; }
+}
+function writeConsent(obj) {
+  try { fs.writeFileSync(CONSENT_FILE, JSON.stringify(obj, null, 1)); } catch { /* 只读目录：记住失败即可，不影响启动 */ }
+  return obj;
+}
+/** 把随包分发的官方模板装成种子世界。
+ *  目标位已被程序化 demo 占着（同一个 id，因为要和线上编辑器链接对齐），
+ *  所以只在「那份 demo 没被用户改过」时才覆盖——改过的图绝不能被模板冲掉。 */
+function installRacingTemplate() {
+  if (!fs.existsSync(TEMPLATE_PAYLOAD)) return { ok: false, error: "包内没有 racing-template.json.gz" };
+  const dst = worldPath(SEED_ID);
+  if (fs.existsSync(dst)) {
+    if (!isUntouchedProceduralDemo(dst)) return { ok: true, already: true, occupied: true };
+    try { fs.unlinkSync(dst); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+  }
+  try {
+    fs.copyFileSync(TEMPLATE_PAYLOAD, dst);
+    worldMetaCache.delete(SEED_ID);
+    return { ok: true, installed: true };
+  } catch (e) { return { ok: false, error: String(e.message || e) }; }
+}
+/** 只读一次 gz 的 meta 判断是不是没动过的 demo；读不动就当改过，宁可不覆盖 */
+function isUntouchedProceduralDemo(file) {
+  try {
+    const j = JSON.parse(zlib.gunzipSync(fs.readFileSync(file)).toString());
+    return j.meta && j.meta.seedKind === "procedural";
+  } catch { return false; }
+}
+
 function ensureSeed() {
-  const seedId = "216d665d3ca92bd1b9a2";
+  const seedId = SEED_ID;
   if (fs.existsSync(worldPath(seedId))) return;
+  // 已确认过就装官方模板，不再造程序化 demo
+  if (readConsent().racingTemplate === "granted" && installRacingTemplate().ok) {
+    console.log(`seeded official racing template '${seedId}' (consented)`);
+    return;
+  }
   const X = 48, Y = 32, Z = 48;
   const indices = [], data = [], rot = [];
   const idOf = (n) => n; // block-id 数值
@@ -261,7 +338,7 @@ function ensureSeed() {
   const payload = {
     formatVersion: "unity", shape: [X, Y, Z], dir: [1, 1, 1],
     indices, data, rot,
-    meta: { name: "神岛示例世界", terrain: {}, sky: {}, created: Date.now() },
+    meta: { name: "神岛示例世界", terrain: {}, sky: {}, created: Date.now(), seedKind: "procedural" },
   };
   writeWorld(seedId, payload);
   console.log(`seeded demo world '${seedId}' with ${indices.length} blocks`);
@@ -278,6 +355,40 @@ const server = http.createServer((req, res) => {
     const parts = pathname.split("/").filter(Boolean); // ['api', ...]
     if (req.method === "GET" && parts[1] === "worlds") return json(res, 200, { worlds: listWorlds() });
     if (req.method === "GET" && parts[1] === "stats") return json(res, 200, apiStats());
+    // 身份指纹：启动器靠它判断端口上跑的是不是「我们自己的」上一个实例，
+    // 是才可以杀；不认识的一律不动，避免误杀用户别的开发服务。
+    if (req.method === "GET" && parts[1] === "whoami") {
+      return json(res, 200, { app: "dao3-editor-clone", version: PKG_VERSION, root: __dirname });
+    }
+    // 官方赛车模板的授权确认状态。模板随包分发，但只有用户在应用内明确同意后才装进世界库。
+    if (parts[1] === "consent") {
+      if (req.method === "GET") {
+        const c = readConsent();
+        const dst = worldPath(SEED_ID);
+        // 别拿文件大小猜是不是模板：改一次图就可能同宽。直接看 meta 里的来源标记。
+        const isTemplate = fs.existsSync(dst) && !isUntouchedProceduralDemo(dst)
+          && fs.statSync(dst).size === (fs.existsSync(TEMPLATE_PAYLOAD) ? fs.statSync(TEMPLATE_PAYLOAD).size : -1);
+        return json(res, 200, {
+          racingTemplate: c.racingTemplate || "unset",
+          available: fs.existsSync(TEMPLATE_PAYLOAD),
+          installed: isTemplate,
+        });
+      }
+      if (req.method === "POST" || req.method === "PUT") {
+        let body = "";
+        req.on("data", (ch) => { body += ch; if (body.length > 4096) req.destroy(); });
+        req.on("end", () => {
+          let granted = false;
+          try { granted = !!JSON.parse(body || "{}").racingTemplate; } catch { /* 视作拒绝 */ }
+          const next = writeConsent(Object.assign({}, readConsent(), { racingTemplate: granted ? "granted" : "declined" }));
+          const install = granted ? installRacingTemplate() : { ok: true, skipped: true };
+          if (!install.ok) return json(res, 400, { error: install.error, racingTemplate: next.racingTemplate });
+          // occupied 必须透出去：前端靠它区分"已装好"和"你有自己的图，我没动"
+          json(res, 200, { ok: true, racingTemplate: next.racingTemplate, installed: !!install.installed, already: !!install.already, occupied: !!install.occupied });
+        });
+        return;
+      }
+    }
     if (parts[1] === "world" && safeId(parts[2]) && parts[3] === "fork" && req.method === "POST") {
       const src = readWorld(parts[2]);
       if (!src) return json(res, 404, { error: "源世界不存在" });
@@ -289,11 +400,13 @@ const server = http.createServer((req, res) => {
       src.meta.created = Date.now();
       const size = writeWorld(dst, src);
       worldMetaCache.delete(dst);
-      const srcCover = path.join(PUBLIC, "assets", "worlds", parts[2], "cover.png");
+      const srcCover = path.join(worldAssetDir(parts[2]), "cover.png");
       if (fs.existsSync(srcCover)) {
-        const dir = path.join(PUBLIC, "assets", "worlds", dst);
-        fs.mkdirSync(dir, { recursive: true });
-        fs.copyFileSync(srcCover, path.join(dir, "cover.png"));
+        try {
+          const dir = worldAssetDir(dst);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.copyFileSync(srcCover, path.join(dir, "cover.png"));
+        } catch { /* 只读安装目录：没有封面不影响复制成功 */ }
       }
       return json(res, 200, { ok: true, id: dst, bytes: size });
     }
@@ -349,8 +462,8 @@ const server = http.createServer((req, res) => {
         const p = worldPath(id);
         if (fs.existsSync(p)) fs.unlinkSync(p);
         // 一并删除该世界的资产目录（如导入 zip 提取的模型）
-        const assetDir = path.join(PUBLIC, "assets", "worlds", id);
-        if (fs.existsSync(assetDir)) fs.rmSync(assetDir, { recursive: true, force: true });
+        for (const d of [path.join(ASSETS, id), path.join(ASSETS_IN_TREE, id)])
+          if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
         worldMetaCache.delete(id);
         return json(res, 200, { ok: true });
       }
@@ -365,9 +478,9 @@ const server = http.createServer((req, res) => {
       req.on("data", (c) => { chunks.push(c); total += c.length; if (total > 80 * 1024 * 1024) req.destroy(); });
       req.on("end", () => {
         try {
-          const dir = path.join(PUBLIC, "assets", "worlds", id, path.dirname(rel));
+          const dir = path.join(ASSETS, id, path.dirname(rel));
           fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(path.join(PUBLIC, "assets", "worlds", id, rel), Buffer.concat(chunks));
+          fs.writeFileSync(path.join(ASSETS, id, rel), Buffer.concat(chunks));
           json(res, 200, { ok: true, path: rel, bytes: total });
         } catch (e) { json(res, 400, { error: String(e.message || e) }); }
       });
@@ -415,6 +528,24 @@ const server = http.createServer((req, res) => {
   }
 
   // ---- static ----
+  // 世界资产可能被写到用户目录（安装目录只读时），但前端 URL 一直是 /assets/worlds/<id>/…，
+  // 所以这个前缀要能在 DATA_ROOT/assets 与仓库内 public/assets 两处都解析。
+  if (pathname.startsWith("/assets/worlds/")) {
+    const rel = decodeURIComponent(pathname.slice("/assets/worlds/".length));
+    if (!rel.includes("..")) {
+      for (const base of [ASSETS, ASSETS_IN_TREE]) {
+        const f = path.join(base, rel);
+        if (!f.startsWith(base)) continue;
+        if (fs.existsSync(f) && fs.statSync(f).isFile()) {
+          const e = path.extname(f).toLowerCase();
+          const h = { "Content-Type": MIME[e] || "application/octet-stream", "Cache-Control": "public, max-age=3600" };
+          fs.readFile(f, (err, buf) => { if (err) return send(res, 500, "read error"); send(res, 200, buf, h); });
+          return;
+        }
+      }
+      return send(res, 404, "not found");
+    }
+  }
   // 介绍站与开发文档在仓库的 docs/ 下（GitHub Pages 的发布目录），本地同源可读
   const fromDocs = pathname === "/docs" || pathname === "/docs/" || pathname.startsWith("/docs/");
   let filePath;
@@ -450,4 +581,10 @@ server.listen(PORT, HOST, () => {
   console.log(`  编辑器:  http://${HOST}:${PORT}/edit/216d665d3ca92bd1b9a2`);
   console.log(`  世界列表: http://${HOST}:${PORT}/api/worlds`);
   console.log(`  静态目录: ${PUBLIC}`);
+  // 从 .dmg / 只读位置运行时这里会指向用户目录，必须打印出来，否则用户找不到自己存的图
+  console.log(`  数据目录: ${DATA_ROOT}`);
+  if (DATA_ROOT !== path.join(__dirname, "server", "data")) {
+    console.log(`  ⚠ 当前所在位置不可写（多因直接从磁盘镜像或只读卷运行），地图已改存到上面这个目录。`);
+    console.log(`    想把地图保存在包内，请把整个文件夹复制到本地磁盘（如桌面）后再启动。`);
+  }
 });

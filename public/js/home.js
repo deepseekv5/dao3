@@ -333,3 +333,40 @@ document.addEventListener("keydown", (e) => {
 });
 syncFilters();
 refresh();
+
+/* ── 官方赛车模板的授权确认 ──────────────────────────────────────────────
+   模板随包分发，但服务端不会自动装：必须用户在这里明确确认后才落地。
+   未确认前用的是程序化示例地形，功能验证照样跑。 */
+async function consentState() {
+  try { return await fetch("/api/consent").then((r) => r.json()); } catch { return null; }
+}
+function showTplModal() { $("tplModal").classList.add("show"); }
+async function answerConsent(granted) {
+  const btn = granted ? $("tplAccept") : $("tplDecline");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/consent", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ racingTemplate: granted }),
+    }).then((x) => x.json());
+    $("tplModal").classList.remove("show");
+    if (r.installed) tip("已装「赛车模板」：199 个实体 / 152 万格");
+    else if (r.occupied) tip("你已改过示例世界，模板没有覆盖它（左侧「模板授权」可强制重装）");
+    else if (granted && !r.ok) tip("模板安装失败：" + (r.error || "未知原因"));
+    else tip("保持示例地形；随时可在左侧「模板授权」改主意");
+    refresh();
+  } finally { btn.disabled = false; }
+}
+$("tplAccept").onclick = () => answerConsent(true);
+$("tplDecline").onclick = () => answerConsent(false);
+$("wbTpl").onclick = async () => {
+  const s = await consentState();
+  if (!s || !s.available) return tip("本包里没有 racing-template.json.gz，无从安装");
+  showTplModal();
+};
+(async () => {
+  const s = await consentState();
+  if (!s) return;
+  // 只有"从没表过态"且模板确实在包里才打扰一次；已选过的不再弹
+  if (s.racingTemplate === "unset" && s.available) showTplModal();
+})();

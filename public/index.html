@@ -26,6 +26,7 @@
       <a href="/api/worlds" target="_blank" rel="noopener" title="世界 API"><span>{ }</span><i>API</i></a>
     </nav>
     <div class="wb-railfoot">
+      <button id="wbTpl" title="赛车模板授权：改主意可随时在这里重新选择" aria-label="模板授权">T</button>
       <button id="wbAbout" title="关于与免责" aria-label="关于">i</button>
     </div>
   </aside>
@@ -131,6 +132,28 @@
 </div>
 
 <div id="importTip" class="wb-tip" hidden></div>
+
+<!-- 官方赛车模板随包分发，但落地前必须让用户明确确认授权来源。
+     这不是"要不要用"的功能开关，而是把版权责任交回给使用者本人。 -->
+<div id="tplModal" class="wb-modal">
+  <div class="wb-mbox">
+    <h3>使用随包分发的「赛车模板」？</h3>
+    <p class="wb-mhint" style="margin:0 0 10px">
+      本包含有一份来自 dao3.fun（神奇代码岛）的官方地图数据
+      <b>「赛车模板」</b>（256×128×256 · 1,523,592 体素 · 199 个实体 · 2 个脚本）。
+      它的<b>著作权归 box3lab 及其权利人所有</b>，不属于本仓库代码的 Apache-2.0 授权范围。
+    </p>
+    <p class="wb-mhint" style="margin:0 0 10px">
+      选择「使用」即表示你确认：你<b>有权</b>获取并在本地使用该地图，且仅用于
+      学习与技术兼容性研究；不用于公开发布、商业分发或冒充官方产品。
+    </p>
+    <p class="wb-mhint" style="margin:0 0 10px">
+      选择「不使用」则保留程序化生成的示例地形，功能验证不受影响；
+      之后仍可在左侧「模板授权」里改主意。
+    </p>
+    <div class="wb-mbtns"><button id="tplDecline" class="wb-btn">不使用</button><button id="tplAccept" class="wb-btn primary">我已获授权，使用它</button></div>
+  </div>
+</div>
 
 <script type="module" src="/js/disclaimer.js"></script>
 <script type="module" src="/js/home.js"></script>

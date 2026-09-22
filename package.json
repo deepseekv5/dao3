@@ -31,7 +31,8 @@
     "package": "node scripts/build-portable.mjs",
     "installers": "node scripts/build-installers.mjs",
     "check:dist": "node scripts/check-distribution.mjs",
-    "fetch:official": "node scripts/fetch-official-project.mjs"
+    "fetch:official": "node scripts/fetch-official-project.mjs",
+    "test:pkg": "node test/packaging.mjs"
   },
   "files": [
     "server.js",
@@ -40,6 +41,7 @@
     "docs",
     "data",
     "official-project/cids.json",
+    "official-project/racing-template.json.gz",
     "public/index.html",
     "public/editor.html",
     "public/voxa.html",

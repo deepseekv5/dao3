@@ -1,11 +1,13 @@
 # ── 不可再分发的第三方内容 ──────────────────────────────────────────
-# 这些来自 dao3.fun 的内容服务（游戏素材与地图数据），版权归 box3lab 及其权利人，
-# 没有再分发授权。仓库只保留 official-project/cids.json 这份哈希清单，
-# 由使用者用自有权限执行 `npm run fetch:official` 自行取回。
+# 这些来自 dao3.fun 的内容服务（游戏素材与地图数据），版权归 box3lab 及其权利人。
+# 例外：赛车模板地图数据按仓库所有者的决定**随包分发**，但不在服务端自动落地——
+# 首次启动由用户在应用内明确确认"我有权使用"后才安装（见 server.js 的 /api/consent）。
+# 音效与赛道模型仍然排除，用 npm run fetch:official 按 CID 自行取回。
 public/data/assets/
 public/assets/
 official-project/*
 !official-project/cids.json
+!official-project/racing-template.json.gz
 server/data/
 
 # ── 上游参考仓库（Apache-2.0，但体积 200MB+，不镜像）─────────────────

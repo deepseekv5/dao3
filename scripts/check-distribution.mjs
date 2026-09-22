@@ -16,8 +16,11 @@ const BAD_EXT = [".mp3", ".glb", ".gltf", ".gz", ".wav", ".ogg", ".bin"];
 // 而顶层 vendor/ 是上游仓库自己的 clone（含 200MB+ 纹理），两者不能混为一谈。
 const BAD_ROOT = ["vendor/", "tmp/", "node_modules/", "server/data/", "official-project/racing-template/"];
 const BAD_ASSET = ["public/assets/", "public/data/assets/"];
+// 官方赛车模板地图数据：按仓库所有者的决定随包分发，但**必须**在应用内经用户确认后才落地。
+// 这是显式登记的例外，不是漏网——其它任何 .gz 一律仍算越界。
+const SHIPPED_MAP = "official-project/racing-template.json.gz";
 // cids.json 是 824B 的哈希索引，.gitkeep 是空占位目录——都不是素材本体
-const OK_OVERRIDE = (p) => p.endsWith("cids.json") || p.endsWith(".gitkeep");
+const OK_OVERRIDE = (p) => p.endsWith("cids.json") || p.endsWith(".gitkeep") || p === SHIPPED_MAP;
 
 const SECRET_RES = [
   /ghp_[A-Za-z0-9]{20,}/,
@@ -71,6 +74,8 @@ const REQUIRED = [
   "data/upstream/block-id.json", "data/upstream/block-spec.json", "data/upstream/LICENSE.Box3Blocks.txt",
   // 缺了它，fetch:official 在新克隆上直接退出——文档承诺的取回路径就是空的
   "official-project/cids.json",
+  // 反向断言：模板既然决定分发，丢了就该报错，而不是静默退回程序化 demo
+  "official-project/racing-template.json.gz",
   "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
   "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md",
 ];

@@ -59,8 +59,71 @@ async function freePort(preferred) {
       s.listen(0, "127.0.0.1", () => { const port = s.address().port; s.close(() => resolve(port)); });
     });
     if (await tryPort(p)) return p;
+    if (p === preferred && (await reclaimOurs(p)) && await tryPort(p)) {
+      console.log(`▸ 已停掉上一个 DAO3 实例，重新使用端口 ${p}`);
+      return p;
+    }
   }
   return 5173;
+}
+
+/** 端口上跑的是不是「我们自己的」DAO3 服务？是就把它停掉，把端口要回来。 */
+async function reclaimOurs(port) {
+  const who = await whoami(port);
+  if (!who || who.app !== "dao3-editor-clone") {
+    // 不认识的一律不动：端口上可能是用户另一个项目的 dev server，
+    // 静默 kill 掉是不可接受的。这里只告诉他被谁占了、我们让开。
+    console.log(`▸ 端口 ${port} 被另一个程序占用（不是 DAO3，不会去杀它），改用其他端口`);
+    console.log(`  想查是谁：lsof -nP -iTCP:${port} -sTCP:LISTEN   （Windows：netstat -ano | findstr :${port}）`);
+    return false;
+  }
+  const pids = pidsOnPort(port);
+  if (!pids.length) return false;
+  let killed = 0;
+  for (const pid of pids) {
+    try { process.kill(pid, "SIGTERM"); killed++; } catch { /* 已退出或无权限 */ }
+  }
+  if (!killed) return false;
+  // 给旧进程一点时间真正退出，否则紧接着的 tryPort 还是会失败
+  for (let i = 0; i < 25; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    if (await whoami(port) === null) return true;
+  }
+  for (const pid of pids) { try { process.kill(pid, "SIGKILL"); } catch {} }
+  await new Promise((r) => setTimeout(r, 400));
+  return (await whoami(port)) === null;
+}
+
+function whoami(port) {
+  return new Promise((resolve) => {
+    const req = http.get({ host: "127.0.0.1", port, path: "/api/whoami", timeout: 900 }, (r) => {
+      let body = "";
+      r.setEncoding("utf8");
+      r.on("data", (c) => { body += c; if (body.length > 65536) r.destroy(); });
+      r.on("end", () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    });
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => { req.destroy(); resolve(null); });
+  });
+}
+
+/** 查端口占用者的 PID。lsof 在 macOS/Linux 都有，Windows 退回 netstat。 */
+function pidsOnPort(port) {
+  const out = [];
+  const push = (s) => { for (const m of String(s).matchAll(/^\s*(\d+)\s*$/gm)) out.push(Number(m[1])); };
+  if (process.platform === "win32") {
+    const r = spawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8" });
+    for (const line of String(r.stdout || "").split("\n")) {
+      if (line.includes("LISTENING") && new RegExp(`[:.]${port}\\s`).test(line)) {
+        const pid = Number(line.trim().split(/\s+/).pop());
+        if (pid) out.push(pid);
+      }
+    }
+  } else {
+    const r = spawnSync("lsof", ["-nP", `-tiTCP:${port}`, "-sTCP:LISTEN"], { encoding: "utf8" });
+    for (const m of String(r.stdout || "").split("\n")) { const p = Number(m.trim()); if (p) out.push(p); }
+  }
+  return [...new Set(out)].filter((p) => p !== process.pid);
 }
 
 function lanIPs() {

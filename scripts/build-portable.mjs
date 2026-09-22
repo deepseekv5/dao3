@@ -47,8 +47,9 @@ const LICENSED_DATA = [
 // 已经构建好的图集产物（派生自 Apache 纹理，随包分发以免用户必须装 Unity 才能跑）
 const BUILT_DATA = ["public/data/block-atlas.json", "public/data/block-atlas.png"];
 // 官方地图的 CID 清单（824B 的哈希索引，不含任何素材本体）：供 fetch 脚本使用。
-// 仓库里就放在 fetch 脚本约定的路径，便携包不必再搬运改名。
-const MANIFEST_ONLY = ["official-project/cids.json"];
+// 赛车模板地图数据（2.8MB gz）按仓库所有者的决定随包分发，但服务端不自动装——
+// 必须用户在应用内确认授权后才 copy 进 server/data/worlds（见 server.js /api/consent）。
+const MANIFEST_ONLY = ["official-project/cids.json", "official-project/racing-template.json.gz"];
 // 明确排除、且要在报告里点名说明的东西——防止以后有人顺手加回来
 const DENY = [
   "vendor", "tmp", "official-project", "server/data", "node_modules",

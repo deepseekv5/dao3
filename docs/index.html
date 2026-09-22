@@ -236,11 +236,11 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
     </a>
   </div>
   <p class="note">
-    <b>三件安装包都不含 Node 运行时</b>，前置条件都是 Node 18+；也<b>不含</b>游戏素材本体
-    （音效、赛道模型、官方地图数据）。需要的话用自有权限执行 <code>npm run fetch:official</code>
-    按 CID 取回并校验——注意它按哈希恢复的是<b>元数据</b>（199 实体、官方 player/physics/environment、
-    40 个音频），<b>还原不了 152 万格的体素地形</b>（官方 chunk 是烘焙网格）。
-    要完整地图请用官方编辑器的「导出项目包 .zip」再导入。原因见
+    <b>三件安装包都不含 Node 运行时</b>，前置条件都是 Node 18+；也<b>不含</b>音效与赛道模型
+    （著作权归 box3lab，无再分发授权）。官方<b>赛车模板地图数据随包分发，但默认不启用</b>：
+    首次打开工作台会要求你确认自己有权在本地使用该地图，确认后才装进世界库；
+    拒绝则保留程序化示例地形，功能验证不受影响。音效可用自有权限执行
+    <code>npm run fetch:official</code> 按 CID 取回并校验。原因见
     <a href="dependencies.html">依赖清单</a>与
     <a href="https://github.com/deepseekv5/dao3/blob/main/THIRD_PARTY_NOTICES.md">素材授权</a>。
     每次发布前 <code>npm run check:dist</code> 会扫 git 树、npm tarball 与便携包三处，
@@ -262,7 +262,7 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
       <tr><td>Three.js</td><td>MIT · © 2010-2023 Three.js Authors</td><td class="yes">是（含原始声明）</td></tr>
       <tr><td>40 个官方音效 mp3</td><td>dao3.fun 内容服务 · <b>无再分发授权</b></td><td class="no">否</td></tr>
       <tr><td>赛道模型（.vb → gltf）</td><td>同上</td><td class="no">否</td></tr>
-      <tr><td>官方地图数据块</td><td>同上；仓库只带 824 字节的 CID 清单</td><td class="no">否</td></tr>
+      <tr><td>官方赛车模板地图数据</td><td>dao3.fun 内容服务 · 版权归 box3lab；随包分发但<b>默认不启用</b></td><td class="yes">是（需应用内确认授权）</td></tr>
       <tr><td><code>official-project/cids.json</code></td><td>纯哈希索引（13 条 CID），不含任何素材本体</td><td class="yes">是</td></tr>
     </tbody>
   </table>
