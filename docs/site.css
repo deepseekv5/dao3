@@ -20,6 +20,10 @@ body {
 }
 a { color: inherit; text-decoration: none; }
 code, pre { font-family: var(--mono); }
+/* 行内 code 里全是 cameraFreezedAxis、/api/world/<id>/asset 这类无空格长 token，
+   不给出断词点就会把整行顶出屏幕。等宽字体本身也更宽，手机上尤其明显。 */
+code { overflow-wrap: anywhere; word-break: break-word; }
+.doc-body a, .lede a, .note a { overflow-wrap: anywhere; }
 ::selection { background: rgba(252, 131, 8, .3); }
 
 /* ── 顶栏 ── */
@@ -121,7 +125,7 @@ section { margin: 0 0 66px; }
 .sc p { margin: 10px 0 0; font-size: 12px; color: var(--fg3); line-height: 1.65; }
 
 /* ── 表格 ── */
-.tbl-wrap { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.tbl-wrap { border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl thead th {
   text-align: left; padding: 10px 14px; background: var(--bg2); font-size: 11px; font-weight: 600;
@@ -173,16 +177,6 @@ section { margin: 0 0 66px; }
 .disc { margin: 16px 0 0; font-size: 11.5px; line-height: 1.75; color: var(--fg3); max-width: 780px; }
 
 /* ── 响应式 ── */
-@media (max-width: 940px) {
-  .hero { grid-template-columns: 1fr; gap: 26px; padding-top: 34px; }
-  .tour { grid-template-columns: 1fr; }
-  .tour figure.wide { grid-column: auto; }
-  .links { display: none; }
-  .nav { padding: 0 16px; }
-  main { padding: 0 16px 30px; }
-  .tbl td:first-child { white-space: normal; }
-}
-
 /* ══ 文档页（scripts/build-docs.mjs 生成） ══════════════════ */
 .doc {
   max-width: var(--maxw); margin: 0 auto; padding: 0 26px 56px;
@@ -256,12 +250,6 @@ section { margin: 0 0 66px; }
 .pager b { font-size: 13.5px; font-weight: 600; }
 .pager span { flex: 1 1 0; }
 
-@media (max-width: 940px) {
-  .doc { grid-template-columns: 1fr; gap: 0; padding: 0 16px 40px; }
-  .doc-side { position: static; max-height: none; overflow: visible; padding-top: 20px; }
-  .toc { display: none; }
-  .doc-body { padding-top: 4px; }
-}
 
 /* ── 返回工作台（仅本地服务显示） ── */
 .home {
@@ -271,4 +259,99 @@ section { margin: 0 0 66px; }
 .home:hover { color: var(--primary); border-color: rgba(252, 131, 8, .45); background: var(--bg4); }
 .home[hidden] { display: none; }
 .home + .gh { margin-left: 0; }
-@media (max-width: 940px) { .home { display: none; } }
+/* 不在窄屏藏 .home：手机上它往往是唯一的返回出口 */
+
+/* ══ 响应式：必须放在文件末尾 ══════════════════════════════
+   之前这些规则写在文件中部，而 .doc / .hero 的基础定义在后面，
+   同特异度下后来者胜，媒体查询等于没写——手机上 .doc 仍是 232px+1fr 两栏，
+   文档页因此横向溢出。全部移到末尾才真正生效。 */
+/* ── 平板 / 窄屏 ───────────────────────────────────────────── */
+@media (max-width: 940px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 26px; padding-top: 34px; }
+  .tour { grid-template-columns: minmax(0, 1fr); }
+  .tour figure.wide { grid-column: auto; }
+  .nav { padding: 0 14px; gap: 12px; }
+  main { padding: 0 16px 30px; }
+  .tbl td:first-child { white-space: normal; }
+  /* 必须 minmax(0,1fr)：写 1fr 时轨道最小宽度等于 min-content，
+     一张宽表格或一行长 code 就能把整条轨道顶破，页面随之横向溢出 */
+  .doc { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 16px 40px; }
+  .doc-side { position: static; max-height: none; overflow: visible; padding-top: 20px; }
+  .toc { display: none; }
+  .doc-body { padding-top: 4px; }
+}
+
+/* ── 手机 ────────────────────────────────────────────────────
+   原来这里只有一句 .links{display:none}，等于手机上完全没有导航。
+   改成可横向滑动的链接条：不占额外高度，又能一跳到位。 */
+@media (max-width: 700px) {
+  html { font-size: 15px; scroll-padding-top: 112px; }
+  .nav { flex-wrap: wrap; height: auto; min-height: 56px; padding: 8px 12px; row-gap: 4px; }
+  .brand b { font-size: 13.5px; }
+  .gh { margin-left: auto; height: 30px; padding: 0 10px; }
+  .links {
+    display: flex; order: 3; flex-basis: 100%; margin-left: 0;
+    overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    padding-bottom: 2px; -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
+            mask-image: linear-gradient(90deg, #000 88%, transparent);
+  }
+  .links::-webkit-scrollbar { display: none; }
+  .links a { padding: 7px 11px; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
+  .home { display: inline-flex; height: 30px; padding: 0 10px; font-size: 12px; }
+
+  .hero { padding: 26px 0 30px; gap: 22px; }
+  .hero h1 { font-size: 25px; letter-spacing: -.3px; line-height: 1.3; }
+  .kicker { font-size: 10px; letter-spacing: .8px; }
+  .lede { font-size: 13.5px; line-height: 1.8; }
+  .inst code { font-size: 11.5px; padding: 9px 11px; word-break: break-all; }
+  .cta { gap: 8px; }
+  .btn { flex: 1 1 100%; justify-content: center; padding: 12px 14px; min-height: 46px; }
+
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .st { padding: 12px 13px; }
+  .st b { font-size: 21px; }
+  .sec > h2 { font-size: 18px; }
+  .sec > .sub { font-size: 12.5px; }
+  .starts, .docs, .dl { grid-template-columns: minmax(0, 1fr); }
+  .tour img { aspect-ratio: 16 / 10; }
+
+  /* 表格在手机上横向滚动：靠 .tbl-wrap 的 overflow-x。
+     但 nowrap 会让表格的 min-content 宽度超过视口，反而把整页撑宽，
+     所以窄屏一律允许换行，只有真正很长的 token 才靠滚动。 */
+  .tbl { font-size: 12.5px; }
+  .tbl td, .tbl thead th { padding: 9px 11px; white-space: normal; }
+  .tbl td:first-child { white-space: normal; }
+  .tbl code { white-space: normal; }
+  .note { font-size: 12px; padding: 11px 13px; }
+  /* 代码块本身可横向滚动，但 .code 是 overflow:hidden 的圆角容器；
+     给 pre 明确的 max-width 才不会让长行把文档撑开 */
+  .code pre { max-width: 100%; }
+  blockquote, .doc-body blockquote { overflow-wrap: anywhere; }
+
+  .doc-body > h1 { font-size: 22px; }
+  .doc-body h2 { font-size: 17px; }
+  .doc-body p, .doc-body ul, .doc-body ol { font-size: 13.5px; line-height: 1.85; }
+  .code pre { padding: 12px 13px; }
+  .code code { font-size: 11.5px; }
+  .doclist { display: flex; flex-wrap: wrap; gap: 4px; }
+  .doclist a { border-left: none; border: 1px solid var(--line); border-radius: 20px; padding: 5px 11px; font-size: 12px; }
+  .doclist a.on { border-color: var(--primary); }
+  .doclist .grp { flex-basis: 100%; margin-top: 6px; }
+  .pager { flex-direction: column; }
+  .pager a.next { text-align: left; }
+  .crumb { font-size: 11px; }
+  .foot { padding: 22px 16px; }
+  .fl a { font-size: 13px; padding: 4px 0; }
+}
+
+/* 触屏设备：把 hover 才有的反馈改成常态，避免点上去没反应 */
+@media (hover: none) {
+  .tour figure:hover { transform: none; box-shadow: none; }
+  .dc:hover, .dlc:hover, .btn:hover { transform: none; }
+}
+
+/* 极窄屏（≤360px）：数字条退回单列，防止三字符换行 */
+@media (max-width: 360px) {
+  .stats { grid-template-columns: minmax(0, 1fr); }
+  .hero h1 { font-size: 22px; }
+}
