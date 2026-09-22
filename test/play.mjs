@@ -16,6 +16,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAY = path.join(ROOT, "play");
 const OUT = path.join(ROOT, "test", "out");
 const BASE_PATH = "/dao3play"; // Pages 项目站就是仓库根挂在 /<repo>/ 下
+const CE_PATH = "/dao3ce";     // 同一批文件，但 .gz 走传输层解压（见下面的服务器）
 
 const pw = await playwright();
 if (!pw) {
@@ -27,7 +28,10 @@ if (!fs.existsSync(path.join(PLAY, "index.html"))) {
   process.exit(1);
 }
 
-/* ---------------- 拟真静态服务器（只认 /dao3play/ 前缀） ---------------- */
+/* ---------------- 拟真静态服务器（只认 /dao3play/ 与 /dao3ce/ 前缀） ---------------- */
+// /dao3ce/ 与 /dao3play/ 服务同一批文件，唯一区别是给 .gz 打上
+// Content-Encoding: gzip —— 浏览器会替我们解掉那一层，JS 拿到的是纯 JSON。
+// Pages 前面的 CDN 完全可能这么干，而这条路径只有真机才测得到。
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -37,11 +41,12 @@ const MIME = {
 };
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || "/").split("?")[0]);
-  if (!url.startsWith(BASE_PATH + "/") && url !== BASE_PATH) {
+  const prefix = url.startsWith(CE_PATH + "/") || url === CE_PATH ? CE_PATH : BASE_PATH;
+  if (!url.startsWith(prefix + "/") && url !== prefix) {
     res.writeHead(404, { "content-type": "text/plain" });
     return res.end("outside the emulated project-page prefix");
   }
-  let rel = url.slice(BASE_PATH.length).replace(/^\/+/, "");
+  let rel = url.slice(prefix.length).replace(/^\/+/, "");
   if (rel === "" ) rel = "index.html";
   const abs = path.join(PLAY, rel);
   // 前缀剥完必须还在 play/ 里，否则 ../ 就能顺着绝对路径读仓库任意文件
@@ -52,10 +57,16 @@ const server = http.createServer((req, res) => {
   try { body = fs.readFileSync(abs); } catch {
     res.writeHead(404, { "content-type": "text/plain" }); return res.end("not found: " + rel);
   }
-  res.writeHead(200, {
+  const headers = {
     "content-type": MIME[path.extname(abs).toLowerCase()] || "application/octet-stream",
     "content-length": body.length,
-  });
+  };
+  if (prefix === CE_PATH && abs.endsWith(".json.gz")) {
+    // 声明成传输层编码：浏览器替我们解压，JS 侧拿到的首字节就不再是 1f 8b
+    headers["content-encoding"] = "gzip";
+    delete headers["content-length"];
+  }
+  res.writeHead(200, headers);
   res.end(body);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -278,6 +289,23 @@ ok("手机摇杆能驱动角色移动", movedTouch > 0.5, movedTouch.toFixed(2) 
 await mpage.screenshot({ path: path.join(OUT, "play-mobile-play.png") });
 ok("手机端零异常与零请求失败", merr.length === 0, merr.slice(0, 3).join(" | "));
 await mctx.close();
+
+/* ---------------- CDN 已替我们解压过 gzip 的那条路 ---------------- */
+// 这是唯一一个"本地默认配置下永远走不到"的分支：托管层给 .gz 打上
+// Content-Encoding: gzip 时，浏览器交出来的是纯 JSON，再喂 DecompressionStream
+// 会直接格式错、整页打不开。play.js 按首两字节判，所以必须真发一次这种响应。
+console.log("== 传输层已解压（Content-Encoding: gzip） ==");
+const cctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+const cpage = await cctx.newPage();
+const cerr = [];
+cpage.on("pageerror", (e) => cerr.push("pageerror: " + e.message));
+await cpage.goto(ORIGIN + CE_PATH + "/", { waitUntil: "domcontentloaded", timeout: 60000 });
+await cpage.waitForFunction(() => !!window.__play, null, { timeout: 180000 });
+const cFacts = await cpage.evaluate(() => ({ voxels: window.__play.voxels(), ents: window.__play.registryEntities() }));
+ok("被 CDN 解压过也照样跑得起来", cFacts.voxels > 1000000 && cFacts.ents === 199,
+   cFacts.voxels.toLocaleString("en") + " 格 / " + cFacts.ents + " 实体");
+ok("这条路径零未捕获异常", cerr.length === 0, cerr.slice(0, 2).join(" | "));
+await cctx.close();
 
 const total = fs.existsSync(PLAY) ? fs.readdirSync(PLAY).length : 0;
 console.log(`\n产物：play/（${total} 个顶层条目）  页面 ${PAGE}`);

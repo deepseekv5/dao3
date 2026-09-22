@@ -10,7 +10,6 @@ import { BlockAtlas } from "./atlas.js";
 import { VoxelWorld } from "./world.js";
 import { VoxelRenderer } from "./renderer.js";
 import { GameRuntime, logGameError } from "./game.js";
-import * as THREE from "../vendor/three/three.module.js";
 
 const WORLD_URL = "./world.json.gz";
 const ATLAS_BASE = "./data";
@@ -65,34 +64,48 @@ const isTouch = (window.matchMedia && matchMedia("(hover: none)").matches)
 document.documentElement.classList.toggle("touch-capable", isTouch);
 
 /* ---------------- 1. 地图下载（gzip JSON：2.8MB → 19MB） ---------------- */
+// 是否真的还需要解压，**按首两个字节判**而不是看 Content-Encoding 头：
+// Pages 前面的 CDN 有可能已经替我们解过一层，那时再把 gzip 帧喂给
+// DecompressionStream 会直接报格式错，整页打不开且本地永远复现不出来。
 async function loadWorldPayload() {
-  if (typeof DecompressionStream !== "function") {
-    throw new Error("这个浏览器不支持 DecompressionStream，无法解开随包发布的 .gz 地图（需 Chrome 80+ / Firefox 113+ / Safari 16.4+）。");
-  }
   const resp = await fetch(WORLD_URL);
   if (!resp.ok || !resp.body || !resp.body.getReader) {
     throw new Error("地图下载失败（HTTP " + resp.status + "）");
   }
   const total = Number(resp.headers.get("content-length")) || 0;
-  const gunzip = new DecompressionStream("gzip");
-  const textP = new Response(gunzip.readable).text();
   const reader = resp.body.getReader();
-  const sink = gunzip.writable.getWriter();
-  let got = 0, lastPaint = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    got += value.length;
-    sink.write(value).catch(() => {});
-    const now = performance.now();
-    if (now - lastPaint > 140) {
-      lastPaint = now;
-      const mb = (got / 1048576).toFixed(1) + " / " + (total ? (total / 1048576).toFixed(1) + " MB" : "? MB");
-      await say(6 + (total ? 30 * got / total : 15), "正在下载地图 " + mb);
-    }
+  const head = await reader.read();
+  if (head.done || !head.value || head.value.length < 2) throw new Error("地图文件是空的或被截断。");
+  const chunk = head.value;
+  const gzipped = chunk[0] === 0x1f && chunk[1] === 0x8b;
+  if (gzipped && typeof DecompressionStream !== "function") {
+    throw new Error("这个浏览器不支持 DecompressionStream，无法解开随包发布的 .gz 地图（需 Chrome 80+ / Firefox 113+ / Safari 16.4+）。");
   }
-  try { sink.close(); } catch {}
-  await say(38, "正在解压…");
+  const src = new ReadableStream({
+    start(c) {
+      c.enqueue(chunk);
+      reader.read().then(function pull(r) {
+        if (r.done) { c.close(); return; }
+        c.enqueue(r.value);
+        reader.read().then(pull, (e) => c.error(e));
+      }, (e) => c.error(e));
+    },
+  });
+  let got = 0, lastPaint = 0;
+  const counted = src.pipeThrough(new TransformStream({
+    transform(value, controller) {
+      got += value.length;
+      const now = performance.now();
+      if (now - lastPaint > 140) {
+        lastPaint = now;
+        const mb = (got / 1048576).toFixed(1) + " / " + (total ? (total / 1048576).toFixed(1) + " MB" : "? MB");
+        say(6 + (total ? 30 * got / total : 15), "正在下载地图 " + mb);
+      }
+      controller.enqueue(value);
+    },
+  }));
+  const textP = new Response(gzipped ? counted.pipeThrough(new DecompressionStream("gzip")) : counted).text();
+  await say(38, gzipped ? "正在解压…" : "正在读取…");
   const text = await textP;
   await say(44, "正在解析世界数据…");
   return JSON.parse(text);
@@ -217,13 +230,11 @@ async function boot_() {
   function startRun() {
     game.start({
       scripts: state.scripts || [],
-      // 音效与赛道模型因著作权未随包分发。 meshes 里按官方 meshNames 逐个登记一个**空节点**：
-      // 运行时找不到资产会退回橙色线框占位盒（编辑器里那是有用的告警），但公开演示里
-      // 199 个橙色方块只会让人以为页面坏了。空节点让实体退回"只有碰撞与逻辑"，
-      // 体素赛道本身照常渲染，脚本行为完全不变。
+      // 音效与赛道模型因著作权未随包分发：assets 留空，运行时对缺失素材走它自己的
+      // 既有分支（实体 → 橙色线框占位盒 + 控制台告警；声音 → 静默），
+      // 不预置 audioBase / meshes，也就不会发出任何对不存在文件的请求。
       assets: {
-        audio: {}, audioBase: "", audioNames: [],
-        meshes: Object.fromEntries((state.meta.meshNames || []).map((n) => [n, { object: new THREE.Group(), scale: 1 }])),
+        audio: {}, audioBase: "", audioNames: [], meshes: {},
         pictureNames: state.meta.pictureNames || [], lutNames: [], partNames: [],
       },
       player: playerMeta(),
