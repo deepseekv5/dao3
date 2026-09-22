@@ -31,7 +31,7 @@ const FILES = [
 // 目录：整棵复制（内容全部是我们自己的产物）
 const DIRS = [
   "public/js", "public/css", "public/img", "public/vendor", "public/data/thumbnails",
-  "scripts", "test", "docs",
+  "scripts", "test", "docs", "play-src",
 ];
 // 重命名复制：把上游的授权文件放到包内对应位置，避免"用了别人的东西却说不出来源"
 const RENAME = {
