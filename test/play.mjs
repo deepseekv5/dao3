@@ -69,9 +69,15 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, headers);
   res.end(body);
 });
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const ORIGIN = `http://127.0.0.1:${server.address().port}`;
-const PAGE = ORIGIN + BASE_PATH + "/";
+// LIVE=<线上地址> 时整套断言改跑线上站点：本地全绿不等于线上能跑，
+// Pages 的构建源、缓存与 CDN 的传输层编码都只在真实部署里才看得到。
+const LIVE = process.env.LIVE ? process.env.LIVE.replace(/\/+$/, "") + "/" : null;
+let ORIGIN = LIVE || "";
+if (!LIVE) {
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  ORIGIN = `http://127.0.0.1:${server.address().port}`;
+}
+const PAGE = LIVE || ORIGIN + BASE_PATH + "/";
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => {
@@ -293,7 +299,9 @@ await mctx.close();
 /* ---------------- CDN 已替我们解压过 gzip 的那条路 ---------------- */
 // 这是唯一一个"本地默认配置下永远走不到"的分支：托管层给 .gz 打上
 // Content-Encoding: gzip 时，浏览器交出来的是纯 JSON，再喂 DecompressionStream
-// 会直接格式错、整页打不开。play.js 按首两字节判，所以必须真发一次这种响应。
+// 会直接格式错、整页打不开。play.js 按首两字节判，所以必须真发一次这种响应
+// ——只能自己起服务器模拟，跑线上时这段没有可注入的传输层，跳过。
+if (!LIVE) {
 console.log("== 传输层已解压（Content-Encoding: gzip） ==");
 const cctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 const cpage = await cctx.newPage();
@@ -306,10 +314,11 @@ ok("被 CDN 解压过也照样跑得起来", cFacts.voxels > 1000000 && cFacts.e
    cFacts.voxels.toLocaleString("en") + " 格 / " + cFacts.ents + " 实体");
 ok("这条路径零未捕获异常", cerr.length === 0, cerr.slice(0, 2).join(" | "));
 await cctx.close();
+}
 
 const total = fs.existsSync(PLAY) ? fs.readdirSync(PLAY).length : 0;
-console.log(`\n产物：play/（${total} 个顶层条目）  页面 ${PAGE}`);
+console.log(`\n${LIVE ? "线上" : "产物"}：${PAGE}`);
 console.log(`${fail ? "FAIL" : "ok "}  ${pass} 条通过 / ${fail} 条失败`);
 await browser.close();
-server.close();
+if (server) server.close();
 process.exitCode = fail ? 1 : 0;

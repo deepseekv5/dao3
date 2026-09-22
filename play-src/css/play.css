@@ -77,13 +77,21 @@ html.touch-capable .pe-hint-touch{display:inline;color:var(--font-white-minor);f
 .end-btns .primary:hover{background:var(--primary-hover)}
 
 /* ---------- 触屏布局避让：摇杆/按钮压在左下角与右下角 ---------- */
-html.touch-capable #gameVitals{left:16px;bottom:auto;top:calc(var(--bbh) + 58px)}
-html.touch-capable #gameConsole{left:16px;right:16px;bottom:auto;top:calc(var(--bbh) + 58px);width:auto;max-height:34vh}
+/* 顶部只留一条紧凑 HUD：地图名 + 一行短操作提示，血条与状态各占一角，
+   再往下才是 #gameHint 的橙色说明条，互不重叠。 */
+html.touch-capable .pe-top{height:40px}
+html.touch-capable .pe-title{font-size:13px;white-space:nowrap;flex:0 0 auto}
+html.touch-capable .pe-hint-touch{font-size:10.5px;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis}
+html.touch-capable #gameVitals{left:14px;bottom:auto;top:calc(var(--bbh) + 46px)}
+html.touch-capable .pe-readout{top:calc(var(--bbh) + 46px);right:12px;gap:6px;font-size:10.5px}
+html.touch-capable #gameCoords{display:none}
+html.touch-capable #gameConsole{left:14px;right:14px;bottom:auto;top:calc(var(--bbh) + 96px);width:auto;max-height:32vh}
 html.touch-capable #gameChat{bottom:200px;max-width:52vw}
-html.touch-capable #gameHudSettings{bottom:200px;left:16px;right:16px;width:auto}
-html.touch-capable .pe-readout{bottom:auto;top:calc(var(--bbh) + 6px);right:12px}
-html.touch-capable #gameHint{top:calc(var(--bbh) + 46px);max-width:88vw;text-align:center}
+html.touch-capable #gameHudSettings{bottom:200px;left:14px;right:14px;width:auto}
+html.touch-capable #gameHint{top:calc(var(--bbh) + 100px);left:50%;right:auto;transform:translateX(-50%);max-width:84vw;text-align:center;white-space:normal}
 html.touch-capable #toast{bottom:200px;max-width:80vw;text-align:center}
+/* 中屏（平板 / 小笔记本）：桌面提示语必须省略而不是把停止按钮挤出去 */
+#playEntry .pe-hint{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* game.js 只在 (pointer:coarse) 命中时补 body.touch；这里按自己的判定兜一层 */
 html.touch-capable body.playing #touchUI,body.touch.playing #touchUI{display:block}
 #joyBase{bottom:max(56px,env(safe-area-inset-bottom));left:max(28px,env(safe-area-inset-left))}
