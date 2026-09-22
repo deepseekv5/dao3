@@ -126,14 +126,19 @@ npm i -g @deepseekv5/dao3-editor-clone       # 装成全局命令 dao3-editor
 `package.json` 的 `files` 里写一句 `"public"`，npm 就会把 `public/assets/` 整个吞进去——
 `files` 存在时 npm **不看 `.gitignore`**。这一条真的让 60 个未授权素材进了 tarball 候选。
 
-现在 `scripts/check-distribution.mjs` 一次扫三处，任何一处越界就退出码 1：
+现在 `scripts/check-distribution.mjs` 一次扫四处，任何一处越界就退出码 1：
 
 ```bash
 npm run check:dist
-# ok   git 跟踪的文件: 477 个文件 | 素材越界 0 | 疑似凭据 0
-# ok   npm tarball:   485 个文件 | 素材越界 0 | 疑似凭据 0
-# ok   便携包目录:     489 个文件 | 素材越界 0 | 疑似凭据 0
+# ok   git 跟踪的文件:      498 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   npm tarball:         492 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   便携包目录:          501 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   网页体验版 play/:     18 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
 ```
+
+第四个面是公开托管，尺度比前三处更严：只允许 `world.json.gz` 一个例外，
+第二份 `.gz` 都不许有（音频/模型压缩包也是 `.gz`），`assets/` 与 `audio/` 整块禁掉。
+详见 [网页体验版](playground.html)。
 
 规则一律**锚定到产物根**：顶层 `vendor/` 是上游仓库自己的 clone（禁止入库），
 而 `public/vendor/three/` 是随包分发的 MIT three.js——两者都叫 vendor，

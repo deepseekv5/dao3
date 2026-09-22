@@ -17,6 +17,7 @@
     <span><b>DAO3 编辑器复刻</b><i>开发文档</i></span>
   </a>
   <nav class="links">
+    <a class="play-link" href="https://deepseekv5.github.io/dao3play/" rel="noopener">在线体验</a>
     <a href="#top">概览</a>
     <a href="./#tour">界面</a>
     <a href="./#proof">验证</a>
@@ -38,7 +39,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 </script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a class="on" href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a class="on" href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
     <nav class="toc"><b>本页内容</b><a class="t2" href="#一随仓库分发的第三方代码">一、随仓库分发的第三方代码</a><a class="t2" href="#二node-内置模块服务端与构建脚本">二、Node 内置模块（服务端与构建脚本）</a><a class="t2" href="#三浏览器-web-api不是依赖但决定可用性">三、浏览器 Web API（不是依赖，但决定可用性）</a><a class="t2" href="#四测试期依赖不随包分发">四、测试期依赖（不随包分发）</a><a class="t2" href="#五上游参考仓库本地-clone不入库">五、上游参考仓库（本地 clone，不入库）</a><a class="t2" href="#六明确不使用的东西">六、明确不使用的东西</a><a class="t2" href="#相关">相关</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/dependencies.md">在 GitHub 编辑原文</a>
   </aside>
@@ -79,7 +80,7 @@ npm run build:atlas</code></pre></div>
 <ul class="lv-0"><li>没有 bundler：没有 webpack / vite / rollup / esbuild 配置，浏览器直接加载 ES module。</li><li>没有 <code>node_modules</code>：<code>npm install</code> 在本项目里是可选的，只为了装测试用的 playwright-core。</li><li>没有物理引擎（cannon / ammo / rapier）：碰撞是自己实现的 AABB + 子步推进， 理由见<a href="physics.html">物理与单位制</a>。</li><li>没有数据库：地图就是 <code>server/data/worlds/&lt;id&gt;.json.gz</code>，格式与官方 Unity 侧导出一致。</li><li>没有遥测：服务端不向任何外部主机发请求；取官方素材是显式的 <code>npm run fetch:official</code>。</li></ul>
 <h2 id="相关">相关</h2>
 <ul class="lv-0"><li><a href="packaging.html">便携包与发布</a> — 这些依赖如何被打进免安装包</li><li><a href="architecture.html">架构与数据流</a> — three.js 在本项目里被用到哪一层</li></ul>
-    <nav class="pager"><a href="packaging.html"><small>上一篇</small><b>便携包与发布</b></a><a class="next" href="credits.html"><small>下一篇</small><b>致谢</b></a></nav>
+    <nav class="pager"><a href="playground.html"><small>上一篇</small><b>网页体验版</b></a><a class="next" href="credits.html"><small>下一篇</small><b>致谢</b></a></nav>
   </article>
 </main>
 <footer class="foot">

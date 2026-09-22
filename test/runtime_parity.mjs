@@ -3,12 +3,12 @@
 // 运行：node test/runtime_parity.mjs   （需先 ./run.sh；可用 BASE=http://127.0.0.1:5174 覆盖地址）
 import fs from "node:fs";
 import zlib from "node:zlib";
-import { resolveChromium, chromeArgs, playwright } from "./browser.mjs";
+import { resolveChromium, chromeArgs, playwright, resolveBase } from "./browser.mjs";
 
 // playwright-core 不是本项目依赖（运行时零依赖是硬要求），测试自己可移植地找它，找不到就 SKIP
 const pw = await playwright();
 
-const BASE = process.env.BASE || "http://127.0.0.1:5174";
+const BASE = await resolveBase();
 const RACING_ID = "216d665d3ca92bd1b9a2";
 const OUT = new URL("./out/", import.meta.url);
 fs.mkdirSync(OUT.pathname, { recursive: true });
@@ -17,6 +17,7 @@ const home = process.env.HOME;
 const exe = resolveChromium();
 if (!exe) { console.log("SKIP  找不到可用的 Chromium：设置 CHROME=/path/to/chrome 后重试"); process.exit(0); }
 if (!pw) { console.log("SKIP  找不到 playwright-core：设 PLAYWRIGHT_MODULE=/path/to/playwright-core 或先 npm i -D playwright-core"); process.exit(0); }
+if (!BASE) { console.log("SKIP  没找到本项目在跑的本地服务：先 ./run.sh（或设 BASE=http://127.0.0.1:PORT）"); process.exit(0); }
 
 const browser = await pw.chromium.launch({ executablePath: exe, headless: true, args: chromeArgs() });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

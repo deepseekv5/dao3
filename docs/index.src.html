@@ -21,6 +21,7 @@
     <span><b>DAO3 编辑器复刻</b><i>本地独立兼容实现</i></span>
   </a>
   <nav class="links">
+    <a href="https://deepseekv5.github.io/dao3play/" class="play-link">在线体验</a>
     <a href="#tour">界面</a>
     <a href="#proof">验证</a>
     <a href="#start">上手</a>
@@ -59,7 +60,8 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
     </div>
     <p class="req">只需要 Node 18+，<b>不需要 npm install</b>——运行时只用 Node 内置模块。</p>
     <div class="cta">
-      <a class="btn primary" href="#download">下载便携包 <small>约 5 MB · 免安装</small></a>
+      <a class="btn primary" href="https://deepseekv5.github.io/dao3play/" rel="noopener">在线体验 <small>不下载 · 手机可玩 · 官方地图</small></a>
+      <a class="btn" href="#download">下载便携包 <small>约 5 MB · 免安装</small></a>
       <a class="btn" href="https://github.com/deepseekv5/dao3" rel="noopener">查看源码 <small>Apache-2.0</small></a>
     </div>
   </div>
@@ -197,6 +199,7 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
     <a class="dc" href="physics.html"><b>物理与单位制</b><span>为什么是格/tick；碰撞判据的官方依据；子步推进与自动踏步；相机不穿墙</span></a>
     <a class="dc" href="testing.html"><b>测试与验证</b><span>后台标签页没 rAF 怎么确定性地推 tick；夹具为什么不能依赖地图内容；测试不得写进默认地图</span></a>
     <a class="dc" href="packaging.html"><b>便携包与发布</b><span>白名单打包；三类素材的授权切分；按 CID 取回并校验</span></a>
+    <a class="dc" href="playground.html"><b>网页体验版</b><span>零服务端的 290 行装配层；import 闭包代替文件清单；公开镜像的授权尺度</span></a>
     <a class="dc" href="dependencies.html"><b>依赖清单</b><span>three.js r160 的 6 个 vendored 文件；Node 内置模块；上游 Apache 仓库；明确不用的东西</span></a>
     <a class="dc" href="credits.html"><b>致谢</b><span>公开类型声明为什么是兼容层的前提；与官方的关系；素材版权归属</span></a>
     <a class="dc" href="windows.html"><b>Windows 支持说明</b><span>已审计 / 已显式实现 / 未实机验证，三类结论分开写</span></a>
@@ -211,9 +214,12 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
 <!-- ── 下载 ─────────────────────────────────────────────── -->
 <section class="sec" id="download">
   <h2>下载</h2>
-  <p class="sub">同一份内容的四种拿法。三件安装包由 <code>.github/workflows/release.yml</code> 在打 tag 时产出，便携包 zip 保留不变。</p>
+  <p class="sub">同一份内容的五种拿法。最上面那件<b>不用下载</b>：官方赛车模板直接在浏览器里跑。三件安装包由 <code>.github/workflows/release.yml</code> 在打 tag 时产出，便携包 zip 保留不变。</p>
   <div class="dl">
-    <a class="dlc feat" href="https://github.com/deepseekv5/dao3/releases/latest">
+    <a class="dlc feat" href="https://deepseekv5.github.io/dao3play/" rel="noopener">
+      <b>网页体验版</b><span>零安装 · 手机也行 · 官方赛车模板 + 真实脚本执行，只能游玩不能编辑</span><em>直接开玩 →</em>
+    </a>
+    <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest">
       <b>便携包 zip</b><span>免安装 · 三端通用 · 解压即用 <code>DAO3-portable-v{{VER}}.zip</code></span><em>≈5 MB · Releases →</em>
     </a>
     <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest/download/DAO3-{{VER}}.dmg">
@@ -242,7 +248,10 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
     <code>npm run fetch:official</code> 按 CID 取回并校验。原因见
     <a href="dependencies.html">依赖清单</a>与
     <a href="https://github.com/deepseekv5/dao3/blob/main/THIRD_PARTY_NOTICES.md">素材授权</a>。
-    每次发布前 <code>npm run check:dist</code> 会扫 git 树、npm tarball 与便携包三处，
+    <b>网页体验版</b>是同一份地图数据的公开展示：静态托管没有服务端，装不了应用内那道确认，
+    所以改为首屏明示来源与版权、由访问者点「进入体验」；它只跑体素地形与脚本逻辑，
+    <b>同样不含</b>官方模型与音频。
+    每次发布前 <code>npm run check:dist</code> 会扫 git 树、npm tarball、便携包与网页体验版四处，
     素材越界、缺运行时必需文件或出现疑似凭据就直接失败。
   </p>
 </section>

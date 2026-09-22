@@ -10,6 +10,7 @@ dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的**本地独立
 | | |
 |---|---|
 | 在线文档 / 介绍站 | <https://deepseekv5.github.io/dao3/> · 文档中心 <https://deepseekv5.github.io/dao3/documentation.html> |
+| **网页体验版** | <https://deepseekv5.github.io/dao3play/> — 不装 Node、不下载包，浏览器里直接跑官方赛车模板（手机可玩） |
 | 运行时要求 | Node.js ≥ 18，**零第三方依赖**（只用 Node 内置模块） |
 | 授权 | Apache-2.0（代码）· 素材来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
 | 与官方关系 | 无任何隶属、授权或背书关系 |
@@ -85,9 +86,15 @@ node start.mjs --port=5173 --no-open
 
 ```bash
 npm test          # 77 条断言（需先起服务）
-npm run test:e2e  # 35 条端到端断言（免责声明门禁、建图、运行模式、每页返回主界面）
+npm run test:e2e  # 30 条端到端断言（免责声明门禁、建图、运行模式、每页返回主界面）
+npm run test:play # 31 条断言：网页体验版在拟真 Pages 子路径下的桌面 + 手机真浏览器回归
 npm run audit:api # 官方 API 面覆盖率
 ```
+
+两个浏览器套件都会**自己找本地服务在哪个端口**：`start.mjs` 首选 5173，
+被别的项目占用时会顺延（它只回收指纹匹配 `dao3-editor-clone` 的旧实例，绝不动别人的服务），
+所以写死端口会一路红——`test/browser.mjs` 的 `resolveBase()` 读 `run.out`
+再用 `/api/whoami` 确认是本项目才用。找不到就 SKIP，不是 FAIL。
 
 ---
 
@@ -184,6 +191,7 @@ docs/          介绍站、文档中心与开发文档（GitHub Pages 源）
 ```bash
 npm run build:atlas   # 重建方块图集（需先 clone 上游纹理，见文档）
 npm run build:docs    # docs/*.md -> docs/*.html（介绍站、文档中心与各篇正文页）
+npm run build:play    # play-src/ + 运行时 import 闭包 -> play/（网页体验版，见 docs/playground.md）
 npm run package       # 生成便携包
 ```
 

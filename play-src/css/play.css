@@ -1,0 +1,104 @@
+/* play.css — 在线体验版专属样式。
+   只覆盖三件事：品牌条、首屏（加载/失败/结束）、触屏布局的避让。
+   运行 HUD 的样式全部来自 editor.css，这里不重复定义。 */
+
+:root{--bbh:calc(32px + env(safe-area-inset-top))}
+
+/* ---------- 品牌条 ---------- */
+#brandbar{position:fixed;top:0;left:0;right:0;height:var(--bbh);display:flex;align-items:center;gap:8px;
+  padding:env(safe-area-inset-top) 12px 0;padding-right:max(12px,env(safe-area-inset-right));background:rgba(10,12,16,.86);
+  border-bottom:1px solid rgba(252,131,8,.35);z-index:300;font-size:12px;color:var(--font-white-minor);
+  overflow:hidden;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.bb-mark{display:inline-flex;width:20px;height:20px;flex:0 0 auto}
+.bb-name{color:#fff;font-size:12.5px;font-weight:600;letter-spacing:.02em;white-space:nowrap;flex:0 0 auto}
+.bb-sep{color:var(--grey3)}
+.bb-map{color:var(--primary);font-weight:600;white-space:nowrap}
+.bb-note{margin-left:6px;font-size:11px;color:#9aa4ae;white-space:nowrap}
+.bb-note b{color:#ffd9a8;font-weight:600}
+.bb-note-mini{display:none;font-size:11px;color:#9aa4ae;white-space:nowrap}
+.bb-links{margin-left:auto;display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.bb-links a{color:#e9eef3;text-decoration:none;font-size:11.5px;padding:4px 9px;border:1px solid var(--grey2);
+  border-radius:20px;white-space:nowrap;background:rgba(255,255,255,.04)}
+.bb-links a:hover{border-color:var(--primary);color:#fff;background:rgba(252,131,8,.16)}
+
+/* ---------- 让位给品牌条 ---------- */
+/* editor.css 给 #viewport 写了 inset:0 + height:100%，只挪 top 会让画布比窗口高出 32px，
+   这里必须同时把 bottom/height 收回来自适应，否则整页纵向溢出。 */
+#viewport{top:var(--bbh);bottom:0;height:auto;width:100%;touch-action:none;-webkit-user-select:none;user-select:none;display:block}
+#playEntry .pe-top{top:var(--bbh)}
+#gameHint{top:calc(var(--bbh) + 54px)}
+#nojs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;
+  font-size:14px;z-index:1100;padding:24px;text-align:center}
+
+/* 桌面只显桌面提示，触屏只显触屏提示（判定由 JS 落在 html 类上，不看 UA） */
+.pe-hint-touch{display:none}
+html.touch-capable .pe-hint{display:none}
+html.touch-capable .pe-hint-touch{display:inline;color:var(--font-white-minor);font-size:11px}
+
+/* ---------- 首屏 ---------- */
+#boot{position:fixed;inset:0;z-index:1000;background:radial-gradient(120% 90% at 50% 0%,#151a22 0%,#07080a 62%);
+  display:flex;align-items:center;justify-content:center;padding:20px}
+.boot-card{width:min(520px,100%);display:flex;flex-direction:column;align-items:center;text-align:center;color:var(--font-white)}
+.boot-logo{width:84px;height:84px;background:url('../img/arena.svg') center/contain no-repeat}
+.boot-title{font-size:26px;font-weight:700;letter-spacing:.02em;margin-top:10px}
+.boot-sub{font-size:12.5px;color:#9aa4ae;margin-top:6px;line-height:1.6}
+.boot-bar{width:260px;max-width:80%;height:8px;border:1px solid var(--primary);border-radius:20px;
+  margin:26px 0 10px;overflow:hidden;background:rgba(255,255,255,.05)}
+.boot-bar i{display:block;height:100%;width:0;background:var(--primary);border-radius:10px;transition:width .25s ease}
+.boot-status{display:flex;gap:10px;align-items:baseline;font-size:12.5px;color:#cfd6dd}
+.boot-status em{font-style:normal;font-variant-numeric:tabular-nums;color:var(--primary);font-weight:600;min-width:42px;text-align:right}
+.boot-limits{list-style:none;text-align:left;margin:22px auto 0;padding:14px 16px;max-width:440px;
+  background:rgba(255,255,255,.045);border:1px solid var(--grey2);border-radius:10px}
+.boot-limits li{font-size:11.8px;line-height:1.75;color:#a9b3bd;padding-left:14px;position:relative}
+.boot-limits li+li{margin-top:4px}
+.boot-limits li::before{content:"";position:absolute;left:0;top:9px;width:5px;height:5px;border-radius:50%;background:var(--grey3)}
+.boot-limits b{color:#ffd9a8;font-weight:600}
+#bootStart{margin-top:22px;padding:13px 34px;border-radius:26px;background:var(--primary);color:#fff;
+  font-size:15px;font-weight:600;box-shadow:0 4px 18px rgba(252,131,8,.45)}
+#bootStart:hover{background:var(--primary-hover)}
+#bootFail{margin-top:18px;padding:12px 16px;border:1px solid #7b3030;border-radius:10px;background:rgba(60,10,10,.5);
+  color:#ffbdbd;font-size:12.5px;line-height:1.8;max-width:440px;text-align:left}
+#bootFail b{color:#ff9b9b}
+#bootFail p+p{margin-top:6px}
+#boot.failed .boot-bar,#boot.failed .boot-limits{display:none}
+#boot.done{opacity:0;pointer-events:none;transition:opacity .45s ease}
+
+/* ---------- 一局结束 ---------- */
+#endPanel{position:fixed;inset:0;z-index:320;display:none;align-items:center;justify-content:center;
+  background:rgba(6,8,12,.72);backdrop-filter:blur(3px)}
+#endPanel.show{display:flex}
+.end-card{width:min(420px,90vw);background:var(--card);border:1px solid var(--grey2);border-radius:14px;padding:22px 22px 20px;text-align:center}
+.end-card b{font-size:16px;color:#fff}
+.end-card p{margin:10px 0 18px;font-size:12.5px;line-height:1.8;color:#a9b3bd}
+.end-btns{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
+.end-btns button,.end-btns a{padding:10px 20px;border-radius:22px;font-size:13px;text-decoration:none;color:#fff;
+  border:1px solid var(--grey2);background:rgba(255,255,255,.05)}
+.end-btns .primary{background:var(--primary);border-color:transparent;font-weight:600}
+.end-btns .primary:hover{background:var(--primary-hover)}
+
+/* ---------- 触屏布局避让：摇杆/按钮压在左下角与右下角 ---------- */
+html.touch-capable #gameVitals{left:16px;bottom:auto;top:calc(var(--bbh) + 58px)}
+html.touch-capable #gameConsole{left:16px;right:16px;bottom:auto;top:calc(var(--bbh) + 58px);width:auto;max-height:34vh}
+html.touch-capable #gameChat{bottom:200px;max-width:52vw}
+html.touch-capable #gameHudSettings{bottom:200px;left:16px;right:16px;width:auto}
+html.touch-capable .pe-readout{bottom:auto;top:calc(var(--bbh) + 6px);right:12px}
+html.touch-capable #gameHint{top:calc(var(--bbh) + 46px);max-width:88vw;text-align:center}
+html.touch-capable #toast{bottom:200px;max-width:80vw;text-align:center}
+/* game.js 只在 (pointer:coarse) 命中时补 body.touch；这里按自己的判定兜一层 */
+html.touch-capable body.playing #touchUI,body.touch.playing #touchUI{display:block}
+#joyBase{bottom:max(56px,env(safe-area-inset-bottom));left:max(28px,env(safe-area-inset-left))}
+#tbtns{bottom:max(54px,env(safe-area-inset-bottom));right:max(22px,env(safe-area-inset-right))}
+
+/* 窄屏（手机竖屏）：品牌条收成一个标记 + 名字 + 短说明，链接缩成短词 */
+@media (max-width:560px){
+  :root{--bbh:calc(30px + env(safe-area-inset-top))}
+  .bb-note,.bb-sep,.bb-map{display:none}
+  .bb-note-mini{display:inline}
+  .bb-name{font-size:11.5px}
+  .bb-links{gap:5px}
+  .bb-links a{padding:4px 7px;font-size:11px;flex:0 0 auto}
+  .boot-title{font-size:22px}
+}
+
+/* 无 WebGL 时首屏已经给出说明，不再显示空画布 */
+body.no-webgl #viewport{display:none}

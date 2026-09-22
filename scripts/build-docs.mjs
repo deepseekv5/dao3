@@ -21,6 +21,7 @@ const DOCS_LIST = [
   ["data-format", "数据格式", "内核"],
   ["physics", "物理与单位制", "内核"],
   ["packaging", "便携包与发布", "交付"],
+  ["playground", "网页体验版", "交付"],
   ["dependencies", "依赖清单", "交付"],
   ["credits", "致谢", "交付"],
   ["windows", "Windows 支持说明", "交付"],
@@ -254,6 +255,7 @@ const NAV = `<header class="nav">
     <span><b>DAO3 编辑器复刻</b><i>开发文档</i></span>
   </a>
   <nav class="links">
+    <a class="play-link" href="https://deepseekv5.github.io/dao3play/" rel="noopener">在线体验</a>
     <a href="#top">概览</a>
     <a href="./#tour">界面</a>
     <a href="./#proof">验证</a>

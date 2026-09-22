@@ -40,6 +40,9 @@ code { overflow-wrap: anywhere; word-break: break-word; }
 .links a { padding: 6px 11px; border-radius: 7px; font-size: 13px; color: var(--fg3); transition: .13s; }
 .links a:hover { color: var(--fg); background: rgba(255, 255, 255, .06); }
 .links a.on { color: var(--primary); background: var(--primary-dim); }
+/* 在线体验是本站唯一的"零成本动作"，导航里给它一个实心块 */
+.links a.play-link { color: #1a1000; background: var(--primary); font-weight: 600; }
+.links a.play-link:hover { color: #1a1000; background: var(--primary-hover); }
 .gh {
   margin-left: auto; display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px; border-radius: 8px;
   font-size: 12.5px; color: var(--fg2); background: var(--bg2); border: 1px solid var(--line); font-family: var(--mono);

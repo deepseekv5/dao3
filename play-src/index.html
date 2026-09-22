@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>赛车模板 · 在线体验版 · 神奇代码岛</title>
+<meta name="description" content="不装任何东西，直接在浏览器里跑官方「赛车模板」：脚本真实执行、20 TPS 物理、第三人称行走与驾驶。神奇代码岛（dao3.fun）编辑器与运行时的本地独立兼容实现。"/>
+<link rel="icon" type="image/svg+xml" href="./img/arena.svg"/>
+<!-- 路径全部相对：Pages 的仓库根子路径下（/dao3play/）绝对路径会 404 -->
+<link rel="stylesheet" href="./css/editor.css"/>
+<link rel="stylesheet" href="./css/play.css"/>
+<script type="importmap">{"imports":{"three":"./vendor/three/three.module.js"}}</script>
+<script>
+  // 与编辑器同一套错误汇聚：未捕获异常与资源加载失败都进 __errs，再刷进游戏控制台
+  window.__errs=[];
+  window.addEventListener("error",e=>window.__errs.push((e.message||e.error||("load-fail "+(e.target&&e.target.src||e.target&&e.target.href||"")))+" @ "+(e.filename||"")+":"+(e.lineno||"")),true);
+  window.addEventListener("unhandledrejection",e=>window.__errs.push("reject: "+(e.reason&&e.reason.stack||e.reason)));
+</script>
+</head>
+<body class="play-only">
+
+<!-- 品牌条：一条细窄顶栏，不遮挡视线 -->
+<div id="brandbar">
+  <span class="bb-mark"><svg viewBox="0 0 32 32" width="20" height="20"><path d="M16 2 3 9v14l13 7 13-7V9L16 2z" fill="none" stroke="#fc8308" stroke-width="2.4"/><path d="M16 9l5 12h-3l-1-2.4h-2L14 21h-3l5-12zm0 4.2-1 2.6h2l-1-2.6z" fill="#fc8308"/></svg></span>
+  <b class="bb-name">神奇代码岛</b>
+  <span class="bb-sep">/</span>
+  <span class="bb-map" id="bbMap">在线体验版</span>
+  <span class="bb-note"><b>体验版</b> 只能游玩，不能编辑与存档</span>
+  <span class="bb-note-mini">试玩版 · 不能编辑与存档</span>
+  <span class="bb-links">
+    <a href="https://deepseekv5.github.io/dao3/" target="_blank" rel="noopener">返回介绍站</a>
+    <a href="https://github.com/deepseekv5/dao3" target="_blank" rel="noopener">源码仓库</a>
+  </span>
+</div>
+
+<noscript><div id="nojs">这个体验版需要 JavaScript 与 WebGL，请更换浏览器后重试。</div></noscript>
+
+<!-- 渲染画布 -->
+<canvas id="viewport"></canvas>
+
+<!-- 首屏：加载进度（152 万格 + 2.8MB 压缩地图，慢网下必须有反馈） -->
+<div id="boot">
+  <div class="boot-card">
+    <div class="boot-logo"></div>
+    <h1 class="boot-title">赛车模板</h1>
+    <p class="boot-sub">官方地图 · 脚本真实执行 · 20 TPS 定步长物理 · 第三人称</p>
+    <div class="boot-bar"><i id="bootFill"></i></div>
+    <div class="boot-status"><span id="bootText">正在初始化…</span><em id="bootPct">0%</em></div>
+    <ul class="boot-limits">
+      <li><b>体验版</b>：只能游玩。不能编辑方块、不能改脚本、不能存档，也不含多人联机。</li>
+      <li>要动手改地图与脚本，请下载本地版（见上方「源码仓库」）。</li>
+      <li>本页跑的是<b>本仓库自行编写的兼容实现</b>，与 box3lab / 神奇代码岛官方无隶属或授权关系。</li>
+      <li>地图<b>体素数据</b>来自官方公开的「赛车模板」项目，著作权归 <b>box3lab</b> 及其权利人，
+          此处仅作接口兼容性展示；官方<b>音效与赛道模型</b>未随本页分发，
+          相关实体只保留碰撞与脚本逻辑。</li>
+    </ul>
+    <button id="bootStart" hidden>进入体验</button>
+    <div id="bootFail" hidden></div>
+  </div>
+</div>
+
+<!-- 一局结束后的面板（Esc 停止运行后出现） -->
+<div id="endPanel">
+  <div class="end-card">
+    <b>本次试跑已结束</b>
+    <p>体验版没有编辑器，也没有存档：重新进入就是官方脚本的初始状态。</p>
+    <div class="end-btns">
+      <button id="endRestart" class="primary">再来一次</button>
+      <a id="endHome" href="https://deepseekv5.github.io/dao3/" target="_blank" rel="noopener">返回介绍站</a>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- 运行模式 HUD（沿用编辑器的运行界面：准星 / 交互提示 / 头顶名牌 / 控制台） -->
+<div id="playEntry">
+  <div class="pe-top">
+    <span id="gameTitle" class="pe-title">赛车模板</span>
+    <span class="pe-hint" id="peHintDesktop">WASD 移动 · 点画面锁定视角（按住拖动也可转视角） · Shift 跑 · Space 跳 · E 交互 · V 切第一/第三人称 · ` 控制台 · Esc 结束</span>
+    <span class="pe-hint-touch" id="peHintTouch">左侧摇杆行走 · 右侧空白拖动转视角 · 按钮跳跃/交互/加速</span>
+    <div class="pe-actions">
+      <button id="gameStoreBtn" class="pe-store" title="商品列表（world.products()）" hidden>商店</button>
+      <button id="gameStop" class="play stop has-ico" title="结束本次试跑"><svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" fill="currentColor"/></svg></button>
+    </div>
+  </div>
+  <div id="gameStore" class="game-store"></div>
+  <div id="gameCross"></div>
+  <div id="gameLockHint">点击画面锁定视角（未锁定时可按住左/右键拖动转视角）· Esc 释放</div>
+  <div class="pe-readout"><span id="gameCoords" class="game-coords">X 0  Y 0  Z 0</span><span id="gameState" class="game-state">follow</span></div>
+  <div id="gameNameTags" class="name-tags"></div>
+  <div id="gameInteract"></div>
+  <div id="gameVitals">
+    <div class="vit-name"><b id="vitName">玩家</b><span id="vitState"></span></div>
+    <div class="vit-bar"><i id="vitHp"></i></div>
+  </div>
+  <div id="gameChatInput"><input id="chatBox" maxlength="200" placeholder="说点什么…（Enter 发送，Esc 取消）" spellcheck="false"/></div>
+  <div id="gameDead"><div class="dead-card"><b>你已倒下</b><button id="btnRespawn" class="playbtn">重生</button></div></div>
+  <div id="gameChat"></div>
+  <div id="gameDialog"></div>
+  <div id="gameConsole"></div>
+  <div id="gameHudSettings" class="game-hud-settings">
+    <div class="gh-row"><span>日照</span><input id="ghSun" type="range" min="0" max="4" step="0.05" value="2.4"><em>2.4</em></div>
+    <div class="gh-row"><span>环境光</span><input id="ghAmbient" type="range" min="0" max="1" step="0.01" value="0.22"><em>0.22</em></div>
+    <div class="gh-row"><span>曝光</span><input id="ghExposure" type="range" min="0.4" max="2" step="0.02" value="1.12"><em>1.12</em></div>
+    <div class="gh-row"><span>视场角</span><input id="ghFov" type="range" min="0.05" max="1.6" step="0.01" value="0.25"><em>0.25</em></div>
+    <div class="gh-row"><span>镜头距离</span><input id="ghDist" type="range" min="1" max="30" step="0.5" value="8.5"><em>8.5</em></div>
+    <div class="gh-btns">
+      <button id="ghDay" title="白天">白天</button>
+      <button id="ghNight" title="夜晚">夜晚</button>
+      <button id="ghSound" title="声音开关">声音:开</button>
+      <button id="ghConsole" title="调试控制台（反引号键）">控制台</button>
+    </div>
+  </div>
+</div>
+<div id="gameUIWidgets" class="uiw-host"></div>
+<div id="gameHint"></div>
+
+<!-- 触屏操控（game.js 里 _bindTouch 认领的就是这些 id） -->
+<div id="touchUI">
+  <div id="joyBase"><div id="joyKnob"></div></div>
+  <div id="tbtns">
+    <button id="tInteract" title="交互">E</button>
+    <button id="tActionA" title="动作 A">A</button>
+    <button id="tActionB" title="动作 B">B</button>
+    <button id="tFly" title="飞行">飞</button>
+    <button id="tCrouch" title="蹲下">蹲</button>
+    <button id="tRun" title="奔跑">跑</button>
+    <button id="tJump" title="跳跃 / 二段跳">跳</button>
+  </div>
+</div>
+
+<script type="module" src="./js/play.js"></script>
+</body>
+</html>

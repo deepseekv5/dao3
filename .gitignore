@@ -23,6 +23,10 @@ server/data/
 tmp/
 node_modules/
 test/out/
+# play/ 是 npm run build:play 的产物，推送到独立仓库 deepseekv5/dao3play 作 Pages 根。
+# 源码在 play-src/ 与 scripts/build-play.mjs，必须入库；产物本身不入库（否则 three.js
+# 会在 git 里存两份，且 2.8MB 地图 gz 每次改动都产生一份新 blob）。
+play/
 run.pid
 run.out
 *.log

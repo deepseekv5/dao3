@@ -103,3 +103,37 @@ export async function playwright() {
   } catch {}
   return null;
 }
+
+/* ---------------- 本地服务地址 ---------------- */
+// 5173 只是 start.mjs 的**首选**端口：它被别的项目占着时会顺延，
+// 所以写死 5173 的测试会对着别人的 dev server 跑，报出一堆莫名其妙的失败。
+// 这里改成读 run.out 里服务自己打印的地址，并用 /api/whoami 的指纹确认是本项目。
+const ROOT_DIR = path.resolve(here, "..");
+const APP_ID = "dao3-editor-clone";
+
+async function probe(origin) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 700);
+    const r = await fetch(origin + "/api/whoami", { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return false;
+    const j = await r.json().catch(() => null);
+    return !!j && j.app === APP_ID;
+  } catch { return false; }
+}
+
+export async function resolveBase() {
+  if (process.env.BASE) return process.env.BASE.replace(/\/+$/, "");
+  const cands = [];
+  try {
+    const out = fs.readFileSync(path.join(ROOT_DIR, "run.out"), "utf8");
+    for (const m of out.matchAll(/http:\/\/(127\.0\.0\.1|localhost):(\d+)/g)) cands.push(m[0]);
+  } catch {}
+  cands.push("http://127.0.0.1:5173");
+  for (let p = 5173; p <= 5185; p++) cands.push(`http://127.0.0.1:${p}`);
+  for (const c of cands) {
+    if (await probe(c)) return c;
+  }
+  return null;
+}

@@ -17,6 +17,7 @@
     <span><b>DAO3 编辑器复刻</b><i>开发文档</i></span>
   </a>
   <nav class="links">
+    <a class="play-link" href="https://deepseekv5.github.io/dao3play/" rel="noopener">在线体验</a>
     <a href="#top">概览</a>
     <a href="./#tour">界面</a>
     <a href="./#proof">验证</a>
@@ -38,7 +39,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 </script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a class="on" href="packaging.html">便携包与发布</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a class="on" href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
     <nav class="toc"><b>本页内容</b><a class="t2" href="#一条命令生成">一条命令生成</a><a class="t2" href="#为什么必须白名单素材分三种处置">为什么必须白名单：素材分三种处置</a><a class="t2" href="#③-怎么拿回来">③ 怎么拿回来</a><a class="t2" href="#没有-③-时的降级行为">没有 ③ 时的降级行为</a><a class="t2" href="#包内结构">包内结构</a><a class="t2" href="#打成-zip">打成 zip</a><a class="t2" href="#自检">自检</a><a class="t2" href="#便携包之上还有三件交付物">便携包之上还有三件交付物</a><a class="t2" href="#github-packages">GitHub Packages</a><a class="t2" href="#发布前的分发审计npm-run-check:dist">发布前的分发审计：npm run check:dist</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/packaging.md">在 GitHub 编辑原文</a>
   </aside>
@@ -94,11 +95,13 @@ npm i -g @deepseekv5/dao3-editor-clone       # 装成全局命令 dao3-editor</c
 <p><code>package.json</code> 的 <code>bin</code> 指向 <code>start.mjs</code>（带 <code>#!/usr/bin/env node</code> 且 <code>chmod +x</code>）。</p>
 <h2 id="发布前的分发审计npm-run-check:dist">发布前的分发审计：<code>npm run check:dist</code></h2>
 <p>以前这段是手写 <code>find</code> + <code>grep</code>，容易漏，而且<b>漏的方向很危险</b>： <code>package.json</code> 的 <code>files</code> 里写一句 <code>&quot;public&quot;</code>，npm 就会把 <code>public/assets/</code> 整个吞进去—— <code>files</code> 存在时 npm <b>不看 <code>.gitignore</code></b>。这一条真的让 60 个未授权素材进了 tarball 候选。</p>
-<p>现在 <code>scripts/check-distribution.mjs</code> 一次扫三处，任何一处越界就退出码 1：</p>
+<p>现在 <code>scripts/check-distribution.mjs</code> 一次扫四处，任何一处越界就退出码 1：</p>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run check:dist
-# ok   git 跟踪的文件: 477 个文件 | 素材越界 0 | 疑似凭据 0
-# ok   npm tarball:   485 个文件 | 素材越界 0 | 疑似凭据 0
-# ok   便携包目录:     489 个文件 | 素材越界 0 | 疑似凭据 0</code></pre></div>
+# ok   git 跟踪的文件:      498 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   npm tarball:         492 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   便携包目录:          501 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   网页体验版 play/:     18 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0</code></pre></div>
+<p>第四个面是公开托管，尺度比前三处更严：只允许 <code>world.json.gz</code> 一个例外， 第二份 <code>.gz</code> 都不许有（音频/模型压缩包也是 <code>.gz</code>），<code>assets/</code> 与 <code>audio/</code> 整块禁掉。 详见 <a href="playground.html">网页体验版</a>。</p>
 <p>规则一律<b>锚定到产物根</b>：顶层 <code>vendor/</code> 是上游仓库自己的 clone（禁止入库）， 而 <code>public/vendor/three/</code> 是随包分发的 MIT three.js——两者都叫 vendor， 用子串匹配会误报，用前缀匹配才对。</p>
 <p>工作流的 <code>portable</code> job 会跑同一个脚本，所以&quot;本地查过&quot;和&quot;发出去的东西&quot;是同一份判据。</p>
 <p>发布前建议跑一遍：</p>
@@ -106,7 +109,7 @@ npm i -g @deepseekv5/dao3-editor-clone       # 装成全局命令 dao3-editor</c
 npm run package                  # 便携包 + zip
 npm run installers               # .dmg（macOS 上）+ dao3.iss
 npm run check:dist               # 三处分发面一起审</code></pre></div>
-    <nav class="pager"><a href="physics.html"><small>上一篇</small><b>物理与单位制</b></a><a class="next" href="dependencies.html"><small>下一篇</small><b>依赖清单</b></a></nav>
+    <nav class="pager"><a href="physics.html"><small>上一篇</small><b>物理与单位制</b></a><a class="next" href="playground.html"><small>下一篇</small><b>网页体验版</b></a></nav>
   </article>
 </main>
 <footer class="foot">

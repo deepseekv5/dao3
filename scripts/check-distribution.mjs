@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // check-distribution.mjs — 发布前的最后一道闸：任何"可对外分发"的产物都不许带
-// 未授权素材或凭据。便携包 zip、npm tarball、以及仓库工作树本身，三处一起查。
+// 未授权素材或凭据。便携包、npm tarball、仓库工作树，以及公开托管的网页体验版
+// play/，四处一起查。
 //
 // 为什么需要它：package.json 的 files 里写一句 "public" 就会把 public/assets
 // 整个吞进去，而 npm **不看 .gitignore**（files 存在时）。这类泄漏静默无声。
@@ -28,25 +29,28 @@ const SECRET_RES = [
   /eyJ[A-Za-z0-9_-]{25,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, // JWT
 ];
 
-function inspect(label, files, readFn) {
+function inspect(label, files, readFn, opts = {}) {
+  const badExt = opts.badExt || BAD_EXT;
+  const allowed = opts.allowed || OK_OVERRIDE;
+  const required = opts.required || REQUIRED;
   const leaks = [];
   for (const f of files) {
     const norm = f.replace(/\\/g, "/");
-    if (OK_OVERRIDE(norm)) continue;
-    if (BAD_ROOT.some((d) => norm.startsWith(d))) leaks.push({ f: norm, why: "顶层目录" });
-    else if (BAD_ASSET.some((d) => norm.startsWith(d))) leaks.push({ f: norm, why: "素材目录" });
-    else if (BAD_EXT.some((e) => norm.endsWith(e))) leaks.push({ f: norm, why: "扩展名" });
+    if (allowed(norm)) continue;
+    if ((opts.badRoot || BAD_ROOT).some((d) => norm.startsWith(d))) leaks.push({ f: norm, why: "顶层目录" });
+    else if ((opts.badAsset || BAD_ASSET).some((d) => norm.startsWith(d))) leaks.push({ f: norm, why: "素材目录" });
+    else if (badExt.some((e) => norm.endsWith(e))) leaks.push({ f: norm, why: "扩展名" });
   }
   const secrets = [];
   for (const f of files) {
     const norm = f.replace(/\\/g, "/");
-    if (/\.(png|jpg|jpeg|webp|gif|ico|atlas|woff2?)$/i.test(norm)) continue;
+    if (/\.(png|jpg|jpeg|webp|gif|ico|atlas|woff2?|gz)$/i.test(norm)) continue;
     let text = "";
     try { text = readFn(norm); } catch { continue; }
     if (!text || text.length > 4_000_000) continue;
     for (const re of SECRET_RES) if (re.test(text)) { secrets.push(norm); break; }
   }
-  return { label, files: files.length, leaks, secrets, missing: missingFrom(files) };
+  return { label, files: files.length, leaks, secrets, missing: missingFrom(files, required) };
 }
 
 function walk(dir, base = dir) {
@@ -79,9 +83,9 @@ const REQUIRED = [
   "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
   "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md",
 ];
-const missingFrom = (files) => {
+const missingFrom = (files, required = REQUIRED) => {
   const set = new Set(files.map((f) => f.replace(/\\/g, "/")));
-  return REQUIRED.filter((r) => !set.has(r));
+  return required.filter((r) => !set.has(r));
 };
 
 // 1) 工作树里被 git 跟踪的文件
@@ -109,6 +113,29 @@ try {
 const PKG = path.resolve(ROOT, "..", "DAO3-便携包");
 if (fs.existsSync(PKG)) {
   reports.push(inspect("便携包目录", walk(PKG), (f) => fs.readFileSync(path.join(PKG, f), "utf8")));
+}
+
+// 4) 网页体验版 play/。它和前三处不一样：不是"发给朋友"，而是**公开镜像**，
+//    任何人都能访问，所以尺度要更严——只允许那一份地图数据作为例外，
+//    连 .gz 都不许有第二份（音频/模型压缩包也是 .gz）。
+const PLAY = path.join(ROOT, "play");
+if (fs.existsSync(PLAY)) {
+  const PLAY_MAP = "world.json.gz";
+  reports.push(inspect("网页体验版 play/", walk(PLAY), (f) => fs.readFileSync(path.join(PLAY, f), "utf8"), {
+    badExt: [".mp3", ".glb", ".gltf", ".gz", ".wav", ".ogg", ".bin", ".zip"],
+    badRoot: [],
+    badAsset: ["assets/", "audio/"],
+    allowed: (p) => p === PLAY_MAP || p.endsWith(".gitkeep"),
+    required: [
+      "index.html", ".nojekyll",
+      "js/play.js", "js/game.js", "js/gapi.js", "js/clientui.js",
+      "js/renderer.js", "js/world.js", "js/atlas.js",
+      "css/play.css", "css/editor.css",
+      "vendor/three/three.module.js", "vendor/three/OrbitControls.js", "vendor/three/LICENSE",
+      "data/block-atlas.json", "data/block-atlas.png",
+      PLAY_MAP,
+    ],
+  }));
 }
 
 let bad = 0;

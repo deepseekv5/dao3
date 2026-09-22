@@ -2,11 +2,13 @@
 // 运行：node test/e2e.mjs
 import fs from "fs";
 import { fileURLToPath } from "url";
-import { resolveChromium, chromeArgs, playwright } from "./browser.mjs";
+import { resolveChromium, chromeArgs, playwright, resolveBase } from "./browser.mjs";
 const pw = await playwright();
 if (!pw) { console.log("SKIP  找不到 playwright-core：设 PLAYWRIGHT_MODULE=/path/to/playwright-core 或先 npm i -D playwright-core"); process.exit(0); }
 
-const EDITOR_URL = (process.env.BASE || "http://127.0.0.1:5173") + "/edit/216d665d3ca92bd1b9a2";
+const BASE = await resolveBase();
+if (!BASE) { console.log("SKIP  没找到本项目在跑的本地服务：先 ./run.sh（或设 BASE=http://127.0.0.1:PORT）"); process.exit(0); }
+const EDITOR_URL = BASE + "/edit/216d665d3ca92bd1b9a2";
 // 中文目录名用 fileURLToPath 解码，避免 URL.pathname 的百分号编码
 const OUT = fileURLToPath(new URL("./out/", import.meta.url));
 fs.mkdirSync(OUT, { recursive: true });
@@ -167,7 +169,7 @@ if (await page.locator("#gameStop").isVisible().catch(() => false)) {
   await page.waitForTimeout(600);
 }
 console.log("== 返回主界面：每个页面都要出得去 ==");
-const HOME = (process.env.BASE || "http://127.0.0.1:5173") + "/";
+const HOME = BASE + "/";
 // 编辑器：顶栏按钮，且未保存的改动必须先落盘
 await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => !document.getElementById("loading"), { timeout: 60000 });
@@ -189,7 +191,7 @@ ok("返回前脏状态已存盘（世界 API 仍读得到 199 实体）",
   }));
 
 // VOXA：品牌位与菜单都要能回
-await page.goto((process.env.BASE || "http://127.0.0.1:5173") + "/voxa", { waitUntil: "domcontentloaded" });
+await page.goto(BASE + "/voxa", { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(2000);
 ok("VOXA 品牌位是返回链接", await page.locator("a.vx-brand[href='/']").isVisible());
 await page.click("#vxMenu");
@@ -200,7 +202,7 @@ await page.waitForURL(HOME, { timeout: 15000 });
 ok("VOXA 可返回工作台", page.url() === HOME, page.url());
 
 // 文档站：本地服务里要露出返回入口
-await page.goto((process.env.BASE || "http://127.0.0.1:5173") + "/docs/", { waitUntil: "load" });
+await page.goto(BASE + "/docs/", { waitUntil: "load" });
 await page.waitForTimeout(800);
 ok("文档站有返回工作台且本地可见", await page.locator(".nav .home").isVisible());
 await page.click(".nav .home");
