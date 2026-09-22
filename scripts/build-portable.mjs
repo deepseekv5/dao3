@@ -50,6 +50,8 @@ const BUILT_DATA = ["public/data/block-atlas.json", "public/data/block-atlas.png
 // 赛车模板地图数据（2.8MB gz）按仓库所有者的决定随包分发，但服务端不自动装——
 // 必须用户在应用内确认授权后才 copy 进 server/data/worlds（见 server.js /api/consent）。
 const MANIFEST_ONLY = ["official-project/cids.json", "official-project/racing-template.json.gz"];
+// 官方素材包是整目录随包（20 模型 + 41 音频，约 3.7MB），和地图数据一样要应用内确认才放行
+const BUNDLE_DIRS = ["official-project/racing-assets"];
 // 明确排除、且要在报告里点名说明的东西——防止以后有人顺手加回来
 const DENY = [
   "vendor", "tmp", "official-project", "server/data", "node_modules",
@@ -114,6 +116,12 @@ for (const [s, d] of Object.entries(RENAME)) if (copyFile(s, d)) copied++;
 for (const f of LICENSED_DATA) if (copyFile(f, f)) copied++;
 for (const f of BUILT_DATA) if (copyFile(f, f)) copied++;
 for (const f of MANIFEST_ONLY) if (copyFile(f, f)) copied++;
+for (const d of BUNDLE_DIRS) {
+  if (!fs.existsSync(path.join(ROOT, d))) throw new Error(`缺少 ${d}/，便携包不该在没有官方模型与音效的情况下发布`);
+  const n = copyTree(d);
+  if (!n) throw new Error(`${d}/ 里一个文件都没有`);
+  copied += n;
+}
 
 const stamp = new Date().toISOString();
 fs.writeFileSync(path.join(OUT, "VERSION"), [

@@ -334,26 +334,43 @@ document.addEventListener("keydown", (e) => {
 syncFilters();
 refresh();
 
-/* ── 官方赛车模板的授权确认 ──────────────────────────────────────────────
-   模板随包分发，但服务端不会自动装：必须用户在这里明确确认后才落地。
+/* ── 官方素材的授权确认 ──────────────────────────────────────────────
+   地图数据、赛道模型、音效都随包分发，但服务端不会自动装、也不会自动放行：
+   必须用户在这里明确确认后才落地（见 server.js 的 /api/consent 与 gatedAsset）。
    未确认前用的是程序化示例地形，功能验证照样跑。 */
 async function consentState() {
   try { return await fetch("/api/consent").then((r) => r.json()); } catch { return null; }
 }
-function showTplModal() { $("tplModal").classList.add("show"); }
+const mb = (n) => (n / 1048576).toFixed(2) + " MB";
+/** 把包内实际内容写进确认框。写死数字会和包脱节，那样这个框就变成一份"看着对"的假文案。 */
+function fillScope(s) {
+  const b = s.bundle || {};
+  const map = $("tplScopeMap");
+  if (map) map.textContent = s.available ? "「赛车模板」· 1,523,592 体素 · 199 个实体 · 2 个脚本" : "本包里没有 racing-template.json.gz";
+  const mo = $("tplScopeModels");
+  if (mo) mo.textContent = b.模型 && b.模型.count ? `${b.模型.count} 个 .gltf · ${mb(b.模型.bytes)}` : "本包里没有";
+  const au = $("tplScopeAudio");
+  if (au) au.textContent = b.音效 && b.音效.count ? `${b.音效.count} 个音频 · ${mb(b.音效.bytes)}` : "本包里没有";
+}
+function showTplModal(s) {
+  fillScope(s || {});
+  $("tplModal").classList.add("show");
+}
 async function answerConsent(granted) {
   const btn = granted ? $("tplAccept") : $("tplDecline");
   btn.disabled = true;
   try {
+    // 一次确认覆盖两项：授权依据是同一条"我有权在本地使用官方内容"，
+    // 拆成两个框只会让人连点两次同样的同意。
     const r = await fetch("/api/consent", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ racingTemplate: granted }),
+      body: JSON.stringify({ racingTemplate: granted, racingAssets: granted }),
     }).then((x) => x.json());
     $("tplModal").classList.remove("show");
-    if (r.installed) tip("已装「赛车模板」：199 个实体 / 152 万格");
-    else if (r.occupied) tip("你已改过示例世界，模板没有覆盖它（左侧「模板授权」可强制重装）");
-    else if (granted && !r.ok) tip("模板安装失败：" + (r.error || "未知原因"));
-    else tip("保持示例地形；随时可在左侧「模板授权」改主意");
+    if (granted && !r.ok) tip("授权失败：" + (r.error || "未知原因"));
+    else if (r.installed) tip("已装「赛车模板」，并放行包内官方模型与音效");
+    else if (r.occupied) tip("你已改过示例世界，模板没有覆盖它；官方模型与音效已放行");
+    else tip(granted ? "已放行官方模型与音效" : "保持示例地形与无素材状态；随时可在左侧「官方素材授权」改主意");
     refresh();
   } finally { btn.disabled = false; }
 }
@@ -361,12 +378,15 @@ $("tplAccept").onclick = () => answerConsent(true);
 $("tplDecline").onclick = () => answerConsent(false);
 $("wbTpl").onclick = async () => {
   const s = await consentState();
-  if (!s || !s.available) return tip("本包里没有 racing-template.json.gz，无从安装");
-  showTplModal();
+  if (!s) return tip("读不到授权状态：本地服务没在跑？");
+  if (!s.available && !s.assetsAvailable) return tip("本包里没有 racing-template.json.gz，也没有 racing-assets/，无从安装");
+  showTplModal(s);
 };
 (async () => {
   const s = await consentState();
   if (!s) return;
-  // 只有"从没表过态"且模板确实在包里才打扰一次；已选过的不再弹
-  if (s.racingTemplate === "unset" && s.available) showTplModal();
+  // 只有"从没表过态"且包内确实有东西才打扰一次；已选过的不再弹。
+  // 旧的 racingTemplate 决定不沿用给新素材：新内容要重新确认。
+  const pending = (s.racingTemplate === "unset" && s.available) || s.racingAssets !== "granted" && s.racingAssets !== "declined";
+  if (pending && (s.available || s.assetsAvailable)) showTplModal(s);
 })();

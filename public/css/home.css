@@ -232,6 +232,14 @@ tr:hover .wb-acts, td:hover .wb-acts { opacity: 1; }
 .wb-mgrid input:focus, .wb-mgrid select:focus { border-color: rgba(252, 131, 8, .55); }
 .wb-mhint { margin: 12px 0 14px; font-size: 11px; line-height: 1.65; color: var(--fg3); }
 .wb-mbtns { display: flex; justify-content: flex-end; gap: 8px; }
+/* 授权范围清单：三项各自成行，体积现场填。放在响应式块之前——
+   同优先级下后写的规则会赢，写在末尾会让窄屏覆盖失效。 */
+.wb-tplscope { margin: 0 0 12px; padding: 9px 12px; list-style: none;
+  border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.03); }
+.wb-tplscope li { display: flex; align-items: baseline; gap: 9px; padding: 3px 0; font-size: 11.5px; }
+.wb-tplscope li + li { border-top: 1px dashed var(--line); }
+.wb-tplscope b { flex: 0 0 5.2em; color: var(--primary); font-weight: 600; }
+.wb-tplscope span { color: var(--fg3); font-variant-numeric: tabular-nums; }
 
 /* ---------------- toast ---------------- */
 .wb-tip {

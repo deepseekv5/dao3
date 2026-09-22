@@ -20,8 +20,14 @@ const BAD_ASSET = ["public/assets/", "public/data/assets/"];
 // 官方赛车模板地图数据：按仓库所有者的决定随包分发，但**必须**在应用内经用户确认后才落地。
 // 这是显式登记的例外，不是漏网——其它任何 .gz 一律仍算越界。
 const SHIPPED_MAP = "official-project/racing-template.json.gz";
+// 官方赛道模型与音效：同样是仓库所有者的分发决定，同样要应用内确认才放行
+// （server.js 的 gatedAsset 在未确认时对这两个前缀直接 403）。
+// 例外只开这一个目录：public/assets 与 public/data/assets 仍然是运行时产物位置，
+// 里面出现任何 .mp3/.gltf 依旧算越界，防止"顺手把别处的素材也带上"。
+const SHIPPED_ASSETS = "official-project/racing-assets/";
 // cids.json 是 824B 的哈希索引，.gitkeep 是空占位目录——都不是素材本体
-const OK_OVERRIDE = (p) => p.endsWith("cids.json") || p.endsWith(".gitkeep") || p === SHIPPED_MAP;
+const OK_OVERRIDE = (p) => p.endsWith("cids.json") || p.endsWith(".gitkeep")
+  || p === SHIPPED_MAP || p.startsWith(SHIPPED_ASSETS);
 
 const SECRET_RES = [
   /ghp_[A-Za-z0-9]{20,}/,
@@ -80,6 +86,10 @@ const REQUIRED = [
   "official-project/cids.json",
   // 反向断言：模板既然决定分发，丢了就该报错，而不是静默退回程序化 demo
   "official-project/racing-template.json.gz",
+  // 官方素材包同理：丢了它，确认框里那两项会变成"本包里没有"，
+  // 而文档与界面都承诺了随包分发
+  "official-project/racing-assets/models/方格.gltf",
+  "official-project/racing-assets/audio/index.json",
   // 体验版的源。play/ 是产物且不入库，所以这三件丢了就等于 build:play 在
   // 使用者手里直接失败——而文档教的就是这条命令。
   "play-src/index.html", "play-src/js/play.js", "play-src/css/play.css",
@@ -125,19 +135,26 @@ if (fs.existsSync(PKG)) {
 const PLAY = path.join(ROOT, "play");
 if (fs.existsSync(PLAY)) {
   const PLAY_MAP = "world.json.gz";
+  // 体验版是静态站，没有服务端那道 403 闸门，确认点改成首屏那张卡：
+  // 它列明来源、著作权与"点进入即表示你确认有权使用"。所以素材可以随包，
+  // 但**只许**这两个目录，其它任何音频/模型文件仍然一律越界。
+  const PLAY_ALLOWED = ["world.json.gz", "assets/models/", "assets/audio/"];
   reports.push(inspect("网页体验版 play/", walk(PLAY), (f) => fs.readFileSync(path.join(PLAY, f), "utf8"), {
     badExt: [".mp3", ".glb", ".gltf", ".gz", ".wav", ".ogg", ".bin", ".zip"],
     badRoot: [],
-    badAsset: ["assets/", "audio/"],
-    allowed: (p) => p === PLAY_MAP || p.endsWith(".gitkeep"),
+    badAsset: ["assets/"],
+    allowed: (p) => p === PLAY_MAP || p.endsWith(".gitkeep") || PLAY_ALLOWED.some((d) => p.startsWith(d)),
     required: [
       "index.html", ".nojekyll",
       "js/play.js", "js/game.js", "js/gapi.js", "js/clientui.js",
       "js/renderer.js", "js/world.js", "js/atlas.js",
       "css/play.css", "css/editor.css",
-      "vendor/three/three.module.js", "vendor/three/OrbitControls.js", "vendor/three/LICENSE",
+      "vendor/three/three.module.js", "vendor/three/OrbitControls.js",
+      "vendor/three/GLTFLoader.js", "vendor/utils/BufferGeometryUtils.js", "vendor/three/LICENSE",
       "data/block-atlas.json", "data/block-atlas.png",
       PLAY_MAP,
+      // 素材包整体在场：少了 models 体验版就退回一片橙色线框，少了 audio 音效全哑
+      "assets/models/方格.gltf", "assets/audio/index.json",
     ],
   }));
 }

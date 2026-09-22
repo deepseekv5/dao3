@@ -248,6 +248,39 @@ const TEMPLATE_PAYLOAD = path.join(__dirname, "official-project", "racing-templa
 const CONSENT_FILE = path.join(DATA_ROOT, "consent.json");
 const SEED_ID = "216d665d3ca92bd1b9a2";
 
+/* 官方赛道模型与音效：随包分发在 official-project/racing-assets/ 下，
+   但和地图数据一样**默认不放行**——必须用户在应用内确认过授权，服务端才让这两个前缀通过。
+   闸门做在服务端而不是只藏个按钮：素材本体在仓库里，前端只要拿到 URL 就能取，
+   唯一的真约束是这个请求必须由服务端点头。 */
+const ASSET_BUNDLE = path.join(__dirname, "official-project", "racing-assets");
+const GATED_ASSETS = [
+  { prefix: "/assets/racing/models/", dir: path.join(ASSET_BUNDLE, "models"), kind: "模型" },
+  { prefix: "/data/assets/audio/", dir: path.join(ASSET_BUNDLE, "audio"), kind: "音效" },
+];
+function bundleStat() {
+  const out = {};
+  for (const g of GATED_ASSETS) {
+    try {
+      const files = fs.readdirSync(g.dir).filter((f) => fs.statSync(path.join(g.dir, f)).isFile());
+      out[g.kind] = { count: files.length, bytes: files.reduce((s, f) => s + fs.statSync(path.join(g.dir, f)).size, 0) };
+    } catch { out[g.kind] = { count: 0, bytes: 0 }; }
+  }
+  return out;
+}
+/** 命中受闸门保护的素材前缀则返回 {file, group}，否则 null。
+ *  文件名必须落在 bundle 目录内：decodeURIComponent 之后可以带 ../，不挡就是任意文件读。 */
+function gatedAsset(pathname) {
+  for (const g of GATED_ASSETS) {
+    if (!pathname.startsWith(g.prefix)) continue;
+    const rel = decodeURIComponent(pathname.slice(g.prefix.length));
+    if (!rel || rel.includes("\0") || rel.includes("..")) return { blocked: "bad name" };
+    const abs = path.resolve(g.dir, rel);
+    if (!abs.startsWith(path.resolve(g.dir) + path.sep)) return { blocked: "escapes bundle" };
+    return { file: abs, group: g };
+  }
+  return null;
+}
+
 function readConsent() {
   try { return JSON.parse(fs.readFileSync(CONSENT_FILE, "utf8")); } catch { return { racingTemplate: "unset" }; }
 }
@@ -360,7 +393,8 @@ const server = http.createServer((req, res) => {
     if (req.method === "GET" && parts[1] === "whoami") {
       return json(res, 200, { app: "dao3-editor-clone", version: PKG_VERSION, root: __dirname });
     }
-    // 官方赛车模板的授权确认状态。模板随包分发，但只有用户在应用内明确同意后才装进世界库。
+    // 官方素材的授权确认状态。地图、模型、音效都随包分发，但只有用户在应用内
+    // 明确同意后才落地/放行。两项分开记：新素材需要重新表态，不能沿用旧决定。
     if (parts[1] === "consent") {
       if (req.method === "GET") {
         const c = readConsent();
@@ -368,9 +402,13 @@ const server = http.createServer((req, res) => {
         // 别拿文件大小猜是不是模板：改一次图就可能同宽。直接看 meta 里的来源标记。
         const isTemplate = fs.existsSync(dst) && !isUntouchedProceduralDemo(dst)
           && fs.statSync(dst).size === (fs.existsSync(TEMPLATE_PAYLOAD) ? fs.statSync(TEMPLATE_PAYLOAD).size : -1);
+        const bundle = bundleStat();
         return json(res, 200, {
           racingTemplate: c.racingTemplate || "unset",
+          racingAssets: c.racingAssets || "unset",
           available: fs.existsSync(TEMPLATE_PAYLOAD),
+          assetsAvailable: bundle.模型.count > 0 && bundle.音效.count > 0,
+          bundle,
           installed: isTemplate,
         });
       }
@@ -378,13 +416,21 @@ const server = http.createServer((req, res) => {
         let body = "";
         req.on("data", (ch) => { body += ch; if (body.length > 4096) req.destroy(); });
         req.on("end", () => {
-          let granted = false;
-          try { granted = !!JSON.parse(body || "{}").racingTemplate; } catch { /* 视作拒绝 */ }
-          const next = writeConsent(Object.assign({}, readConsent(), { racingTemplate: granted ? "granted" : "declined" }));
-          const install = granted ? installRacingTemplate() : { ok: true, skipped: true };
+          let reqBody = {};
+          try { reqBody = JSON.parse(body || "{}") || {}; } catch { /* 视作拒绝 */ }
+          // 只认显式给出的键：不带 racingAssets 的老前端不会顺手把素材也授了
+          const patch = {};
+          if ("racingTemplate" in reqBody) patch.racingTemplate = reqBody.racingTemplate ? "granted" : "declined";
+          if ("racingAssets" in reqBody) patch.racingAssets = reqBody.racingAssets ? "granted" : "declined";
+          const next = writeConsent(Object.assign({}, readConsent(), patch));
+          const install = patch.racingTemplate === "granted" ? installRacingTemplate() : { ok: true, skipped: true };
           if (!install.ok) return json(res, 400, { error: install.error, racingTemplate: next.racingTemplate });
           // occupied 必须透出去：前端靠它区分"已装好"和"你有自己的图，我没动"
-          json(res, 200, { ok: true, racingTemplate: next.racingTemplate, installed: !!install.installed, already: !!install.already, occupied: !!install.occupied });
+          json(res, 200, {
+            ok: true,
+            racingTemplate: next.racingTemplate, racingAssets: next.racingAssets || "unset",
+            installed: !!install.installed, already: !!install.already, occupied: !!install.occupied,
+          });
         });
         return;
       }
@@ -528,6 +574,25 @@ const server = http.createServer((req, res) => {
   }
 
   // ---- static ----
+  // 官方素材包：未确认授权前一律 403，并说明为什么（404 会让人以为包坏了）
+  const gated = gatedAsset(pathname);
+  if (gated) {
+    if (gated.blocked) return send(res, 400, "bad asset name");
+    if (readConsent().racingAssets !== "granted") {
+      return json(res, 403, {
+        error: "official-assets-not-consented",
+        need: "racingAssets",
+        hint: "这些官方模型与音效随包分发，但只有在应用内确认授权后服务端才放行。打开工作台首页的确认框，或左侧「官方素材授权」。",
+      });
+    }
+    if (!fs.existsSync(gated.file) || !fs.statSync(gated.file).isFile()) return send(res, 404, "not found");
+    const e = path.extname(gated.file).toLowerCase();
+    fs.readFile(gated.file, (err, buf) => {
+      if (err) return send(res, 500, "read error");
+      send(res, 200, buf, { "Content-Type": MIME[e] || "application/octet-stream", "Cache-Control": "public, max-age=3600" });
+    });
+    return;
+  }
   // 世界资产可能被写到用户目录（安装目录只读时），但前端 URL 一直是 /assets/worlds/<id>/…，
   // 所以这个前缀要能在 DATA_ROOT/assets 与仓库内 public/assets 两处都解析。
   if (pathname.startsWith("/assets/worlds/")) {

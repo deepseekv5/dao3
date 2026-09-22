@@ -209,7 +209,8 @@ function updateCoords(pick) {
 /* ---- 保存 / 加载 ---- */
 // 官方只有一张实体表：场景模型与玩法实体统一按 entitiesTree 扁平 schema 写出
 function collectEntities() {
-  return (state.models || []).filter((m) => m.object).map((m) => {
+  const placed = (state.models || []).filter((m) => m.object);
+  const out = placed.map((m) => {
     const o = m.object, q = o.quaternion, s = o.scale;
     m.pos = [o.position.x, o.position.y, o.position.z];
     return {
@@ -225,7 +226,17 @@ function collectEntities() {
       meshInvisible: m.hidden === true,
       anchorOffset: m.anchorOffset ? [m.anchorOffset.x, m.anchorOffset.y, m.anchorOffset.z] : null,
     };
-  }).concat((state.entities || []).filter((d) => !d.mesh));
+  });
+  // 带 mesh 的实体正常会变成上面的场景模型；但只要资产没取到（未授权、404、解析失败）
+  // 它就落不进 state.models。按"!d.mesh"过滤会让这批实体在保存时被静默清零——
+  // 素材读不到不该变成地图数据丢失。所以改成"没被任何已放置模型代表"就原样留回来。
+  const covered = new Set();
+  for (const m of placed) {
+    if (m.name) covered.add("n:" + m.name);
+    if (m.id) covered.add("i:" + m.id);
+  }
+  const has = (d) => (d.name && covered.has("n:" + d.name)) || (d.id && covered.has("i:" + d.id));
+  return out.concat((state.entities || []).filter((d) => !has(d)));
 }
 async function save() {
   const entities = collectEntities();
@@ -281,6 +292,7 @@ async function applySceneModels(meta) {
     } catch { a = null; }
     return a;
   };
+  const placedSrc = new Set();
   for (const d of withMesh) {
     const a = await ensure(d.mesh);
     if (!a || !a.object) continue;
@@ -292,13 +304,17 @@ async function applySceneModels(meta) {
       metalness: d.metalness, shininess: d.shininess, tint: d.tint, damage: d.damage,
       particle: d.particle, sound: d.sound, defaultMotionId: d.defaultMotionId, meshInvisible: d.meshInvisible, anchorOffset: d.anchorOffset, source: a.object,
     });
+    placedSrc.add(d);
   }
   for (const d of legacy) {
     const a = await ensure(d.meshName);
     if (!a || !a.object) continue;
     addPlacedModel({ name: d.name, meshName: d.meshName, pos: d.pos, scale: d.scale, rotY: d.rotY || 0, source: a.object });
   }
-  state.entities = ents.filter((d) => !d.mesh);
+  // 没摆上的实体必须留在 state.entities 里。旧写法一律按"!d.mesh"过滤，于是资产
+  // 403/404 时那 194 个带 mesh 的实体既进不了场景模型、又被这条丢掉，
+  // 编辑器下一次保存就把整张图的实体清零——读不到素材不该变成地图数据丢失。
+  state.entities = ents.filter((d) => !d.mesh || !placedSrc.has(d));
   suspendModelList(false);
   refreshModelList();
   ui && ui.refreshTree && ui.refreshTree();
@@ -547,7 +563,7 @@ async function boot() {
     viewport.addEventListener("contextmenu", (e) => e.preventDefault());
   }
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, sunDirFromDayNight, enterPlay, stopPlay, setFirstPerson, importProject });
-  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay };
+  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities };
   initFeatures(window.__editor);
   restoreEntityMarkers();
   restoreSceneModels(state.meta); // boot 种子世界同样恢复场景模型

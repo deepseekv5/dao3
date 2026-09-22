@@ -93,7 +93,8 @@ npm run build:atlas
 - 没有物理引擎（cannon / ammo / rapier）：碰撞是自己实现的 AABB + 子步推进，
   理由见[物理与单位制](physics.md)。
 - 没有数据库：地图就是 `server/data/worlds/<id>.json.gz`，格式与官方 Unity 侧导出一致。
-- 没有遥测：服务端不向任何外部主机发请求；取官方素材是显式的 `npm run fetch:official`。
+- 没有遥测：服务端不向任何外部主机发请求。唯一的出站取回是显式的 `npm run fetch:official`
+  / `fetch:audio`，用于按 CID 修复随包分发的官方素材，正常安装不会触发。
 
 ## 相关
 

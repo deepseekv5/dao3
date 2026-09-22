@@ -25,12 +25,35 @@ const ENTRIES = [
   "public/js/game.js",
 ];
 
+/* play-src/js/play.js 自己不在这份入口里——它是"页面侧"文件，走 play-src/ 整目录镜像。
+   但它 import 的东西必须被闭包看见，否则构建照样"审查通过"、一上线就 404：
+   之前它只 import 上面四个入口，所以这个洞一直没暴露，直到加了 GLTFLoader。
+   play.js 部署在 play/js/，说明符是相对那个位置解析的，而 play/js/ 镜像的是 public/js/，
+   所以按 public/js/ 来解析它的相对说明符就等于它在浏览器里的实际解析结果。 */
+const SHELL = "play-src/js/play.js";
+function shellEntries() {
+  const code = fs.readFileSync(path.join(ROOT, SHELL), "utf8");
+  const out = [];
+  for (const spec of specifiers(code)) {
+    if (!spec.startsWith(".")) continue;
+    out.push(path.normalize(path.join("public/js", spec)).split(path.sep).join("/"));
+  }
+  return out;
+}
+
 const STATIC_FILES = [
   ["public/data/block-atlas.json", "data/block-atlas.json"],
   ["public/data/block-atlas.png", "data/block-atlas.png"],
   ["public/img/arena.svg", "img/arena.svg"],
   ["public/css/editor.css", "css/editor.css"], // 运行 HUD 的全部样式都在这里，整份取用
   ["official-project/racing-template.json.gz", "world.json.gz"],
+];
+
+// 官方赛道模型与音效：随包分发，闸门在应用内那道确认——静态站没有服务端，
+// 所以确认点就是首屏那张卡（它列明来源、著作权与"点进入即表示你确认有权使用"）。
+const BUNDLE_DIRS = [
+  ["official-project/racing-assets/models", "assets/models"],
+  ["official-project/racing-assets/audio", "assets/audio"],
 ];
 
 // three.js 以 MIT 随包分发，许可证必须同行
@@ -144,8 +167,8 @@ for (const rel of srcFiles) bytes += copy(path.join("play-src", rel).split(path.
 log(`页面  play-src/ → play/  ${srcFiles.length} 个文件`);
 for (const rel of srcFiles) log(`   · ${rel.padEnd(22)} ${kb(fs.statSync(path.join(OUT, rel)).size)}`);
 
-// 2) 运行时模块闭包
-const mods = closure(ENTRIES);
+// 2) 运行时模块闭包（含 play.js 自己 import 的那些）
+const mods = closure(ENTRIES.concat(shellEntries()));
 const jsBytes = {};
 for (const rel of mods) {
   const dest = rel.replace(/^public\//, "");
@@ -166,6 +189,19 @@ for (const [src, dest] of FORCE_VENDOR) {
   if (!fs.existsSync(path.join(ROOT, src))) throw new Error(`缺少 ${src}`);
   bytes += copy(src, dest);
   log(`   · ${dest.padEnd(26)} ${kb(fs.statSync(path.join(OUT, dest)).size)}`);
+}
+
+// 3b) 官方素材包：整目录复制，缺目录就直接失败而不是静默出一个"没模型"的体验版
+log(`\n官方素材包`);
+for (const [srcRel, destRel] of BUNDLE_DIRS) {
+  const from = path.join(ROOT, srcRel);
+  if (!fs.existsSync(from)) throw new Error(`缺少素材目录 ${srcRel}/，体验版不该在没有模型与音效的情况下发布`);
+  const names = fs.readdirSync(from).filter((f) => fs.statSync(path.join(from, f)).isFile());
+  if (!names.length) throw new Error(`${srcRel}/ 是空的`);
+  let n = 0;
+  for (const f of names) n += copy(path.join(srcRel, f).split(path.sep).join("/"), path.posix.join(destRel, f));
+  bytes += n;
+  log(`   · ${destRel.padEnd(26)} ${names.length} 个文件 · ${kb(n)}`);
 }
 
 // 4) Pages 不做 Jekyll 处理

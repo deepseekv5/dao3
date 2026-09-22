@@ -25,6 +25,16 @@ const get = (port, p) => new Promise((resolve) => {
   req.on("error", () => resolve(null));
   req.on("timeout", () => { req.destroy(); resolve(null); });
 });
+/** 二进制取回：get() 把 body 按 utf8 拼成字符串，mp3/gltf 的字节会被解坏，
+ *  拿它和源文件比长度会得出假结论，所以单独走 Buffer 通道。 */
+const getBuf = (port, p) => new Promise((resolve) => {
+  const req = http.get({ host: "127.0.0.1", port, path: p, timeout: 5000 }, (r) => {
+    const chunks = []; r.on("data", (c) => chunks.push(c));
+    r.on("end", () => resolve({ status: r.statusCode, buf: Buffer.concat(chunks) }));
+  });
+  req.on("error", () => resolve(null));
+  req.on("timeout", () => { req.destroy(); resolve(null); });
+});
 const post = (port, p, obj) => new Promise((resolve) => {
   const body = JSON.stringify(obj);
   const req = http.request({ host: "127.0.0.1", port, path: p, method: "POST",
@@ -89,6 +99,43 @@ if (!fs.existsSync(path.join(PKG, "server.js"))) {
       ok("确认授权后模板落地", a.ok === true && a.installed === true, JSON.stringify(a));
       const ws1 = await worlds(port);
       ok("模板是 199 实体 / 152 万格", ws1[0].entities === 199 && ws1[0].blocks > 1500000, JSON.stringify(ws1[0]));
+
+      /* 官方模型与音效：随包分发，但闸门在服务端。
+         只授地图绝不等于顺手把素材也放了行——这条必须单独确认。 */
+      const MODEL = "/assets/racing/models/" + encodeURIComponent("方格") + ".gltf";
+      const AUDIO = "/data/assets/audio/break_block.mp3";
+      const g1 = await getBuf(port, MODEL), g2 = await getBuf(port, AUDIO);
+      ok("只授地图时模型与音效仍被 403 挡住", !!g1 && !!g2 && g1.status === 403 && g2.status === 403,
+        `model=${g1 && g1.status} audio=${g2 && g2.status}`);
+      const g3 = await getBuf(port, "/assets/racing/models/../../../../package.json");
+      ok("穿越路径不能绕过闸门", !!g3 && g3.status >= 400, "HTTP " + (g3 && g3.status));
+      const a2 = JSON.parse(await post(port, "/api/consent", { racingTemplate: true, racingAssets: true }));
+      ok("素材授权单独记录", a2.racingAssets === "granted", JSON.stringify(a2));
+      const g4 = await getBuf(port, MODEL), g5 = await getBuf(port, AUDIO);
+      const srcModel = fs.readFileSync(path.join(app, "official-project/racing-assets/models/方格.gltf"));
+      const srcAudio = fs.readFileSync(path.join(app, "official-project/racing-assets/audio/break_block.mp3"));
+      ok("确认后模型放行且字节与仓库内一致", !!g4 && g4.status === 200 && g4.buf.equals(srcModel),
+        `HTTP ${g4 && g4.status} ${g4 && g4.buf.length}B / ${srcModel.length}B`);
+      ok("确认后音效放行且字节与仓库内一致", !!g5 && g5.status === 200 && g5.buf.equals(srcAudio),
+        `HTTP ${g5 && g5.status} ${g5 && g5.buf.length}B / ${srcAudio.length}B`);
+      const c1 = JSON.parse((await get(port, "/api/consent")).body);
+      ok("确认框能报出包内素材数量与体积", c1.assetsAvailable === true
+        && c1.bundle && c1.bundle.模型.count === 20 && c1.bundle.音效.count === 41, JSON.stringify(c1.bundle));
+      // 改主意要真的收回去：只清 consent.json 不够，得确认 403 会重新生效
+      fs.rmSync(path.join(fakeHome, ".dao3-editor/consent.json"));
+      const g6 = await getBuf(port, MODEL);
+      ok("清掉授权记录后素材重新回到 403", !!g6 && g6.status === 403, "HTTP " + (g6 && g6.status));
+      /* 素材读不到不能变成地图数据丢失。
+         collectEntities 旧写法按 "!d.mesh" 保留未放置实体：一旦资产 403/404，
+         194 个带 mesh 的实体既进不了 state.models、又被这条过滤掉，
+         编辑器一保存就把整张图的实体清零——用户看到的是"我只是没同意用素材，图没了"。 */
+      const w6 = await getBuf(port, "/api/world/216d665d3ca92bd1b9a2");
+      const ents6 = JSON.parse(w6.buf.toString("utf8")).meta?.entities || [];
+      ok("未授权状态下地图实体仍完整可读回（199 个）", ents6.length === 199, ents6.length + " 个");
+      const reSaved = JSON.parse(await post(port, "/api/world/216d665d3ca92bd1b9a2",
+        JSON.parse(w6.buf.toString("utf8"))));
+      ok("原样回写不丢实体", reSaved.ok !== false, JSON.stringify(reSaved).slice(0, 90));
+      await post(port, "/api/consent", { racingTemplate: true, racingAssets: true });
 
       // 改过的图不能被模板冲掉。
       // 注意：安装目录是只读的，所以数据其实落在回退目录（fakeHome/.dao3-editor），

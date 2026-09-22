@@ -1,13 +1,16 @@
 # ── 不可再分发的第三方内容 ──────────────────────────────────────────
 # 这些来自 dao3.fun 的内容服务（游戏素材与地图数据），版权归 box3lab 及其权利人。
-# 例外：赛车模板地图数据按仓库所有者的决定**随包分发**，但不在服务端自动落地——
+# 例外一：赛车模板地图数据按仓库所有者的决定**随包分发**，但不在服务端自动落地——
 # 首次启动由用户在应用内明确确认"我有权使用"后才安装（见 server.js 的 /api/consent）。
-# 音效与赛道模型仍然排除，用 npm run fetch:official 按 CID 自行取回。
+# 例外二：official-project/racing-assets/ 里的 20 个赛道模型与 40 个音效同样随包分发，
+# 走同一道确认闸门；未确认前服务端对这两个前缀直接 403，客户端拿不到也不请求。
+# public/assets 与 public/data/assets 从此只是运行时产物位置（世界上传件、取回脚本落点），
+# 素材本体不在那里。
 public/data/assets/
 public/assets/
-official-project/*
-!official-project/cids.json
-!official-project/racing-template.json.gz
+# official-project/ 里除了 racing-template/（660KB 的官方 .raw 原始响应，只是导入用的
+# 中间产物，随时能按 CID 重新取回）之外都入库：cids.json、地图数据、以及素材包。
+official-project/racing-template/
 server/data/
 
 # ── 上游参考仓库（Apache-2.0，但体积 200MB+，不镜像）─────────────────

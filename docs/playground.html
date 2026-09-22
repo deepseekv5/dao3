@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a class="on" href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#一条命令构建">一条命令构建</a><a class="t2" href="#装配层只有-290-行">装配层只有 290 行</a><a class="t2" href="#拷哪些文件不靠列清单">拷哪些文件不靠列清单</a><a class="t2" href="#三条硬约束构建时自检">三条硬约束，构建时自检</a><a class="t2" href="#缺失素材宁可空着不要橙色方块">缺失素材：宁可空着，不要橙色方块</a><a class="t2" href="#手机端是真能玩的">手机端是真能玩的</a><a class="t2" href="#实测数字">实测数字</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#一条命令构建">一条命令构建</a><a class="t2" href="#装配层只有-290-行">装配层只有 290 行</a><a class="t2" href="#拷哪些文件不靠列清单">拷哪些文件不靠列清单</a><a class="t2" href="#三条硬约束构建时自检">三条硬约束，构建时自检</a><a class="t2" href="#模型与音效随包确认点挪到首屏那张卡">模型与音效：随包，确认点挪到首屏那张卡</a><a class="t2" href="#手机端是真能玩的">手机端是真能玩的</a><a class="t2" href="#实测数字">实测数字</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/playground.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -49,8 +49,8 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>不装 Node、不下载包，打开链接就能跑官方赛车模板： <b>&lt;https://deepseekv5.github.io/dao3play/&gt;</b>。</p>
 <p>它和介绍站是同一个渲染器、同一份 <code>game.js</code>——不是&quot;演示视频&quot;，也不是阉割版预览， 而是同一套运行时换了个不带服务端的装配层。</p>
 <h2 id="一条命令构建">一条命令构建</h2>
-<div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run build:play        # → play/（18 个文件，约 4.6 MB）
-npm run test:play         # 真浏览器回归：桌面 + 手机，31 条断言</code></pre></div>
+<div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run build:play        # → play/（82 个文件，约 8.4 MB）
+npm run test:play         # 真浏览器回归：桌面 + 手机 + CDN 解压，38 条断言</code></pre></div>
 <p><code>play/</code> 是<b>产物</b>，已进 <code>.gitignore</code>：源码在 <code>play-src/</code> 与 <code>scripts/build-play.mjs</code>。 它单独发布到 <code>deepseekv5/dao3play</code>，Pages 的构建源就是仓库根， 所以线上路径正好落在主页域名下的 <code>/dao3play/</code>。</p>
 <h2 id="装配层只有-290-行">装配层只有 290 行</h2>
 <p><code>GameRuntime</code> 真正取用的编辑器字段就五个：<code>state</code>（含 <code>meta</code> / <code>models</code> / <code>entities</code> / <code>scripts</code>）、 <code>atlas</code>、<code>world</code>、<code>renderer</code>、<code>toast</code>，外加可选的 <code>applyTerrain</code>。 所以 <code>play-src/js/play.js</code> 走的是和 <code>public/js/main.js</code> 完全相同的一条链：</p>
@@ -69,17 +69,18 @@ npm run test:play         # 真浏览器回归：桌面 + 手机，31 条断言<
 <h2 id="三条硬约束构建时自检">三条硬约束，构建时自检</h2>
 <p>体验版没有服务端，Pages 又把站点挂在主页域名的<b>子路径</b>下，所以：</p>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>约束</th><th>破坏后果</th><th>谁在守</th></tr></thead><tbody><tr><td>不得出现 <code>/api/</code></td><td>全部 404，世界打不开</td><td><code>build-play.mjs</code> 的 <code>audit()</code></td></tr><tr><td>不得出现根绝对路径（<code>/js/</code> <code>/css/</code> <code>/data/</code> <code>/vendor/</code> <code>/assets/</code> <code>/img/</code>）</td><td>本地能跑、上线全 404</td><td>同上，含 <code>css/editor.css</code> 里 1 处 <code>url(/img/…)</code> 会被就地改写</td></tr><tr><td>不得带未授权素材</td><td>公开镜像比本地分发严重得多</td><td><code>npm run check:dist</code> 第 4 个面</td></tr></tbody></table></div>
-<p><code>check:dist</code> 现在扫<b>四处</b>：git 树、npm tarball、便携包目录、<code>play/</code>。 第四处的尺度比前三处更严——公开托管没有&quot;发给朋友&quot;这层缓冲，所以 <code>play/</code> 里只允许 <code>world.json.gz</code> 一个例外，连第二份 <code>.gz</code> 都不许有， 音频与模型目录整块禁掉，运行时必需的 17 个文件逐个断言在场。</p>
-<h2 id="缺失素材宁可空着不要橙色方块">缺失素材：宁可空着，不要橙色方块</h2>
-<p>官方音效与赛道模型（199 个 <code>.gltf</code>）著作权归 box3lab，未随任何产物分发。 运行时的既有行为是：<code>_setMesh</code> 找不到资产就挂一个 <code>0xfc8308</code> 橙色线框占位盒， 并在控制台打「未找到资产 mesh/xxx.vb」。在编辑器里这是有用的告警； 但在一百多万人打开的公开页面上，199 个橙色方块只会被读成&quot;这个页面坏了&quot;。</p>
-<p>所以 <code>play.js</code> 按 <code>meta.meshNames</code> 给每个名字登记一个<b>空的 <code>THREE.Group</code></b>： 资产查找命中，占位分支走不到，实体退回&quot;只有碰撞与逻辑&quot;，体素赛道照常渲染， 脚本行为一字不变。回归里对应两条断言：控制台必须出现 <code>index.js 运行成功</code> 与 <code>clientIndex.js 运行成功</code>，且<b>不得</b>出现 <code>占位|未找到资产</code>。</p>
-<p>赛车脚本本身恰好依赖这个性质——它把 5 个检查点实体 <code>destroy()</code> 掉，只留 <code>bounds</code> 用， 所以没有模型完全不影响判圈与计时。</p>
+<p><code>check:dist</code> 现在扫<b>四处</b>：git 树、npm tarball、便携包目录、<code>play/</code>。 第四处的尺度比前三处更严——公开托管没有&quot;发给朋友&quot;这层缓冲，所以 <code>play/</code> 里只允许 <code>world.json.gz</code> 一个例外，连第二份 <code>.gz</code> 都不许有， 音频与模型目录整块禁掉，运行时必需的文件逐个断言在场（含 GLTFLoader、BufferGeometryUtils 与素材包代表文件）。</p>
+<h2 id="模型与音效随包确认点挪到首屏那张卡">模型与音效：随包，确认点挪到首屏那张卡</h2>
+<p>官方音效与赛道模型（20 个 <code>.gltf</code>）著作权归 box3lab，<b>不在任何开源许可之下</b>； 它们由仓库所有者决定随包分发，桌面版靠服务端那道 <code>403</code> 闸门兜住。 静态托管没有服务端可点头，所以确认点改到首屏：那张卡列明来源、著作权， 以及&quot;点「进入体验」即表示你确认自己有权获取并使用它们&quot;。这是同一决定的等价实现，不是绕过。</p>
+<p><code>build-play.mjs</code> 把 <code>official-project/racing-assets/</code> 整目录复制进 <code>play/assets/</code>， 缺目录就直接失败——体验版不该在没模型没音效的情况下发布。</p>
+<p>摆放走的是编辑器同一条路（<code>main.js</code> 的 <code>applySceneModels</code>）：把带 mesh 的实体克隆成 <b>外部对象</b>放进 <code>state.models</code>，<code>_buildRegistry</code> 才会带上 <code>orientation</code> 与 <code>scaleVec</code>。 一开始图省事只把网格交给运行时的 <code>_setMesh</code>，结果 199 个模型全按默认朝向堆在原点， 玩家一出生就被埋进一片青色围栏——截图整屏纯色，断言却全绿。 <code>play.js</code> 里那段注释就是为下一个想走捷径的人写的。</p>
+<p>回归对应三条断言：控制台必须出现 <code>index.js 运行成功</code> 与 <code>clientIndex.js 运行成功</code>、 <b>不得</b>出现 <code>占位|未找到资产</code>、且实体必须真的挂上网格 （<code>_meshHolder.children.length &gt; 0</code> 的超过 150 个）。第三条专门堵 &quot;往 <code>assets.meshes</code> 塞空 Group 让告警消失&quot;这种自欺做法——那样画面是一片空白， 而前两条照样全绿。</p>
 <h2 id="手机端是真能玩的">手机端是真能玩的</h2>
 <p><code>game.js</code> 的 <code>_bindTouch</code> 认领的就是 <code>#joyBase</code> / <code>#joyKnob</code> / 七个 <code>#t*</code> 按钮， 体验版把这套 DOM 原样带上，于是触屏层直接复用。输入形态按能力判定 （<code>matchMedia(&quot;(hover: none)&quot;)</code> ∪ <code>ontouchstart</code> ∪ <code>maxTouchPoints</code>），不看 UA。</p>
 <p><code>test/play.mjs</code> 用 390×844、<code>hasTouch</code>、<code>deviceScaleFactor 3</code> 的上下文实测：</p>
 <ul class="lv-0"><li>摇杆 120×120 落在可视区内，七个按钮全部在界内；</li><li>派发真 <code>TouchEvent</code> 推摇杆，角色在 1.8 秒内移动 7.66 格；</li><li>首屏与游玩画面的 <code>scrollWidth - innerWidth</code> 都是 0（无横向溢出）。</li></ul>
 <h2 id="实测数字">实测数字</h2>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>产物</td><td>18 个文件 / 4.64 MB</td></tr><tr><td>地图载荷</td><td><code>world.json.gz</code> 2,780 KB → 解压 19 MB → 1,523,592 格 / 199 实体</td></tr><tr><td>本地首屏到可进入</td><td>2.0~2.2 秒</td></tr><tr><td>回归</td><td>31 条断言，桌面 + 手机各一轮</td></tr><tr><td>网络面</td><td>17 个请求，零 4xx、零 <code>/api/</code>、零未捕获异常</td></tr><tr><td>移动速度</td><td>按住 Shift+W 走 6.86 格 / 19 tick（≈7.2 格/秒，官方 20 TPS 口径）</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>产物</td><td>82 个文件 / 8.36 MB</td></tr><tr><td>地图载荷</td><td><code>world.json.gz</code> 2,780 KB → 解压 19 MB → 1,523,592 格 / 199 实体</td></tr><tr><td>本地首屏到可进入</td><td>2.0~2.2 秒</td></tr><tr><td>回归</td><td>38 条断言：桌面 + 手机 + CDN 已解压三轮</td></tr><tr><td>网络面</td><td>17 个请求，零 4xx、零 <code>/api/</code>、零未捕获异常</td></tr><tr><td>移动速度</td><td>按住 Shift+W 走 6.86 格 / 19 tick（≈7.2 格/秒，官方 20 TPS 口径）</td></tr></tbody></table></div>
 <p><code>test/play.mjs</code> 里那个静态服务器会把 <code>/dao3play/</code> 前缀剥掉再落盘—— 这是刻意的：产物必须在<b>它真实的部署形态</b>下被测， 否则&quot;本地全绿、上线白屏&quot;这类问题根本测不出来。</p>
     <nav class="pager"><a href="packaging.html"><small>上一篇</small><b>便携包与发布</b></a><a class="next" href="dependencies.html"><small>下一篇</small><b>依赖清单</b></a></nav>
   </article>

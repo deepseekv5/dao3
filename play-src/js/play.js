@@ -10,9 +10,14 @@ import { BlockAtlas } from "./atlas.js";
 import { VoxelWorld } from "./world.js";
 import { VoxelRenderer } from "./renderer.js";
 import { GameRuntime, logGameError } from "./game.js";
+import * as THREE from "../vendor/three/three.module.js";
 
 const WORLD_URL = "./world.json.gz";
 const ATLAS_BASE = "./data";
+// 官方素材包（build-play 从 official-project/racing-assets 整目录复制过来）。
+// 必须相对：Pages 把本站挂在主页域名的 /dao3play/ 子路径下，写 /assets/... 会打到域名根。
+const MODEL_BASE = "./assets/models/";
+const AUDIO_BASE = "./assets/audio/";
 
 const $ = (id) => document.getElementById(id);
 const boot = $("boot"), bootFill = $("bootFill"), bootText = $("bootText"), bootPct = $("bootPct");
@@ -157,6 +162,63 @@ async function boot_() {
   // 交还原数组占的内存，手机上留给分块网格
   payload.indices = payload.data = payload.rot = null;
 
+  /* ---- 官方赛道模型与音效 ----
+     和地图一样随包分发，确认点是首屏那张卡。运行时自己不会取 gltf：
+     编辑器是 main.js 的 loadSeedAssets 先把它们解成 THREE 场景再塞进
+     state.assets.meshes，这里做同一件事（含同一套枢轴归一），只是路径换成相对。 */
+  const meta = payload.meta || {};
+  const meshNames = meta.meshNames || [];
+  const assets = { meshes: {}, audio: {}, audioBase: AUDIO_BASE, audioNames: [], pictureNames: meta.pictureNames || [], lutNames: [], partNames: [] };
+  {
+    await say(54, "正在加载赛道模型（" + meshNames.length + " 个）…");
+    const { GLTFLoader } = await import("../vendor/three/GLTFLoader.js");
+    const loader = new GLTFLoader();
+    const meshFails = [];
+    const loadOne = async (base) => {
+      for (const ext of [".gltf", ".glb"]) {
+        try {
+          const r = await fetch(MODEL_BASE + encodeURIComponent(base) + ext);
+          if (!r.ok) continue;
+          const buf = await r.arrayBuffer();
+          const scene = await new Promise((res, rej) => loader.parse(buf, "", (g) => res(g.scene), rej));
+          // 官方 .vb 转 gltf 后各文件内部枢轴不一致（横向最多偏 13 格、纵向有负的），
+          // 统一归一到「XZ 居中、底面为原点」，否则模型会飘在半空或插进地里。
+          const box = new THREE.Box3().setFromObject(scene);
+          if (isFinite(box.min.x) && isFinite(box.max.x)) {
+            const c = box.getCenter(new THREE.Vector3());
+            const wrap = new THREE.Group();
+            wrap.position.set(-c.x, -box.min.y, -c.z);
+            while (scene.children.length) wrap.add(scene.children[0]);
+            scene.add(wrap);
+            scene.updateMatrixWorld(true);
+          }
+          return scene;
+        } catch (err) {
+          // 空 catch 会把"一个模型都没挂上"变成一句看不见的错误：这里记下最后一个失败原因，
+          // 全部失败时原样打到首屏，而不是让人对着一片橙色线框猜为什么。
+          meshFails.push(base + ext + ": " + String((err && err.message) || err));
+        }
+      }
+      return null;
+    };
+    let loaded = 0;
+    // 并发拉：20 个文件里两个就 700KB，串行在手机上会白等好几秒
+    await Promise.all(meshNames.map(async (n) => {
+      const scene = await loadOne(n);
+      if (scene) { assets.meshes[n] = { object: scene, scale: 1 }; loaded++; }
+    }));
+    if (loaded === 0 && meshNames.length > 0) {
+      fail([{ b: "赛道模型一个都没取到。", text: "" },
+        `预期 ${meshNames.length} 个，位于 ${MODEL_BASE}。`,
+        (meshFails[0] || "无失败记录").slice(0, 200)]);
+      return;
+    }
+    try {
+      const r = await fetch(AUDIO_BASE + "index.json");
+      if (r.ok) assets.audioNames = await r.json();
+    } catch { /* 没音效不影响游玩 */ }
+  }
+
   const state = {
     tool: "place",
     currentBlock: (atlas.get("grass") || {}).id || 127,
@@ -170,9 +232,50 @@ async function boot_() {
     meta: payload.meta || {},
     scripts: (payload.meta && payload.meta.scripts) || [],
     entities: (payload.meta && payload.meta.entities) || [],
-    assets: { audio: {}, meshes: {}, meshNames: [] },
+    assets,
     models: [],
   };
+  // 官方地图里写的是 /assets/racing/models/，静态站挂在 /dao3play/ 下，
+  // 根绝对路径会打到主页域名上去了；运行时按这个前缀解析图片与网格目录。
+  state.meta.assetRoot = MODEL_BASE;
+
+  /* 把带网格的实体摆成真实场景模型——和编辑器 main.js 的 applySceneModels 同一条路。
+     不能只把网格交给运行时的 _setMesh：官方 entitiesTree 的位置/朝向/缩放是按
+     「外部对象」的约定算的（_buildRegistry 对 state.models 传 obj、对 state.entities 传 null），
+     走 _setMesh 那条分支拿不到 orientation，整批模型会按默认朝向堆在原点，
+     结果就是玩家被埋进一片青色围栏里。 */
+  {
+    const ents = state.entities.filter((d) => d && (d.mesh || d.meshName));
+    let placed = 0;
+    for (const d of ents) {
+      const base = String(d.mesh || d.meshName).replace(/.*[\\/]/, "").replace(/\.(vb|vox|glb|gltf|fbx|obj)$/i, "");
+      const a = assets.meshes[base];
+      if (!a || !a.object) continue;
+      const sv = Array.isArray(d.scaleVec || d.scale) ? (d.scaleVec || d.scale) : [d.scale ?? 1, d.scale ?? 1, d.scale ?? 1];
+      const obj = a.object.clone(true);
+      obj.scale.set(sv[0] || 1, sv[1] || 1, sv[2] || 1);
+      if (d.orientation) obj.quaternion.fromArray(d.orientation);
+      else if (typeof d.rotY === "number") obj.rotation.y = d.rotY;
+      obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      const pos = d.position || d.pos || [0, 0, 0];
+      obj.position.set(pos[0], pos[1], pos[2]);
+      obj.visible = d.meshInvisible !== true;
+      renderer.models.add(obj);
+      state.models.push({
+        id: d.id, name: d.name, object: obj, pos: [pos[0], pos[1], pos[2]],
+        scale: Array.isArray(d.scale) ? d.scale[0] : (d.scale ?? 1), scaleVec: sv,
+        orientation: d.orientation || null, meshName: base,
+        bounds: d.bounds || null, tags: d.tags || [], collision: !!d.collision,
+        fixed: !!d.fixed, gravity: !!d.gravity, anchorOffset: d.anchorOffset || null,
+      });
+      placed++;
+    }
+    if (ents.length && !placed) {
+      fail([{ b: "赛道模型一个都没摆进场景。", text: "" }, `带网格的实体 ${ents.length} 个，全部没取到对应资产。`]);
+      return;
+    }
+    assets.placedModels = placed;
+  }
 
   function sunDirFromDayNight(h) {
     const a = (h * 1.25 - 0.12) * Math.PI;
@@ -230,13 +333,10 @@ async function boot_() {
   function startRun() {
     game.start({
       scripts: state.scripts || [],
-      // 音效与赛道模型因著作权未随包分发：assets 留空，运行时对缺失素材走它自己的
-      // 既有分支（实体 → 橙色线框占位盒 + 控制台告警；声音 → 静默），
-      // 不预置 audioBase / meshes，也就不会发出任何对不存在文件的请求。
-      assets: {
-        audio: {}, audioBase: "", audioNames: [], meshes: {},
-        pictureNames: state.meta.pictureNames || [], lutNames: [], partNames: [],
-      },
+      // 官方模型与音效随包分发，首屏那张卡就是确认点。
+      // 网格在 boot 里已解好塞进 assets.meshes（运行时按名字取），
+      // 音效走 audioBase 懒加载，两条路径都是相对的。
+      assets,
       player: playerMeta(),
     });
     const hint = $("gameHint");

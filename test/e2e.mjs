@@ -51,7 +51,10 @@ if (prompted) {
   await page.click(".dc-btn.ok");
   await page.waitForFunction(() => !document.querySelector(".dc-mask"), { timeout: 5000 }).catch(() => {});
   ok("确认后遮罩移除", (await page.locator(".dc-mask").count()) === 0);
-  ok("确认已记住(不再自动弹)", (await page.evaluate(() => localStorage.getItem("dao3_disclaimer_ack"))) === "1");
+  // 断言"记住了一次确认"，而不是记住版本号：disclaimer.js 在声明实质变化时会升 ACK_VER，
+  // 写死 "1" 会让每次改文案都变成一条假故障。
+  ok("确认已记住(写入版本号)", /^\d+$/.test(await page.evaluate(() => localStorage.getItem("dao3_disclaimer_ack")) || ""),
+    await page.evaluate(() => localStorage.getItem("dao3_disclaimer_ack")));
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !document.getElementById("loading"), { timeout: 60000 });
   await page.waitForTimeout(3000);
@@ -68,6 +71,23 @@ ok("方块库渲染", cellCount > 30, cellCount + " cells");
 const seedCount = await page.evaluate(() => parseInt(document.getElementById("blockCount").textContent.replace(/,/g, "")));
 ok("默认世界为赛车模板(≈152万体素)", seedCount > 1300000, seedCount.toLocaleString());
 ok("赛车脚本已载入(含 index.js)", (await page.evaluate(() => [...document.querySelectorAll("#scriptFiles .sfile")].map((e) => e.textContent).join(","))).includes("index.js"));
+// 素材读不到时保存不能把实体清空：把 assetRoot 指到一个必然 404 的前缀、
+// 清掉已缓存的网格后重走一次恢复，再问 collectEntities（保存就是用它算 meta.entities）。
+const orphan = await page.evaluate(async () => {
+  const E = window.__editor;
+  const keepRoot = E.state.meta.assetRoot, keepMeshes = E.state.assets.meshes;
+  E.state.meta.assetRoot = "/e2e-no-such-asset-dir/";
+  E.state.assets.meshes = {};
+  E.state.models = [];
+  window.__replaceWorld(E.world);
+  await new Promise((r) => setTimeout(r, 2500));
+  const n = E.collectEntities().length;
+  const left = E.state.entities.length;
+  E.state.meta.assetRoot = keepRoot; E.state.assets.meshes = keepMeshes;
+  return { n, left, models: E.state.models.length };
+});
+ok("资产 404 时未摆上的实体仍留在实体表里", orphan.left >= 199, `state.entities=${orphan.left} models=${orphan.models}`);
+ok("资产 404 时保存仍保住 199 个实体", orphan.n >= 199, orphan.n + " 个");
 await shot("01-loaded");
 
 console.log("== 手动生成 100×100 超平坦（验证尺寸弹窗） ==");

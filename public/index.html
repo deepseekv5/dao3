@@ -26,7 +26,7 @@
       <a href="/api/worlds" target="_blank" rel="noopener" title="世界 API"><span>{ }</span><i>API</i></a>
     </nav>
     <div class="wb-railfoot">
-      <button id="wbTpl" title="赛车模板授权：改主意可随时在这里重新选择" aria-label="模板授权">T</button>
+      <button id="wbTpl" title="官方素材授权：地图 / 模型 / 音效，改主意可随时在这里重新选择" aria-label="官方素材授权">T</button>
       <button id="wbAbout" title="关于与免责" aria-label="关于">i</button>
     </div>
   </aside>
@@ -134,25 +134,33 @@
 
 <div id="importTip" class="wb-tip" hidden></div>
 
-<!-- 官方赛车模板随包分发，但落地前必须让用户明确确认授权来源。
-     这不是"要不要用"的功能开关，而是把版权责任交回给使用者本人。 -->
+<!-- 官方素材随包分发，但落地/放行前必须让用户明确确认授权来源。
+     这不是"要不要用"的功能开关，而是把版权责任交回给使用者本人。
+     三项清单与体积由 /api/consent 的 bundle 现场填，不写死——写死就会和包内实际内容脱节。 -->
 <div id="tplModal" class="wb-modal">
   <div class="wb-mbox">
-    <h3>使用随包分发的「赛车模板」？</h3>
-    <p class="wb-mhint" style="margin:0 0 10px">
-      本包含有一份来自 dao3.fun（神奇代码岛）的官方地图数据
-      <b>「赛车模板」</b>（256×128×256 · 1,523,592 体素 · 199 个实体 · 2 个脚本）。
-      它的<b>著作权归 box3lab 及其权利人所有</b>，不属于本仓库代码的 Apache-2.0 授权范围。
+    <h3>使用随包分发的官方「赛车模板」素材？</h3>
+    <p class="wb-mhint" style="margin:0 0 8px">
+      本包内含三份来自 dao3.fun（神奇代码岛）的官方内容。它们的<b>著作权归 box3lab
+      及其权利人所有</b>，不属于本仓库代码的 Apache-2.0 授权范围：
     </p>
-    <p class="wb-mhint" style="margin:0 0 10px">
-      选择「使用」即表示你确认：你<b>有权</b>获取并在本地使用该地图，且仅用于
+    <ul class="wb-tplscope" id="tplScope">
+      <li><b>地图数据</b><span id="tplScopeMap">「赛车模板」</span></li>
+      <li><b>赛道模型</b><span id="tplScopeModels">—</span></li>
+      <li><b>音效</b><span id="tplScopeAudio">—</span></li>
+    </ul>
+    <p class="wb-mhint" style="margin:0 0 8px">
+      选择「使用」即表示你确认：你<b>有权</b>获取并在本地使用上述内容，且仅用于
       学习与技术兼容性研究；不用于公开发布、商业分发或冒充官方产品。
     </p>
-    <p class="wb-mhint" style="margin:0 0 10px">
-      选择「不使用」则保留程序化生成的示例地形，功能验证不受影响；
-      之后仍可在左侧「模板授权」里改主意。
+    <p class="wb-mhint" style="margin:0 0 8px">
+      在你确认之前，服务端<b>不会</b>把模型与音效交给前端（请求一律 403），地图也不会装进世界库；
+      届时用的是程序化生成的示例地形，功能验证不受影响。
     </p>
-    <div class="wb-mbtns"><button id="tplDecline" class="wb-btn">不使用</button><button id="tplAccept" class="wb-btn primary">我已获授权，使用它</button></div>
+    <p class="wb-mhint" style="margin:0 0 10px">
+      之后仍可在左侧「官方素材授权」里改主意。
+    </p>
+    <div class="wb-mbtns"><button id="tplDecline" class="wb-btn">不使用</button><button id="tplAccept" class="wb-btn primary">我已获授权，全部使用</button></div>
   </div>
 </div>
 

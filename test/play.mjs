@@ -38,6 +38,8 @@ const MIME = {
   ".json": "application/json; charset=utf-8", ".png": "image/png",
   ".svg": "image/svg+xml", ".gz": "application/gzip", ".ico": "image/x-icon",
   ".webp": "image/webp", ".woff2": "font/woff2",
+  ".gltf": "model/gltf+json", ".glb": "model/gltf-binary",
+  ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav",
 };
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || "/").split("?")[0]);
@@ -141,6 +143,27 @@ const scriptRun = await page.evaluate(() => window.__play.consoleText());
 ok("两个官方脚本都跑到「运行成功」", /index\.js 运行成功/.test(scriptRun) && /clientIndex\.js 运行成功/.test(scriptRun),
    scriptRun.replace(/\s+/g, " ").slice(0, 90));
 ok("没有缺失素材的占位告警", !/占位|未找到资产/.test(scriptRun), scriptRun.match(/占位|未找到资产/g)?.length + " 条");
+// 官方模型与音效现在随包分发：实体必须真的挂上网格，而不是退回"只有碰撞与逻辑"。
+// 只断言"没有告警"是不够的——把 assets.meshes 全塞空 Group 也能让告警消失，
+// 但画面是一片空白，所以这里量真实子节点数与音频清单。
+const art = await page.evaluate(() => {
+  const g = window.__game;
+  let named = 0, holders = 0;
+  for (const e of g.entities) {
+    if (e._meshName) named++;
+    if (e._meshHolder && e._meshHolder.children.length) holders++;
+  }
+  const an = (g.assets || {}).audioNames;
+  return {
+    named, holders, placed: g.e.state.models.length,
+    audioCount: Array.isArray(an) ? an.length : -1, audioType: Object.prototype.toString.call(an),
+    audioBase: (g.assets || {}).audioBase,
+  };
+});
+ok("赛道模型真的挂上了实体（不是空占位）", art.named > 150 && art.holders > 150,
+   `${art.holders}/${art.named} 个实体有网格，场景模型 ${art.placed} 个`);
+ok("官方音效清单已加载且走相对路径", art.audioCount >= 40 && !/^\/|^\.\.\//.test(art.audioBase || "/"),
+   `${art.audioCount} 个(${art.audioType}) · base=${art.audioBase}`);
 
 console.log("== 角色控制器：官方 0.22 格/tick ==");
 await page.mouse.click(720, 430); // 锁视角，与真人一样

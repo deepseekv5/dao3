@@ -77,7 +77,7 @@ node:os            node:net            node:crypto</code></pre></div>
 npm run build:atlas</code></pre></div>
 <p><code>build:atlas</code> 会优先读 <code>data/upstream/</code>（随仓库分发的两张 Apache 小表副本）， 纹理仍必须来自本地 <code>vendor/</code>——纹理有 200MB+，不在分发范围内。</p>
 <h2 id="六明确不使用的东西">六、明确<b>不</b>使用的东西</h2>
-<ul class="lv-0"><li>没有 bundler：没有 webpack / vite / rollup / esbuild 配置，浏览器直接加载 ES module。</li><li>没有 <code>node_modules</code>：<code>npm install</code> 在本项目里是可选的，只为了装测试用的 playwright-core。</li><li>没有物理引擎（cannon / ammo / rapier）：碰撞是自己实现的 AABB + 子步推进， 理由见<a href="physics.html">物理与单位制</a>。</li><li>没有数据库：地图就是 <code>server/data/worlds/&lt;id&gt;.json.gz</code>，格式与官方 Unity 侧导出一致。</li><li>没有遥测：服务端不向任何外部主机发请求；取官方素材是显式的 <code>npm run fetch:official</code>。</li></ul>
+<ul class="lv-0"><li>没有 bundler：没有 webpack / vite / rollup / esbuild 配置，浏览器直接加载 ES module。</li><li>没有 <code>node_modules</code>：<code>npm install</code> 在本项目里是可选的，只为了装测试用的 playwright-core。</li><li>没有物理引擎（cannon / ammo / rapier）：碰撞是自己实现的 AABB + 子步推进， 理由见<a href="physics.html">物理与单位制</a>。</li><li>没有数据库：地图就是 <code>server/data/worlds/&lt;id&gt;.json.gz</code>，格式与官方 Unity 侧导出一致。</li><li>没有遥测：服务端不向任何外部主机发请求。唯一的出站取回是显式的 <code>npm run fetch:official</code> / <code>fetch:audio</code>，用于按 CID 修复随包分发的官方素材，正常安装不会触发。</li></ul>
 <h2 id="相关">相关</h2>
 <ul class="lv-0"><li><a href="packaging.html">便携包与发布</a> — 这些依赖如何被打进免安装包</li><li><a href="architecture.html">架构与数据流</a> — three.js 在本项目里被用到哪一层</li></ul>
     <nav class="pager"><a href="playground.html"><small>上一篇</small><b>网页体验版</b></a><a class="next" href="credits.html"><small>下一篇</small><b>致谢</b></a></nav>
