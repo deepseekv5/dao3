@@ -26,14 +26,20 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
   <a class="vx-brand" href="/" title="返回主界面（工作台）">VOXA</a>
   <span class="vx-vsep"></span>
 
+  <!-- 官方是「一组三个」分段按钮，激活态是绿色底块 + 绿字，不是下划线；
+       换肤不在其中——它是新建时决定的作品类型，之后不能改。 -->
   <div class="vx-modegroup" id="vxModes">
     <button class="vx-tab active" data-mode="model" title="模型编辑状态"><span class="ti" data-vico="person"></span>模型</button>
     <button class="vx-tab" data-mode="anim" title="动画编辑状态"><span class="ti" data-vico="run"></span>动画</button>
+    <button class="vx-tab" data-mode="physics" title="物理界面布局（碰撞盒）"><span class="ti" data-vico="hitbox"></span>物理</button>
   </div>
-  <span class="vx-vsep"></span>
-  <div class="vx-modegroup secondary">
-    <button class="vx-tab" data-mode="physics" title="物理界面布局（碰撞盒）"><span class="ti" data-vico="cube"></span>物理</button>
-    <button class="vx-tab" data-mode="skin" title="换肤模式：18 节点人形模板"><span class="ti" data-vico="shirt"></span>换肤</button>
+  <span class="vx-vsep" id="sepType"></span>
+  <!-- 作品类型徽标：自由模式 / 换肤模式 -->
+  <span id="vxTypeBadge" class="vx-type" title="作品类型在新建时决定，之后不可修改">自由模式</span>
+
+  <!-- 物理模式独有：碰撞盒模式（官方放在顶栏，不是浮层） -->
+  <div class="vx-axisgrp" id="grpPhMode" hidden><b>模式</b>
+    <button data-ph="default" class="on">默认</button><button data-ph="custom">自定义</button>
   </div>
 
   <!-- 体素模式独有：镜像 / 旋转 / 翻转 / 部件框大小 -->

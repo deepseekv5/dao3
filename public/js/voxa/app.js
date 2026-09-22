@@ -54,6 +54,7 @@ const VICO = {
   person: '<circle cx="12" cy="6" r="2.8" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6.5 21v-4.2a5.5 5.5 0 0 1 11 0V21M9 12.5l3 2 3-2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   run: '<circle cx="14" cy="5" r="2.2" fill="currentColor"/><path d="M13 8.5l-3.4 2.2.8 4.1-2.9 5.4M13 8.5l3.6 1.6 2.9-1.1M9.6 10.7L6 12.4M10.4 14.8l4.2 1.2 1.3 4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
   cube: '<path d="M12 3.5l7.2 4.2v8.6L12 20.5l-7.2-4.2V7.7L12 3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  hitbox: '<path d="M12 3.5l7.2 4.2v8.6L12 20.5l-7.2-4.2V7.7L12 3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   shirt: '<path d="M8.5 4L5 6l1.6 3.2L8.5 8v11h7V8l1.9 1.2L19 6l-3.5-2a3.5 3.5 0 0 1-7 0z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
   scissors: '<circle cx="6.5" cy="17.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="6.5" cy="6.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.6 8.2L19 18M8.6 15.8L19 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   local: '<path d="M12 12V4M12 12H4M12 12l7 7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/>',
@@ -95,6 +96,7 @@ class VoxaApp {
     this.view.setActivePart(this.activePart);
     this.view.focus();
     this.view.onFrame = () => { if (this.playing) this._tickPlay(); };
+    this.applyDocType();
     this.applyMode();
   }
   /* ---------------- 初始内容 ---------------- */
@@ -224,6 +226,16 @@ class VoxaApp {
     };
 
     $("vxBack").onclick = () => this.setInPart(false);
+    // 顶栏的碰撞盒模式（官方放在这里，不是浮层里的下拉框）
+    $("grpPhMode").querySelectorAll("button[data-ph]").forEach((b) => {
+      b.onclick = () => {
+        this.doc.physics.mode = b.dataset.ph;
+        refreshPhysics(this.doc);
+        $("phMode") && ($("phMode").value = b.dataset.ph);
+        $("grpPhMode").querySelectorAll("button[data-ph]").forEach((x) => x.classList.toggle("on", x === b));
+        this.renderPhysics(); this.renderProps(); this.dirty();
+      };
+    });
     // 官方：双击部件进入体素编辑
     this.view.canvas.addEventListener("dblclick", (ev) => {
       const hit = this.view.pickVoxel(ev);
@@ -343,7 +355,7 @@ class VoxaApp {
         // 不需要离开前确认：dirty() 每次都 saveLocal() 落 localStorage，没有未保存态
         location.href = "/";
         break;
-      case "new": if (confirm("新建模型会清空当前内容？")) { this.doc = newDoc(); this.activePart = null; this.seedStarterPart(); this.view.setDoc(this.doc); this.renderAll(); } break;
+      case "new": this.newDocFlow(); break;
       case "save": this.save(); break;
       case "open": this.pickFile(".voxa,.json", (f) => this.openFile(f)); break;
       case "importVox": this.pickFile(".vox", (f) => this.importVoxFile(f)); break;
@@ -373,21 +385,48 @@ class VoxaApp {
   }
   applyMode() {
     const anim = this.mode === "anim", phys = this.mode === "physics";
-    const vox = this.mode !== "anim" && this.mode !== "physics" && this.inPart;
+    const vox = this.mode === "model" && this.inPart;
     $("vxTimeline").classList.toggle("show", anim);
-    $("vxPhysics").classList.toggle("show", phys);
-    // 顶栏的镜像/旋转/翻转/部件框大小只属于体素层，坐标系切换属于部件层与动画层
+    // 官方物理界面：模式在顶栏，参数在右侧「参数」面板，没有浮层
+    $("vxPhysics").style.display = "none";
+    $("grpPhMode").hidden = !phys;
     for (const id of ["grpMirror", "grpRotate", "grpFlip", "grpSize"]) $(id).hidden = !vox;
-    $("grpSpace").hidden = vox || phys;
+    $("grpSpace").hidden = vox || phys || anim;
     $("vxBack").hidden = !vox;
     $("sectPalette").style.display = phys ? "none" : "";
-    $("sectProps").style.display = anim && !this.activePart ? "" : "";
+    $("sectList").style.display = phys ? "none" : "";
     $("vxVoxOps").style.display = vox ? "" : "none";
+    this.view.setGhostMode(phys);
     if (anim) { this.renderTimeline(); this.setFrame(this.frame); }
     if (phys) { refreshPhysics(this.doc); this.renderPhysics(); }
-    if (this.mode === "skin") this.loadSkinTemplate(true);
     this.buildTools();
     this.syncSizeBoxes();
+    this.renderProps();
+  }
+  /** 换肤是作品类型而不是编辑器模式：它只影响新建时的模板与可用操作 */
+  /** 官方新建对话框：自由模式 / 换肤模式，类型一旦定下不可修改，所以必须问清楚 */
+  newDocFlow() {
+    const pick = window.prompt("新建模型\n1 = 自由模式（不设限，支持自定义动画）\n2 = 换肤模式（做玩家皮肤，载入 18 节点人形模板，类型创建后不可更改）", "1");
+    if (pick === null) return;
+    const type = String(pick).trim() === "2" ? "skin" : "free";
+    if (!confirm("新建模型会清空当前内容，确定？")) return;
+    this.doc = newDoc(type === "skin" ? "换肤作品" : "未命名模型", type);
+    this.activePart = null; this.inPart = false;
+    this.view.setDoc(this.doc);
+    if (type === "skin") this.loadSkinTemplate(true);
+    else this.seedStarterPart();
+    this.applyDocType();
+    this.renderAll();
+    this.tip(type === "skin" ? "已新建换肤作品（类型不可更改）" : "已新建自由模式作品");
+  }
+  applyDocType() {
+    const skin = this.doc.type === "skin";
+    const b = $("vxTypeBadge");
+    b.textContent = skin ? "换肤模式" : "自由模式";
+    b.classList.toggle("skin", skin);
+    b.title = skin
+      ? "换肤作品：仅可修改皮肤部件内容与各部件绑定骨骼节点的偏移，类型创建后不可更改"
+      : "自由模式：不设限创作模式，支持自定义动画";
   }
   /** 把当前部件框尺寸回填到顶栏的三个数字框 */
   syncSizeBoxes() {
@@ -409,14 +448,15 @@ class VoxaApp {
     ["paint", "paint"], ["eyedropper", "eyedropper"],
   ];
   static RAIL_ANIM = [["move", "move"], ["rot", "rot"], ["scale", "scale"]];
+  // 官方物理界面左侧只有两个图标：移动 + 缩放（碰撞盒不能旋转，旋转由实体承载）
+  static RAIL_PHYSICS = [["move", "move"], ["scale", "scale"]];
 
   buildTools() {
     const host = $("vxTools");
     host.innerHTML = "";
     const list = this.mode === "anim" ? VoxaApp.RAIL_ANIM
-      : this.mode === "physics" ? []
-        : this.mode === "skin" ? (this.inPart ? VoxaApp.RAIL_VOXEL : VoxaApp.RAIL_PART)
-          : (this.inPart ? VoxaApp.RAIL_VOXEL : VoxaApp.RAIL_PART);
+      : this.mode === "physics" ? VoxaApp.RAIL_PHYSICS
+        : (this.inPart ? VoxaApp.RAIL_VOXEL : VoxaApp.RAIL_PART);
     for (const [ico, act] of list) {
       if (ico === "-") {
         const s = document.createElement("span"); s.className = "vx-sep"; host.appendChild(s); continue;
@@ -682,6 +722,38 @@ class VoxaApp {
   renderProps() {
     const host = $("vxProps");
     host.innerHTML = "";
+    // 官方物理界面的右侧只有「参数」：位置 + 尺寸两行，各自 X/Y/Z
+    if (this.mode === "physics") {
+      const ph = this.doc.physics;
+      const row = (label, arr, key) => {
+        const r = document.createElement("div");
+        r.className = "vx-axisrow";
+        r.innerHTML = `<span class="ax">${label}</span>`;
+        ["X", "Y", "Z"].forEach((ax, i) => {
+          const inp = document.createElement("input");
+          inp.type = "number"; inp.step = "0.1"; inp.value = +(arr[i] ?? 0).toFixed(2);
+          inp.title = `${key} ${ax}`;
+          inp.onchange = () => {
+            const next = arr.slice(); next[i] = Number(inp.value) || 0;
+            if (key === "center") ph.center = next; else ph.size = next.map((v) => Math.max(0.05, v));
+            ph.mode = "custom"; refreshPhysics(this.doc);
+            this.renderPhysics(); this.view.rebuild(); this.dirty();
+          };
+          r.appendChild(inp);
+        });
+        return r;
+      };
+      const box = document.createElement("div");
+      box.className = "vx-sec";
+      box.appendChild(row("", ph.center, "center"));
+      box.appendChild(row("", ph.size, "size"));
+      host.appendChild(box);
+      const t = document.createElement("div");
+      t.className = "vx-empty";
+      t.textContent = "默认模式下碰撞盒是所有部件的最小外接包围盒，随模型变化；自定义后固定为你填的尺寸。Arena 里显示为黄色方框。";
+      host.appendChild(t);
+      return;
+    }
     if (this.mode === "anim" && this.activeBone) {
       host.appendChild(section("骨骼 " + this.activeBone.name, [
         vecRow("位移", this.activeBone.position, (v) => { this.activeBone.position = v; this.view.buildBones(); }),
@@ -734,6 +806,7 @@ class VoxaApp {
     $("phMode").value = ph.mode;
     $("phPos").value = ph.center.map((v) => +v.toFixed(2)).join(", ");
     $("phSize").value = ph.size.map((v) => +v.toFixed(2)).join(", ");
+    $("grpPhMode").querySelectorAll("button[data-ph]").forEach((b) => b.classList.toggle("on", b.dataset.ph === ph.mode));
   }
   renderTimeline() {
     // 官方动画面板：左列「动画列表」，右侧骨骼节点轨道 + 秒刻度尺

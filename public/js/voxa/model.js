@@ -45,11 +45,13 @@ export function newAnim(name = "idle") {
   return { id: nextId("a"), name, fps: ANIM_FPS, tracks: {} };
 }
 
-export function newDoc(name = "未命名模型") {
+export function newDoc(name = "未命名模型", type = "free") {
   const root = newBone("Root", null);
   root.id = "root";
   return {
     version: VOXA_VERSION, name,
+    // 官方口径：作品类型（自由 / 换肤）在创建时刻即决定，且不支持之后修改
+    type: type === "skin" ? "skin" : "free",
     palette: [newPaletteEntry()],
     parts: [], bones: [root],
     anims: [newAnim("idle")], curAnim: 0,

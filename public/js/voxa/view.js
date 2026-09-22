@@ -235,6 +235,19 @@ export class VoxaView {
   setActivePart(part) { this.activePart = part; this.rebuildBoxes(); }
   setBoneVisible(on) { this.showBones = on; this.boneHelpers.visible = on; }
   setBoxesVisible(on) { this.showBoxes = on; this.boxHelpers.visible = on; }
+  /** 物理界面：官方把模型画成半透明，好让人看清碰撞盒与模型的关系 */
+  setGhostMode(on) {
+    this.ghost = !!on;
+    for (const n of this.partNodes.values()) {
+      if (!n.mesh) continue;
+      n.mesh.material.transparent = this.ghost || n.mesh.material.userData?.baseTransparent || false;
+      n.mesh.material.opacity = this.ghost ? 0.42 : (n.mesh.material.userData?.baseOpacity ?? 1);
+      n.mesh.material.needsUpdate = true;
+      if (n.emissive) { n.emissive.visible = !this.ghost; }
+    }
+    // 碰撞盒在物理界面要始终可见，哪怕用户在部件层关掉了框
+    if (on) this.boxHelpers.visible = true;
+  }
 
   /* ---------------- 拾取 ---------------- */
   ndc(ev) {

@@ -30,14 +30,16 @@ body.voxa{
 .vx-ico:hover{background:#2a2a2a;color:#fff}
 .vx-ico.on{color:var(--vx-green)}
 
-/* 模式切换：官方是「图标 + 文字」，激活态是绿色文字 + 绿色下划线，不是色块填充 */
-.vx-modegroup{display:flex;gap:2px;align-items:stretch;flex:0 0 auto}
-.vx-modegroup.secondary{opacity:.9}
-.vx-tab{display:inline-flex;align-items:center;gap:5px;padding:0 12px;height:39px;color:var(--vx-fg2);
-  font-size:12.5px;white-space:nowrap;border-bottom:2px solid transparent;background:none}
-.vx-tab:hover{color:#fff}
-.vx-tab.active{color:var(--vx-green);border-bottom-color:var(--vx-green);font-weight:600}
-.vx-tab .ti{opacity:.85}
+/* 模式切换：官方是**一组三个分段按钮**，激活态是绿色底块 + 绿字（不是下划线、不是橙色块） */
+.vx-modegroup{display:flex;gap:2px;align-items:stretch;flex:0 0 auto;background:#141414;border:1px solid #2c2c2c;border-radius:6px;padding:2px;height:30px}
+.vx-tab{display:inline-flex;align-items:center;gap:5px;padding:0 12px;border-radius:4px;color:var(--vx-fg2);
+  font-size:12.5px;white-space:nowrap;background:none}
+.vx-tab:hover{color:#fff;background:#232323}
+.vx-tab.active{color:#0f1a04;background:var(--vx-green);font-weight:700}
+/* 作品类型徽标：换肤/自由在新建时就定了，所以只做展示不做切换 */
+.vx-type{font-size:11px;color:var(--vx-fg2);background:#242424;border:1px solid #333;border-radius:10px;
+  padding:2px 9px;white-space:nowrap;flex:0 0 auto}
+.vx-type.skin{color:var(--vx-green-ink);background:var(--vx-green);border-color:var(--vx-green-dim);font-weight:600}
 
 /* 镜像 / 旋转 / 翻转 / 部件框大小 / 坐标系 */
 .vx-axisgrp{display:flex;align-items:center;gap:3px;flex:0 0 auto}
