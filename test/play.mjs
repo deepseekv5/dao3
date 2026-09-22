@@ -272,6 +272,19 @@ ok("7 个虚拟按钮全部落在可视区内", mPlay.btns.length === 7 && mPlay
    mPlay.btns.filter((b) => !b.inside).map((b) => b.id).join(" "));
 ok("游玩画面无横向溢出", mPlay.overflow <= 1, String(mPlay.overflow));
 
+// fixed 元素只写 top 不写 bottom:auto，就会从 top 一直撑到 bottom ——
+// .pe-readout 曾经因此变成 750px 高的容器，把状态读数甩到屏幕正中压住准星。
+// 横向溢出测不出这种错（宽度没变），所以这里量高度与所在区带。
+const bands = await mpage.evaluate(() => {
+  const box = (sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: Math.round(r.height) }; };
+  return { readout: box(".pe-readout"), state: box("#gameState"), vitals: box("#gameVitals"), cross: box("#gameCross") };
+});
+const cross = bands.cross || { y: 422, h: 0 };
+ok("读数条没被撑高（fixed 只写 top 会撑满整屏）", bands.readout.h < 60, JSON.stringify(bands.readout));
+ok("状态读数在顶部区带、没压住准星", bands.state.y < 160 && Math.abs(bands.state.y - cross.y) > 120,
+   `state.y=${bands.state.y} cross.y=${cross.y}`);
+ok("血条在顶部区带内", bands.vitals.y < 160 && bands.vitals.h < 80, JSON.stringify(bands.vitals));
+
 // 真推摇杆：Touch 事件走 game.js 的 _bindTouch
 const before = await mpage.evaluate(() => window.__play.position());
 await mpage.touchscreen.tap(mPlay.joy.x + mPlay.joy.w / 2, mPlay.joy.y + mPlay.joy.h / 2);

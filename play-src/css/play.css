@@ -83,7 +83,7 @@ html.touch-capable .pe-top{height:40px}
 html.touch-capable .pe-title{font-size:13px;white-space:nowrap;flex:0 0 auto}
 html.touch-capable .pe-hint-touch{font-size:10.5px;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis}
 html.touch-capable #gameVitals{left:14px;bottom:auto;top:calc(var(--bbh) + 46px)}
-html.touch-capable .pe-readout{top:calc(var(--bbh) + 46px);right:12px;gap:6px;font-size:10.5px}
+html.touch-capable .pe-readout{top:calc(var(--bbh) + 46px);bottom:auto;right:12px;gap:6px;font-size:10.5px}
 html.touch-capable #gameCoords{display:none}
 html.touch-capable #gameConsole{left:14px;right:14px;bottom:auto;top:calc(var(--bbh) + 96px);width:auto;max-height:32vh}
 html.touch-capable #gameChat{bottom:200px;max-width:52vw}
