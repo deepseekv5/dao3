@@ -80,6 +80,10 @@ const REQUIRED = [
   "official-project/cids.json",
   // 反向断言：模板既然决定分发，丢了就该报错，而不是静默退回程序化 demo
   "official-project/racing-template.json.gz",
+  // 体验版的源。play/ 是产物且不入库，所以这三件丢了就等于 build:play 在
+  // 使用者手里直接失败——而文档教的就是这条命令。
+  "play-src/index.html", "play-src/js/play.js", "play-src/css/play.css",
+  "scripts/build-play.mjs",
   "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
   "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md",
 ];
