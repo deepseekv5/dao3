@@ -222,6 +222,23 @@
   <div id="peRotate" role="note">转成横屏更好操作：竖屏下摇杆与按键会挤到赛道上</div>
 </div>
 
+<!-- 就地重生成地形弹窗：只换体素，不动实体/脚本/区域/商品 -->
+<div id="terrainModal" class="modal">
+  <div class="modal-box">
+    <div class="modal-title">生成地形</div>
+    <p class="modal-note">只替换方块，实体 / 脚本 / 区域 / 商品 / 出生点都保留。想从零开始请用「新建世界」。</p>
+    <div class="size-custom">
+      <label>地貌<select id="tmPreset"></select></label>
+      <label>种子<input id="tmSeed" type="number" min="1" max="999999" value="20260924"></label>
+      <label>起伏<input id="tmAmp" type="range" min="0.3" max="2" step="0.05" value="1"><em id="tmAmpV">1.00</em></label>
+      <label>淹成水面<input id="tmFloodAuto" type="checkbox" checked><em>按地貌</em></label>
+      <label>水面占比<input id="tmFlood" type="range" min="0" max="80" step="5" value="10" disabled><em id="tmFloodV">10%</em></label>
+      <label><input id="tmTrees" type="checkbox" checked> 种树</label>
+    </div>
+    <div class="modal-actions"><button id="tmCancel">取消</button><button id="tmOk" class="primary">生成</button></div>
+  </div>
+</div>
+
 <!-- 新建世界尺寸弹窗 -->
 <div id="sizeModal" class="modal">
   <div class="modal-box">
@@ -229,6 +246,7 @@
     <div class="mode-row" id="genMode">
       <button data-mode="flat" class="active">超平坦</button>
       <button data-mode="demo">示例地形</button>
+      <button data-mode="terrain">程序化地形</button>
       <button data-mode="empty">空白</button>
     </div>
     <div class="size-presets" id="sizePresets">
@@ -236,6 +254,13 @@
       <button data-s="100,100" class="active">100 × 100</button>
       <button data-s="128,128">128 × 128</button>
       <button data-s="256,256">256 × 256</button>
+    </div>
+    <div class="size-custom" id="terrainWrap" style="display:none">
+      <label>地貌<select id="tnPreset"></select></label>
+      <label>种子<input id="tnSeed" type="number" min="1" max="999999" value="20260924"></label>
+      <label>起伏<input id="tnAmp" type="range" min="0.3" max="2" step="0.05" value="1"><em id="tnAmpV">1.00</em></label>
+      <label>淹成水面<input id="tnFloodAuto" type="checkbox" checked><em>按地貌</em></label>
+      <label>水面占比<input id="tnFlood" type="range" min="0" max="80" step="5" value="10" disabled><em id="tnFloodV">10%</em></label>
     </div>
     <div class="size-custom">
       <label>宽 X<input id="szX" type="number" min="8" max="256" value="100"></label>

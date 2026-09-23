@@ -254,6 +254,11 @@ export class VoxelRenderer {
     // map 在图集加载完成后由 main.js 赋值为共享的 atlas.texture
     this.opaqueMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.0 });
     this.transparentMat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.6, roughness: 0.5, metalness: 0.0, depthWrite: false });
+    // 水面单独一条材质：程序化地形的海/湖要靠它才读得出"是水"。
+    // 与通用透明方块共用 transparentMat 时，水只是"淡了一档的贴图"，
+    // 实测整片群岛看着像毛玻璃平台。这里压暗底色 + 降粗糙度，让水面吃高光。
+    // 只认 water：图集里 11 个 fluid 有 10 个是牛奶/果汁/酱油，统一染蓝就错了。
+    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false });
     this.glowMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     // 空气墙材质：编辑器半透明绿罩（运行时整层隐藏，见 setBarriersVisible）
     this.barrierMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.28, color: 0x6fdc7f, depthWrite: false });
@@ -376,6 +381,7 @@ vec2 fxTileRect(float t){
     };
     patch(this.opaqueMat);
     patch(this.transparentMat);
+    patch(this.waterMat);
     patch(this.glowMat);
     this.setEdges = (on) => { this.showEdges = !!on; this._edgeU.value = on ? 1 : 0; };
     this.showGrid = true;
@@ -618,15 +624,16 @@ vec2 fxTileRect(float t){
 
   buildChunk(cx, cy, cz, key) {
     const old = this.chunkMeshes.get(key);
-    if (old) { if (old.opaque) this.disposeMesh(old.opaque); if (old.trans) this.disposeMesh(old.trans); if (old.glow) this.disposeMesh(old.glow); if (old.barrier) this.disposeMesh(old.barrier); }
+    if (old) { if (old.opaque) this.disposeMesh(old.opaque); if (old.trans) this.disposeMesh(old.trans); if (old.water) this.disposeMesh(old.water); if (old.glow) this.disposeMesh(old.glow); if (old.barrier) this.disposeMesh(old.barrier); }
     const w = this.world; if (!w) { this.chunkMeshes.delete(key); return; }
     const A = this.atlas;
     const pos = [], nor = [], uv = [], idx = [], av = [];
     const tpos = [], tnor = [], tuv = [], tidx = [], tav = [];
+    const wpos = [], wnor = [], wuv = [], widx = [], wav = [];
     const gpos = [], gnor = [], guv = [], gidx = [], gav = [];
     const bpos = [], bnor = [], buv = [], bidx = [], bav = [];
     const ox = cx * CHUNK, oy = cy * CHUNK, oz = cz * CHUNK;
-    let vc = 0, tvc = 0, gvc = 0, bvc = 0;
+    let vc = 0, tvc = 0, wvc = 0, gvc = 0, bvc = 0;
     for (let y = 0; y < CHUNK; y++) for (let z = 0; z < CHUNK; z++) for (let x = 0; x < CHUNK; x++) {
       const wx = ox + x, wy = oy + y, wz = oz + z;
       const id = w.get(wx, wy, wz); if (!id) continue;
@@ -642,12 +649,14 @@ vec2 fxTileRect(float t){
       if (!Array.isArray(block.emissive)) {
         console.warn("[renderer] block missing emissive id=" + block.id + " name=" + block.name + " type=" + typeof block);
       }
-      // 空气墙进独立桶；其余按透明/不透明分桶
-      const useT = selfTrans && !isBarrier;
+      // 空气墙进独立桶；水单独一桶；其余按透明/不透明分桶
+      const isWater = selfTrans && !isBarrier && block.name === "water";
+      const useT = selfTrans && !isBarrier && !isWater;
+      const useW = isWater;
       const rot = w.getRot ? (w.getRot(wx, wy, wz) & 3) : 0;
       const fmap = rot ? ROT_FACE[rot] : null; // 旋转只换贴图来源，面的几何与剔除不变
-      const P = useT ? tpos : isBarrier ? bpos : pos, N = useT ? tnor : isBarrier ? bnor : nor, U = useT ? tuv : isBarrier ? buv : uv;
-      let base = useT ? tvc : isBarrier ? bvc : vc;
+      const P = useW ? wpos : useT ? tpos : isBarrier ? bpos : pos, N = useW ? wnor : useT ? tnor : isBarrier ? bnor : nor, U = useW ? wuv : useT ? tuv : isBarrier ? buv : uv;
+      let base = useW ? wvc : useT ? tvc : isBarrier ? bvc : vc;
       for (const f of FACES) {
         const nx = wx + f.dir[0], ny = wy + f.dir[1], nz = wz + f.dir[2];
         const nid = w.get(nx, ny, nz);
@@ -663,7 +672,7 @@ vec2 fxTileRect(float t){
         const a4 = an && an.frames && an.frames.length > 1
           ? [an.frames.length, (an.duration || 200) / 1000, an.frames[0], 0]
           : [0, 0, 0, 0];
-        const AV = useT ? tav : isBarrier ? bav : av;
+        const AV = useW ? wav : useT ? tav : isBarrier ? bav : av;
         for (let c = 0; c < 4; c++) {
           const co = f.corners[c];
           P.push(wx + co[0], wy + co[1], wz + co[2]);
@@ -672,9 +681,9 @@ vec2 fxTileRect(float t){
           U.push(u0 + su * (u1 - u0), v0 + sv * (v1 - v0));
           AV.push(a4[0], a4[1], a4[2], a4[3]);
         }
-        (useT ? tidx : isBarrier ? bidx : idx).push(base, base + 1, base + 2, base, base + 2, base + 3);
+        (useW ? widx : useT ? tidx : isBarrier ? bidx : idx).push(base, base + 1, base + 2, base, base + 2, base + 3);
         base += 4;
-        if (useT) tvc += 4; else if (isBarrier) bvc += 4; else vc += 4;
+        if (useW) wvc += 4; else if (useT) tvc += 4; else if (isBarrier) bvc += 4; else vc += 4;
         if (isGlow) {
           for (let c = 0; c < 4; c++) {
             const co = f.corners[c];
@@ -703,6 +712,7 @@ vec2 fxTileRect(float t){
     };
     rec.opaque = build(pos, nor, uv, idx, this.opaqueMat, true, av);
     rec.trans = build(tpos, tnor, tuv, tidx, this.transparentMat, false, tav);
+    rec.water = build(wpos, wnor, wuv, widx, this.waterMat, false, wav);
     rec.glow = build(gpos, gnor, guv, gidx, this.glowMat, false, gav);
     // 空气墙：半透明网格（编辑器里看得到、可拾取），运行时整体隐藏；不投影避免暴露位置
     if (!bpos.length && !bvc) rec.barrier = null;
@@ -720,6 +730,7 @@ vec2 fxTileRect(float t){
     }
     if (rec.glow) rec.glow.renderOrder = 3;
     if (rec.trans) rec.trans.renderOrder = 2;
+    if (rec.water) rec.water.renderOrder = 2;
     this.chunkMeshes.set(key, rec);
   }
   // 空气墙可见性（运行模式隐藏）
@@ -785,6 +796,7 @@ vec2 fxTileRect(float t){
     const meshes = [];
     for (const m of this.chunkMeshes.values()) if (m.opaque) meshes.push(m.opaque);
     for (const m of this.chunkMeshes.values()) if (m.trans) meshes.push(m.trans);
+    for (const m of this.chunkMeshes.values()) if (m.water) meshes.push(m.water);
     for (const m of this.chunkMeshes.values()) if (m.barrier) meshes.push(m.barrier);
     const hits = this.raycaster.intersectObjects(meshes, false);
     if (hits.length) {

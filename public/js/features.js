@@ -1,6 +1,7 @@
 // features.js — 地图尺寸、多文件脚本、实体生成、模型库、zip 项目包导入、运行接线。
 import * as THREE from "../vendor/three/three.module.js";
 import { VoxelWorld } from "./world.js";
+import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 
 let E; // window.__editor 引用
@@ -9,6 +10,7 @@ export function initFeatures(editor) {
   E = editor;
   wireTopMenu();
   wireSizeModal();
+  wireTerrainModal();
   wireScript();
   wireModels();
   wirePlayer();
@@ -43,8 +45,77 @@ function wireTopMenu() {
   });
 }
 
+/** 就地重生成地形：只换体素，**不动**实体、脚本、区域、商品与出生点。
+ *  与 createWorld 的区别就在这里——新建地图必须连带清掉绑在旧地形上的一切
+ *  （见 createWorld 里那段注释），而"换个地貌"是作者想在同一张图上迭代，
+ *  清掉反而毁掉他的作品。 */
+export function regenerateTerrain(opts = {}) {
+  const e = E;
+  const p = presetById(opts.preset);
+  const [X, Y, Z] = e.world.shape;
+  const before = e.world.size();
+  // 故意不接进撤销栈：整张图重生成动辄上百万格 diff，塞进 200 深的栈会把内存吃穿，
+  // 而 History.commit 还会再应用一遍。改成"生成前确认 + 明确说明不可撤销"。
+  const stats = genTerrain(e.world, { atlas: e.atlas, clear: true, ...opts });
+  e.state.dirty = true;
+  e.renderer.rebuildAll();          // 整张地形换了，逐块 markDirty 不现实
+  e.updateStatus && e.updateStatus();
+  e.markDirty && e.markDirty();
+  e.toast(`已生成${p.name}：${before.toLocaleString()} → ${stats.cells.toLocaleString()} 格，`
+    + `海拔 ${stats.min}~${stats.max}，水面 ${stats.wetPct}% 面积（${stats.water.toLocaleString()} 格），`
+    + `树 ${stats.trees} 棵（此操作不进撤销栈）`);
+  return stats;
+}
+
 /* ------------------------------ 地图尺寸选择 ------------------------------ */
 let genMode = "flat";
+/** 水位滑杆：默认跟随地貌预设的 flood，取消「按地貌」才手动指定水面占比。
+ *  「新建世界」与「生成地形」两个入口共用，只是 id 前缀不同（tn / tm）。
+ *  返回一个 getter：undefined = 用预设值，不要把 0 当成"没设"——沙丘就是要 0。 */
+function wireFloodControl(prefix, presetSel) {
+  const auto = document.getElementById(prefix + "FloodAuto");
+  const slider = document.getElementById(prefix + "Flood");
+  const label = document.getElementById(prefix + "FloodV");
+  if (!auto || !slider || !label || !presetSel) return () => undefined;
+  const current = () => (auto.checked ? presetById(presetSel.value).flood : Number(slider.value) / 100);
+  const sync = () => {
+    slider.disabled = auto.checked;
+    label.textContent = Math.round(current() * 100) + "%";
+  };
+  auto.onchange = sync;
+  slider.oninput = sync;
+  presetSel.addEventListener("change", sync);
+  sync();
+  return () => (auto.checked ? undefined : Number(slider.value) / 100);
+}
+function wireTerrainModal() {
+  const modal = document.getElementById("terrainModal");
+  if (!modal) return;
+  const sel = document.getElementById("tmPreset");
+  if (sel && !sel.options.length) {
+    for (const p of PRESETS) {
+      const o = document.createElement("option");
+      o.value = p.id; o.textContent = p.name + " — " + p.desc;
+      sel.appendChild(o);
+    }
+    sel.value = "hills";
+  }
+  const amp = document.getElementById("tmAmp");
+  if (amp) amp.oninput = () => { document.getElementById("tmAmpV").textContent = Number(amp.value).toFixed(2); };
+  const floodOf = wireFloodControl("tm", sel);
+  window.__openTerrainModal = () => modal.classList.add("show");
+  document.getElementById("tmCancel").onclick = () => modal.classList.remove("show");
+  document.getElementById("tmOk").onclick = () => {
+    modal.classList.remove("show");
+    regenerateTerrain({
+      preset: sel.value,
+      seed: Number(document.getElementById("tmSeed").value) || 1,
+      amplitude: Number(amp.value),
+      flood: floodOf(),
+      trees: document.getElementById("tmTrees").checked,
+    });
+  };
+}
 function wireSizeModal() {
   const modal = document.getElementById("sizeModal");
   const presets = document.getElementById("sizePresets");
@@ -55,11 +126,25 @@ function wireSizeModal() {
       document.getElementById("szX").value = x; document.getElementById("szZ").value = z;
     };
   });
+  const tnPreset = document.getElementById("tnPreset");
+  if (tnPreset && !tnPreset.options.length) {
+    for (const p of PRESETS) {
+      const o = document.createElement("option");
+      o.value = p.id; o.textContent = p.name + " — " + p.desc;
+      tnPreset.appendChild(o);
+    }
+    tnPreset.value = "hills";
+  }
+  const amp = document.getElementById("tnAmp"), ampV = document.getElementById("tnAmpV");
+  if (amp) amp.oninput = () => { ampV.textContent = Number(amp.value).toFixed(2); };
+  const tnFloodOf = wireFloodControl("tn", tnPreset);
   document.querySelectorAll("#genMode button").forEach((b) => {
     b.onclick = () => {
       document.querySelectorAll("#genMode button").forEach((x) => x.classList.remove("active")); b.classList.add("active");
       genMode = b.dataset.mode;
       document.getElementById("thickWrap").style.display = genMode === "flat" ? "flex" : "none";
+      const tw = document.getElementById("terrainWrap");
+      if (tw) tw.style.display = genMode === "terrain" ? "flex" : "none";
     };
   });
   window.__openSizeModal = () => modal.classList.add("show");
@@ -70,12 +155,18 @@ function wireSizeModal() {
     const Y = clampI(document.getElementById("szY").value, 8, 128);
     const T = clampI(document.getElementById("szT").value, 1, 64);
     modal.classList.remove("show");
-    createWorld(genMode, X, Y, Z, T);
+    createWorld(genMode, X, Y, Z, T, null, {
+      preset: tnPreset ? tnPreset.value : "hills",
+      seed: document.getElementById("tnSeed") ? Number(document.getElementById("tnSeed").value) || 1 : 1,
+      amplitude: amp ? Number(amp.value) : 1,
+      flood: tnFloodOf(),
+    });
   };
 }
-export function createWorld(mode, X, Y, Z, T, name) {
+export function createWorld(mode, X, Y, Z, T, name, genOpts) {
   const e = E, atlas = e.atlas;
   const w = new VoxelWorld([X, Y, Z]);
+  E._lastGen = null;   // 上一张图的地形统计不能算到这张头上
   const id = (n) => (atlas.get(n) ? atlas.get(n).id : 0);
   const GRASS = id("grass"), DIRT = id("dirt"), STONE = id("stone");
   if (mode === "flat") {
@@ -88,8 +179,13 @@ export function createWorld(mode, X, Y, Z, T, name) {
       const top = Math.max(1, Math.min(Y - 8, h(x, z)));
       for (let y = 0; y <= top; y++) w.set(x, y, z, y === top ? GRASS : y > top - 3 ? DIRT : STONE);
     }
+  } else if (mode === "terrain") {
+    // 程序化生成：确定性噪声，同 seed 同结果（见 terrain.js）
+    E._lastGen = genTerrain(w, { atlas, ...(genOpts || {}) });
   }
-  const auto = mode === "flat" ? `超平坦 ${X}×${Z} 厚${T}` : mode === "demo" ? `示例地形 ${X}×${Z}` : `空白 ${X}×${Y}×${Z}`;
+  const auto = mode === "flat" ? `超平坦 ${X}×${Z} 厚${T}` : mode === "demo" ? `示例地形 ${X}×${Z}`
+    : mode === "terrain" ? `${(presetById((genOpts || {}).preset) || {}).name || "程序化"} ${(genOpts || {}).seed || ""} ${X}×${Z}`
+    : `空白 ${X}×${Y}×${Z}`;
   // 换地形 = 换地图。出生点、实体、场景模型、区域、商品都是绑在旧地形坐标上的，
   // 留着会把玩家丢到新边界外（掉虚空），并把旧地图的 199 个检查点撒进新图。
   const m = e.state.meta;
@@ -120,7 +216,8 @@ export function createWorld(mode, X, Y, Z, T, name) {
   renderScriptFiles();
   e.state.meta = Object.assign({}, e.state.meta, { name: name || auto, terrain: e.state.terrain, created: Date.now() });
   if (window.__replaceWorld) window.__replaceWorld(w);
-  e.toast(`已生成 ${X}×${Z} ${mode === "flat" ? "超平坦(厚" + T + ")" : mode}`);
+  const g = E._lastGen;
+  e.toast("已生成 " + auto + (g ? `，水面 ${g.wetPct}% 面积，树 ${g.trees} 棵` : ""));
 }
 function clampI(v, a, b) { return Math.max(a, Math.min(b, Math.round(Number(v) || a))); }
 function clampF(v, a, b) { return Math.max(a, Math.min(b, Number(v))); }

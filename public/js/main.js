@@ -383,6 +383,11 @@ function replaceWorld(w) {
   state.selection = null; ctx.selection = null;
   renderer.setSelectionBox(null); renderer.setHighlight(null); renderer.setGhost(null);
   if (game) game.stop();
+  // 换世界必须把上一张图的场景模型/实体标记从场景图里摘掉。createWorld 只把
+  // state.models 置空，Object3D 还挂在 renderer.models 上，于是新建世界后旧赛车图
+  // 的 199 个检查点、车、灯柱全都留在画面里（实测：新地形直接浮在旧赛道上面）。
+  // 只 remove 不 dispose：这些几何体在 state.assets.meshes 里被跨放置共享。
+  while (renderer.models.children.length) renderer.models.remove(renderer.models.children[0]);
   renderer.setWorld(w);
   renderer.fpControls.setWorld(world);
   applyTerrain();
@@ -424,7 +429,7 @@ ctx.notify = toast;
 async function boot() {
   try { localStorage.setItem("dao3_last_world", worldId); } catch {}
   await atlas.load("/data");
-  for (const m of [renderer.opaqueMat, renderer.transparentMat, renderer.glowMat, renderer.barrierMat]) { m.map = atlas.texture; m.needsUpdate = true; }
+  for (const m of [renderer.opaqueMat, renderer.transparentMat, renderer.waterMat, renderer.glowMat, renderer.barrierMat]) { m.map = atlas.texture; m.needsUpdate = true; }
   // 接缝线/序列帧动画按图集瓦片边界计算
   renderer.setAtlasParams(atlas);
   state.currentBlock = atlas.get("grass")?.id || 127;
