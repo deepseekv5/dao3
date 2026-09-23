@@ -205,6 +205,20 @@ ok("核心四类 API 运行时零缺失", apiProbe.missingCount === 0, (apiProbe
 ok("成员种类也对（方法没被实现成属性）", apiProbe.kindOk === true, (apiProbe.badKind || []).slice(0, 6).join(","));
 ok("对账真的覆盖了官方成员清单", apiProbe.total >= 300, apiProbe.total + " 个成员");
 
+// 运行 HUD 的「立即重生」：手册里承诺了这个按钮，它必须真的把人送回地图出生点
+const respawnBtn = await page.evaluate(async () => {
+  const g = window.__game, sp = g.player.spawnPoint;
+  const btn = document.getElementById("ghRespawn");
+  if (!btn) return { missing: true };
+  g.playerEntity.position.set(sp.x + 14, sp.y, sp.z + 14);
+  const far = { x: g.playerEntity.position.x, z: g.playerEntity.position.z };
+  btn.click();
+  await new Promise((r) => setTimeout(r, 400));
+  const back = { x: g.playerEntity.position.x, z: g.playerEntity.position.z };
+  return { moved: Math.abs(far.x - back.x) > 5, atSpawn: Math.abs(back.x - sp.x) < 1.5 && Math.abs(back.z - sp.z) < 1.5 };
+});
+ok("HUD「立即重生」把人送回地图出生点", !respawnBtn.missing && respawnBtn.moved && respawnBtn.atSpawn, JSON.stringify(respawnBtn));
+
 await shot("04-play");
 await page.click("#gameStop");
 await page.waitForTimeout(900);

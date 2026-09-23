@@ -497,6 +497,13 @@ body.playing .name-tags{display:block}
 
 /* 触屏 Gamepad：官方图槽（跳 / 蹲 / 跑 / 飞 / A / B / 交互） */
 body.touch.playing #touchUI{display:block}
+/* 竖屏提示只在手机竖着拿时出现：横屏与桌面都不该看到它 */
+#peRotate{display:none}
+@media (pointer:coarse) and (orientation:portrait){
+  body.playing #peRotate{display:block;position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    z-index:30;pointer-events:none;background:rgba(12,15,20,.9);border:1px solid var(--grey2);color:#ffd9a8;
+    font-size:12px;line-height:1.5;padding:7px 12px;border-radius:999px;max-width:82vw;text-align:center}
+}
 #tbtns{position:fixed;right:22px;bottom:54px;display:flex;flex-direction:row-reverse;flex-wrap:wrap;justify-content:flex-start;align-items:flex-end;gap:12px;width:230px;z-index:70}
 #tbtns button{width:58px;height:58px;font-size:15px}
 #tbtns button#tJump{width:78px;height:78px;font-size:17px;background:rgba(252,131,8,.22);border-color:rgba(252,131,8,.55)}

@@ -3221,6 +3221,8 @@ void main() {
       rt.player.spawnPoint = new GameVector3(p.x, p.y, p.z);
       rt.say("出生点已设为当前位置");
     };
+    const respawn = document.getElementById("ghRespawn");
+    if (respawn) respawn.onclick = () => { rt.player.forceRespawn(); rt.hud.dead && rt.hud.dead.classList.remove("show"); };
     const day = document.getElementById("ghDay");
     if (day) day.onclick = () => { rt.sunPhase = 0.25; };
     const night = document.getElementById("ghNight");

@@ -117,8 +117,10 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
 </div>
 
 <h3>手机与平板</h3>
-<p>触屏设备自动出虚拟按键：左下<b>摇杆</b>控制方向，右下<b>加速</b>、<b>跳跃/使用道具</b>、<b>蹲下/刹车</b>、<b>交互</b>四个键。
-画面用 dragging 转视角。体验版在竖屏下会提示转成横屏，按键位置才不挡赛道。</p>
+<p>触屏设备自动出虚拟按键：左下<b>摇杆</b>控制方向，右下七个键——
+<b>交互</b>（上车/拾取）、<b>动作 A</b>、<b>动作 B</b>、<b>飞</b>、<b>蹲</b>（开车时是刹车）、
+<b>跑</b>、<b>跳</b>（开车时是吃加速道具）。没锁鼠标时用<b>按住拖动</b>转视角。
+竖屏时会提示转成横屏——竖着拿摇杆和按键会挤到赛道上。</p>
 
 <h2 id="race">一场比赛怎么跑</h2>
 <table>
@@ -170,7 +172,7 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
 </div>
 
 <h2 id="out">掉出世界、卡住与重生</h2>
-<p>坐标掉到世界之外会自动重生回出生点。要是卡在建筑里出不来，按 <kbd>Esc</kbd> 退出运行模式再进一次；<kbd>H</kbd> 打开的设置面板里也有<b>立即重生</b>。写脚本的人可以直接调 <code>player.forceRespawn()</code>。</p>
+<p>坐标掉到世界之外会自动重生回出生点。要是卡在建筑里出不来，按 <kbd>Esc</kbd> 退出运行模式再进一次；<kbd>H</kbd> 打开的设置面板里有<b>立即重生</b>按钮。写脚本的人可以直接调 <code>player.forceRespawn()</code>。</p>
 
 <h2 id="hud">界面与设置</h2>
 <table>
@@ -178,8 +180,8 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
   <tbody>
     <tr><td>左下</td><td>聊天与系统播报（<kbd>T</kbd> 发言）</td></tr>
     <tr><td>中下</td><td>准星与交互提示（能互动的东西会显示名字，例如「报名点」）</td></tr>
-    <tr><td>右上</td><td>商城入口、玩家列表</td></tr>
-    <tr><td><kbd>H</kbd></td><td>设置面板：画质、音量、鼠标灵敏度、立即重生</td></tr>
+    <tr><td>右上</td><td>「商店」入口（地图配了商品表才会出现）与停止按钮</td></tr>
+    <tr><td><kbd>H</kbd></td><td>设置面板：日照、环境光、曝光、视场角、镜头距离，以及<b>设出生点</b> / <b>立即重生</b> / 白天 / 夜晚 / 重置 / 声音 / 控制台</td></tr>
     <tr><td><kbd>`</kbd></td><td>脚本控制台：地图脚本报错、警告都在这里，玩的时候可以不理会</td></tr>
   </tbody>
 </table>

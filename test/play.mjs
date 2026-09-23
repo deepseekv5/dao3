@@ -382,6 +382,21 @@ const after = await mpage.evaluate(() => window.__play.position());
 const movedTouch = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z);
 ok("手机摇杆能驱动角色移动", movedTouch > 0.5, movedTouch.toFixed(2) + " 格");
 await mpage.screenshot({ path: path.join(OUT, "play-mobile-play.png") });
+// 竖屏提示：手册说"竖屏会提示转横屏"，那就得真的在竖屏出现、横屏消失
+const rotPortrait = await mpage.evaluate(() => {
+  const el = document.getElementById("peRotate");
+  return el ? getComputedStyle(el).display : "no-el";
+});
+ok("竖屏手机上提示转成横屏", rotPortrait === "block", rotPortrait);
+await mpage.setViewportSize({ width: 780, height: 390 });
+await mpage.waitForTimeout(500);
+const rotLandscape = await mpage.evaluate(() => {
+  const el = document.getElementById("peRotate");
+  return el ? getComputedStyle(el).display : "no-el";
+});
+ok("转成横屏后提示自动消失", rotLandscape === "none", rotLandscape);
+await mpage.setViewportSize({ width: 390, height: 780 });
+await mpage.waitForTimeout(300);
 ok("手机端零异常与零请求失败", merr.length === 0, merr.slice(0, 3).join(" | "));
 await mctx.close();
 
