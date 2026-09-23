@@ -49,7 +49,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>判断标准只有一条：<b>在真实浏览器里把功能跑出来</b>，而不是类型检查通过。 所以本项目的回归套件是驱动真页面的，截图和断言同源。</p>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm start &amp;                      # 起本地服务
 npm test                         # test/runtime_parity.mjs · 77 条断言
-npm run test:e2e                 # test/e2e.mjs · 35 条端到端断言（截图落在 test/out/）</code></pre></div>
+npm run test:e2e                 # test/e2e.mjs · 39 条端到端断言（截图落在 test/out/）</code></pre></div>
 <p>套件需要 <code>playwright-core</code> + 一个 Chromium。它<b>不是</b>项目依赖 （运行时零依赖是硬要求），测试自己可移植地找：</p>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm i -D playwright-core &amp;&amp; npx playwright install chromium
 # 或指向已有安装：

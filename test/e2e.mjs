@@ -97,6 +97,8 @@ await page.click("#sizeOk");
 await page.waitForTimeout(2500);
 const blockCount = await page.evaluate(() => parseInt(document.getElementById("blockCount").textContent.replace(/,/g, "")));
 ok("生成 100×100×5 平坦(约5w体素)", blockCount > 49000 && blockCount < 51000, blockCount);
+// 换图那一刻就要读脚本数：下面沙箱那节会自己往脚本表里加文件，事后再读就不是"新图"的状态了
+const scriptsOnNewMap = await page.evaluate(() => (window.__editor.state.scripts || []).length);
 await shot("02-flat-world");
 
 console.log("== 第一人称编辑 ==");
@@ -112,13 +114,25 @@ ok("FP 模式关闭", fpOff === true);
 console.log("== 脚本沙箱（sb 方块） ==");
 await page.click('.mtab[data-menu="script"]');
 await page.waitForFunction(() => document.getElementById("scriptScreen").classList.contains("show"), { timeout: 5000 });
-const hasIndexFile = await page.evaluate(() => [...document.querySelectorAll("#scriptFiles .sfile")].some((e) => e.textContent.includes("index.js")));
-ok("多文件列表含 index.js", hasIndexFile);
-await page.click("#scriptExample");
+// 新图不该继承旧图脚本（赛车模板的 index.js 会把 jumpPower 设成 0），
+// 所以这里不借用地图自带的 index.js，而是走真实 UI 自己建两个文件。
+ok("新建地图脚本表为空", scriptsOnNewMap === 0, scriptsOnNewMap + " 个");
+await page.evaluate(() => { window.__editor.state.scripts.push({ name: "index.js", code: "" }, { name: "lib.js", code: "" }); });
+await page.evaluate(() => window.__editor.refreshScriptFiles());
+await page.evaluate(() => {
+  const e = window.__editor;
+  e.state.scripts[0].code = "let n=0; for (let x=0;x<6;x++) for (let y=0;y<6;y++) for (let z=0;z<6;z++){ sb.set(x,y+50,z,'stone'); n++; } console.log('完成，共 '+sb.count()+' 个体素');";
+  e.__scriptIdx = 0;
+  document.getElementById("scriptCode").value = e.state.scripts[0].code;
+  document.getElementById("scriptCode").dispatchEvent(new Event("input"));
+});
+await page.waitForTimeout(300);
+const fileNames = await page.evaluate(() => [...document.querySelectorAll("#scriptFiles .sfile")].map((x) => x.textContent.trim()));
+ok("多文件列表含 index.js 与 lib.js", fileNames.some((t) => t.includes("index.js")) && fileNames.some((t) => t.includes("lib.js")), fileNames.join(","));
 await page.click("#scriptRun");
 await page.waitForTimeout(1200);
 const sOut = await page.evaluate(() => document.getElementById("scriptOut").textContent || "");
-ok("沙箱脚本成功输出", sOut.includes("变更") || sOut.includes("完成"), sOut);
+ok("沙箱脚本成功输出", sOut.includes("完成"), sOut.slice(0, 80));
 await shot("03-script");
 
 console.log("== 运行模式（玩家出生在地图中心 + 脚本执行） ==");
@@ -140,6 +154,46 @@ const spawnPos = await page.evaluate(() => {
 const claimedAtCenter = spawnPos && Math.abs(spawnPos[0] - 50) <= 2 && Math.abs(spawnPos[2] - 50) <= 2;
 ok("出生点在地图中心 (50,*,50)", !!claimedAtCenter, spawnPos);
 ok("脚本已载入提示", playing.consoleText.includes("已载入"), playing.consoleText.slice(0, 80));
+
+// 跳跃：新建地图必须带着自己的脚本走。赛车模板的 index.js 有一句
+// jumpPower = 0（官方把跳跃键改成吃加速道具），漏清就会渗进每一张新图，
+// 表现为"按空格完全没反应"。这里在干净超平坦上真按一次空格量高度。
+const jump = await page.evaluate(async () => {
+  const g = window.__game;
+  const y0 = g.playerEntity.position.y;
+  g._jumpBuf = 0.14;
+  const ys = [];
+  for (let i = 0; i < 16; i++) { await new Promise((r) => setTimeout(r, 50)); ys.push(g.playerEntity.position.y); }
+  return { jumpPower: g.player.jumpPower, rise: Math.max(...ys) - y0, scripts: (window.__editor.state.scripts || []).length };
+});
+ok("新建地图不继承旧图脚本", scriptsOnNewMap === 0, scriptsOnNewMap + " 个脚本");
+ok("按空格真的跳起来", jump.jumpPower > 0 && jump.rise > 1.0, `jumpPower=${jump.jumpPower}  rise=${jump.rise.toFixed(2)} 格`);
+
+// 角色外观：六个命名部件是对外契约（挂点/换肤/摆臂都靠它们），
+// 且必须是有细节的部件组而不是六块居中盒子。
+const look = await page.evaluate(() => {
+  const av = window.__game.playerEntity._avatar;
+  const parts = av.userData.parts;
+  const names = Object.keys(parts);
+  let meshes = 0, tintable = 0;
+  av.traverse((m) => { if (m.isMesh) { meshes++; if (m.userData.tint) tintable++; } });
+  // 肩宽必须撑得住头宽，否则是火柴人；腿要绕髋转而不是绕腿中心转
+  const bb = (n) => parts[n].getWorldPosition({ x: 0, y: 0, z: 0 });
+  return { names, meshes, tintable, groupParts: names.every((n) => parts[n].isGroup),
+    shoulder: Math.abs(parts.armL.position.x - parts.armR.position.x),
+    headW: parts.head.children[0] ? parts.head.children[0].geometry.parameters.width : 0 };
+});
+ok("六部件契约仍在且是关节 Group", look.groupParts
+  && ["head", "body", "armL", "armR", "legL", "legR"].every((n) => look.names.includes(n)), look.names.join(","));
+ok("角色有细节层次（不止六块盒子）", look.meshes >= 24 && look.tintable >= 8, `${look.meshes} 个子网格 / ${look.tintable} 个可染色`);
+ok("肩宽撑得住头宽", look.shoulder > look.headW, `肩 ${look.shoulder.toFixed(2)} > 头宽 ${look.headW.toFixed(2)}`);
+// player.color 官方默认 [1,1,1]＝不染色；旧实现直接 copy 会把上衣冲成灰白
+const shirt = await page.evaluate(() => {
+  const p = window.__game.playerEntity._avatar.userData.parts.body;
+  let hex = null; p.traverse((m) => { if (m.isMesh && m.userData.tint === "cloth" && hex === null) hex = m.material.color.getHexString(); });
+  return { hex, color: JSON.stringify(window.__game.player.color) };
+});
+ok("默认 player.color 不冲淡上衣原色", shirt.hex === "4a86c4", `player.color=${shirt.color} → 上衣 #${shirt.hex}`);
 await shot("04-play");
 await page.click("#gameStop");
 await page.waitForTimeout(900);

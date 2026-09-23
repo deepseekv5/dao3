@@ -64,7 +64,7 @@ node start.mjs --port=5173 --no-open
 ## 它到底"兼容"到什么程度
 
 不是"看着像"，是有断言可查的。`test/runtime_parity.mjs` 用真实浏览器驱动运行时，
-**112 条断言全绿**（默认执行 107 条，另 5 条需 `RACING_ZIP` 夹具），覆盖：
+**175 条断言全绿**（parity 77 + e2e 39 + play 38 + packaging 21），覆盖：
 
 - **单位制**：官方 `walkSpeed 0.22 格/tick`、`64ms/tick`、`gravity -0.1`、
   `jumpPower 0.96`——在现搭的确定性平台上量出来的位移/跳跃高度必须落在官方量级
@@ -86,8 +86,8 @@ node start.mjs --port=5173 --no-open
 
 ```bash
 npm test          # 77 条断言（需先起服务）
-npm run test:e2e  # 30 条端到端断言（免责声明门禁、建图、运行模式、每页返回主界面）
-npm run test:play # 31 条断言：网页体验版在拟真 Pages 子路径下的桌面 + 手机真浏览器回归
+npm run test:e2e  # 39 条端到端断言（免责声明门禁、建图、运行模式、每页返回主界面）
+npm run test:play # 38 条断言：网页体验版在拟真 Pages 子路径下的桌面 + 手机真浏览器回归
 npm run audit:api # 官方 API 面覆盖率
 ```
 

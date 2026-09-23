@@ -375,8 +375,16 @@ const pl = await page.evaluate(async () => {
   const step = async (n) => { for (let i = 0; i < (n || 2); i++) { g._last -= 320; g._frame(); await sleep(6); } };
   const out = {};
   const parts = e._avatar.userData.parts;
-  const body = parts.body.material, leg = parts.legL.material;
+  // 部件现在是关节 Group（里面若干带 userData.tint 的子网格），
+  // 取"这个部件上会被染色的那块"来验材质，比直接读 parts.body.material 更贴近语义
+  const clothOf = (n) => { let m = null; parts[n].traverse((x) => { if (!m && x.isMesh && x.userData.tint) m = x; }); return m; };
+  const bodyMesh = clothOf("body"), leg = clothOf("legL").material;
+  const body = bodyMesh.material;
   out.standard = !!(body.isMeshStandardMaterial && leg.isMeshStandardMaterial);
+  // 未染色时（player.color 默认 [1,1,1]）的实测颜色，作为叠乘的基准。
+  // 不能拿 userData.baseColor 的十六进制除 255 来算：那是 sRGB，
+  // 而 THREE r152+ 的 Color 存的是线性值，两者差一个转换，比出来必然对不上。
+  out.base = [+body.color.r.toFixed(3), +body.color.g.toFixed(3), +body.color.b.toFixed(3)];
   P.color.red = 0.2; P.color.green = 0.9; P.color.blue = 0.4;
   P.metalness = 0.7; P.shininess = 0.35; P.emissive = 1.5;
   await step();
@@ -449,10 +457,14 @@ const pl = await page.evaluate(async () => {
   g._voxelDirty && g._voxelDirty.clear();
   return out;
 });
+// player.color 官方默认 [1,1,1]＝不染色，所以它是**叠乘**到布料底色上的 tint，
+// 不是替换——替换的话默认白色会把蓝衬衫冲成灰白（旧实现正是如此，等于这个参数从没生效过）。
+const tinted = pl.look.body.every((v, i) => Math.abs(v - +(pl.base[i] * [0.2, 0.9, 0.4][i]).toFixed(2)) <= 0.02);
 ok(`人偶材质是 PBR，player.color/metalness/shininess/emissive 赋值即时生效`,
-  pl.standard === true && pl.look.body[0] === 0.2 && pl.look.body[1] === 0.9 && pl.look.body[2] === 0.4
+  pl.standard === true && tinted
   && pl.look.metal === 0.7 && pl.look.rough === 0.65 && pl.look.emis === 1.5 && pl.look.lit > 0.5
-  && pl.restored.metal === 0 && pl.restored.emis === 1, JSON.stringify(pl.look) + " " + JSON.stringify(pl.restored));
+  && pl.restored.metal === 0 && pl.restored.emis === 1,
+  JSON.stringify({ base: pl.base, body: pl.look.body, want: pl.base.map((v, i) => +(v * [0.2, 0.9, 0.4][i]).toFixed(2)) }));
 ok(`player.scale 同时放大人偶与物理盒（2 格净空：scale1 过得去、scale2 被顶住）`,
   pl.avatarScale === 2 && pl.scale1.x > pl.scale1.gate && pl.scale2.x <= pl.scale2.gate + 0.35,
   JSON.stringify({ s1: pl.scale1, s2: pl.scale2, av: pl.avatarScale }));

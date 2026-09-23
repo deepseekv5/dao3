@@ -99,12 +99,25 @@ export function createWorld(mode, X, Y, Z, T, name) {
   m.groups = [];
   m.zones = [];
   m.products = [];
+  // 脚本同样是**这张图**的。赛车模板的 index.js 里有 entity.player.jumpPower = 0
+  // （官方把跳跃键改成了吃加速道具），漏清会让每一张新建地图都不能跳；
+  // 它 onTick 还按 checkPoints[0].bounds 取检查点，新图没有那些实体，
+  // 于是每 tick 抛一次 TypeError。素材引用（meshNames/assetRoot/ui）指向的也是旧图。
+  m.scripts = [];
+  m.meshNames = [];
+  delete m.assetRoot;
+  m.ui = [];
   if (window.__game) window.__game.spawnPoint = null; // enterPlay 用的是 meta||旧值，两边都要清
   // _applyPlayerMeta 在 _createPlayer 之后跑，initialPosition 会把出生点再次拽回旧坐标，
   // 所以只删位置，玩家的速度/镜头/音效等配置保留。
   if (m.player) { delete m.player.initialPosition; delete m.player.initialYaw; }
   e.state.entities = [];
   e.state.models = [];
+  e.state.scripts = [];
+  // 脚本面板选中的下标是编辑器状态，地图换了它就是悬空引用；
+  // 文件列表也要立刻重画，否则屏幕上还挂着上一张图的 index.js
+  e.__scriptIdx = null;
+  renderScriptFiles();
   e.state.meta = Object.assign({}, e.state.meta, { name: name || auto, terrain: e.state.terrain, created: Date.now() });
   if (window.__replaceWorld) window.__replaceWorld(w);
   e.toast(`已生成 ${X}×${Z} ${mode === "flat" ? "超平坦(厚" + T + ")" : mode}`);
@@ -162,7 +175,8 @@ function wireScript() {
   const render = () => renderCodeEditor();
   const syncScroll = () => syncCodeScroll();
   ta.addEventListener("input", () => {
-    if (e.__scriptIdx != null) e.state.scripts[e.__scriptIdx].code = ta.value;
+    const cur = curScript();
+    if (cur) cur.code = ta.value;
     if (_errLine >= 0) { _errLine = -1; } // 编辑即清除错误标记
     renderCodeEditor(); // 同步渲染（脚本文件都不大，且后台标签页 rAF 会被节流）
     syncCodeScroll();
@@ -174,26 +188,37 @@ function wireScript() {
     renderScriptFiles();
   };
   document.getElementById("scriptDel").onclick = () => {
-    if (!e.__scriptIdx) return;
+    // 原来是 !e.__scriptIdx：第一个脚本的下标是 0，falsy，于是"删掉当前脚本"
+    // 对第一个文件永远静默失效。
+    if (e.__scriptIdx == null) return;
     if (e.state.scripts.length <= 1) { e.toast("至少保留一个脚本文件"); return; }
     e.state.scripts.splice(e.__scriptIdx, 1);
     e.__scriptIdx = null;
     renderScriptFiles();
   };
   document.getElementById("scriptRename").onclick = () => {
-    if (e.__scriptIdx == null) return;
-    const nm = prompt("重命名", e.state.scripts[e.__scriptIdx].name);
-    if (nm && /\.js$/i.test(nm)) { e.state.scripts[e.__scriptIdx].name = nm; renderScriptFiles(); }
+    const cur = curScript();
+    if (!cur) return;
+    const nm = prompt("重命名", cur.name);
+    if (nm && /\.js$/i.test(nm)) { cur.name = nm; renderScriptFiles(); }
     else if (nm) e.toast("文件名需以 .js 结尾");
   };
   document.getElementById("scriptExample").onclick = () => {
-    if (e.__scriptIdx == null) return;
-    e.state.scripts[e.__scriptIdx].code = DEFAULT_SCRIPT;
+    const cur = curScript();
+    if (!cur) return;
+    cur.code = DEFAULT_SCRIPT;
     document.getElementById("scriptCode").value = DEFAULT_SCRIPT;
     render();
   };
   document.getElementById("scriptGenEntities").onclick = genEntitiesFromScript;
   renderScriptFiles();
+}
+/** 当前选中的脚本文件；下标越界（换地图把脚本清空了、或刚删掉一个）时返回 null。
+ *  __scriptIdx 是编辑器状态，state.scripts 是地图状态，两者生命周期不同，
+ *  直接拿前者当下标就会在换图后指到不存在的位置上。 */
+function curScript() {
+  const e = E;
+  return e.__scriptIdx == null ? null : (e.state.scripts || [])[e.__scriptIdx] || null;
 }
 function renderScriptFiles() {
   const e = E;
@@ -214,10 +239,18 @@ function renderScriptFiles() {
     };
     list.appendChild(it);
   });
+  // 越界的下标先夹回来，再决定默认选中谁
+  if (e.__scriptIdx != null && e.__scriptIdx >= e.state.scripts.length) e.__scriptIdx = null;
   if (e.__scriptIdx == null && e.state.scripts.length) e.__scriptIdx = 0;
   if (e.__scriptIdx != null) {
     ta.value = e.state.scripts[e.__scriptIdx].code || "";
     renderCodeEditor(); syncCodeScroll();
+  } else {
+    ta.value = "";
+    const pre = document.getElementById("scriptHighlight");
+    if (pre) pre.textContent = "";
+    const ln = document.getElementById("scriptLines");
+    if (ln) ln.textContent = "";
   }
 }
 
@@ -526,6 +559,7 @@ export function addPlacedModel(d) {
 let _suspendList = false;
 export function suspendModelList(v) { _suspendList = !!v; }
 export function refreshModelList() { renderModelList(); }
+export function refreshScriptFiles() { renderScriptFiles(); }
 function renderModelList() {
   const e = E, list = document.getElementById("modelList");
   if (!list || _suspendList) return;

@@ -8,7 +8,7 @@ import { TOOLS, readSelection, eraseSelection, pasteVoxels } from "./tools.js";
 import { mirror, rotate90, flip } from "./ops.js";
 import * as io from "./io.js";
 import { buildUI } from "./ui.js";
-import { initFeatures, moveSelectedModel, importProject, migratePlayerMeta, placeHeldModel, moveHeldModelTo, rotateHeldModel, dropHeldModel, ensureHeldFromSelection, refreshModelList, createWorld } from "./features.js";
+import { initFeatures, moveSelectedModel, importProject, migratePlayerMeta, placeHeldModel, moveHeldModelTo, rotateHeldModel, dropHeldModel, ensureHeldFromSelection, refreshModelList, refreshScriptFiles, createWorld } from "./features.js";
 import { GameRuntime, logGameError } from "./game.js";
 
 const worldId = (location.pathname.match(/\/edit\/([a-zA-Z0-9_-]+)/) || [])[1] || "216d665d3ca92bd1b9a2";
@@ -563,7 +563,7 @@ async function boot() {
     viewport.addEventListener("contextmenu", (e) => e.preventDefault());
   }
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, sunDirFromDayNight, enterPlay, stopPlay, setFirstPerson, importProject });
-  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities };
+  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles };
   initFeatures(window.__editor);
   restoreEntityMarkers();
   restoreSceneModels(state.meta); // boot 种子世界同样恢复场景模型

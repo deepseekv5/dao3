@@ -1,15 +1,15 @@
 {
- "base": "http://127.0.0.1:5321",
+ "base": "http://127.0.0.1:5174",
  "viewport": {
   "width": 1440,
   "height": 900
  },
  "scale": 2,
- "captured": "2026-09-21T23:34:57.987Z",
+ "captured": "2026-09-23T00:25:07.522Z",
  "shots": [
   {
    "name": "workbench",
-   "kb": 158
+   "kb": 159
   },
   {
    "name": "editor-build",
@@ -37,15 +37,15 @@
   },
   {
    "name": "editor-run",
-   "kb": 203
+   "kb": 205
   },
   {
    "name": "run-store",
-   "kb": 229
+   "kb": 231
   },
   {
    "name": "voxa",
-   "kb": 347
+   "kb": 348
   }
  ],
  "pageErrors": []

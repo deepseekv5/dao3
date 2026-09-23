@@ -4,15 +4,16 @@
 // 站点截图就跟着更新，不会出现"文档还是上个月的界面"。
 //
 // 用法：先起服务（npm start），再
-//   BASE=http://127.0.0.1:5321 node scripts/capture-screenshots.mjs
+//   BASE=http://127.0.0.1:PORT node scripts/capture-screenshots.mjs   留空则自动探测
 // 找不到 playwright-core 时整套 SKIP 并给出提示（运行时零依赖，测试/截图工具是可选的）。
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveChromium, chromeArgs, playwright } from "../test/browser.mjs";
+import { resolveChromium, chromeArgs, playwright, resolveBase } from "../test/browser.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BASE = process.env.BASE || "http://127.0.0.1:5321";
+const BASE = await resolveBase();
+if (!BASE) { console.error("找不到本项目在跑的本地服务：先 ./run.sh（或设 BASE=http://127.0.0.1:PORT）"); process.exit(1); }
 const OUT = path.join(ROOT, "docs/img");
 const RACING = "216d665d3ca92bd1b9a2";
 const W = Number(process.env.SHOT_W || 1440), H = Number(process.env.SHOT_H || 900);
@@ -26,14 +27,19 @@ if (!exe || !pw) {
   console.log("      或设 CHROME=/path/to/chrome 与 PLAYWRIGHT_MODULE=/path/to/playwright-core");
   process.exit(0);
 }
+// 免责声明只确认一次；__noAutosave 保证截图过程绝不写回地图存档。
+// 版本号从 disclaimer.js 里读，不写死：写死过一次，升 ACK_VER 之后 10 张截图
+// 全变成那张遮罩，而且每张字节数一模一样，不细看根本发现不了。
+const ACK = (/const\s+ACK_VER\s*=\s*["']([^"']+)["']/.exec(
+  fs.readFileSync(path.join(ROOT, "public/js/disclaimer.js"), "utf8")) || [])[1];
+if (!ACK) { console.error("读不到 public/js/disclaimer.js 里的 ACK_VER，拒绝截图（否则遮罩会盖住全部画面）"); process.exit(1); }
 const { chromium } = pw;
 const browser = await chromium.launch({ executablePath: exe, args: chromeArgs() });
 const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 2 });
-// 免责声明只确认一次；__noAutosave 保证截图过程绝不写回地图存档
-await ctx.addInitScript(() => {
-  try { localStorage.setItem("dao3_disclaimer_ack", "1"); } catch {}
+await ctx.addInitScript((ver) => {
+  try { localStorage.setItem("dao3_disclaimer_ack", ver); } catch {}
   window.__noAutosave = true;
-});
+}, ACK);
 const page = await ctx.newPage();
 const errs = [];
 page.on("pageerror", (e) => errs.push(String(e.message || e)));

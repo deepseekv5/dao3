@@ -76,28 +76,80 @@ class TagLayer {
 }
 
 /* ============================ 默认角色外观 ============================ */
+// 六个命名部件（head/body/armL/armR/legL/legR）是对外契约：PART_SLOT 的 18 个官方
+// 挂点归并到它们，addWearable 拿它们当锚点，player.skin 按它们分部位染色，
+// _updateAvatar 按它们摆臂摆腿。所以重做外观只能改这六块**内部**长什么样。
+//
+// 每个部件是一个 Group，原点放在**关节**上（肩、髋），网格往下偏——
+// 这样 rotation.x 是绕肩/髋转，而不是绕一块居中盒子的中心转（旧版腿像钟摆就是这么来的）。
+// 子网格用 userData.tint 标自己该被哪种染色影响：
+//   "cloth" 上衣/裤子类，受 skin[part] 与 player.color 驱动
+//   "skin"  露出的皮肤（脸、手），受 skin[part] 驱动
+//   不设   头发、眼睛、腰带、鞋、纽扣——永远是自己的颜色，染色不会把五官涂没
 function makeAvatar() {
   const g = new THREE.Group();
   // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
-  // 所以人偶用 Standard（roughness 1 / metalness 0 时观感与原来的 Lambert 基本一致）
-  const std = (hex) => new THREE.MeshStandardMaterial({ color: hex, roughness: 1, metalness: 0 });
-  const skin = std(0xf1c27d);
-  const shirt = std(0x2f8fd8);
-  const pants = std(0x39445c);
-  const mk = (w, h, d, mat, x, y, z) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat.clone());
+  // 所以人偶统一用 Standard（roughness 1 / metalness 0 时观感接近原来的 Lambert）
+  const std = (hex, rough = 0.86) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 });
+  const C = {
+    skin: 0xf0c9a0, skinDark: 0xd3a878, hair: 0x40301f, eye: 0x2b2b33, eyeWhite: 0xf7f9fc,
+    shirt: 0x4a86c4, shirtShade: 0x35648f, collar: 0xdfe6ef, pants: 0x3d4560, pantsShade: 0x2c3348,
+    belt: 0x2a2d38, buckle: 0xd9b25a, boot: 0x2b241d, bootSole: 0x1a1614, cuff: 0x2f5f8f,
+  };
+  const part = (name, x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); p.name = name; g.add(p); return p; };
+  // box 的 y 是相对**关节**的偏移，不是世界高度
+  const box = (parent, w, h, d, hex, x, y, z, tint, rough) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), std(hex, rough));
     m.position.set(x, y, z);
-    m.userData.baseColor = mat.color.getHex();
-    g.add(m);
+    m.castShadow = true; m.receiveShadow = true;
+    m.userData.baseColor = hex;
+    if (tint) m.userData.tint = tint;
+    parent.add(m);
     return m;
   };
-  const head = mk(0.52, 0.52, 0.52, skin, 0, 1.55, 0);
-  const body = mk(0.5, 0.62, 0.28, shirt, 0, 1.0, 0);
-  const armL = mk(0.16, 0.6, 0.16, shirt, -0.34, 1.0, 0);
-  const armR = mk(0.16, 0.6, 0.16, shirt, 0.34, 1.0, 0);
-  const legL = mk(0.2, 0.7, 0.2, pants, -0.13, 0.35, 0);
-  const legR = mk(0.2, 0.7, 0.2, pants, 0.13, 0.35, 0);
-  for (const m of [head, body, armL, armR, legL, legR]) { m.castShadow = true; }
+
+  const head = part("head", 0, 1.40, 0);
+  box(head, 0.40, 0.40, 0.36, C.skin, 0, 0.20, 0, "skin");           // 脸（侧面收一点，避免整颗头都是后脑）
+  box(head, 0.42, 0.12, 0.38, C.hair, 0, 0.375, -0.005);             // 头发帽：只比头宽 0.02，多了就像顶着一块板
+  box(head, 0.38, 0.20, 0.08, C.hair, 0, 0.255, -0.165);             // 后脑头发（贴着头皮，不外凸）
+  box(head, 0.09, 0.05, 0.03, C.hair, -0.14, 0.295, 0.175);          // 左眉
+  box(head, 0.09, 0.05, 0.03, C.hair, 0.14, 0.295, 0.175);           // 右眉
+  box(head, 0.09, 0.08, 0.03, C.eyeWhite, -0.10, 0.205, 0.18);       // 左眼白
+  box(head, 0.09, 0.08, 0.03, C.eyeWhite, 0.10, 0.205, 0.18);        // 右眼白
+  box(head, 0.05, 0.05, 0.03, C.eye, -0.09, 0.195, 0.196, null, 0.4); // 左瞳（低 roughness＝有点湿亮）
+  box(head, 0.05, 0.05, 0.03, C.eye, 0.09, 0.195, 0.196, null, 0.4);  // 右瞳
+  box(head, 0.06, 0.04, 0.05, C.skinDark, 0, 0.135, 0.19, "skin");   // 鼻尖
+  box(head, 0.14, 0.025, 0.03, C.skinDark, 0, 0.075, 0.18, "skin");  // 嘴
+  box(head, 0.10, 0.10, 0.10, C.skin, 0, 0.14, -0.21, "skin");       // 颈后
+
+  const body = part("body", 0, 0.82, 0);
+  box(body, 0.46, 0.50, 0.26, C.shirt, 0, 0.29, 0, "cloth");         // 躯干（比头宽，肩线才撑得住）
+  box(body, 0.50, 0.09, 0.29, C.collar, 0, 0.545, 0.01);             // 领口（比肩略宽，读得出是独立一件）
+  box(body, 0.48, 0.09, 0.27, C.pants, 0, 0.045, 0, "cloth");        // 胯
+  box(body, 0.49, 0.07, 0.28, C.belt, 0, 0.115, 0);                  // 腰带
+  box(body, 0.09, 0.06, 0.03, C.buckle, 0, 0.115, 0.15, null, 0.35); // 铜扣（metalness 感靠低 roughness）
+  box(body, 0.10, 0.16, 0.02, C.shirtShade, -0.14, 0.33, 0.14);      // 上衣左开襟阴影
+  box(body, 0.10, 0.16, 0.02, C.shirtShade, 0.14, 0.33, 0.14);       // 上衣右开襟阴影
+
+  const arm = (name, side) => {
+    const a = part(name, side * 0.28, 1.32, 0);                      // 原点在肩
+    box(a, 0.15, 0.30, 0.16, C.shirt, 0, -0.16, 0, "cloth");         // 上臂（袖子）
+    box(a, 0.155, 0.055, 0.165, C.cuff, 0, -0.315, 0);               // 袖口
+    box(a, 0.13, 0.16, 0.14, C.skin, 0, -0.42, 0, "skin");           // 小臂+手
+    return a;
+  };
+  const armL = arm("armL", -1), armR = arm("armR", 1);
+
+  const leg = (name, side) => {
+    const l = part(name, side * 0.115, 0.82, 0);                    // 原点在髋
+    box(l, 0.185, 0.44, 0.20, C.pants, 0, -0.22, 0, "cloth");       // 大腿
+    box(l, 0.175, 0.20, 0.19, C.pantsShade, 0, -0.54, 0, "cloth");  // 小腿（深一档，读得出是两条）
+    box(l, 0.19, 0.11, 0.28, C.boot, 0, -0.695, 0.035);             // 鞋（往前伸，有鞋头）
+    box(l, 0.195, 0.035, 0.29, C.bootSole, 0, -0.755, 0.04);        // 鞋底
+    return l;
+  };
+  const legL = leg("legL", -1), legR = leg("legR", 1);
+
   g.userData.parts = { head, body, armL, armR, legL, legR };
   return g;
 }
@@ -1196,6 +1248,15 @@ export class GameRuntime {
         this._doubleJumpUsed = true;
         this._fireButtonEvent(GameButtonType.DOUBLE_JUMP);
         this._playAt(p.doubleJumpSound, ent.position);
+      } else if ((this._grounded || this._coyote > 0) && p.jumpPower <= 0) {
+        // 地图脚本把 jumpPower 设成 0 是合法的官方玩法（赛车模板就用跳跃键吃加速道具）。
+        // 但按下去毫无反应会被当成"游戏坏了"，所以说明一句是谁关的、为什么。节流 4 秒。
+        this._jumpBuf = 0;
+        const now = performance.now();
+        if (!this._jumpBlockedAt || now - this._jumpBlockedAt > 4000) {
+          this._jumpBlockedAt = now;
+          this.toast("这张地图的脚本关掉了跳跃（player.jumpPower = 0）");
+        }
       }
     }
     this._doubleJumpButton = false;
@@ -1800,25 +1861,36 @@ export class GameRuntime {
       const c = skinColorOf(p.skin && p.skin[part]);
       if (c) st.color = c;
     }
-    for (const [slot, mesh] of Object.entries(parts)) {
+    for (const [slot, node] of Object.entries(parts)) {
       const st = state[slot] || {};
-      mesh.visible = !st.hidden;
-      if (!mesh.material) continue;
-      const mt = mesh.material;
-      // 优先级：官方 skin 分部位配色 > player.color（人偶本体色，默认值就是肤色系）> 材质自带色
-      const col = st.color ? st.color.clone()
-        : (slot === "body" && tint) ? tint.clone()
-        : (mesh.userData.baseColor != null ? new THREE.Color(mesh.userData.baseColor) : null);
-      if (col) mt.color.copy(col);
-      if (!mt.isMeshStandardMaterial) continue;
-      mt.metalness = mm;
-      mt.roughness = clamp01(1 - sh);
-      if (mt.emissive) {
-        // 材质本身没有自发光色时，只改 emissiveIntensity 是看不见的，得先把颜色点亮
-        if (mt.userData._baseEmissive === undefined) mt.userData._baseEmissive = (mt.emissive.r + mt.emissive.g + mt.emissive.b) > 0.001;
-        if (!mt.userData._baseEmissive) mt.emissive.setScalar(em > 0 ? 1 : 0);
-        mt.emissiveIntensity = em > 0 ? em : 1;
-      }
+      node.visible = !st.hidden;
+      // 部件是 Group：染色要落到里面标了 tint 的子网格上。
+      // 头发、眼睛、腰带、鞋不带 tint，永远保持自己的颜色——否则 player.color 会把五官涂成一片。
+      // 优先级：官方 skin 分部位配色 > player.color（人偶本体色，只作用于上衣）> 材质自带色
+      node.traverse((mesh) => {
+        if (!mesh.isMesh || !mesh.material) return;
+        const mt = mesh.material;
+        const kind = mesh.userData.tint;
+        // skin[part] 是**具名换肤**，按官方语义整块替换；
+        // player.color 是「人偶本体色」，官方默认 [1,1,1]＝不染色，所以只能**叠乘**到
+        // 布料底色上。旧写法直接 copy(tint)，于是默认值白色把蓝衬衫冲成灰白——
+        // 也就是说这个参数从来没起过它该起的作用，只是悄悄毁掉了原色。
+        const base = mesh.userData.baseColor != null ? new THREE.Color(mesh.userData.baseColor) : null;
+        let col = null;
+        if (st.color && kind) col = st.color.clone();
+        else if (slot === "body" && kind === "cloth" && tint && base) col = base.clone().multiply(tint);
+        else if (base) col = base;
+        if (col) mt.color.copy(col);
+        if (!mt.isMeshStandardMaterial) return;
+        mt.metalness = mm;
+        mt.roughness = clamp01(1 - sh);
+        if (mt.emissive) {
+          // 材质本身没有自发光色时，只改 emissiveIntensity 是看不见的，得先把颜色点亮
+          if (mt.userData._baseEmissive === undefined) mt.userData._baseEmissive = (mt.emissive.r + mt.emissive.g + mt.emissive.b) > 0.001;
+          if (!mt.userData._baseEmissive) mt.emissive.setScalar(em > 0 ? 1 : 0);
+          mt.emissiveIntensity = em > 0 ? em : 1;
+        }
+      });
     }
   }
 
