@@ -254,6 +254,53 @@ ok("上车后换上车的网格并收起人物本体", board.holderKids > 0 && b
   && board.avatarVisible === false, JSON.stringify({ mesh: board.mesh, kids: board.holderKids, av: board.avatarVisible }));
 await page.screenshot({ path: path.join(OUT, "play-boarded.png") });
 
+// 车头朝向与镜头取景。官方 .vb→glTF 丢了动画轨道，而官方正是靠轨道驱动车头朝向，
+// 所以网格会停在导出朝向：实测 汽车模板-1 车头在 −X、行进在 +Z，车是"横着开"的。
+// 现在每帧按部件命名（前轮/后轮/尾翼）量车尾→车头，转最短角对齐速度方向。
+const drive = await page.evaluate(async () => {
+  const g = window.__game, THREE = g.THREE || await import("./vendor/three/three.module.js");
+  const ent = g.playerEntity, h = ent._meshHolder;
+  if (!h || !h.children.length) return { skip: "没有车辆网格" };
+  const named = () => { const o = {}; h.traverse((n) => { if (n.name && (n.name.includes("前") || n.name.includes("后")) && !o[n.name]) o[n.name] = n.getWorldPosition(new THREE.Vector3()); }); return o; };
+  // 官方模板上车后有 3 秒倒计时，期间 disableInputDirection=BOTH（按键无效）。
+  // 不等它结束就按 W，只会量到一辆停着不动的车。
+  for (let i = 0; i < 60; i++) {
+    if (String(g.player.disableInputDirection || "none") === "none") break;
+    await new Promise((x) => setTimeout(x, 200));
+  }
+  const p0 = { ent: [ent.position.x, ent.position.z], x: ent.position.x, z: ent.position.z };
+  g._keys.w = true;
+  const samples = [];
+  for (let i = 0; i < 10; i++) {
+    await new Promise((x) => setTimeout(x, 150));
+    const v = { x: ent.velocity.x, z: ent.velocity.z }, sp = Math.hypot(v.x, v.z);
+    const nm = named();
+    if (sp < 0.05 || !nm["前轮"] || !nm["后轮"]) continue;
+    const c = new THREE.Box3().setFromObject(h).getCenter(new THREE.Vector3());
+    const f = nm["前轮"];
+    samples.push({
+      lead: +(((f.x - c.x) * v.x + (f.z - c.z) * v.z) / sp).toFixed(2),
+      len: (() => { const sz = new THREE.Box3().setFromObject(h).getSize(new THREE.Vector3()); return +Math.max(sz.x, sz.z).toFixed(2); })(),
+      along: (() => { const sz = new THREE.Box3().setFromObject(h).getSize(new THREE.Vector3()); return Math.abs(v.z) > Math.abs(v.x) ? sz.z > sz.x : sz.x > sz.z; })(),
+    });
+  }
+  g._keys.w = false;
+  const moved = Math.hypot(ent.position.x - p0.x, ent.position.z - p0.z);
+  const cam = Math.hypot(g.e.renderer.camera.position.x - ent.position.x, g.e.renderer.camera.position.z - ent.position.z);
+  return { n: samples.length, lead: samples.map((x) => x.leads ?? x.lead), alongAll: samples.every((x) => x.along),
+    moved: +moved.toFixed(2), cam: +cam.toFixed(2), want: g.player.cameraDistance, scale: g.player.scale };
+});
+if (drive.skip) console.log("SKIP  车头朝向：", drive.skip);
+else {
+  ok("开起来后车头朝在行进方向（不是横着/倒着）",
+    drive.n >= 3 && drive.lead.filter((v) => v != null).length >= 3 && drive.lead.slice(-3).every((v) => v > 0.3),
+    "前伸 " + drive.lead.join(","));
+  ok("车身长轴与行进方向一致", drive.alongAll === true);
+  ok("镜头按主体大小取景（0.13 比例的车不再用 8.5 格远看）",
+    drive.cam < drive.want * 0.6 && drive.cam > 1, `${drive.cam} 格 vs cameraDistance ${drive.want}`);
+}
+await page.screenshot({ path: path.join(OUT, "play-car-driving.png") });
+
 // 键盘按键必须真的 fire 官方 player.onPress。曾经只有触屏按钮会 fire，
 // 键盘只改了内部 _jumpBuf —— 于是桌面端玩家吃了加速道具也按不出来
 // （赛车模板的消耗判定是 button == GameButtonType.JUMP）。

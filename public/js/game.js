@@ -598,6 +598,7 @@ export class GameRuntime {
       cameraUp: new GameVector3(0, 1, 0), cameraPosition: new GameVector3(),
       cameraFreezedAxis: GameCameraFreezedAxis.NONE,
       cameraFovY: PLAYER_DEFAULTS.cameraFovY, cameraDistance: PLAYER_DEFAULTS.cameraDistance,
+      cameraFrameSubject: true,
       cameraYaw: 0, cameraPitch: 0, freezedForwardDirection: null,
       muted: false, music: { _sample: "", get sample() { return this._sample; }, set sample(v) { this._sample = v; rt._setMusic(v); } },
       gamepad: {
@@ -1286,7 +1287,8 @@ export class GameRuntime {
     const list = this.entities.filter((e2) => !e2.destroyed);
     if (list.length < 2) return;
     const now = new Map(list.map((a) => [a, new Set()]));
-    const ZERO = new GameVector3();
+    const UP = { x: 0, y: 1, z: 0 };
+const ZERO = new GameVector3();
     // 官方实体可达数百个（场景模型即实体）：先算一次 AABB 再按 X 轴扫描剪枝，避免 O(n²)
     // 盒心与 _rebuildSolids 同口径：position + anchorOffset（漏掉偏移会把接触算到隔壁实体上）
     const c = (a) => { const o = a.anchorOffset; return [a.position.x + (o ? o.x : 0), a.position.y + (o ? o.y : 0), a.position.z + (o ? o.z : 0)]; };
@@ -1727,7 +1729,8 @@ export class GameRuntime {
       r.camera.getWorldDirection(dir);
       const tgt = (p.cameraEntity && p.cameraEntity !== ent && p.cameraEntity.position)
         ? p.cameraEntity.position : new GameVector3(cx, cy, cz);
-      let dist = p.cameraDistance;
+      const frame = this._frameScale(ent);
+      let dist = p.cameraDistance * frame.k;
       // 必须忽略玩家自己的实体：官方赛车模板上车后会 entity.mesh = 汽车，
       // 于是这条从眼位往回打的射线第一个命中的就是自己那个盒子（实测 distance 0），
       // dist 被夹到 0.22 的贴身下限，结果 1.3 格长的车壳糊满整屏、什么都看不见。
@@ -1743,6 +1746,7 @@ export class GameRuntime {
       }
       r.camera.position.set(tgt.x - dir.x * dist, tgt.y - dir.y * dist + lift, tgt.z - dir.z * dist);
       if (lift > 0.02) r.camera.lookAt(tgt.x, tgt.y + lift * 0.55, tgt.z);
+      else if (frame.lift > 0.02) r.camera.lookAt(tgt.x, tgt.y + frame.lift, tgt.z);
     } else if (mode === GameCameraMode.FPS) {
       r.camera.position.set(cx, cy, cz);
     } else if (mode === GameCameraMode.FIXED) {
@@ -1777,10 +1781,94 @@ export class GameRuntime {
       if (!e2._external || e2._driven) e2._obj.position.set(e2.position.x, e2.position.y, e2.position.z);
       if (e2._mixer) e2._mixer.update(dt);
       else if (e2._motionPlaying && !e2._external) e2._obj.rotation.y += dt * 1.2;
+      this._steerVehicleMesh(e2, dt);
       this._stepParticles(e2, dt);
       this._syncEntityVisibility(e2);
       this._updateAvatar(e2, dt);
     }
+  }
+  /** 车辆网格跟着行进方向转。
+   *
+   * 官方 .vb → glTF 的转换没有保留动画轨道，而官方恰恰是靠 motion 轨道驱动车头朝向的——
+   * 轨道一丢，网格就永远停在导出时那个朝向。实测 汽车模板-1 的车头在 −X
+   * （前轮 x≈1.4、后轮 x≈93、尾翼 x≈132.6），行进方向却是 +Z，于是车"横着开"。
+   *
+   * 轴向不写死在代码里，按几何量：水平方向上的长轴＝车长，靠近模型枢轴的那一端算车头
+   * （官方导出把枢轴放在车头，所以包围盒中心相对 holder 原点偏哪边，车头就朝反边）。
+   * 中心几乎与枢轴重合时判不出方向，宁可不转也不要瞎转。 */
+  /** 车辆网格跟着行进方向转。
+   *
+   * 官方 .vb → glTF 的转换没有保留动画轨道，而官方恰恰是靠 motion 轨道驱动车头朝向的——
+   * 轨道一丢，网格就永远停在导出时那个朝向。实测 汽车模板-1 的前轮在 x≈1.4、
+   * 后轮 x≈93、尾翼 x≈132.6（车头在 −X），而行进方向是 +Z，于是车"横着开"。
+   *
+   * 做法不靠推算角度：每帧直接量"车尾→车头"在世界里的方向，转一个最短角把它对齐到速度方向。
+   * 车头方向由模型自己的**部件命名**给出（前轮 / 后轮 / 尾翼…），中英都收，
+   * 因为 VOXA 建模与官方模板可能出现任一种。这样符号不可能算反——
+   * 前几版用"枢轴在车头"和解析式推角度，先后错成横着开、倒着开。
+   * 认不出部件名的网格（纯场景件）返回 null，一律不转，绝不把作者摆好的朝向改坏。 */
+  _carParts(ent) {
+    const holder = ent._meshHolder;
+    if (!holder) return null;
+    if (holder._parts) return holder._parts;
+    const FRONT = /前|头|front|nose|steer/i, REAR = /后|尾|翼|排|喷|rear|tail|wing|exhaust|jet/i;
+    const f = [], r = [];
+    holder.traverse((o) => {
+      if (!o.name || !o.isObject3D) return;
+      if (FRONT.test(o.name)) f.push(o);
+      else if (REAR.test(o.name)) r.push(o);
+    });
+    const parts = (f.length && r.length) ? { f, r } : null;
+    holder._parts = parts;
+    return parts;
+  }
+  _steerVehicleMesh(ent, dt) {
+    if (!ent.isPlayer || !ent._meshHolder || !ent._meshHolder.children.length) return;
+    const holder = ent._meshHolder;
+    const sp = Math.hypot(ent.velocity.x, ent.velocity.z);
+    if (sp < 0.05) return;                       // 太慢时方向没意义，保持原朝向
+    const parts = this._carParts(ent);
+    if (!parts) return;
+    const avg = (list) => {
+      const v = new THREE.Vector3();
+      for (const o of list) v.add(o.getWorldPosition(new THREE.Vector3()));
+      return v.divideScalar(list.length);
+    };
+    const axis = avg(parts.f).sub(avg(parts.r));  // 车尾 → 车头
+    axis.y = 0;
+    if (axis.lengthSq() < 1e-6) return;
+    const cur = Math.atan2(axis.x, axis.z);
+    const want = Math.atan2(ent.velocity.x, ent.velocity.z);
+    let d = want - cur;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    if (Math.abs(d) > Math.PI * 0.62) d *= 0.25;  // 掉头（倒车/撞回来）时慢一点转，别瞬间翻面
+    else d *= clamp(dt * 7, 0, 1);
+    const base = holder._steerBase;
+    holder.quaternion.setFromEuler(new THREE.Euler(0, holder._steerYaw = (holder._steerYaw || 0) + d, 0, "YXZ"));
+    if (base) holder.quaternion.multiply(base);
+  }
+  /** 第三人称相机要框住主体。官方 cameraDistance 是绝对值（默认 8.5 格），
+   *  而赛车模板把 player.scale 设成 0.13、车只有 0.6 格高——按 8.5 格看过去，
+   *  车在画面里只占约 18%，像个玩具。这里按"主体高度相对未缩放玩家(1.8 格)的比例"
+   *  收镜头距离并抬高注视点，使主体在画面里的大小与正常人物相当；
+   *  未缩放的玩家比例正好是 1，所以默认观感不变。 */
+  _frameScale(ent) {
+    if (this.player.cameraFrameSubject === false) return { k: 1, lift: 0 };
+    let h = 1.8;
+    try {
+      const src = (ent._meshHolder && ent._meshHolder.children.length) ? ent._meshHolder
+        : (ent._avatar || ent._obj);
+      if (src) {
+        const box = new THREE.Box3().setFromObject(src);
+        const size = box.getSize(new THREE.Vector3());
+        if (size.y > 0.02) {
+          h = size.y;
+          const c = box.getCenter(new THREE.Vector3());
+          return { k: clamp(h / 1.8, 0.2, 1), lift: clamp(c.y - ent.position.y - h * 0.45, 0, 1.2) };
+        }
+      }
+    } catch { /* 量不到就按原样 */ }
+    return { k: 1, lift: 0 };
   }
   _updateAvatar(ent, dt) {
     const av = ent._avatar;
@@ -2179,6 +2267,9 @@ void main() {
     holder.position.set(o.x, o.y, o.z);
     const q = ent.meshOrientation;
     if (q && q.w != null) holder.quaternion.set(q.x || 0, q.y || 0, q.z || 0, q.w);
+    holder._steerBase = holder.quaternion.clone();
+    holder._steerYaw = null;
+    holder._parts = undefined;      // 换了网格要重认部件（车头朝向按命名找）
     const col = ent.meshColor;
     holder.traverse((m) => {
       if (!m.isMesh || !m.material) return;
