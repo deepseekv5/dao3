@@ -194,6 +194,17 @@ const shirt = await page.evaluate(() => {
   return { hex, color: JSON.stringify(window.__game.player.color) };
 });
 ok("默认 player.color 不冲淡上衣原色", shirt.hex === "4a86c4", `player.color=${shirt.color} → 上衣 #${shirt.hex}`);
+
+// API 参考文档的"本地"列是静态比对出来的，对这四类再补一次真运行时对账：
+// 静态搜到名字 ≠ 对象上真有这个成员（on*/next* 是动态挂的，属性也可能压根没赋）。
+const apiProbe = await page.evaluate(async () => {
+  const m = await import("/js/api-probe.js?cb=" + Date.now());
+  return await m.probe();
+});
+ok("核心四类 API 运行时零缺失", apiProbe.missingCount === 0, (apiProbe.missing || []).slice(0, 6).join(",") || apiProbe.error);
+ok("成员种类也对（方法没被实现成属性）", apiProbe.kindOk === true, (apiProbe.badKind || []).slice(0, 6).join(","));
+ok("对账真的覆盖了官方成员清单", apiProbe.total >= 300, apiProbe.total + " 个成员");
+
 await shot("04-play");
 await page.click("#gameStop");
 await page.waitForTimeout(900);
@@ -282,6 +293,50 @@ ok("文档站有返回工作台且本地可见", await page.locator(".nav .home"
 await page.click(".nav .home");
 await page.waitForURL(HOME, { timeout: 15000 });
 ok("文档站可返回工作台", page.url() === HOME, page.url());
+
+console.log("== 游玩手册与 API 参考：入口与可读性 ==");
+await page.goto(BASE + "/manual", { waitUntil: "load" });
+await page.waitForTimeout(600);
+ok("手册页打开且标题正确", (await page.title()).includes("游玩手册"), await page.title());
+ok("手册里的实况截图真的解码成功", await page.evaluate(() =>
+  [...document.images].length >= 2 && [...document.images].every((i) => i.naturalWidth > 100)),
+await page.evaluate(() => [...document.images].map((i) => i.naturalWidth).join("/")));
+ok("键位表用 kbd 呈现（不是截图里的口述）", await page.evaluate(() => document.querySelectorAll("kbd").length) >= 20);
+ok("手册页内锚点全部命中", await page.evaluate(() =>
+  [...document.querySelectorAll("a[href^='#']")].every((a) => !!document.querySelector(a.getAttribute("href")))));
+const mOver = await (async () => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  const v = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  await page.setViewportSize({ width: 1280, height: 860 });
+  return v;
+})();
+ok("手册在 390px 手机上不横向溢出", mOver <= 0, mOver + "px");
+ok("手册里的站内链接都不是死链", await page.evaluate(async () => {
+  for (const a of [...document.querySelectorAll("a[href^='/']")]) {
+    const r = await fetch(a.getAttribute("href"), { method: "HEAD" });
+    if (!r.ok) return false;
+  }
+  return true;
+}));
+
+await page.goto(HOME, { waitUntil: "load" });
+await page.waitForTimeout(700);
+const rail = await page.evaluate(() => [...document.querySelectorAll(".wb-railnav a")]
+  .map((a) => ({ t: a.textContent.trim(), h: a.getAttribute("href") })));
+ok("工作台有「手册」入口且指向 /manual", rail.some((r) => r.t.includes("手册") && r.h === "/manual"),
+  rail.map((r) => r.t).join(" "));
+ok("「API」不再指向裸 JSON 接口，而是 API 参考页",
+  !rail.some((r) => r.h === "/api/worlds") && rail.some((r) => r.t.includes("API") && /api-reference\.html$/.test(r.h)),
+  JSON.stringify(rail.map((r) => r.h)));
+// 此刻停在工作台，编辑器不在 DOM 里；直接查编辑器那份 HTML 有没有把两个入口写进去
+ok("编辑器顶栏与运行 HUD 都有手册入口", await page.evaluate(async () => {
+  const t = await (await fetch("/editor.html")).text();
+  return /id="btnManual"[^>]*data-ico="manual"/.test(t) && /id="peManual"[^>]*href="\/manual"/.test(t);
+}));
+const ref = await page.evaluate(() => fetch("/docs/api-reference.html").then((r) => r.text()));
+ok("API 参考是生成物且带官方中文说明",
+  ref.includes("npm run build:api-ref") && ref.includes("当前运行世界的公共 URL"),
+  (ref.length / 1024).toFixed(0) + "KB");
 
 await browser.close();
 console.log("== 测试完成（截图在 test/out/*.png） ==");

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>游玩手册 · DAO3 编辑器复刻</title>
+<meta name="description" content="玩家视角的游玩手册：操作键位、一场比赛的流程、加速道具、视角与界面、常见问题。不需要读代码。"/>
+<link rel="icon" type="image/svg+xml" href="/img/arena.svg"/>
+<style>
+:root{
+  --bg:#171717; --panel:#2b2b2b; --panel2:#333; --grey2:#3c3c3c;
+  --ink:#eaeaea; --mut:#9a9a9a; --dim:#7a7a7a; --primary:#fc8308;
+  --sans:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.75}
+a{color:var(--primary)}
+.bar{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--panel);border-bottom:1px solid #000;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.brand{font-weight:700;font-size:15px;text-decoration:none;white-space:nowrap}
+.brand span{color:var(--mut);font-weight:400}
+.nav{display:flex;gap:2px;flex-wrap:wrap;margin-left:auto}
+.nav a{font-size:13px;color:var(--mut);text-decoration:none;padding:5px 9px;border-radius:6px;white-space:nowrap}
+.nav a:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+main{max-width:920px;margin:0 auto;padding:26px 20px 90px}
+h1{font-size:26px;line-height:1.35;margin:6px 0 4px}
+.lead{color:var(--mut);margin:0 0 22px}
+h2{font-size:19px;margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--grey2)}
+h3{font-size:15.5px;margin:22px 0 6px;color:var(--ink)}
+p{margin:8px 0}
+ul{margin:8px 0;padding-left:22px}
+li{margin:4px 0}
+table{width:100%;border-collapse:collapse;margin:10px 0 4px;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--grey2);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:12.5px;letter-spacing:.02em}
+td b{font-weight:600}
+kbd{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid #4a4a4a;border-bottom-width:2px;border-radius:5px;padding:1.5px 6px;white-space:nowrap;color:#f2f2f2}
+.note{background:var(--panel);border-left:3px solid var(--primary);border-radius:0 8px 8px 0;padding:11px 14px;margin:14px 0;font-size:14px;color:#d8d8d8}
+.tip{border-left-color:#5aa469}
+.shot{margin:14px 0;background:var(--panel);border:1px solid var(--grey2);border-radius:10px;padding:8px}
+.shot img{display:block;width:100%;height:auto;border-radius:6px}
+.shot figcaption{color:var(--dim);font-size:12.5px;padding:6px 3px 1px}
+.faq dt{font-weight:600;margin-top:16px}
+.faq dd{margin:4px 0 0;color:#cfcfcf}
+code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px}
+.foot{margin-top:44px;padding-top:16px;border-top:1px solid var(--grey2);color:var(--dim);font-size:13px}
+@media (max-width:700px){
+  body{font-size:15.5px}
+  .nav{margin-left:0;width:100%}
+  table{font-size:13.5px}
+  th,td{padding:7px 8px}
+  h1{font-size:22px}
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <a class="brand" href="/">DAO3 编辑器复刻 <span>/ 游玩手册</span></a>
+  <nav class="nav">
+    <a href="#keys">键位</a>
+    <a href="#race">一场比赛</a>
+    <a href="#boost">加速道具</a>
+    <a href="#hud">界面</a>
+    <a href="#faq">常见问题</a>
+    <a href="/docs/api-reference.html">API 参考</a>
+    <a href="/edit/216d665d3ca92bd1b9a2">打开编辑器 →</a>
+  </nav>
+</div>
+
+<main>
+
+<h1>游玩手册</h1>
+<p class="lead">这一页只讲<b>怎么玩</b>，不讲代码。要给地图写脚本的看 <a href="/docs/api-reference.html">API 参考</a>。</p>
+
+<div class="note">
+本手册按随包附带的官方<b>「赛车模板」</b>写：地图 ID <code>216d665d3ca92bd1b9a2</code>，
+3 圈、5 个检查点。其它地图的键位相同，但玩法由那张地图自己的脚本决定——
+官方脚本完全可以关掉跳跃、改掉速度或换成别的规则。
+</div>
+
+<h2 id="enter">怎么开始</h2>
+<ul>
+  <li><b>本地包</b>：打开工作台 →「打开赛车模板」→ 右上角<b>「运行游戏」</b>。或直接在浏览器进 <a href="/edit/216d665d3ca92bd1b9a2">编辑器</a>。</li>
+  <li><b>不想装东西</b>：<a href="https://deepseekv5.github.io/dao3play/">网页体验版</a>，进页面就是运行状态，只能玩，不能编辑与存档。</li>
+</ul>
+<p>进入运行模式后<b>点一下画面</b>会锁定鼠标用来转视角；按 <kbd>Esc</kbd> 解除锁定，再按一次退出运行模式。</p>
+
+<figure class="shot">
+  <img src="/docs/img/editor-run.png" alt="运行模式下的赛车模板：第三人称视角、左上角倒计时与圈数提示、右下虚拟按键"/>
+  <figcaption>运行模式实况：第三人称跟随、提示消息、以及触屏设备的虚拟按键。</figcaption>
+</figure>
+
+<h2 id="keys">键位</h2>
+
+<h3>电脑（键盘 + 鼠标）</h3>
+<table>
+  <thead><tr><th>按键</th><th>走路时</th><th>开车时</th></tr></thead>
+  <tbody>
+    <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / 方向键</td><td>移动</td><td>转向、进退</td></tr>
+    <tr><td><kbd>Shift</kbd></td><td>跑步</td><td><b>加速</b>（1.5 格/tick）</td></tr>
+    <tr><td><kbd>Ctrl</kbd></td><td>蹲下</td><td><b>刹车</b>（降到 0.8 格/tick）</td></tr>
+    <tr><td><kbd>空格</kbd></td><td>跳跃（连按两段跳，需地图开启）</td><td><b>吃掉身上的加速道具</b></td></tr>
+    <tr><td><kbd>E</kbd></td><td>交互：报名、上车、拾取</td><td>下车</td></tr>
+    <tr><td><kbd>F</kbd></td><td>飞行（需地图开启 <code>canFly</code>）</td><td>—</td></tr>
+    <tr><td><kbd>V</kbd></td><td colspan="2">第一人称 / 第三人称切换，屏幕左下角会提示当前模式</td></tr>
+    <tr><td><kbd>T</kbd> / <kbd>Enter</kbd></td><td colspan="2">聊天输入框</td></tr>
+    <tr><td><kbd>H</kbd></td><td colspan="2">运行模式设置面板（画质、音效、灵敏度）</td></tr>
+    <tr><td><kbd>`</kbd>（反引号）</td><td colspan="2">脚本控制台（写脚本的人用的，玩不需要）</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td colspan="2">先解锁鼠标 / 关商店，再按一次退出运行模式</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+<b>开车时空格不是跳跃。</b>赛车模板把玩家的跳跃力设成 0（<code>player.jumpPower = 0</code>），
+空格改成用来消耗加速道具。走路时按空格没反应、又提示「这张地图的脚本关掉了跳跃」，就是这个原因，不是 bug。
+</div>
+
+<h3>手机与平板</h3>
+<p>触屏设备自动出虚拟按键：左下<b>摇杆</b>控制方向，右下<b>加速</b>、<b>跳跃/使用道具</b>、<b>蹲下/刹车</b>、<b>交互</b>四个键。
+画面用 dragging 转视角。体验版在竖屏下会提示转成横屏，按键位置才不挡赛道。</p>
+
+<h2 id="race">一场比赛怎么跑</h2>
+<table>
+  <thead><tr><th>阶段</th><th>你要做什么</th><th>发生了什么</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>1 报名</b></td>
+      <td>走到<b>报名点</b>，按 <kbd>E</kbd></td>
+      <td>人物被传送到发车格，换成汽车模型、人物收起；引擎声开始</td>
+    </tr>
+    <tr>
+      <td><b>2 倒计时</b></td>
+      <td>等着，<b>按键此时无效</b></td>
+      <td>「出发倒计时：3 / 2 / 1」，这一步官方刻意锁住方向输入</td>
+    </tr>
+    <tr>
+      <td><b>3 跑圈</b></td>
+      <td>按顺序通过 <b>5 个检查点</b>，回到起点线算一圈</td>
+      <td>每个检查点通过后即被消耗；绕过去不算，必须<b>依次</b>经过</td>
+    </tr>
+    <tr>
+      <td><b>4 每圈结束</b></td>
+      <td>继续</td>
+      <td>播终点提示音，私聊里报「进度：n/3圈，用时 x 秒」</td>
+    </tr>
+    <tr>
+      <td><b>5 完赛</b></td>
+      <td>关掉结算框</td>
+      <td>跑满 3 圈后车停、播鼓掌声，全服播报总用时；打破纪录会单独播报，然后弹一个「用时 x 秒」的对话框</td>
+    </tr>
+  </tbody>
+</table>
+<p><b>顺序错了就等于没跑。</b>检查点只在「你的下一个」那个生效，抄近路跳过第 3 个点，第 4 个也不会认。</p>
+
+<figure class="shot">
+  <img src="/docs/img/run-store.png" alt="运行模式中的商城面板：商品列表与货币"/>
+  <figcaption>顶部「商店」入口打开的面板，<kbd>Esc</kbd> 关闭。</figcaption>
+</figure>
+
+<h2 id="boost">加速道具</h2>
+<ul>
+  <li>赛道上的道具车过碰到就<b>拾取</b>，身上带着时会看到提示网格发光。</li>
+  <li>带着道具按 <kbd>空格</kbd> 才消耗：车速上限从 1.5 抬到 <b>2.5 格/tick</b>，同时车尾喷粒子。</li>
+  <li>加速有时长，到点车速与外观都自动恢复。</li>
+  <li>被吃掉的道具大约 <b>3 秒</b>后回到原位，下一辆车还能再吃。</li>
+</ul>
+<div class="note tip">
+攒着不放等于没有。直道末端吃、弯前放开，比一直按着 <kbd>Shift</kbd> 快得多。
+</div>
+
+<h2 id="out">掉出世界、卡住与重生</h2>
+<p>坐标掉到世界之外会自动重生回出生点。要是卡在建筑里出不来，按 <kbd>Esc</kbd> 退出运行模式再进一次；<kbd>H</kbd> 打开的设置面板里也有<b>立即重生</b>。写脚本的人可以直接调 <code>player.forceRespawn()</code>。</p>
+
+<h2 id="hud">界面与设置</h2>
+<table>
+  <thead><tr><th>位置</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td>左下</td><td>聊天与系统播报（<kbd>T</kbd> 发言）</td></tr>
+    <tr><td>中下</td><td>准星与交互提示（能互动的东西会显示名字，例如「报名点」）</td></tr>
+    <tr><td>右上</td><td>商城入口、玩家列表</td></tr>
+    <tr><td><kbd>H</kbd></td><td>设置面板：画质、音量、鼠标灵敏度、立即重生</td></tr>
+    <tr><td><kbd>`</kbd></td><td>脚本控制台：地图脚本报错、警告都在这里，玩的时候可以不理会</td></tr>
+  </tbody>
+</table>
+
+<h2 id="faq">常见问题</h2>
+<dl class="faq">
+  <dt>按空格没反应</dt>
+  <dd>两种情况：开车时空格是<b>消耗加速道具</b>；走路时如果屏幕提示「这张地图的脚本关掉了跳跃」，说明这张图把 <code>jumpPower</code> 设为 0，是地图设计而不是故障。</dd>
+
+  <dt>上车之后屏幕被车壳糊住、什么都看不见</dt>
+  <dd>1.0.7 之前是真 bug（跟随相机被车身自己挡住，压到了贴身距离），现在已修。如果你还看到这个现象，先确认用的是最新包。</dd>
+
+  <dt>车子前进但轮子不转</dt>
+  <dd>官方赛车模型的<b>动画轨道在 .vb → glTF 的转换里没有保留</b>，源动画文件不在这批公开素材里，所以轮子确实不会转。运行时会明确提示「该模型不含任何动画数据」而不是静默假装播放。这是素材缺口，不是逻辑没写。</dd>
+
+  <dt>鼠标转不动视角</dt>
+  <dd>没锁定成功（按过 <kbd>Esc</kbd>、或在 iframe 里）。<b>按住左键拖</b>可以转视角；点一下画面重新请求锁定。</dd>
+
+  <dt>手机上进面就卡、找不到按键</dt>
+  <dd>确认浏览器允许全屏并<b>横屏</b>；虚拟按键在横屏下才摆得开。体验版在竖屏会提示你转过去。</dd>
+
+  <dt>我的改动会上传吗</dt>
+  <dd>不会。编辑数据全部存在你这台机器的 <code>server/data/worlds/</code> 下，服务端不外连。<b>网页体验版</b>是只读镜像，退出即无。</dd>
+</dl>
+
+<h2 id="next">想自己改玩法</h2>
+<p>键位、速度、能不能跳、几圈结束，全都是地图脚本里 <code>player.*</code> 与 <code>world.*</code> 的事。
+从<a href="/edit/216d665d3ca92bd1b9a2">编辑器</a>右上角「脚本」页开始改，接口查 <a href="/docs/api-reference.html">API 参考</a>
+（逐个成员的签名、单位与中文说明），单位与物理的口径看
+<a href="/docs/physics.html">物理与单位制</a>。</p>
+
+<p class="foot">
+本页与 <code>docs/</code> 同源。<a href="/">返回工作台</a> ·
+<a href="/docs/">开发文档</a> ·
+<a href="/docs/changelog.html">更新日志</a> ·
+<a href="https://github.com/deepseekv5/dao3" rel="noopener">源码仓库</a>
+</p>
+
+</main>
+</body>
+</html>

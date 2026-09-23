@@ -221,6 +221,59 @@ const uniq = await page.evaluate(async (b64) => {
 ok("画面有足够色彩与亮度（不是清屏色/黑屏）", uniq.colors > 24 && uniq.litRatio > 0.25,
    `${uniq.colors} 色 · ${(uniq.litRatio * 100).toFixed(1)}% 亮 · 截图 ${uniq.w}×${uniq.h} ${png.length}B`);
 
+console.log("== 上车（官方赛车流程最容易坏的一步） ==");
+// 官方脚本在 onInteract 里把 player.scale 设成 0.13 并换上车的 mesh。
+// 曾经相机避让射线会打到玩家自己的实体（实测 distance 0），
+// dist 被夹到 0.22 的贴身下限，于是 1.3 格长的车壳糊满整屏、什么都看不见。
+const board = await page.evaluate(async () => {
+  const g = window.__game, r = g.e.renderer, ent = g.playerEntity;
+  const gate = g.world.querySelector("#报名点");
+  if (!gate) return { skip: "没有 #报名点" };
+  ent.position.set(gate.position.x, gate.position.y + 1, gate.position.z + 2);
+  g._vy = 0; g._grounded = true;
+  await new Promise((x) => setTimeout(x, 200));
+  const hint = document.getElementById("gameInteract").textContent;
+  const before = { camDist: 0, ent: [ent.position.x, ent.position.z] };
+  before.camDist = Math.hypot(r.camera.position.x - ent.position.x, r.camera.position.z - ent.position.z);
+  const api = g.world.querySelector("player");
+  api.motion.loadByName({ iterations: Infinity, motions: [{ iterations: 1, name: "run" }] });
+  // 直接触发交互，等价于玩家按 E
+  gate._channels.Interact.fire({ tick: g.currentTick, entity: ent, player: api });
+  await new Promise((x) => setTimeout(x, 1200));
+  const after = Math.hypot(r.camera.position.x - ent.position.x, r.camera.position.z - ent.position.z);
+  return { hint, before: +before.camDist.toFixed(2), after: +after.toFixed(2),
+    want: g.player.cameraDistance, scale: g.player.scale, mesh: ent._meshName || "",
+    avatarVisible: ent._avatar.visible,
+    holderKids: ent._meshHolder ? ent._meshHolder.children.length : 0,
+    clips: ent._clips ? ent._clips.length : 0 };
+});
+ok("报名点可交互且提示正确", /报名点/.test(board.hint || ""), JSON.stringify(board.hint || ""));
+ok("上车后相机仍保持第三人称距离（没塌进车壳里）",
+  board.after > 2 || board.skip, JSON.stringify({ before: board.before, after: board.after, want: board.want }));
+ok("上车后换上车的网格并收起人物本体", board.holderKids > 0 && board.mesh.includes("汽车")
+  && board.avatarVisible === false, JSON.stringify({ mesh: board.mesh, kids: board.holderKids, av: board.avatarVisible }));
+await page.screenshot({ path: path.join(OUT, "play-boarded.png") });
+
+// 键盘按键必须真的 fire 官方 player.onPress。曾经只有触屏按钮会 fire，
+// 键盘只改了内部 _jumpBuf —— 于是桌面端玩家吃了加速道具也按不出来
+// （赛车模板的消耗判定是 button == GameButtonType.JUMP）。
+const pressFires = await page.evaluate(async () => {
+  const g = window.__game, pl = g.world.querySelector("player").player;
+  const seen = [];
+  pl.onPress(({ button }) => seen.push("d:" + button));
+  pl.onRelease(({ button }) => seen.push("u:" + button));
+  for (const code of ["Space", "ControlLeft", "KeyF"]) {
+    window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));
+    await new Promise((r) => setTimeout(r, 40));
+    window.dispatchEvent(new KeyboardEvent("keydown", { code, bubbles: true }));   // 长按连发
+    window.dispatchEvent(new KeyboardEvent("keyup", { code, bubbles: true }));
+  }
+  return seen;
+});
+ok("键盘 Space/Ctrl/F 会触发 onPress 与 onRelease", pressFires.filter((s) => s.startsWith("d:")).length === 3
+  && pressFires.filter((s) => s.startsWith("u:")).length === 3, pressFires.join(" "));
+ok("长按连发不会重复触发 Press", new Set(pressFires).size === pressFires.length, pressFires.join(" "));
+
 console.log("== 界面设置与结束流程 ==");
 const hudOk = await page.evaluate(() => {
   const host = document.getElementById("gameHudSettings");

@@ -572,6 +572,9 @@ const server = http.createServer((req, res) => {
   if (pathname === "/site" || pathname === "/site/" || pathname === "/about") {
     pathname = "/site.html";
   }
+  if (pathname === "/manual" || pathname === "/manual/") {
+    pathname = "/manual.html";
+  }
 
   // ---- static ----
   // 官方素材包：未确认授权前一律 403，并说明为什么（404 会让人以为包坏了）

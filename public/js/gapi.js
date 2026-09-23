@@ -93,8 +93,17 @@ export class GameBounds3 {
 
 export class GameRGBColor {
   constructor(r = 0, g = 0, b = 0) { this.red = r; this.green = g; this.blue = b; }
+  // 官方契约里分量就叫 r/g/b（/a），不是 red/green/blue。脚本按官方写 color.r 时
+  // 拿到 undefined 是静默失败——颜色会直接变成黑的，所以两组名字都得在。
+  get r() { return this.red; }
+  set r(v) { this.red = v; }
+  get g() { return this.green; }
+  set g(v) { this.green = v; }
+  get b() { return this.blue; }
+  set b(v) { this.blue = v; }
+  get a() { return 1; }
   set(r, g, b) { this.red = r; this.green = g; this.blue = b; return this; }
-  copy(o) { this.red = o.red; this.green = o.green; this.blue = o.blue; return this; }
+  copy(o) { this.red = o.red ?? o.r; this.green = o.green ?? o.g; this.blue = o.blue ?? o.b; return this; }
   clone() { return new GameRGBColor(this.red, this.green, this.blue); }
   add(o) { return this.clone().addEq(o); }
   sub(o) { return this.clone().subEq(o); }
@@ -108,18 +117,29 @@ export class GameRGBColor {
     return new GameRGBColor(this.red + (o.red - this.red) * n, this.green + (o.green - this.green) * n, this.blue + (o.blue - this.blue) * n);
   }
   equals(o) { return !!o && this.red === o.red && this.green === o.green && this.blue === o.blue; }
+  toRGBA() { return new GameRGBAColor(this.red, this.green, this.blue, 1); }
   toString() { return `rgb(${Math.round(this.red * 255)}, ${Math.round(this.green * 255)}, ${Math.round(this.blue * 255)})`; }
   static random() { return new GameRGBColor(Math.random(), Math.random(), Math.random()); }
 }
 
 export class GameRGBAColor extends GameRGBColor {
   constructor(r = 0, g = 0, b = 0, a = 1) { super(r, g, b); this.alpha = a; }
+  get a() { return this.alpha; }
+  set a(v) { this.alpha = v; }
   set(r, g, b, a) { super.set(r, g, b); if (a !== undefined) this.alpha = a; return this; }
-  copy(o) { super.copy(o); if (o.alpha !== undefined) this.alpha = o.alpha; return this; }
+  copy(o) { super.copy(o); const a = o.alpha ?? o.a; if (a !== undefined) this.alpha = a; return this; }
   clone() { return new GameRGBAColor(this.red, this.green, this.blue, this.alpha); }
   lerp(o, n) {
     const c = super.lerp(o, n);
     return new GameRGBAColor(c.red, c.green, c.blue, this.alpha + ((o.alpha ?? 1) - this.alpha) * n);
+  }
+  // 官方 blendEq：把自身当作目标色与给定 RGB 混合后就地写回，返回 GameRGBColor
+  blendEq(o) {
+    const a = this.alpha;
+    this.red = this.red * a + (o.red ?? o.r) * (1 - a);
+    this.green = this.green * a + (o.green ?? o.g) * (1 - a);
+    this.blue = this.blue * a + (o.blue ?? o.b) * (1 - a);
+    return this;
   }
   toString() {
     return `rgba(${Math.round(this.red * 255)}, ${Math.round(this.green * 255)}, ${Math.round(this.blue * 255)}, ${this.alpha})`;
@@ -589,6 +609,15 @@ function makeHandler(ent, rt, config) {
     }
     ent._motionPlaying = true;
     ent._motionKind = name;
+    // 官方 .vb→gltf 的转换没有保留动画轨道（实测 20 个模型 clips 全为 0），
+    // 所以 loadByName 指定的动作根本不存在。这里不伪造动画，但必须说清楚：
+    // 否则脚本作者以为动作在跑、只是"效果不明显"，会往错误的方向查半天。
+    const key = "motion:" + (ent._meshName || ent.id) + ":" + name;
+    if (name && rt._warned && !rt._warned.has(key)) {
+      rt._warned.add(key);
+      consoleDiv(rt.hud && rt.hud.console,
+        `实体 ${ent.id} 的网格没有名为 "${name}" 的动画轨道（该模型不含任何动画数据），已跳过播放`, "warn");
+    }
   }
   return handler;
 }

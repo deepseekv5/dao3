@@ -339,6 +339,7 @@ body.playing canvas{cursor:crosshair}
 .pe-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
 .pe-store{pointer-events:auto;background:var(--grey2);color:#fff;border:1px solid var(--grey2);border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer}
 .pe-store[hidden]{display:none}
+a.pe-store{text-decoration:none;display:inline-block;line-height:1.45}
 .pe-store:hover{border-color:var(--primary);color:#ffd9a8}
 .pe-store:disabled{opacity:.45;cursor:default}
 .game-store{position:absolute;right:14px;top:56px;width:296px;max-height:62vh;overflow:auto;background:rgba(12,15,20,.94);border:1px solid var(--grey2);border-radius:12px;box-shadow:0 16px 50px rgba(0,0,0,.6);padding:10px;display:none;pointer-events:auto}

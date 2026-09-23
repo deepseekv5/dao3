@@ -799,6 +799,13 @@ export class GameRuntime {
   /* ---------------- 输入 ---------------- */
   _bindInput() {
     const rt = this;
+    // 键盘按键 → 官方 GameButtonType。触屏那套早就在 fire Press，键盘却只改了
+    // 内部 _jumpBuf，导致 player.onPress 在桌面端永远收不到 JUMP/CROUCH/FLY。
+    // 官方赛车模板的加速道具正是 `if (button == GameButtonType.JUMP && entity.canAccelerate)`
+    // —— 于是键盘玩家吃了道具也按不出来，只有手机能玩。
+    const KEY_BUTTON = { space: GameButtonType.JUMP, controlleft: GameButtonType.CROUCH,
+      controlright: GameButtonType.CROUCH, keyf: GameButtonType.FLY };
+    const heldButtons = new Set();
     this._onKeyDown = (ev) => {
       if (!rt.running || !rt.player) return;
       const tag = (ev.target && ev.target.tagName) || "";
@@ -814,6 +821,9 @@ export class GameRuntime {
         if (!rt._grounded && rt.player.enableDoubleJump) rt._doubleJumpButton = true;
       }
       if (c === "keyf" && rt.player.canFly) rt._toggleFly();
+      // ev.repeat：长按会连发 keydown，Press 只该在真正按下那一刻响一次
+      const btn = KEY_BUTTON[c];
+      if (btn && !ev.repeat && !heldButtons.has(btn)) { heldButtons.add(btn); rt._firePress(btn, true); }
       if (c === "keyv") {
         rt.player.cameraMode = rt.player.cameraMode === GameCameraMode.FPS ? GameCameraMode.FOLLOW : GameCameraMode.FPS;
         rt.toast(rt.player.cameraMode === GameCameraMode.FPS ? "第一人称 (fps)" : "第三人称 (follow)");
@@ -828,6 +838,8 @@ export class GameRuntime {
       const c = String(ev.code || "").toLowerCase();
       rt._setKey(c, false);
       rt.player._channels.KeyUp.fire({ tick: rt.currentTick, keyCode: keyCodeOf(ev) });
+      const btn = KEY_BUTTON[c];
+      if (btn && heldButtons.has(btn)) { heldButtons.delete(btn); rt._firePress(btn, false); }
     };
     this._onMouseMove = (ev) => {
       if (!rt.running || !rt.player) return;
@@ -1583,7 +1595,12 @@ export class GameRuntime {
       const tgt = (p.cameraEntity && p.cameraEntity !== ent && p.cameraEntity.position)
         ? p.cameraEntity.position : new GameVector3(cx, cy, cz);
       let dist = p.cameraDistance;
-      const back = this._raycast(tgt, { x: -dir.x, y: -dir.y, z: -dir.z }, { maxDistance: dist + 0.6, ignoreFluid: true });
+      // 必须忽略玩家自己的实体：官方赛车模板上车后会 entity.mesh = 汽车，
+      // 于是这条从眼位往回打的射线第一个命中的就是自己那个盒子（实测 distance 0），
+      // dist 被夹到 0.22 的贴身下限，结果 1.3 格长的车壳糊满整屏、什么都看不见。
+      // 第三人称相机本来就不该被它正在跟随的那个实体挡住。
+      const back = this._raycast(tgt, { x: -dir.x, y: -dir.y, z: -dir.z },
+        { maxDistance: dist + 0.6, ignoreFluid: true, ignoreEntities: [ent] });
       // 贴墙时把镜头收到墙外：0.8 的硬下限会让镜头留在几何体里（穿模），只保留一个很小的贴身下限。
       // 收得越紧就越往上抬成「过肩」，否则人物会顶满画面、看不见前面的路。
       let lift = 0;
@@ -2059,11 +2076,7 @@ void main() {
     const g = this._globals(this._isClientScript(name, entry || code));
     const keys = Object.keys(g);
     const vals = keys.map((k) => g[k]);
-    try {
-      const fn = new Function(...keys, String(code) + "\n//# sourceURL=" + encodeURIComponent(name));
-      fn(...vals);
-      consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok");
-    } catch (err) {
+    const fail = (err) => {
       const msg = err && err.message ? err.message : String(err);
       let where = "";
       if (err && err.stack) {
@@ -2072,6 +2085,21 @@ void main() {
       }
       consoleDiv(this.hud.console, `[${name}] ${msg}${where}`, "err");
       window.__errs && window.__errs.push && window.__errs.push(`[${name}] ${msg}`);
+    };
+    try {
+      // 官方脚本大量在文件顶层直接写 await（`const r = await http.fetch(…)`），
+      // 用同步 Function 编译会在第一行 await 就抛 SyntaxError、整个脚本一个字都不执行。
+      // 所以按 async 函数体编译；顶层 return 也因此顺带可用。
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      const fn = new AsyncFunction(...keys, String(code) + "\n//# sourceURL=" + encodeURIComponent(name));
+      const p = fn(...vals);
+      if (p && typeof p.then === "function") {
+        p.then(() => consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok"), fail);
+      } else {
+        consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok");
+      }
+    } catch (err) {
+      fail(err);
     }
   }
   // 客户端脚本沙箱（ui 节点树 / input / screen / Audio / 向量），DOM 承载，随运行启停挂载
@@ -2102,9 +2130,9 @@ void main() {
       resources: this._resources(), storage: this._storage("storage"), db: this._storage("db"),
       http: { fetch: (u, o) => fetch(u, o) },
       remoteChannel: this._remoteChannel(),
-      rtc: { createPeer: () => null, joinRoom: () => Promise.resolve() },
-      analytics: { log: (k, v) => consoleDiv(rt.hud.console, "analytics " + k, "info") },
-      gui: { toast: (m) => rt.toast(m) },
+      rtc: this._rtc(),
+      analytics: this._analytics(),
+      gui: this._gui(),
       process: { env: {}, platform: "browser", version: "dao3-clone" },
       __dirname: "/",
       console: {
@@ -2207,6 +2235,191 @@ void main() {
         const offset = (o && o.offset) || 0, limit = (o && o.limit) || 100;
         return Promise.resolve(all().slice(offset, offset + limit));
       },
+      // 官方 GameStorage 还能按名字开一块数据空间；getGroupStorage 是"组地图共享"的那一层，
+      // 本地没有组的概念，用独立前缀隔开，语义与官方一致（同一块空间跨图共享）。
+      getDataStorage: (name) => rt._dataStorage(ns, "map", name),
+      getGroupStorage: (name) => rt._dataStorage(ns, "group", name),
+    };
+  }
+  /** 官方 GameDataStorage：一块命名空间下的键值库，list 返回可翻页的 QueryList */
+  _dataStorage(ns, scope, name) {
+    const rt = this;
+    const k = (x) => `dao3_${ns}:${scope}:${name}:${x}`;
+    const read = (x) => { try { const v = localStorage.getItem(k(x)); return v == null ? null : JSON.parse(v); } catch { return null; } };
+    const write = (x, v) => { try { localStorage.setItem(k(x), JSON.stringify(v)); return true; } catch { return false; } };
+    const keys = () => {
+      const pre = `dao3_${ns}:${scope}:${name}:`, out = [];
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const kk = localStorage.key(i);
+          if (kk && kk.startsWith(pre)) out.push(kk.slice(pre.length));
+        }
+      } catch {}
+      return out;
+    };
+    const storage = {
+      key: name,
+      get: async (x) => read(x),
+      set: async (x, v) => { write(x, v); },
+      update: async (x, fn) => { const cur = read(x); const next = await fn(cur); write(x, next); return next; },
+      increment: async (x, by = 1) => { const n = (Number(read(x)) || 0) + by; write(x, n); return n; },
+      remove: async (x) => { const old = read(x); try { localStorage.removeItem(k(x)); } catch {} return old; },
+      has: async (x) => localStorage.getItem(k(x)) != null,
+      destroy: async () => { for (const x of keys()) { try { localStorage.removeItem(k(x)); } catch {} } },
+      list: async (opt) => {
+        const pageSize = Math.max(1, (opt && opt.pageSize) || (opt && opt.limit) || 20);
+        const rows = keys().map((x) => ({ key: x, value: read(x) }));
+        return this._queryList(rows, pageSize, (opt && (opt.page || opt.offset)) || 0);
+      },
+    };
+    return storage;
+  }
+  /** 官方 QueryList：一次取一页，nextPage() 前进，isLastPage 只读 */
+  _queryList(rows, pageSize, startPage = 0) {
+    let page = Math.max(0, Math.floor(startPage));
+    const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+    return {
+      getCurrentPage: () => rows.slice(page * pageSize, (page + 1) * pageSize),
+      nextPage: async () => { if (page < pages - 1) page++; },
+      get isLastPage() { return page >= pages - 1; },
+      get length() { return rows.length; },
+    };
+  }
+  /** 官方 GameRTC：本地没有语音服务器，但频道模型是真的——成员集合、每人音量、
+   *  麦克风授权状态都可查可改，并且真的作用在该玩家的音效增益上。
+   *  publishMicrophone 会真的去要一次 getUserMedia（脚本主动调用才会触发）。 */
+  _rtc() {
+    const rt = this;
+    const channels = new Map();
+    const makeChannelObj = (id) => {
+      const members = new Set(), vol = new Map(), mic = new Map();
+      const gainOf = (ent) => ent && ent.player ? ent.player : null;
+      return {
+        id,
+        add: async (ent) => { if (ent) members.add(ent); },
+        remove: async (ent) => { members.delete(ent); },
+        getPlayers: async () => [...members],
+        publishMicrophone: async (ent) => {
+          if (!ent) return;
+          try {
+            const st = await navigator.mediaDevices.getUserMedia({ audio: true });
+            for (const t of st.getTracks()) t.stop();   // 本地没有对端，拿到就立刻释放
+            mic.set(ent, true);
+          } catch { mic.set(ent, false); }
+        },
+        unpublish: async (ent) => { mic.delete(ent); },
+        getVolume: async (ent) => (vol.has(ent) ? vol.get(ent) : 1),
+        setVolume: async (ent, v) => {
+          const n = clamp(Number(v), 0, 10);
+          vol.set(ent, n);
+          const p = gainOf(ent);
+          if (p) p.voiceVolume = n;   // 脚本可读回去；运行时按这个值缩放该玩家的声音
+        },
+        getMicrophonePermission: async (ent) => !!mic.get(ent),
+        destroy: async () => { channels.delete(id); members.clear(); vol.clear(); mic.clear(); },
+      };
+    };
+    return {
+      createChannel: async (channelId) => {
+        const id = String(channelId || "default");
+        if (!channels.has(id)) channels.set(id, makeChannelObj(id));
+        return channels.get(id);
+      },
+      // 兼容早期形态的两个名字，别让老脚本直接炸
+      createPeer: () => null,
+      joinRoom: () => Promise.resolve(),
+    };
+  }
+  /** 官方 GameGUI：较老的一套界面桥（官方注释自己就写着"请在客户端使用 GameUI"）。
+   *  这里按声明式面板实现——init 收下面板定义，show 把它并进 HUD 的 widget 层，
+   *  setAttribute 改单个属性，onMessage 收按钮回传。老接口，但老地图还在调。 */
+  _gui() {
+    const rt = this;
+    rt._guiPanels = rt._guiPanels || new Map();
+    rt._guiWidgets = rt._guiWidgets || [];
+    const msg = makeChannel();
+    const flat = (cfg) => {
+      const out = [];
+      const walk = (items, box) => {
+        for (const it of items || []) {
+          const w = Object.assign({}, it);
+          w.id = String(w.id || w.name || "");
+          w.x = box.x + (Number(w.x) || 0) * box.w;
+          w.y = box.y + (Number(w.y) || 0) * box.h;
+          w.w = (Number(w.w) ?? 1) * box.w;
+          w.h = (Number(w.h) ?? 0.08) * box.h;
+          w.type = w.type === "btn" ? "button" : (w.type || "text");
+          out.push(w);
+          if (it.children) walk(it.children, { x: w.x, y: w.y, w: w.w, h: w.h });
+        }
+      };
+      walk(cfg.items || cfg.children || [], { x: Number(cfg.x) || 30, y: Number(cfg.y) || 30, w: Number(cfg.w) || 40, h: Number(cfg.h) || 30 });
+      return out;
+    };
+    const repaint = () => { if (rt.running) rt._renderWidgets(); };
+    return {
+      init: async (entity, config) => {
+        const name = String((config && (config.name || config.id)) || "default");
+        rt._guiPanels.set(name, { name, config, items: flat(config || {}) });
+      },
+      show: async (entity, name, allowMultiple) => {
+        const panel = rt._guiPanels.get(String(name));
+        if (!panel) return;
+        if (!allowMultiple) rt._guiWidgets = rt._guiWidgets.filter((w) => w._panel !== panel.name);
+        for (const it of panel.items) {
+          const w = Object.assign({}, it, { _panel: panel.name });
+          if (w.type === "button") {
+            const id = w.id;
+            rt._uiPress = rt._uiPress || new Map();
+            const prev = rt._uiPress.get(id);
+            rt._uiPress.set(id, (ev) => {
+              msg.fire({ tick: rt.currentTick, entity: rt.playerEntity, name: panel.name, id, value: ev && ev.value });
+              if (prev) prev(ev);
+            });
+          }
+          rt._guiWidgets.push(w);
+        }
+        repaint();
+      },
+      remove: async (entity, selector) => {
+        rt._guiWidgets = rt._guiWidgets.filter((w) => w.id !== selector && w._panel !== selector);
+        repaint();
+      },
+      getAttribute: async (entity, selector, name) => {
+        const w = rt._guiWidgets.find((x) => x.id === selector);
+        return w ? (w[name] ?? null) : null;
+      },
+      setAttribute: async (entity, selector, name, value) => {
+        const w = rt._guiWidgets.find((x) => x.id === selector);
+        if (w) w[name] = value;
+        repaint();
+      },
+      onMessage: (listener) => msg.on(listener),
+      ui: null,
+      toast: (m) => rt.toast(m),
+    };
+  }
+  /** 官方 GameAnalytics.sensor：神策埋点。本地实现记录在内存里、可在控制台看到，
+   *  不发往任何网络——这是这套离线实现的边界，不是漏写。 */
+  _analytics() {
+    const rt = this;
+    const events = [];
+    let cfg = null;
+    return {
+      sensor: {
+        init: (url, timeout) => { cfg = { url: String(url || ""), timeout: Number(timeout) || 30000 }; },
+        track: (distinctId, eventName, properties) => {
+          const rec = { at: Date.now(), distinctId: String(distinctId || ""), eventName: String(eventName || ""), properties: properties || null };
+          events.push(rec);
+          if (events.length > 500) events.shift();
+          consoleDiv(rt.hud && rt.hud.console, `analytics track ${rec.eventName} @${rec.distinctId}`, "info");
+          return rec;
+        },
+      },
+      // 本地观测口（官方没有，纯给排查用；不在 d.ts 里，因此不影响兼容性判定）
+      events: () => [...events],
+      config: () => cfg && { ...cfg },
+      log: (k, v) => consoleDiv(rt.hud && rt.hud.console, "analytics " + k, "info"),
     };
   }
   _remoteChannel() {
@@ -2680,9 +2893,12 @@ void main() {
       return false;
     }
     counts[key] = used + 1;
+    this._orderSeq = (this._orderSeq || 0) + 1;
     this._channels.PlayerPurchaseSuccess.fire({
       tick: this.currentTick, entity: ent, productId: p.productId,
       productName: p.name, price: p.price, currency: p.currency,
+      userId: ent && ent.player ? ent.player.userId || ent.player.name : "",
+      orderId: this._orderSeq,
     });
     if (ent && ent.player) ent.player.directMessage(`已购买「${p.name}」`);
     this._renderStore();
@@ -3024,7 +3240,7 @@ void main() {
     const host = this.hud.widgets;
     if (!host) return;
     host.innerHTML = "";
-    const widgets = (this.e.state.meta && this.e.state.meta.ui) || [];
+    const widgets = ((this.e.state.meta && this.e.state.meta.ui) || []).concat(this._guiWidgets || []);
     for (const w of widgets) {
       if (w.type === "image") {
         const im = document.createElement("img");
@@ -3049,6 +3265,7 @@ void main() {
       host.appendChild(el);
     }
     host.classList.toggle("show", widgets.length > 0);
+    this._widgetCount = widgets.length;
   }
   _syncHudSettings() {
     const cam = document.getElementById("plCam");

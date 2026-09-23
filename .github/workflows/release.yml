@@ -124,7 +124,13 @@ jobs:
           dmg_f=$(ls assets/dmg/*.dmg | head -1)
           exe_f=$(ls assets/windows-installer/*.exe | head -1)
           ls -l "$zip_f" "$dmg_f" "$exe_f"
-          notes="便携包 zip / macOS .dmg / Windows 安装程序 exe 三件同内容，按平台挑一件。"
+          # Release 正文只从 CHANGELOG.md 的对应小节生成。
+          # 以前这里手拼一句固定文案，于是 Release 说明、CHANGELOG、介绍站三处各写一份，
+          # 改一漏二，而且漏掉的那份看起来完全正常。
+          if ! notes=$(node scripts/changelog-section.mjs "$TAG" 2>&1); then
+            echo "取不到 $TAG 的更新日志小节："; echo "$notes"; exit 1
+          fi
+          notes="$notes"$'\n\n---\n\n'"便携包 zip / macOS .dmg / Windows 安装程序 exe 三件同内容，按平台挑一件。"
           notes="$notes"$'\n\n'"GitHub Packages（npm）：npx @deepseekv5/dao3-editor-clone"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$zip_f" "$dmg_f" "$exe_f" --clobber

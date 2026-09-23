@@ -1,6 +1,6 @@
 {
   "name": "@deepseekv5/dao3-editor-clone",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": false,
   "description": "dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、20 TPS 定步长物理、体素编辑、VOXA 建模、项目包导入导出。零第三方运行时依赖。",
   "type": "module",
@@ -24,6 +24,7 @@
     "start": "node start.mjs",
     "serve": "node server.js",
     "build:atlas": "node scripts/build-block-atlas.mjs",
+    "build:api-ref": "node scripts/api-audit.mjs && node scripts/build-api-ref.mjs",
     "build:docs": "node scripts/build-docs.mjs",
     "build:play": "node scripts/build-play.mjs",
     "audit:api": "node scripts/api-audit.mjs",
@@ -51,6 +52,8 @@
     "public/editor.html",
     "public/voxa.html",
     "public/site.html",
+    "public/data/api-impl.json",
+    "public/manual.html",
     "public/js",
     "public/css",
     "public/img",
@@ -66,6 +69,7 @@
     "启动-macOS.command",
     "LICENSE",
     "NOTICE",
+    "CHANGELOG.md",
     "THIRD_PARTY_NOTICES.md"
   ],
   "keywords": [

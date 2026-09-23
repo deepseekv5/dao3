@@ -25,8 +25,11 @@ if (!VERSION) { console.error("package.json 缺 version"); process.exit(1); }
 const FILES = [
   "server.js", "start.mjs", "package.json", ".gitignore",
   "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
-  "LICENSE", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md",
+  "LICENSE", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md",
   "public/index.html", "public/editor.html", "public/voxa.html", "public/site.html",
+  // 玩家游玩手册：工作台左侧、编辑器顶栏、运行 HUD 三处都链到 /manual，
+  // 漏了它便携包里这三个入口全是 404
+  "public/manual.html",
 ];
 // 目录：整棵复制（内容全部是我们自己的产物）
 const DIRS = [
@@ -45,7 +48,9 @@ const LICENSED_DATA = [
   "data/upstream/block-id.json", "data/upstream/block-spec.json", "data/upstream/LICENSE.Box3Blocks.txt",
 ];
 // 已经构建好的图集产物（派生自 Apache 纹理，随包分发以免用户必须装 Unity 才能跑）
-const BUILT_DATA = ["public/data/block-atlas.json", "public/data/block-atlas.png"];
+const BUILT_DATA = ["public/data/block-atlas.json", "public/data/block-atlas.png",
+  // API 参考文档的"本地"列与运行时对账探针都读这三份；缺了文档就只剩官方那一半
+  "public/data/api-members.json", "public/data/api-methods.json", "public/data/api-impl.json"];
 // 官方地图的 CID 清单（824B 的哈希索引，不含任何素材本体）：供 fetch 脚本使用。
 // 赛车模板地图数据（2.8MB gz）按仓库所有者的决定随包分发，但服务端不自动装——
 // 必须用户在应用内确认授权后才 copy 进 server/data/worlds（见 server.js /api/consent）。

@@ -15,16 +15,24 @@ vendor/ArenaPro-CLI/client/types/ClientAPI.d.ts   UiNode 树 · InputSystem · C
 所以分两步：
 
 1. `scripts/api-audit.mjs` 从 d.ts 抽出成员清单，产出两份：
-   - `public/data/api-members.json` — 全部成员（329 个）
+   - `public/data/api-members.json` — 全部成员（71 个游戏类型 / 751 个成员，两端都算）
    - `public/data/api-methods.json` — 其中可调用的方法
 2. `public/js/api-probe.js` 在**真实运行时**上逐个探面（含动态挂载的通道），
    并检查"名字对但类型错"的情况（把属性当函数暴露也是不兼容）：
    报告里的 `badKind` 必须是 0。
 
 ```bash
-npm run audit:api
-# 覆盖率 329/329 · badKind 0
+npm run build:api-ref
+# 合计 107 个游戏类型 / 71 个有成员级声明，751 个官方成员，静态比对到 730（覆盖 97.2%）
 ```
+
+静态比对还有一个只咬短名字的坑：`r` / `g` / `b` / `a` 用整词正则永远命中
+（`spectator:` 里就含 `r:`）。而官方 `GameRGBColor` 的分量恰恰叫 `r/g/b`，
+我们内部却用 `red/green/blue`——审计报"已实现"，脚本里 `color.r` 是 `undefined`，
+颜色直接变黑且不报错。所以 1–2 个字符的成员只认"成员位置"：属性访问、访问器声明、
+对象字面量的键。
+
+逐成员的签名、官方中文说明与单位，以及本地到位还是缺口，见 [API 参考](api-reference.md)（生成物）。
 
 ## 沙箱按端裁剪
 

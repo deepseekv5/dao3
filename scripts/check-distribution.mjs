@@ -77,10 +77,14 @@ const reports = [];
 const REQUIRED = [
   "server.js", "start.mjs", "package.json",
   "public/index.html", "public/editor.html", "public/voxa.html", "public/site.html",
+  "public/manual.html",
   "public/vendor/three/three.module.js", "public/vendor/three/GLTFLoader.js",
   "public/vendor/three/GLTFExporter.js", "public/vendor/three/OrbitControls.js",
   "public/vendor/three/LICENSE", "public/vendor/utils/BufferGeometryUtils.js",
   "public/data/block-atlas.png", "public/data/block-atlas.json",
+  "public/data/api-members.json", "public/data/api-methods.json", "public/data/api-impl.json",
+  // API 参考页与它的生成器：文档站承诺了这一页，生成物或生成脚本丢了就是死链
+  "docs/api-reference.md", "docs/api-reference.html", "scripts/build-api-ref.mjs",
   "data/upstream/block-id.json", "data/upstream/block-spec.json", "data/upstream/LICENSE.Box3Blocks.txt",
   // 缺了它，fetch:official 在新克隆上直接退出——文档承诺的取回路径就是空的
   "official-project/cids.json",
@@ -96,6 +100,8 @@ const REQUIRED = [
   "scripts/build-play.mjs",
   "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
   "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md",
+  // Release 正文由它生成，丢了 workflow 会直接失败——但更早发现更好
+  "CHANGELOG.md",
 ];
 const missingFrom = (files, required = REQUIRED) => {
   const set = new Set(files.map((f) => f.replace(/\\/g, "/")));
@@ -123,10 +129,14 @@ try {
   reports.push({ label: "npm tarball", error: String(e.message).slice(0, 200) });
 }
 
-// 3) 便携包目录与 zip（如果已经构建过）
-const PKG = path.resolve(ROOT, "..", "DAO3-便携包");
-if (fs.existsSync(PKG)) {
-  reports.push(inspect("便携包目录", walk(PKG), (f) => fs.readFileSync(path.join(PKG, f), "utf8")));
+// 3) 便携包目录（如果已经构建过）。
+// 目录位置有两种：本地习惯建在仓库旁边，CI 用的是 "$GITHUB_WORKSPACE/DAO3-便携包"
+// 即仓库**内部**。只找其中一种的话，另一种环境下这一项会静默跳过——
+// 曾经就是这样：本地残留的旧目录让审计看起来在跑，其实一直在检查过期产物。
+for (const PKG of [path.resolve(ROOT, "..", "DAO3-便携包"), path.join(ROOT, "DAO3-便携包")]) {
+  if (!fs.existsSync(PKG)) continue;
+  const label = PKG.startsWith(ROOT + path.sep) ? "便携包目录（仓库内）" : "便携包目录（仓库旁）";
+  reports.push(inspect(label, walk(PKG), (f) => fs.readFileSync(path.join(PKG, f), "utf8")));
 }
 
 // 4) 网页体验版 play/。它和前三处不一样：不是"发给朋友"，而是**公开镜像**，

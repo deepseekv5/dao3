@@ -40,6 +40,7 @@ const I = window.__icons = {
   home: '<svg viewBox="0 0 24 24"><path d="M4 11.5L12 4l8 7.5V20h-6v-6h-4v6H4v-8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
   fp: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10.5" cy="10.5" r="1" fill="currentColor"/><path d="M4 4l5 2.6M20 4l-5 2.6M4 20l5-2.6M20 20l-5-2.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
   tree: '<svg viewBox="0 0 24 24"><path d="M6 4v10M12 4v10M18 4v10M3 14h18M6 20h5M15 20h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  manual: '<svg viewBox="0 0 24 24"><path d="M12 5.2C10.3 3.9 8 3.5 4.5 3.9v14.2c3.5-.4 5.8 0 7.5 1.3 1.7-1.3 4-1.7 7.5-1.3V3.9C16 3.5 13.7 3.9 12 5.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 5.2v14.2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
   doc: '<svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20.5H6v-17z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3.5V8h4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
   fx: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M18.5 16l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z" fill="currentColor" opacity=".8"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M4 9.5v5h4l5 4v-13l-5 4H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M17 9a5 5 0 0 1 0 6M19.5 6.5a9 9 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
@@ -720,6 +721,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
    ["导入 .gz 地图", () => pickFile(".gz,.json", async (f) => replace(await io.importGz(f, atlas)))],
    ["导入 .vox", () => pickFile(".vox", async (f) => replace(await io.importVox(f, atlas)))], ["导出 .gz", () => io.exportGz(world, { ...state.meta, terrain: state.terrain })],
    ["导出 .vox", () => io.exportVox(world, atlas)], ["导出 .glb", () => io.exportGlb(renderer, state.meta)],
+   ["游玩手册（键位与玩法）", () => window.open("/manual", "_blank", "noopener")],
    ["免责声明", () => (window.__showDisclaimer ? window.__showDisclaimer() : null)]].forEach(([label, fn]) => {
     const b = document.createElement("button"); b.className = "witem"; b.style.textAlign = "left"; b.innerHTML = `<b>${label}</b>`; b.onclick = () => { fileMenu.classList.remove("show"); fn(); };
     fileMenu.appendChild(b);
@@ -737,6 +739,11 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     if (state.dirty) { await save(); }
     location.href = "/";
   };
+
+  // ---------- 游玩手册 ----------
+  // 新标签页打开：编辑器里有未保存改动，跳走会打断手上的活
+  const bm = $("btnManual");
+  if (bm) bm.onclick = () => window.open("/manual", "_blank", "noopener");
 
   // ---------- 世界库 ----------
   $("btnWorlds").onclick = async (e) => {

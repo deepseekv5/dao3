@@ -38,6 +38,7 @@
     <button id="btnWorlds" class="tb-ico" title="世界库" data-ico="doc"></button>
     <button class="tb-ico" title="协作" data-ico="collab"></button>
     <button class="tb-ico" title="反馈" data-ico="feedback"></button>
+    <button id="btnManual" class="tb-ico" title="游玩手册：键位、比赛流程、加速道具与常见问题" data-ico="manual"></button>
     <button id="btnSettings" class="tb-ico" title="设置" data-ico="settings"></button>
     <button id="btnHome" class="tb-ico" title="返回主界面（未保存的改动会先存下来）" data-ico="home"></button>
     <button id="btnPublish" class="play" title="运行游戏（玩家将出现在地图中心，脚本全量执行）" data-ico="play"></button>
@@ -161,9 +162,10 @@
 <div id="playEntry">
   <div class="pe-top">
     <span id="gameTitle" class="pe-title">运行中</span>
-    <span class="pe-hint">WASD 移动 · 鼠标视角 · Shift 跑 · Ctrl 蹲 · Space 跳/二段跳 · E 交互 · 左键 A · 右键 B · V 视角 · ` 控制台</span>
+    <span class="pe-hint">WASD 移动 · Shift 跑 · Ctrl 蹲/刹车 · Space 跳或吃道具 · E 交互/上车 · V 视角 · H 设置 · Esc 退出</span>
     <div class="pe-actions">
       <button id="gameStoreBtn" class="pe-store" title="商品列表（world.products()）" hidden>商店</button>
+      <a id="peManual" class="pe-store" href="/manual" target="_blank" rel="noopener" title="玩家游玩手册：键位、比赛流程、加速道具与常见问题">手册</a>
       <button id="gameStop" class="play stop" data-ico="stop" title="返回编辑器"></button>
     </div>
   </div>

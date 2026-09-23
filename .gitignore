@@ -30,6 +30,11 @@ test/out/
 # 源码在 play-src/ 与 scripts/build-play.mjs，必须入库；产物本身不入库（否则 three.js
 # 会在 git 里存两份，且 2.8MB 地图 gz 每次改动都产生一份新 blob）。
 play/
+# 便携包目录与它的 zip 都是 build-portable 的产物：zip 走 GitHub Release 附件，
+# 入库会让每次发版都多存一份 7MB 二进制 blob。
+DAO3-便携包/
+DAO3-便携包-*.zip
+dist/
 run.pid
 run.out
 *.log
