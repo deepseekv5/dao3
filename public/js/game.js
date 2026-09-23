@@ -926,11 +926,34 @@ export class GameRuntime {
     const locked = document.pointerLockElement === this.e.renderer.renderer.domElement;
     el.classList.toggle("show", !!this.running && !locked && !this._isTouch);
   }
+  /* ---------------- 悬浮操作层 ----------------
+   * 原来这套按键只在 (pointer:coarse) 下出现，而且只监听 touch 事件，于是
+   *   1) 桌面用户永远看不到屏幕按键；2) 用鼠标点它没有任何反应（没有 mouse 监听）。
+   * 现在按 Pointer Events 统一处理（鼠标/触屏/手写笔一套代码），并且桌面也能开：
+   * 开关与摆放位置存在 localStorage，属于"这台设备的操作习惯"，不属于地图数据。 */
+  _floatPref() {
+    try {
+      const v = localStorage.getItem("dao3.floatControls");
+      if (v === "1") return true;
+      if (v === "0") return false;
+    } catch {}
+    return this._isTouch;   // 没表过态就按设备给默认：触屏开、桌面关
+  }
+  _applyFloatClass() {
+    document.body.classList.toggle("touch", this._isTouch);
+    document.body.classList.toggle("float-ui", !!this._floatOn && !!this.running);
+    document.body.classList.toggle("float-edit", !!this._floatEdit);
+    // 面板上的开关文案与"摆放/复位"两个按钮的可见性必须跟着状态走；
+    // 只在面板初始化时同步一次的话，重进运行模式后按钮会一直停在 hidden。
+    if (this._syncFloatBtns) this._syncFloatBtns();
+  }
   _bindTouch() {
     const rt = this;
     this._isTouch = (window.matchMedia && matchMedia("(pointer: coarse)").matches) || "ontouchstart" in window;
-    if (!this._isTouch) return;
-    document.body.classList.add("touch");
+    this._floatOn = this._floatPref();
+    this._restoreFloatLayout();
+    this._applyFloatClass();
+    if (!this._floatOn) return;
     const base = document.getElementById("joyBase"), knob = document.getElementById("joyKnob");
     const R = 46;
     let joyId = null;
@@ -944,29 +967,49 @@ export class GameRuntime {
       setKnob(dx, dy);
       rt._joy = { x: dx / R, y: dy / R };
     };
-    const end = (ev) => {
-      for (const t of ev.changedTouches) if (t.identifier === joyId) {
-        joyId = null; rt._joy = { x: 0, y: 0 }; setKnob(0, 0);
-      }
+    this._ts = (ev) => {
+      if (rt._floatEdit) return;
+      ev.preventDefault();
+      if (joyId !== null) return;
+      joyId = ev.pointerId;
+      try { base.setPointerCapture(joyId); } catch {}
+      move(ev);
     };
-    this._ts = (ev) => { ev.preventDefault(); const t = ev.changedTouches[0]; joyId = t.identifier; move(t); };
-    this._tm = (ev) => { ev.preventDefault(); for (const t of ev.changedTouches) if (t.identifier === joyId) move(t); };
-    this._te = end;
+    this._tm = (ev) => { if (!rt._floatEdit && ev.pointerId === joyId) { ev.preventDefault(); move(ev); } };
+    this._te = (ev) => {
+      if (ev.pointerId !== joyId) return;
+      joyId = null; rt._joy = { x: 0, y: 0 }; setKnob(0, 0);
+    };
+    this._floatGrabs = [];
+    for (const id of ["joyBase", "tbtns"]) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.style.touchAction = "none";
+      const grab = (ev) => { if (rt._floatEdit) rt._floatDragStart(ev); };
+      el.addEventListener("pointerdown", grab);
+      rt._floatGrabs.push([el, grab]);
+    }
     if (base) {
-      base.addEventListener("touchstart", this._ts, { passive: false });
-      base.addEventListener("touchmove", this._tm, { passive: false });
-      base.addEventListener("touchend", this._te);
-      base.addEventListener("touchcancel", this._te);
+      base.style.touchAction = "none";
+      base.addEventListener("pointerdown", this._ts);
+      base.addEventListener("pointermove", this._tm);
+      base.addEventListener("pointerup", this._te);
+      base.addEventListener("pointercancel", this._te);
     }
     this._touchBtns = [];
     const hold = (id, down, up) => {
       const el = document.getElementById(id);
       if (!el) return;
-      const dn = (ev) => { ev.preventDefault(); down(); };
-      const uf = (ev) => { ev.preventDefault(); up && up(); };
-      el.addEventListener("touchstart", dn, { passive: false });
-      el.addEventListener("touchend", uf, { passive: false });
-      rt._touchBtns.push([el, dn, uf]);
+      el.style.touchAction = "none";
+      const dn = (ev) => { if (rt._floatEdit) return; ev.preventDefault(); down(); };
+      const uf = (ev) => { if (rt._floatEdit) return; ev.preventDefault(); up && up(); };
+      el.addEventListener("pointerdown", dn);
+      el.addEventListener("pointerup", uf);
+      el.addEventListener("pointercancel", uf);
+      // 鼠标点完别再触发一次 click（否则会被当成画布上的 ACTION0）
+      const cl = (ev) => { if (rt._floatEdit) return; ev.preventDefault(); ev.stopPropagation(); };
+      el.addEventListener("click", cl, true);
+      rt._touchBtns.push([el, dn, uf, cl]);
     };
     hold("tJump", () => { rt._jumpBuf = 0.14; rt._firePress(GameButtonType.JUMP, true); }, () => rt._firePress(GameButtonType.JUMP, false));
     hold("tCrouch", () => { rt._keys.ctrl = true; }, () => { rt._keys.ctrl = false; });
@@ -989,24 +1032,114 @@ export class GameRuntime {
     cv.addEventListener("touchstart", this._cts, { passive: true });
     cv.addEventListener("touchmove", this._ctm, { passive: true });
     cv.addEventListener("touchend", this._cte);
+    // 摆放模式下松手要能收尾：拖拽监听挂在 window 上
+    this._tmove = (ev) => rt._floatDragMove(ev);
+    this._tup = (ev) => rt._floatDragEnd(ev);
+    window.addEventListener("pointermove", this._tmove);
+    window.addEventListener("pointerup", this._tup);
+  }
+  /** 摆放模式：把摇杆底盘 / 按键组拖到任意位置，存 localStorage */
+  _floatDragStart(ev) {
+    const host = ev.currentTarget;
+    if (!host) return;
+    ev.preventDefault();
+    try { host.setPointerCapture(ev.pointerId); } catch {}
+    const r = host.getBoundingClientRect();
+    this._floatDrag = { host, dx: ev.clientX - r.left, dy: ev.clientY - r.top, w: r.width, h: r.height };
+  }
+  _floatDragMove(ev) {
+    const d = this._floatDrag;
+    if (!d) return;
+    const x = clamp(ev.clientX - d.dx, 0, innerWidth - d.w);
+    const y = clamp(ev.clientY - d.dy, 0, innerHeight - d.h);
+    d.host.style.left = x + "px";
+    d.host.style.top = y + "px";
+    d.host.style.right = "auto";
+    d.host.style.bottom = "auto";
+  }
+  _floatDragEnd(ev) {
+    const d = this._floatDrag;
+    if (!d) return;
+    this._floatDrag = null;
+    this._saveFloatLayout();
+  }
+  _floatLayout() {
+    const out = {};
+    for (const id of ["joyBase", "tbtns"]) {
+      const el = document.getElementById(id);
+      if (!el || !el.style.left) continue;
+      out[id] = { left: el.style.left, top: el.style.top };
+    }
+    return out;
+  }
+  _saveFloatLayout() {
+    try { localStorage.setItem("dao3.floatLayout", JSON.stringify(this._floatLayout())); } catch {}
+  }
+  _restoreFloatLayout() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem("dao3.floatLayout") || "null"); } catch {}
+    if (!saved) return;
+    for (const [id, pos] of Object.entries(saved)) {
+      const el = document.getElementById(id);
+      if (!el || !pos || !pos.left) continue;
+      el.style.left = pos.left; el.style.top = pos.top;
+      el.style.right = "auto"; el.style.bottom = "auto";
+    }
+  }
+  _resetFloatLayout() {
+    for (const id of ["joyBase", "tbtns"]) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.style.left = el.style.top = el.style.right = el.style.bottom = "";
+    }
+    try { localStorage.removeItem("dao3.floatLayout"); } catch {}
+    this.toast("悬浮按键已回到默认位置");
+  }
+  /** 开关悬浮层：改偏好 → 重新绑定 → 同步 body 类 */
+  _setFloatOn(on) {
+    this._floatOn = !!on;
+    try { localStorage.setItem("dao3.floatControls", on ? "1" : "0"); } catch {}
+    this._unbindTouch();
+    // _bindTouch 会重读偏好（_setFloatOn 已经先落盘），所以这里直接复用它，
+    // 免得"绑定"逻辑出现第二份实现而和 _bindTouch 漂移
+    this._bindTouch();
+    this._applyFloatClass();
+  }
+  _setFloatEdit(on) {
+    this._floatEdit = !!on;
+    // 只在"进入摆放"时顺带把悬浮层打开；退出摆放绝不能反过来关掉它，
+    // 否则开关按钮里 _setFloatEdit(false) 会把 _floatOn 改掉，紧接着的
+    // _setFloatOn(!rt._floatOn) 就取反成"关"，点一下等于没点。
+    if (on && !this._floatOn) this._setFloatOn(true);
+    this._applyFloatClass();
+    this.toast(on ? "摆放模式：拖动摇杆与按键组到顺手的位置，再点「完成摆放」" : "摆放完成");
   }
   _unbindTouch() {
-    if (!this._isTouch) return;
-    document.body.classList.remove("touch");
+    if (!this._floatOn) return;
+    for (const [el, grab] of this._floatGrabs || []) el.removeEventListener("pointerdown", grab);
+    this._floatGrabs = [];
     const base = document.getElementById("joyBase");
     if (base && this._ts) {
-      base.removeEventListener("touchstart", this._ts);
-      base.removeEventListener("touchmove", this._tm);
-      base.removeEventListener("touchend", this._te);
+      base.removeEventListener("pointerdown", this._ts);
+      base.removeEventListener("pointermove", this._tm);
+      base.removeEventListener("pointerup", this._te);
+      base.removeEventListener("pointercancel", this._te);
     }
-    for (const [el, dn, uf] of this._touchBtns || []) {
-      el.removeEventListener("touchstart", dn);
-      el.removeEventListener("touchend", uf);
+    for (const [el, dn, uf, cl] of this._touchBtns || []) {
+      el.removeEventListener("pointerdown", dn);
+      el.removeEventListener("pointerup", uf);
+      el.removeEventListener("pointercancel", uf);
+      el.removeEventListener("click", cl, true);
     }
     const cv = this.e.renderer.renderer.domElement;
     cv.removeEventListener("touchstart", this._cts);
     cv.removeEventListener("touchmove", this._ctm);
     cv.removeEventListener("touchend", this._cte);
+    if (this._tmove) window.removeEventListener("pointermove", this._tmove);
+    if (this._tup) window.removeEventListener("pointerup", this._tup);
+    this._touchBtns = [];
+    this._floatDrag = null;
+    document.body.classList.remove("float-ui", "float-edit");
   }
   _toggleFly() {
     const p = this.player;
@@ -3221,6 +3354,24 @@ void main() {
       rt.player.spawnPoint = new GameVector3(p.x, p.y, p.z);
       rt.say("出生点已设为当前位置");
     };
+    const syncFloat = () => {
+      const b = document.getElementById("ghFloat");
+      if (b) b.textContent = "悬浮按键:" + (rt._floatOn ? "开" : "关");
+      for (const id of ["ghFloatEdit", "ghFloatReset"]) {
+        const el = document.getElementById(id);
+        if (el) el.hidden = !rt._floatOn;
+      }
+      const ed = document.getElementById("ghFloatEdit");
+      if (ed) ed.textContent = rt._floatEdit ? "完成摆放" : "摆放按键";
+    };
+    const fl = document.getElementById("ghFloat");
+    if (fl) fl.onclick = () => { rt._setFloatEdit(false); rt._setFloatOn(!rt._floatOn); syncFloat(); };
+    const fle = document.getElementById("ghFloatEdit");
+    if (fle) fle.onclick = () => { rt._setFloatEdit(!rt._floatEdit); syncFloat(); };
+    const flr = document.getElementById("ghFloatReset");
+    if (flr) flr.onclick = () => { rt._resetFloatLayout(); };
+    syncFloat();
+    this._syncFloatBtns = syncFloat;
     const respawn = document.getElementById("ghRespawn");
     if (respawn) respawn.onclick = () => { rt.player.forceRespawn(); rt.hud.dead && rt.hud.dead.classList.remove("show"); };
     const day = document.getElementById("ghDay");

@@ -39,7 +39,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 </script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a class="on" href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a class="on" href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
     <nav class="toc"><b>本页内容</b><a class="t2" href="#官方口径位移是「格-tick」不是「格-秒」">官方口径：位移是「格 / tick」，不是「格 / 秒」</a><a class="t2" href="#定步长-+-追帧上限">定步长 + 追帧上限</a><a class="t2" href="#碰撞判据的官方依据">碰撞判据的官方依据</a><a class="t2" href="#子步推进不重发整段">子步推进，不重发整段</a><a class="t2" href="#自动踏步">自动踏步</a><a class="t2" href="#相机不穿墙">相机不穿墙</a><a class="t2" href="#已知边界">已知边界</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/physics.md">在 GitHub 编辑原文</a>
   </aside>
@@ -88,7 +88,7 @@ airFriction         0.001（地图可覆盖为官方 velocityDamping 0.01）</co
 <p>原来的 <code>Math.max(0.8, …)</code> 硬下限正是&quot;相机留在几何体里&quot;的原因 （120 个贴墙站位 × 12 yaw × 2 pitch 的扫描里 7.9% 落在实心格内）。 去掉硬下限会顶到后脑勺，所以配上抬肩。</p>
 <h2 id="已知边界">已知边界</h2>
 <ul class="lv-0"><li>方块一律整格立方：官方 <code>block-spec.json</code> 没有 slab/stair/shape 字段， 网格与物理都是整格，所以<b>不存在台阶/斜坡形状</b>，旋转码只改贴图来源。</li><li>蹲下不改物理盒高度（官方 player 只有 <code>crouchSpeed/crouchAcceleration</code>， 没有任何高度/碰撞相关字段），因此蹲着进不了 1 格洞是符合官方数据的表现。</li><li><code>restitution/friction/mass</code> 走简化刚体，不是完整物理引擎； 弹跳垫与传送带的方向按方块旋转码绕 Y 旋转。</li></ul>
-    <nav class="pager"><a href="data-format.html"><small>上一篇</small><b>数据格式</b></a><a class="next" href="packaging.html"><small>下一篇</small><b>便携包与发布</b></a></nav>
+    <nav class="pager"><a href="map-format.html"><small>上一篇</small><b>标准地图格式</b></a><a class="next" href="packaging.html"><small>下一篇</small><b>便携包与发布</b></a></nav>
   </article>
 </main>
 <footer class="foot">

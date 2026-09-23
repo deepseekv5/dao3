@@ -20,6 +20,7 @@ const DOCS_LIST = [
   ["api-compat", "官方 API 兼容层", "内核"],
   ["api-reference", "API 参考", "内核"],
   ["data-format", "数据格式", "内核"],
+  ["map-format", "标准地图格式", "内核"],
   ["physics", "物理与单位制", "内核"],
   ["packaging", "便携包与发布", "交付"],
   ["playground", "网页体验版", "交付"],

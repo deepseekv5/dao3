@@ -39,7 +39,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 </script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a class="on" href="data-format.html">数据格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a class="on" href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
     <nav class="toc"><b>本页内容</b><a class="t2" href="#地图存档与官方-unity-侧-.gz-完全同构">地图存档：与官方 Unity 侧 .gz 完全同构</a><a class="t3" href="#meta-里放什么">meta 里放什么</a><a class="t2" href="#项目包-.zip官方-21-键清单">项目包 .zip：官方 21 键清单</a><a class="t3" href="#为什么需要-compat.json">为什么需要 compat.json</a><a class="t2" href="#内容寻址cidv0">内容寻址（CIDv0）</a><a class="t2" href="#导入支持什么">导入支持什么</a><a class="t2" href="#这些格式的来源与边界">这些格式的来源与边界</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/data-format.md">在 GitHub 编辑原文</a>
   </aside>
@@ -56,19 +56,19 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
   &quot;indices&quot;: [ /* x + y*X + z*X*Y */ ],
   &quot;data&quot;:    [ /* blockId，稀疏：只存非空 */ ],
   &quot;rot&quot;:     [ /* 0..3 的转数；官方 id 里的 16384 倍数在落盘时已折算 */ ],
-  &quot;lightIndices&quot;: [], &quot;lightFlags&quot;: [], &quot;lightIntensity&quot;: [],
-  &quot;lightRange&quot;: [], &quot;lightColorRgb&quot;: [], &quot;lightOffsetXyz&quot;: [],
   &quot;meta&quot;: { /* 编辑器元数据，见下 */ }
 }</code></pre></div>
+<p>官方某些导出里还会有 <code>lightIndices</code> / <code>lightFlags</code> / <code>lightIntensity</code> / <code>lightRange</code> / <code>lightColorRgb</code> / <code>lightOffsetXyz</code> 六个光照数组——<b>本实现既不写也不读</b>， 带光照的官方地图导入后光照会丢。逐字段的取值域见<a href="map-format.html">标准地图格式</a>。</p>
 <p><code>GET /api/world/:id</code> 在请求头带 <code>Accept-Encoding: gzip</code> 时<b>原样吐出磁盘上的 gz</b>， 不重复解压再压缩；浏览器自动解压，所以大地图回源只有一次 gunzip。</p>
 <h3 id="meta-里放什么"><code>meta</code> 里放什么</h3>
-<p>官方 blob 放不下的东西都进 <code>meta</code>：<code>terrain</code>（天空/雾/曝光）、<code>scripts</code>、 <code>entities</code>（官方 22 字段的扁平表）、<code>zones</code>、<code>player</code>、<code>worldSettings</code>、 <code>environment</code>、<code>ambientSound</code>、<code>products</code>、<code>ui</code>、<code>pictureNames</code>、<code>assetRoot</code>。</p>
+<p>官方 blob 放不下的东西都进 <code>meta</code>（实测 18 个键）：<code>name</code>、<code>terrain</code>（天空/雾/曝光）、 <code>scripts</code>、<code>entities</code>（官方 22 字段的扁平表）、<code>models</code>、<code>meshNames</code>、<code>assetRoot</code>、 <code>zones</code>、<code>player</code>、<code>worldSettings</code>、<code>displayName</code>、<code>groups</code>、<code>ambientSound</code>、 <code>description</code>、<code>products</code>、<code>ui</code>、<code>spawnPoint</code>、<code>gameRules</code>。</p>
+<p><b>没有 <code>pictureNames</code></b>——图片名单只在导出时写进 <code>compat.json</code>，运行期由 <code>resources.ls(&quot;picture&quot;)</code> 现算。</p>
 <h2 id="项目包-.zip官方-21-键清单">项目包 <code>.zip</code>：官方 21 键清单</h2>
 <div class="code"><pre><code>project.json          21 个键、字母序、version &quot;0.3.23&quot;
 project/info.json     displayName / description / previewImage / notice
 project/player.json   官方 41 键（见下）
 project/physics.json  { gravity, useOBB, velocityDamping }
-project/environment.json  46 个叶子键（fog7 + rain8 + snow8 + sky13 + 其余）
+project/environment.json  61 个叶子键（drawDistance1 + fog8 + rain12 + sky30 + snow10）
 project/ambientSound.json 5 个槽
 project/zones.json    官方 bounds/selector/massScale/force + 环境覆盖
 project/uiTree.json   官方 nodes 形态（Root / 组 / 屏幕）
@@ -95,8 +95,8 @@ project/compat.json         本地扩展（官方清单里没有的）</code></p
 <p>导入 zip 时，模型与图片会落到 <code>public/assets/worlds/&lt;id&gt;/</code> 下， 编辑器按 <code>meta.assetRoot</code> 懒加载。<b>图片保留 <code>picture/</code> 目录层级</b>， 这样 <code>resources.ls(&quot;picture&quot;)</code> 返回的路径和 <code>UiImage.image</code> 写的路径能对上。</p>
 <h2 id="这些格式的来源与边界">这些格式的来源与边界</h2>
 <p><code>.gz</code> 的 payload 形状、<code>block-id.json</code> / <code>block-spec.json</code> 的字段， 来自官方 Apache-2.0 的 <code>Box3Blocks-unityPackage</code>； <code>project.json</code> 的 21 键与 <code>player</code> 的 41 键，来自官方公开的项目数据结构。</p>
-<p><b>官方 <code>chunks/&lt;CID&gt;.bin</code> 不是逐体素列表</b>，别指望从里面解出方块表： 72 个非空块合计只有 23,995 字节，而地图有 152 万格——信息量差 169 倍。 它是烘焙后的合并网格容器（protobuf 分段，含 <code>5f5900</code> 标记）。 复现与判据见 <code>scripts/decode-official-chunks.mjs</code>。</p>
-    <nav class="pager"><a href="api-reference.html"><small>上一篇</small><b>API 参考</b></a><a class="next" href="physics.html"><small>下一篇</small><b>物理与单位制</b></a></nav>
+<p><b>官方 <code>chunks/&lt;CID&gt;.bin</code> 不是逐体素列表</b>，别指望从里面解出方块表： 72 个非空块合计只有 23,997 字节，而地图有 1,523,592 格非空格——约 63.5 格每字节， 而任何 <code>(index,id)</code> 编码至少要 4–8 字节<b>每格</b>，物理上不可能。 五种假设（含 depth-5 稀疏八叉树）精确耗尽的文件数是 0/72。 字节特征（含 <code>5f5900</code> 标记）指向&quot;烘焙后的合并网格容器&quot;，但 <b>protobuf 只是证据指向、未被证明</b>。 判据、逐条反证与字段级取值域见<a href="map-format.html">标准地图格式</a>。</p>
+    <nav class="pager"><a href="api-reference.html"><small>上一篇</small><b>API 参考</b></a><a class="next" href="map-format.html"><small>下一篇</small><b>标准地图格式</b></a></nav>
   </article>
 </main>
 <footer class="foot">

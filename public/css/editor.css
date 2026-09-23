@@ -365,6 +365,10 @@ a.pe-store{text-decoration:none;display:inline-block;line-height:1.45}
 /* 运行模式：血量 / 状态 / 聊天输入 / 死亡重生 */
 #gameVitals{position:absolute;left:16px;bottom:130px;display:none;flex-direction:column;gap:3px;pointer-events:none}
 body.playing #gameVitals.show{display:flex}
+/* 悬浮层的摇杆默认就在左下角（left 28 / bottom 56 / 120 见方），血条同侧会压上去。
+   只在血条本来贴底的场合抬它——体验版把血条改成顶部定位，那时再写 bottom
+   就等于同时钉住上下两边，元素会被拉成 560px 高的一条。 */
+html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 .vit-name{font-size:12px;color:#fff;text-shadow:0 1px 3px #000;display:flex;gap:8px;align-items:center}
 .vit-name span{color:#ffd9a8;font-size:11px}
 .vit-bar{width:150px;height:7px;border-radius:4px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);overflow:hidden}
@@ -409,8 +413,17 @@ body.playing #gameVitals.show{display:flex}
 .gh-btns button:hover{background:var(--primary);border-color:var(--primary)}
 
 /* 触屏操控（运行模式 + 触屏设备）：左摇杆 / 右侧跳跃·交互 / 右半屏拖动转视角 */
-#touchUI{display:none}
+/* 悬浮操作层：容器本身不吃点击，只有里面的控件接事件，
+   否则一整块覆盖层会把画面中央的点击（ACTION0 / 指针锁）全挡掉 */
+#touchUI{display:none;pointer-events:none}
+#touchUI #joyBase,#touchUI #tbtns{pointer-events:auto}
 @media (pointer:coarse){ body.playing #touchUI{display:block} }
+/* 桌面也能开：body.float-ui 由设置面板里的开关控制，与设备类型无关 */
+body.playing.float-ui #touchUI{display:block}
+body.playing.float-ui:not(.touch) #touchUI{opacity:.9}
+/* 摆放模式：控件虚线描边、可拖动，此时按下不触发功能 */
+body.float-edit #joyBase,body.float-edit #tbtns button{outline:2px dashed var(--primary);outline-offset:3px;cursor:grab}
+body.float-edit #tbtns{cursor:grab}
 #joyBase{position:fixed;left:28px;bottom:56px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);z-index:70;touch-action:none}
 #joyKnob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(252,131,8,.55);transform:translate(-50%,-50%);pointer-events:none}
 #tbtns{position:fixed;right:26px;bottom:64px;display:flex;flex-direction:column;gap:14px;z-index:70}
@@ -497,6 +510,7 @@ body.playing .name-tags{display:block}
 
 /* 触屏 Gamepad：官方图槽（跳 / 蹲 / 跑 / 飞 / A / B / 交互） */
 body.touch.playing #touchUI{display:block}
+body.playing.float-edit #peRotate{display:none}
 /* 竖屏提示只在手机竖着拿时出现：横屏与桌面都不该看到它 */
 #peRotate{display:none}
 @media (pointer:coarse) and (orientation:portrait){

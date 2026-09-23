@@ -66,7 +66,8 @@ export async function importVox(file, atlas) {
 }
 
 // -------- 官方 environment / physics blob 双向映射 --------
-// 官方 environment.raw 是嵌套形状（drawDistance + fog6 + rain6 + sky13 + snow7），
+// 官方 environment.raw 是嵌套形状：顶层 5 组 = drawDistance + fog(6 键) + rain(6 键)
+// + sky(14 键) + snow(6 键)，递归到标量共 61 个叶子（实测，见 docs/map-format.md）。
 // physics.raw 只有 gravity / useOBB / velocityDamping；我运行时用一套扁平键，故必须显式换算。
 const rgbOfEnv = (c, dflt) => (c && typeof c === "object" ? { r: +c.red ?? +c.r ?? dflt, g: +c.green ?? +c.g ?? dflt, b: +c.blue ?? +c.b ?? dflt } : { r: dflt, g: dflt, b: dflt });
 const rgbaOfEnv = (c) => (c && typeof c === "object" ? { r: +c.red || 0, g: +c.green || 0, b: +c.blue || 0, a: c.alpha == null ? 1 : +c.alpha } : { r: 0, g: 0, b: 0, a: 1 });

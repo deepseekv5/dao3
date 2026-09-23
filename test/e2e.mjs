@@ -219,6 +219,61 @@ const respawnBtn = await page.evaluate(async () => {
 });
 ok("HUD「立即重生」把人送回地图出生点", !respawnBtn.missing && respawnBtn.moved && respawnBtn.atSpawn, JSON.stringify(respawnBtn));
 
+// 悬浮操作层：桌面也能开、鼠标点得动、能摆放并记住位置
+const floatFacts = await page.evaluate(async () => {
+  const g = window.__game;
+  const hidden = getComputedStyle(document.getElementById("touchUI")).display === "none";
+  g._setFloatOn(true);
+  await new Promise((r) => setTimeout(r, 120));
+  const shown = getComputedStyle(document.getElementById("touchUI")).display !== "none";
+  const pl = g.world.querySelector("player").player;
+  const seen = [];
+  pl.onPress(({ button }) => seen.push("d:" + button));
+  pl.onRelease(({ button }) => seen.push("u:" + button));
+  const el = document.getElementById("tJump");
+  const r0 = el.getBoundingClientRect();
+  const o = { bubbles: true, cancelable: true, clientX: r0.left + 8, clientY: r0.top + 8, pointerId: 1, isPrimary: true, button: 0 };
+  el.dispatchEvent(new PointerEvent("pointerdown", o));
+  const buf = g._jumpBuf;
+  el.dispatchEvent(new PointerEvent("pointerup", o));
+  await new Promise((r) => setTimeout(r, 120));
+  // 摆放：拖按键组
+  g._setFloatEdit(true);
+  const grp = document.getElementById("tbtns");
+  const before = grp.getBoundingClientRect();
+  const od = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 9, isPrimary: true, button: 0 });
+  grp.dispatchEvent(new PointerEvent("pointerdown", od(before.left + 20, before.top + 20)));
+  window.dispatchEvent(new PointerEvent("pointermove", od(before.left - 160, before.top - 110)));
+  window.dispatchEvent(new PointerEvent("pointerup", od(before.left - 160, before.top - 110)));
+  await new Promise((r) => setTimeout(r, 120));
+  const moved = Math.abs(grp.getBoundingClientRect().top - before.top) > 50;
+  const saved = !!localStorage.getItem("dao3.floatLayout");
+  g._setFloatEdit(false);
+  g._resetFloatLayout();
+  g._setFloatOn(false);
+  await new Promise((r) => setTimeout(r, 120));
+  const off = getComputedStyle(document.getElementById("touchUI")).display === "none";
+  return { hidden, shown, seen, buf, moved, saved, off };
+});
+ok("悬浮层默认关、开了才显示、关了又收起", floatFacts.hidden && floatFacts.shown && floatFacts.off);
+ok("桌面用鼠标点悬浮「跳」会发出官方 JUMP 按下/松开",
+  floatFacts.seen.includes("d:jump") && floatFacts.seen.includes("u:jump") && floatFacts.buf > 0,
+  JSON.stringify(floatFacts.seen));
+ok("摆放模式能拖动按键组并记住位置", floatFacts.moved && floatFacts.saved);
+// 摇杆与血条同在左下角，开了悬浮层不能互相压住
+const overlap = await page.evaluate(async () => {
+  const g = window.__game;
+  g._setFloatOn(true);
+  g.player.hp = 5;   // 让血条真的显示出来
+  await new Promise((r) => setTimeout(r, 400));
+  const a = document.getElementById("joyBase").getBoundingClientRect();
+  const b = document.getElementById("gameVitals").getBoundingClientRect();
+  g._setFloatOn(false);
+  if (b.width === 0) return { shown: false };
+  return { shown: true, hit: !(a.left > b.right || b.left > a.right || a.top > b.bottom || b.top > a.bottom) };
+});
+ok("悬浮摇杆不压住血条", !overlap.shown || !overlap.hit, JSON.stringify(overlap));
+
 await shot("04-play");
 await page.click("#gameStop");
 await page.waitForTimeout(900);

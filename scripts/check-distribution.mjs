@@ -85,6 +85,7 @@ const REQUIRED = [
   "public/data/api-members.json", "public/data/api-methods.json", "public/data/api-impl.json",
   // API 参考页与它的生成器：文档站承诺了这一页，生成物或生成脚本丢了就是死链
   "docs/api-reference.md", "docs/api-reference.html", "scripts/build-api-ref.mjs",
+  "docs/map-format.md", "docs/map-format.html",
   "data/upstream/block-id.json", "data/upstream/block-spec.json", "data/upstream/LICENSE.Box3Blocks.txt",
   // 缺了它，fetch:official 在新克隆上直接退出——文档承诺的取回路径就是空的
   "official-project/cids.json",

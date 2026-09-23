@@ -361,19 +361,20 @@ ok("状态读数在顶部区带、没压住准星", bands.state.y < 160 && Math.
    `state.y=${bands.state.y} cross.y=${cross.y}`);
 ok("血条在顶部区带内", bands.vitals.y < 160 && bands.vitals.h < 80, JSON.stringify(bands.vitals));
 
-// 真推摇杆：Touch 事件走 game.js 的 _bindTouch
+// 真推摇杆。悬浮层现在按 Pointer Events 绑定（鼠标/触屏/手写笔一套代码），
+// 而真实手指在浏览器里产生的本来就是 pointer 事件——所以这里也发 pointer 事件。
+// 合成 TouchEvent 是"测试自己发明的输入形态"，真机不会只发 touch 不发 pointer。
 const before = await mpage.evaluate(() => window.__play.position());
 await mpage.touchscreen.tap(mPlay.joy.x + mPlay.joy.w / 2, mPlay.joy.y + mPlay.joy.h / 2);
 const handle = await mpage.evaluateHandle(async ({ cx, cy }) => {
   const joy = document.getElementById("joyBase");
-  const t = new Touch({ identifier: 7, target: joy, clientX: cx, clientY: cy });
-  joy.dispatchEvent(new TouchEvent("touchstart", { touches: [t], targetTouches: [t], changedTouches: [t], bubbles: true, cancelable: true }));
+  const pe = (type, x, y) => joy.dispatchEvent(new PointerEvent(type, {
+    pointerId: 7, pointerType: "touch", isPrimary: true, bubbles: true, cancelable: true, clientX: x, clientY: y,
+  }));
+  pe("pointerdown", cx, cy);
   await new Promise((r) => setTimeout(r, 60));
-  const t2 = new Touch({ identifier: 7, target: joy, clientX: cx, clientY: cy - 46 });
-  joy.dispatchEvent(new TouchEvent("touchmove", { touches: [t2], targetTouches: [t2], changedTouches: [t2], bubbles: true, cancelable: true }));
-  setTimeout(() => {
-    joy.dispatchEvent(new TouchEvent("touchend", { touches: [], targetTouches: [], changedTouches: [t2], bubbles: true, cancelable: true }));
-  }, 1500);
+  pe("pointermove", cx, cy - 46);
+  setTimeout(() => pe("pointerup", cx, cy - 46), 1500);
   return true;
 }, { cx: mPlay.joy.x + mPlay.joy.w / 2, cy: mPlay.joy.y + mPlay.joy.h / 2 });
 void handle;

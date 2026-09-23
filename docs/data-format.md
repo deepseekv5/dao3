@@ -15,20 +15,26 @@ server/data/worlds/<id>.json.gz
   "indices": [ /* x + y*X + z*X*Y */ ],
   "data":    [ /* blockId，稀疏：只存非空 */ ],
   "rot":     [ /* 0..3 的转数；官方 id 里的 16384 倍数在落盘时已折算 */ ],
-  "lightIndices": [], "lightFlags": [], "lightIntensity": [],
-  "lightRange": [], "lightColorRgb": [], "lightOffsetXyz": [],
   "meta": { /* 编辑器元数据，见下 */ }
 }
 ```
+
+官方某些导出里还会有 `lightIndices` / `lightFlags` / `lightIntensity` / `lightRange` /
+`lightColorRgb` / `lightOffsetXyz` 六个光照数组——**本实现既不写也不读**，
+带光照的官方地图导入后光照会丢。逐字段的取值域见[标准地图格式](map-format.md)。
 
 `GET /api/world/:id` 在请求头带 `Accept-Encoding: gzip` 时**原样吐出磁盘上的 gz**，
 不重复解压再压缩；浏览器自动解压，所以大地图回源只有一次 gunzip。
 
 ### `meta` 里放什么
 
-官方 blob 放不下的东西都进 `meta`：`terrain`（天空/雾/曝光）、`scripts`、
-`entities`（官方 22 字段的扁平表）、`zones`、`player`、`worldSettings`、
-`environment`、`ambientSound`、`products`、`ui`、`pictureNames`、`assetRoot`。
+官方 blob 放不下的东西都进 `meta`（实测 18 个键）：`name`、`terrain`（天空/雾/曝光）、
+`scripts`、`entities`（官方 22 字段的扁平表）、`models`、`meshNames`、`assetRoot`、
+`zones`、`player`、`worldSettings`、`displayName`、`groups`、`ambientSound`、
+`description`、`products`、`ui`、`spawnPoint`、`gameRules`。
+
+**没有 `pictureNames`**——图片名单只在导出时写进 `compat.json`，运行期由
+`resources.ls("picture")` 现算。
 
 ## 项目包 `.zip`：官方 21 键清单
 
@@ -37,7 +43,7 @@ project.json          21 个键、字母序、version "0.3.23"
 project/info.json     displayName / description / previewImage / notice
 project/player.json   官方 41 键（见下）
 project/physics.json  { gravity, useOBB, velocityDamping }
-project/environment.json  46 个叶子键（fog7 + rain8 + snow8 + sky13 + 其余）
+project/environment.json  61 个叶子键（drawDistance1 + fog8 + rain12 + sky30 + snow10）
 project/ambientSound.json 5 个槽
 project/zones.json    官方 bounds/selector/massScale/force + 环境覆盖
 project/uiTree.json   官方 nodes 形态（Root / 组 / 屏幕）
@@ -104,6 +110,8 @@ CID = base58btc( 0x12 0x20 ‖ sha256(bytes) )     // 以 "Qm" 开头
 `project.json` 的 21 键与 `player` 的 41 键，来自官方公开的项目数据结构。
 
 **官方 `chunks/<CID>.bin` 不是逐体素列表**，别指望从里面解出方块表：
-72 个非空块合计只有 23,995 字节，而地图有 152 万格——信息量差 169 倍。
-它是烘焙后的合并网格容器（protobuf 分段，含 `5f5900` 标记）。
-复现与判据见 `scripts/decode-official-chunks.mjs`。
+72 个非空块合计只有 23,997 字节，而地图有 1,523,592 格非空格——约 63.5 格每字节，
+而任何 `(index,id)` 编码至少要 4–8 字节**每格**，物理上不可能。
+五种假设（含 depth-5 稀疏八叉树）精确耗尽的文件数是 0/72。
+字节特征（含 `5f5900` 标记）指向"烘焙后的合并网格容器"，但 **protobuf 只是证据指向、未被证明**。
+判据、逐条反证与字段级取值域见[标准地图格式](map-format.md)。

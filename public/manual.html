@@ -61,6 +61,7 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
     <a href="#keys">键位</a>
     <a href="#race">一场比赛</a>
     <a href="#boost">加速道具</a>
+    <a href="#float">悬浮按键</a>
     <a href="#hud">界面</a>
     <a href="#faq">常见问题</a>
     <a href="/docs/api-reference.html">API 参考</a>
@@ -171,6 +172,19 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
 攒着不放等于没有。直道末端吃、弯前放开，比一直按着 <kbd>Shift</kbd> 快得多。
 </div>
 
+<h2 id="float">悬浮操作按钮</h2>
+<p>这套屏幕按键不是手机专属。按 <kbd>H</kbd> 打开设置面板，点<b>悬浮按键</b>就能在任何设备上
+把它们浮在画面上——包括用<b>鼠标点</b>（桌面默认关着，免得挡视野）。</p>
+<ul>
+  <li>按键是<b>悬浮层</b>：只有按钮本身接点击，中间那块区域是透的，照常锁定视角、照常点世界里的东西。</li>
+  <li>点<b>摆放按键</b>进入摆放模式，把<b>摇杆底盘</b>和<b>按键组</b>拖到顺手的位置，再点<b>完成摆放</b>。
+      摆放模式下按下不会真的触发操作，可以放心拖。</li>
+  <li>位置记在<b>这台设备</b>上（浏览器本地存储），换地图、重开应用都还在；点<b>复位</b>回到默认布局。</li>
+  <li>退出运行模式后悬浮层自动收起，不会留在编辑器界面上。</li>
+</ul>
+<div class="note">开关与摆放属于<b>操作习惯</b>，不属于地图数据——所以它不会被存进 <code>.json.gz</code>，
+也不会跟着项目包发给别人。</div>
+
 <h2 id="out">掉出世界、卡住与重生</h2>
 <p>坐标掉到世界之外会自动重生回出生点。要是卡在建筑里出不来，按 <kbd>Esc</kbd> 退出运行模式再进一次；<kbd>H</kbd> 打开的设置面板里有<b>立即重生</b>按钮。写脚本的人可以直接调 <code>player.forceRespawn()</code>。</p>
 
@@ -181,7 +195,7 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
     <tr><td>左下</td><td>聊天与系统播报（<kbd>T</kbd> 发言）</td></tr>
     <tr><td>中下</td><td>准星与交互提示（能互动的东西会显示名字，例如「报名点」）</td></tr>
     <tr><td>右上</td><td>「商店」入口（地图配了商品表才会出现）与停止按钮</td></tr>
-    <tr><td><kbd>H</kbd></td><td>设置面板：日照、环境光、曝光、视场角、镜头距离，以及<b>设出生点</b> / <b>立即重生</b> / 白天 / 夜晚 / 重置 / 声音 / 控制台</td></tr>
+    <tr><td><kbd>H</kbd></td><td>设置面板：日照、环境光、曝光、视场角、镜头距离，以及<b>设出生点</b> / <b>立即重生</b> / <b>悬浮按键</b> / 摆放 / 复位 / 白天 / 夜晚 / 重置 / 声音 / 控制台</td></tr>
     <tr><td><kbd>`</kbd></td><td>脚本控制台：地图脚本报错、警告都在这里，玩的时候可以不理会</td></tr>
   </tbody>
 </table>
