@@ -98,17 +98,34 @@ export async function specPrompt(side, digest) {
   return head + specBrief(side, d);
 }
 
-/** 系统提示 = 开发规范（ai-spec.js，单一来源）+ 单次生成的输出契约。 */
+/**
+ * 系统提示 = 开发规范（ai-spec.js，单一来源）+ 该端的输出契约。
+ *
+ * 沙箱那一路必须单独收尾：OUTPUT_RULES 讲的是 sleep / setInterval / entity /
+ * remoteChannel 这些官方全局，而方块沙箱里只有 sb / Math / console 三个。
+ * 之前把同一份契约拼给沙箱，等于一边在规范里写"这里没有 world"、
+ * 一边又在同一条提示的最后告诉模型"要按 tick 就在 tick 回调里累加"——
+ * 模型照做就生成出跑不通的代码。契约按端分开，才谈得上自洽。
+ */
 export async function buildSystemPrompt(side, digest) {
-  return await specPrompt(side, digest) + "\n\n" + OUTPUT_RULES;
+  const spec = await specPrompt(side, digest);
+  return spec + "\n\n" + (side === "sandbox" ? SANDBOX_OUTPUT_RULES : OUTPUT_RULES);
 }
+
+const SANDBOX_OUTPUT_RULES = `【输出要求】
+1. 只写方块沙箱脚本：全局仅有 sb、Math、console 三个，world / entity / player / storage / ui 全都不存在。
+2. 计时不要写无限循环；要分批就用有限次数循环。
+3. 输出恰好一个 \`\`\`js 代码块；块外最多两句中文，说明这段会造出什么。
+4. 不要 import/require，不要访问 DOM，不要读 localStorage。
+5. 坐标必须是整数格且落在世界尺寸内；先用 sb.size() 探边界再下笔。
+6. 代码要能直接运行。`;
 
 const OUTPUT_RULES = `【输出要求】
 1. 先判断该写服务端、客户端还是方块沙箱；用户没说清就默认服务端，并在说明里点出这个选择。
 2. 只用规范里列出的全局与成员。清单里没有的**不要用**，改成更简单的等价写法。
 3. 输出恰好一个 \`\`\`js 代码块；块外最多两句中文，说明这段做什么、怎么触发。
-4. 不要 import/require，不要假设 DOM，不要写死玩家数量，不要留 TODO 占位。
-5. 延时/冷却一律按 tick 计数（${"1 tick = 64ms"}），没有 sleep()。
+4. 跨文件复用用 CommonJS（require("./x.js") / module.exports），不要写 ES module 的 import/export。不要假设 DOM，不要写死玩家数量，不要留 TODO 占位。
+5. 延时用 await sleep(毫秒) 或 setInterval（引擎托管）；要按 tick 计数就在 tick 回调里自己累加，1 tick = ${(1000 / 64).toFixed(3)}ms。
 6. 代码要能直接运行。`;
 
 /* ---------------- 面板 ---------------- */

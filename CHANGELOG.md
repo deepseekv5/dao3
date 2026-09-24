@@ -84,6 +84,62 @@
   只给成员名。`BUILT_DATA` 改为直接从 `package.json` 取；分发守卫另外补上了
   漏登记的 `ai-spec.js` 与 `ai-agent.js` 两个被 import 的模块。
 
+### 修正（官方文档全量对账之后）
+
+把 `box3-product-document` 全部 456 篇文档过了一遍并与代码逐条核对，查出这些**我们这边**的错：
+
+- **`GameQuaternion` 的参数顺序整个是反的。** 官方是 `(w, x, y, z)`（d.ts:22517、
+  `api/GameQuaternion/index.md:13,82`），我们按 Three.js 习惯建成 `(x, y, z, w)`。
+  更糟的是 `api-spec.json` 里 advertise 给 AI 的是官方那个正确签名——于是提示词和运行时
+  互相打脸：模型照规范写 `new GameQuaternion(1,0,0,0)`（意思是 w=1），拿到的是 x=1，
+  **它生成的每一个四元数都是错的**。同理 `fromAxisAngle` 官方收 `(axis, rad)` 两个参数，
+  我们收四个数。
+- **`GameVector3.fromPolar` 第一和第三个参数对调了。** 官方 `(mag, phi, theta)`，
+  我们 `(theta, phi, r)`：照文档写的 `fromPolar(5, 0.3, 1.2)` 会把长度当角度用。
+- **AI 规范里有四条是我自己编的**，官方文档根本找不到：
+  "world.say 只出气泡不进聊天"（恰好相反，官方 `resident.md` 说它是向所有玩家广播，
+  头顶气泡那个是 `entity.say`）；"movementBounds 越界夹回边界"（官方是"传回出生点"）；
+  "enableInteract 要设 displayText/buttonType/buttonKey"（后两个名字整个仓库都搜不到，
+  官方是 `interactHint/interactRadius/interactColor`）；"searchBox 要求完全包含是官方语义"
+  （官方没说，那是我们自己的实现）。**规范里写一条假的比不写更坏**——模型会照着错的那条
+  自信生成，而它读起来很像人话。现在每条都带 `src` 出处，没有官方出处的标 `ours` 并明说。
+- **规范说"没有 sleep()、不要 setInterval、角度一律弧度"，三句都不对。** `sleep` 与引擎托管的
+  `setTimeout/setInterval` 都存在且官方示例在用一个样；客户端 UI 的 `rotation` 是**角度**
+  （−179..180）不是弧度。另外那句"不要 import / require"把官方唯一的跨文件手段禁掉了：
+  Arena 服务端规范就是 CommonJS。
+- **补上跨文件模块。** 官方服务端脚本用 `require("./x.js")` / `module.exports`，
+  我们原先把每个脚本当独立函数体跑、连 `require` 这个全局都没有，官方写法直接
+  "require is not defined"。现在支持 CommonJS（循环依赖按 Node 语义返回部分导出并 warn），
+  ES module 语法给一句能照着改的报错而不是 `Unexpected token`。
+- **`next*` 事件不认官方的对象过滤器。** 官方主用法是
+  `await world.nextChat({ message: "start" })`（`api/notice/eventDiff.md`），
+  我们原先把参数当谓词函数调用（`filter(ev)`），照文档写的代码会
+  "filter is not a function"。
+- **持久化数据跨地图串档。** `getDataStorage` 官方是【单地图】隔离
+  （"其他地图（如副图）无法访问此空间"），而我们的 key 里**根本没有 worldId**——
+  两张图用同名存储读写的是同一份，把官方规则整个反过来。
+- **`storage.list` 的官方写法会死循环。** `cursor` 是**必选**的页码、`pageSize` 默认 100
+  且范围 [0,100]；我们原先不读 `cursor`、默认 20，于是 `list({cursor:1})` 永远返回第 0 页。
+  另外 `get(key)` 官方返回 `{key,value,updateTime,createTime,version}` 对象，
+  我们返回裸值——照文档写 `(await store.get(k)).value` 在我们这里拿到 undefined。
+- **规范自相矛盾的 TPS。** 我们写死"64ms 一个 tick（20 TPS）"——20 是官方文档里
+  **Minecraft 那一套**（`mc-api` 说每秒 20 次）的口径，DAO3 真值是 15.625。
+  同一个错误数字还散在 README、docs、文档生成器和一个测试的换算里。现在一律由 `TICK_MS` 现算。
+- **一批量程与默认值对不上官方**：airFriction 滑杆上限 0.02（官方范围 0-1）、
+  sunFrequency 默认 0.0002（官方 0）、fogUniformDensity 默认 0.004（官方 0）、
+  实体 friction 缺省 1（官方 0）、gravity 缺省 false（官方 true）、bounds 缺省 [0,0,0]（官方 1,1,1）。
+- **`getGroupStorage` 的注释在撒谎**，写着"语义与官方一致"，而那段描述其实是
+  mc-api 的 `__shared__/` 全局共享。官方作用域是"一个地图组内的主图+副图"；
+  本地没有地图组这个实体，只能退化成"这台设备共享"——是近似，不是等价，现在注释这么写。
+- **`world.say` 等三条被从 PITFALLS 里删掉/降级后**，仍保留 `searchBox`、选择器语法两条，
+  但标注为【本实现行为】。
+- **AI 规范的沙箱那一路被污染了。** 方块沙箱只有 `sb / Math / console`，
+  却拼上了服务端的输出契约（sleep、setInterval、tick 回调），等于一边说"这里没有 world"
+  一边又说"要按 tick 就在 tick 回调里累加"。现在契约按端分开。
+- **e2e 的 mock 会把汉字解坏。** 三个测试桩都用 `let b = ""; b += chunk` 累积请求体，
+  每个 TCP 分块各自 `toString("utf8")`，**跨块边界的多字节字符被拆坏**并且改变长度——
+  表现为"模型侧收到的规范比界面少 2 字节"这种看着像产品 bug 的假故障。改成 `Buffer.concat` 一次解码。
+
 ### 说明
 
 - 官方 `box3-product-document/local-engine` 已核对：那是**服主运维手册**

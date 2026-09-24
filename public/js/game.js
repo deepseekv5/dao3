@@ -21,9 +21,19 @@ import { sunDirFromPhase, nightFromElev } from "./sun.js";
  * 编辑器的存储面板与 AI Agent 的 storage.* 动作都必须走它：复制一份字符串模板，
  * 改了这边就会让 Agent 写到脚本读不到的地方——写进去、读不出来、还不报错，
  * 是最难查的那类 bug。
+ *
+ * 作用域按官方 `api/GameDataStorage/getSpace.md` 的三条隔离规则来：
+ *   · getDataStorage 是【单地图】——"其他地图（如副图）无法访问此空间"，
+ *     所以 map 作用域的键**必须带 worldId**。早先这里没有 worldId，
+ *     于是两张图用同名存储会读写同一份数据，把官方规则整个反过来：
+ *     在 A 图 `update("lv3", n=>n+1)` 再切到 B 图加一次，官方得到 1 和 1，我们得到 2。
+ *   · getGroupStorage 是【主副图共同维护】——刻意不带 worldId。
+ *     本地没有"地图组"这个实体（官方那套是服务端 + PostgreSQL 的概念），
+ *     所以它退化成"这台设备上的所有图共享"，是近似而不是等价，见下面的注释。
  */
-export const dataStoragePrefix = (ns, scope, name) => `dao3_${ns}:${scope}:${name}:`;
-export const dataStorageKey = (ns, scope, name, key) => dataStoragePrefix(ns, scope, name) + key;
+export const dataStoragePrefix = (ns, scope, name, worldId) =>
+  (scope === "map" ? `dao3_${ns}:map:${worldId || "local"}:${name}:` : `dao3_${ns}:group:${name}:`);
+export const dataStorageKey = (ns, scope, name, key, worldId) => dataStoragePrefix(ns, scope, name, worldId) + key;
 
 export * from "./gapi.js";
 
@@ -2326,10 +2336,83 @@ void main() {
     });
   }
 
-  /* ---------------- 脚本沙箱 ---------------- */
-  runScript(name, code, entry) {
+  /* ---------------- 脚本沙箱与跨文件模块 ---------------- */
+
+  /** 把 import 说明符解析到本地图的脚本名。只认相对路径与裸文件名：
+   *  没有 node_modules、没有 URL，脚本能碰到的就只有这张表。 */
+  _resolveModule(from, spec) {
+    const s = String(spec || "").trim();
+    if (!s) return null;
+    const table = this._scriptTable || [];
+    const base = String(from || "index.js").replace(/[^/]*$/, "");
+    const rel = (s.startsWith("./") || s.startsWith("../")) ? s : s.replace(/^\//, "");
+    const parts = [];
+    for (const seg of (base + rel).split("/")) {
+      if (!seg || seg === ".") continue;
+      if (seg === "..") parts.pop();
+      else parts.push(seg);
+    }
+    const key = parts.join("/");
+    const cands = [key, key + ".js", /\.js$/.test(key) ? key : key + ".js"];
+    for (const c of cands) {
+      const hit = table.find((f) => f.name === c);
+      if (hit) return hit.name;
+    }
+    return null;
+  }
+
+  /**
+   * CommonJS 风格的 require()。官方 Arena 服务端脚本规范就是 CommonJS
+   * （module.exports / require，见 box3 文档 api/notice/exportAndImport.md），
+   * 而我们原先把每个脚本当独立函数体跑、连 require 这个全局都不存在，
+   * 所以官方写法会直接抛 "require is not defined"。
+   *
+   * 循环依赖按 Node 语义返回**部分导出**而不是死锁——地图脚本里
+   * "A 用 B、B 又回调 A" 是常见写法；但仍要 warn 一句，
+   * 否则调一个 undefined 属性时完全看不出是环造成的。
+   */
+  _require(from, spec) {
+    const resolved = this._resolveModule(from, spec);
+    if (!resolved) {
+      const have = (this._scriptTable || []).map((f) => f.name).join("、") || "（这张图没有别的脚本）";
+      throw new Error(`require("${spec}") 找不到模块。本图的脚本只有：${have}。`
+        + `路径要带相对前缀和扩展名，例如 require("./utils.js")。`);
+    }
+    if (this._modules.has(resolved)) return this._modules.get(resolved).exports;
+    if (this._moduleLoading.has(resolved)) {
+      consoleDiv(this.hud && this.hud.console, `循环依赖：${from} → ${resolved}，拿到的是部分导出`, "warn");
+      const half = this._modules.get(resolved);
+      return half ? half.exports : {};
+    }
+    const rec = { exports: {} };
+    this._modules.set(resolved, rec);
+    this._moduleLoading.add(resolved);
+    try {
+      const f = (this._scriptTable || []).find((x) => x.name === resolved);
+      this._evalScript(resolved, f ? f.code : "", f ? f.entry : null, rec);
+    } finally {
+      this._moduleLoading.delete(resolved);
+    }
+    return rec.exports;
+  }
+
+  /**
+   * 我们这边脚本是编译进函数体执行的，ES module 语法会变成一句看不出所以然的
+   * "Unexpected token"。宁可给一句能照着改的话：本实现只支持 CommonJS，
+   * 而官方 Arena 服务端规范也正是 CommonJS。
+   */
+  _esmSyntax(code) {
+    const s = String(code || "");
+    return /(^|[\n;])\s*(import\s+[\w{*][\s\S]{0,400}?from\s*["']|import\s*\(|import\s*["'])/.test(s)
+      || /(^|[\n;])\s*export\s+(default\s+)?(const|let|var|function|class|async|\{)/.test(s);
+  }
+
+  /** 编译并执行一个脚本；给了 mod 就按 CommonJS 模块跑（注入 module/exports/require）。 */
+  _evalScript(name, code, entry, mod) {
     const rt = this;
     const g = this._globals(this._isClientScript(name, entry || code));
+    g.require = (spec) => rt._require(name, spec);
+    if (mod) { g.module = mod; g.exports = mod.exports; }
     const keys = Object.keys(g);
     const vals = keys.map((k) => g[k]);
     const fail = (err) => {
@@ -2342,6 +2425,12 @@ void main() {
       consoleDiv(this.hud.console, `[${name}] ${msg}${where}`, "err");
       noteError(`[${name}] ${msg}`);
     };
+    if (this._esmSyntax(code)) {
+      const e = new Error(`${name} 用了 ES module 语法（import / export）。本实现把每个脚本编译成函数体执行，`
+        + `只支持 CommonJS：用 require("./x.js") 取，另一头用 module.exports = { … } 交。`);
+      fail(e);
+      return Promise.reject(e);
+    }
     try {
       // 官方脚本大量在文件顶层直接写 await（`const r = await http.fetch(…)`），
       // 用同步 Function 编译会在第一行 await 就抛 SyntaxError、整个脚本一个字都不执行。
@@ -2350,13 +2439,18 @@ void main() {
       const fn = new AsyncFunction(...keys, String(code) + "\n//# sourceURL=" + encodeURIComponent(name));
       const p = fn(...vals);
       if (p && typeof p.then === "function") {
-        p.then(() => consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok"), fail);
-      } else {
-        consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok");
+        return p.then(() => consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok"), fail);
       }
+      consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok");
+      return Promise.resolve();
     } catch (err) {
       fail(err);
+      return Promise.reject(err);
     }
+  }
+
+  runScript(name, code, entry) {
+    return this._evalScript(name, code, entry, null);
   }
   // 客户端脚本沙箱（ui 节点树 / input / screen / Audio / 向量），DOM 承载，随运行启停挂载
   _client() {
@@ -2491,8 +2585,10 @@ void main() {
         const offset = (o && o.offset) || 0, limit = (o && o.limit) || 100;
         return Promise.resolve(all().slice(offset, offset + limit));
       },
-      // 官方 GameStorage 还能按名字开一块数据空间；getGroupStorage 是"组地图共享"的那一层，
-      // 本地没有组的概念，用独立前缀隔开，语义与官方一致（同一块空间跨图共享）。
+      // 官方 GameStorage 只有 getDataStorage / getGroupStorage 两个口子（api/GameDataStorage/index.md）。
+      // 上面那套扁平 get/set/has/page 是**我们自己的扩展**，官方没有，别当成对等实现。
+      // getGroupStorage 官方作用域是"一个地图组内的主图+副图"；本地没有地图组这个实体，
+      // 这里退化成"这台设备上所有图共享一份"。是近似不是等价——跨图共享的范围我们放大到了全设备。
       getDataStorage: (name) => rt._dataStorage(ns, "map", name),
       getGroupStorage: (name) => rt._dataStorage(ns, "group", name),
     };
@@ -2500,11 +2596,13 @@ void main() {
   /** 官方 GameDataStorage：一块命名空间下的键值库，list 返回可翻页的 QueryList */
   _dataStorage(ns, scope, name) {
     const rt = this;
-    const k = (x) => dataStorageKey(ns, scope, name, x);
+    // worldId 只作用到 map 作用域（见 dataStoragePrefix 上的三条官方隔离规则）
+    const wid = () => (scope === "map" ? ((rt.e && rt.e.worldId) || "local") : undefined);
+    const k = (x) => dataStorageKey(ns, scope, name, x, wid());
     const read = (x) => { try { const v = localStorage.getItem(k(x)); return v == null ? null : JSON.parse(v); } catch { return null; } };
     const write = (x, v) => { try { localStorage.setItem(k(x), JSON.stringify(v)); return true; } catch { return false; } };
     const keys = () => {
-      const pre = dataStoragePrefix(ns, scope, name), out = [];
+      const pre = dataStoragePrefix(ns, scope, name, wid()), out = [];
       try {
         for (let i = 0; i < localStorage.length; i++) {
           const kk = localStorage.key(i);
@@ -2522,10 +2620,19 @@ void main() {
       remove: async (x) => { const old = read(x); try { localStorage.removeItem(k(x)); } catch {} return old; },
       has: async (x) => localStorage.getItem(k(x)) != null,
       destroy: async () => { for (const x of keys()) { try { localStorage.removeItem(k(x)); } catch {} } },
+      /**
+       * 官方签名是 list({ cursor, pageSize })：`cursor` **必选**、是"分页起点页码"，
+       * `pageSize` 可选、默认 100 且范围 [0,100]（api/GameDataStorage/help.md:351-352）。
+       * 原先这里根本不读 cursor、默认 20 —— 于是官方写法 `list({cursor:1})`
+       * 会永远返回第 0 页，翻页循环卡死且没有任何报错。
+       */
       list: async (opt) => {
-        const pageSize = Math.max(1, (opt && opt.pageSize) || (opt && opt.limit) || 20);
+        const raw = Number(opt && (opt.cursor ?? opt.page ?? opt.offset));
+        const cursor = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+        const size = Number(opt && opt.pageSize);
+        const pageSize = Math.min(100, Math.max(1, Number.isFinite(size) && size > 0 ? Math.floor(size) : 100));
         const rows = keys().map((x) => ({ key: x, value: read(x) }));
-        return this._queryList(rows, pageSize, (opt && (opt.page || opt.offset)) || 0);
+        return this._queryList(rows, pageSize, cursor);
       },
     };
     return storage;

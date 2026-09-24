@@ -323,5 +323,31 @@ console.log("== 设置自动保存：改了就该在 localStorage 里 ==");
   ok("没有 /models 端点时不算用户配置错", /没有 \/models 端点/.test(srv));
 }
 
+console.log("== 官方 next* 事件过滤器：对象匹配器必须认（1:1 破口回归） ==");
+{
+  const { eventMatches } = await import("../public/js/gapi.js");
+  const ent = { id: "player-1" };
+  const ev = { entity: ent, input: { jump: true, forward: false }, message: "hi" };
+  ok("无过滤器匹配一切", eventMatches(undefined, ev) && eventMatches(null, ev));
+  ok("谓词函数照旧可用", eventMatches((e) => e.input.jump, ev) && !eventMatches((e) => e.input.forward, ev));
+  // 官方 api/notice/eventDiff.md 的主用法：world.nextPlayerInput({ entity, input: { jump: true } })
+  ok("官方对象写法能匹配（旧实现会抛 filter is not a function）",
+    eventMatches({ entity: ent, input: { jump: true } }, ev));
+  ok("对象写法能判否：jump=false 不该命中 jump=true",
+    !eventMatches({ input: { jump: false } }, ev));
+  ok("只比给定键，不多要求", eventMatches({ message: "hi" }, ev) && !eventMatches({ message: "yo" }, ev));
+  ok("嵌套对象是部分匹配，不是深相等", eventMatches({ input: { forward: false } }, ev));
+  ok("数组按值比（坐标类事件）", eventMatches({ tags: ["a", "b"] }, { tags: ["a", "b"] })
+    && !eventMatches({ tags: ["a"] }, { tags: ["a", "b"] }));
+  // 嵌套一律走部分匹配——`input: { jump: true }` 能工作靠的就是它，
+  // 所以 `entity` 也是按结构比而不是按引用比。实际不冲突：两个玩家的
+  // name/id 不可能整体相同，而按引用比反而会让跨帧取到的实体包装对象判否。
+  ok("entity 按结构部分匹配：不同实例但同字段算命中",
+    eventMatches({ entity: { id: "player-1" } }, ev));
+  ok("entity 字段不同就不命中", !eventMatches({ entity: { id: "player-2" } }, ev));
+  ok("过滤器是原始值时不误判为匹配", !eventMatches(3, ev) && !eventMatches("x", ev));
+  ok("事件不是对象时不崩", eventMatches({ a: 1 }, null) === false && eventMatches({ a: 1 }, 7) === false);
+}
+
 console.log(fails ? `\n${fails} 项未通过` : "\n全部通过");
 process.exitCode = fails ? 1 : 0;

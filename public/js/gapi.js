@@ -55,9 +55,12 @@ export class GameVector3 {
   equals(v) { return !!v && Math.abs(this.x - v.x) < 1e-6 && Math.abs(this.y - v.y) < 1e-6 && Math.abs(this.z - v.z) < 1e-6; }
   exactEquals(v) { return !!v && this.x === v.x && this.y === v.y && this.z === v.z; }
   toString() { return `(${this.x}, ${this.y}, ${this.z})`; }
-  static fromPolar(theta, phi, r = 1) {
+  /** 官方签名 fromPolar(mag, phi, theta)（d.ts:22746、api/GameVector3/index.md:47）。
+   *  我们原先是 (theta, phi, r)——第一个和第三个参数正好相反，
+   *  于是照文档写的 fromPolar(5, 0.3, 1.2) 会把长度当角度用。 */
+  static fromPolar(mag, phi, theta) {
     const s = Math.sin(phi);
-    return new GameVector3(r * s * Math.cos(theta), r * Math.cos(phi), r * s * Math.sin(theta));
+    return new GameVector3(mag * s * Math.cos(theta), mag * Math.cos(phi), mag * s * Math.sin(theta));
   }
 }
 
@@ -146,31 +149,46 @@ export class GameRGBAColor extends GameRGBColor {
   }
 }
 
+/**
+ * 官方契约是 `new GameQuaternion(w, x, y, z)` 与 `set(w, x, y, z)`
+ * （d.ts:22517/22535，api/GameQuaternion/index.md:13,82）。
+ * 我们原先按 Three.js 的习惯建成 (x,y,z,w)——而 api-spec.json 里 advertise 给
+ * AI 的签名是官方那个正确的，于是提示词和运行时互相打脸：模型照规范写
+ * `new GameQuaternion(1, 0, 0, 0)`（意思是 w=1），拿到的却是 x=1，
+ * 每一个它构造的四元数都是错的。
+ *
+ * 字段仍然叫 .x/.y/.z/.w（与 THREE.Quaternion 对齐，省掉一层转换），
+ * 只有**构造与 set 的参数顺序**按官方。内部构造一律走下面那个 q()，
+ * 免得十几处 new GameQuaternion(...) 在改顺序时漏一处——漏了不会报错，
+ * 只会让某个旋转悄悄反向。
+ */
+const q = (w, x, y, z) => Object.assign(new GameQuaternion(), { w, x, y, z });
+
 export class GameQuaternion {
-  constructor(x = 0, y = 0, z = 0, w = 1) { this.x = x; this.y = y; this.z = z; this.w = w; }
-  set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; return this; }
-  copy(o) { this.x = o.x; this.y = o.y; this.z = o.z; this.w = o.w; return this; }
-  clone() { return new GameQuaternion(this.x, this.y, this.z, this.w); }
-  equals(o) { return !!o && this.x === o.x && this.y === o.y && this.z === o.z && this.w === o.w; }
-  mag() { return Math.hypot(this.x, this.y, this.z, this.w); }
-  sqrMag() { return this.x ** 2 + this.y ** 2 + this.z ** 2 + this.w ** 2; }
-  normalize() { const m = this.mag() || 1; this.x /= m; this.y /= m; this.z /= m; this.w /= m; return this; }
-  dot(o) { return this.x * o.x + this.y * o.y + this.z * o.z + this.w * o.w; }
+  constructor(w = 1, x = 0, y = 0, z = 0) { this.w = w; this.x = x; this.y = y; this.z = z; }
+  set(w, x, y, z) { this.w = w; this.x = x; this.y = y; this.z = z; return this; }
+  copy(o) { this.w = o.w; this.x = o.x; this.y = o.y; this.z = o.z; return this; }
+  clone() { return q(this.w, this.x, this.y, this.z); }
+  equals(o) { return !!o && this.w === o.w && this.x === o.x && this.y === o.y && this.z === o.z; }
+  mag() { return Math.hypot(this.w, this.x, this.y, this.z); }
+  sqrMag() { return this.w ** 2 + this.x ** 2 + this.y ** 2 + this.z ** 2; }
+  normalize() { const m = this.mag() || 1; this.w /= m; this.x /= m; this.y /= m; this.z /= m; return this; }
+  dot(o) { return this.w * o.w + this.x * o.x + this.y * o.y + this.z * o.z; }
   mul(o) {
-    const { x, y, z, w } = this;
-    return new GameQuaternion(
-      x * o.w + y * o.z - z * o.y + w * o.x,
-      -x * o.z + y * o.w + z * o.x + w * o.y,
-      x * o.y - y * o.x + z * o.w + w * o.z,
-      -x * o.x - y * o.y - z * o.z + w * o.w);
+    const { w, x, y, z } = this;
+    return q(
+      w * o.w - x * o.x - y * o.y - z * o.z,
+      w * o.x + x * o.w + y * o.z - z * o.y,
+      w * o.y - x * o.z + y * o.w + z * o.x,
+      w * o.z + x * o.y - y * o.x + z * o.w);
   }
-  inv() { return new GameQuaternion(-this.x, -this.y, -this.z, this.w); }
-  add(o) { return new GameQuaternion(this.x + o.x, this.y + o.y, this.z + o.z, this.w + o.w); }
-  sub(o) { return new GameQuaternion(this.x - o.x, this.y - o.y, this.z - o.z, this.w - o.w); }
+  inv() { return q(this.w, -this.x, -this.y, -this.z); }
+  add(o) { return q(this.w + o.w, this.x + o.x, this.y + o.y, this.z + o.z); }
+  sub(o) { return q(this.w - o.w, this.x - o.x, this.y - o.y, this.z - o.z); }
   angle(o) { return 2 * Math.acos(clamp(Math.abs(this.dot(o)) / (this.mag() * o.mag() || 1), -1, 1)); }
-  rotateX(rad) { return this.mul(GameQuaternion.fromAxisAngle(1, 0, 0, rad)); }
-  rotateY(rad) { return this.mul(GameQuaternion.fromAxisAngle(0, 1, 0, rad)); }
-  rotateZ(rad) { return this.mul(GameQuaternion.fromAxisAngle(0, 0, 1, rad)); }
+  rotateX(rad) { return this.mul(GameQuaternion.fromAxisAngle(new GameVector3(1, 0, 0), rad)); }
+  rotateY(rad) { return this.mul(GameQuaternion.fromAxisAngle(new GameVector3(0, 1, 0), rad)); }
+  rotateZ(rad) { return this.mul(GameQuaternion.fromAxisAngle(new GameVector3(0, 0, 1), rad)); }
   getAxisAngle() {
     const s = Math.sqrt(Math.max(0, 1 - this.w * this.w));
     if (s < 1e-6) return { axis: new GameVector3(0, 1, 0), rad: 0 };
@@ -180,18 +198,21 @@ export class GameQuaternion {
     };
   }
   slerp(o, t) {
-    const q = new THREE.Quaternion(this.x, this.y, this.z, this.w);
-    q.slerp(new THREE.Quaternion(o.x, o.y, o.z, o.w), t);
-    return new GameQuaternion(q.x, q.y, q.z, q.w);
+    const r = new THREE.Quaternion(this.x, this.y, this.z, this.w);
+    r.slerp(new THREE.Quaternion(o.x, o.y, o.z, o.w), t);
+    return q(r.w, r.x, r.y, r.z);
   }
-  toString() { return `(${this.x}, ${this.y}, ${this.z}, ${this.w})`; }
-  static fromAxisAngle(x, y, z, rad) {
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(x, y, z).normalize(), rad);
-    return new GameQuaternion(q.x, q.y, q.z, q.w);
+  toString() { return `(${this.w}, ${this.x}, ${this.y}, ${this.z})`; }
+  /** 官方签名是 fromAxisAngle(axis: GameVector3, rad)（d.ts:22746 区段）。
+   *  原先收的是四个数 (x,y,z,rad)——照文档写的两参数调用会把 rad 当成 z。 */
+  static fromAxisAngle(axis, rad) {
+    const a = axis && typeof axis === "object" ? axis : new GameVector3(...Array.isArray(axis) ? axis : [Number(axis) || 0, 0, 0]);
+    const r = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(a.x, a.y, a.z).normalize(), rad);
+    return q(r.w, r.x, r.y, r.z);
   }
-  static fromEuler(x, y, z) { // 官方欧拉序 YZX
-    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, "YZX"));
-    return new GameQuaternion(q.x, q.y, q.z, q.w);
+  static fromEuler(x, y, z) {   // 官方欧拉序 YZX
+    const r = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, "YZX"));
+    return q(r.w, r.x, r.y, r.z);
   }
   static rotationBetween(a, b) {
     const x = toVec3(a), y = toVec3(b);
@@ -386,6 +407,33 @@ export function rayHitsBox(ent, o, dir, tMax, out) {
 
 /* ------------------------------ 事件通道 ------------------------------ */
 // 官方：on*(handler) 返回 {cancel,resume,active} token；next*(filter?) 返回 Promise。
+/**
+ * 事件过滤器：官方两种写法都要认。
+ *   await world.nextPlayerInput(({ input }) => input.jump)      谓词
+ *   await world.nextPlayerInput({ entity, input: { jump: true } })  对象部分匹配
+ * 第二种是官方 `api/notice/eventDiff.md` 里教的主用法，而我们原先只把参数
+ * 当函数调用（`filter(ev)`）——于是照官方文档写的代码在我们这里直接
+ * "filter is not a function"。这是真·1:1 破口，不是兼容性偏好。
+ */
+export function eventMatches(filter, ev) {
+  if (filter == null) return true;
+  if (typeof filter === "function") return !!filter(ev);
+  if (typeof filter !== "object" || ev == null || typeof ev !== "object") return false;
+  for (const [k, want] of Object.entries(filter)) {
+    const got = ev[k];
+    if (want && typeof want === "object" && !Array.isArray(want)
+      && got && typeof got === "object") {
+      if (!eventMatches(want, got)) return false;
+    } else if (got !== want) {
+      // 官方事件里的坐标/颜色是 Vec3 这类对象，调用方偶尔会拿数组来比；
+      // 逐元素比一次，避免"看起来该匹配却判否"这种更难查的失败。
+      if (!(Array.isArray(want) && Array.isArray(got) && want.length === got.length
+        && want.every((v, i) => v === got[i]))) return false;
+    }
+  }
+  return true;
+}
+
 export function makeChannel() {
   const handlers = [];
   const on = (h) => {
@@ -395,7 +443,7 @@ export function makeChannel() {
     return { cancel: () => { rec.active = false; }, resume: () => { rec.active = true; }, active: () => rec.active };
   };
   const next = (filter) => new Promise((resolve) => {
-    const tok = on((ev) => { if (!filter || filter(ev)) { tok.cancel(); resolve(ev); } });
+    const tok = on((ev) => { if (eventMatches(filter, ev)) { tok.cancel(); resolve(ev); } });
   });
   return {
     on, next, handlers,

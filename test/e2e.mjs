@@ -464,9 +464,14 @@ console.log("== AI 代理：密钥不外泄、只对本机、地址要干净 =="
   // 测试夹具要是长得像真密钥，check:dist 就会把自己的测试文件报成泄漏。
   const KEY = "e2e-fake-key-not-a-real-secret-9f3a";
   const mock = http.createServer((req, res) => {
-    let b = "";   // 读掉请求体：不读完 Node 会一直挂着连接
-    req.on("data", (c) => b += c);
+    // 必须攒 Buffer 再一次性解码。写成 `let b = ""; b += chunk` 会把每个 TCP 分块
+    // 各自 toString("utf8")，于是**跨块边界的多字节汉字被拆坏**（变成 \ufffd），
+    // 替换字符还顺带改变长度——表现就是"模型侧收到的规范和界面差 2 字节"这种
+    // 看着像产品有 bug 的假故障。读掉请求体也是必须的：不读完 Node 会挂着连接。
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
     req.on("end", () => {
+      const b = Buffer.concat(chunks).toString("utf8");
       const auth = req.headers.authorization || "";
       // 密钥错时必须真的回 401：否则代理走不到"抹掉密钥再回显"那条分支，
       // 断言会空过——第一版就是这样，error 字段是空串却显示 PASS。
@@ -508,9 +513,10 @@ console.log("== 交给模型的开发规范：走真实 UI，且以模型侧收�
   const KEY = "e2e-spec-fake-key-3c81";
   let sent = null;
   const spy = http.createServer((req, res) => {
-    let b = "";
-    req.on("data", (c) => b += c);
+    const chunks = [];   // 攒 Buffer 一次解码，理由见上面那个 mock 的注释
+    req.on("data", (c) => chunks.push(c));
     req.on("end", () => {
+      const b = Buffer.concat(chunks).toString("utf8");
       try { sent = JSON.parse(b); } catch { sent = null; }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ model: "e2e-spy", choices: [{ message: { role: "assistant", content: "```js\nworld.say('ok');\n```" } }] }));
@@ -570,8 +576,12 @@ console.log("== 交给模型的开发规范：走真实 UI，且以模型侧收�
   const st = await page.evaluate(() => document.querySelector('.ai-drawer [data-k="state"]').textContent);
   ok("走真实 UI 能生成并回填代码", /已生成/.test(st), st);
   const sys = (sent?.messages || []).find((m) => m.role === "system")?.content || "";
-  ok("模型侧收到的 system 就是界面上那份规范", sys.length > 8000 && sys === srv.text,
-    `system ${sys.length} 字符 / 界面 ${srv.text.length} 字符`);
+  // 不只是"等不等"，还要能在不等时说出不等的**位置**——两字节的漂移靠肉眼看 46KB 文本是不可能的。
+  let diffAt = -1;
+  for (let i = 0; i < Math.max(sys.length, srv.text.length); i++) { if (sys[i] !== srv.text[i]) { diffAt = i; break; } }
+  ok("模型侧收到的 system 就是界面上那份规范", sys.length > 8000 && diffAt === -1,
+    diffAt < 0 ? `逐字相同 · ${sys.length} 字符`
+      : `第 ${diffAt} 字符起不同：模型侧「${JSON.stringify(sys.slice(diffAt - 24, diffAt + 24))}」vs 界面「${JSON.stringify(srv.text.slice(diffAt - 24, diffAt + 24))}」`);
   const usr = (sent?.messages || []).find((m) => m.role === "user")?.content || "";
   ok("user 消息带上了需求与端", /端：server/.test(usr) && /需求：.*区域/.test(usr) && /写一份新脚本/.test(usr),
     JSON.stringify(usr.slice(0, 60)));
@@ -614,9 +624,10 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
   const seen = [];
   let n = 0;
   const mock = http.createServer((req, res) => {
-    let b = "";
-    req.on("data", (c) => b += c);
+    const chunks = [];   // 攒 Buffer 一次解码，理由见上面那个 mock 的注释
+    req.on("data", (c) => chunks.push(c));
     req.on("end", () => {
+      const b = Buffer.concat(chunks).toString("utf8");
       const payload = (() => { try { return JSON.parse(b); } catch { return {}; } })();
       if ((req.headers.authorization || "") !== "Bearer " + KEY) {
         res.writeHead(401, { "content-type": "application/json" });
@@ -696,7 +707,17 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     models: (window.__editor.state.models || []).length,
     canUndo: (window.__editor.history.stack || []).length,
     errs: (window.__errLog || []).slice(),
-    saved: !!localStorage.getItem("dao3_storage:map:scores:best"),
+    saved: (() => {
+      // 按 key 的形状找，而不是写死整串：官方 getDataStorage 是【单地图】作用域，
+      // 修好之后 key 里带 worldId，写死 "dao3_storage:map:scores:best" 反而会变成
+      // 一个"检测到旧 bug 才通过"的假断言。
+      const ks = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("dao3_storage:map:") && k.endsWith(":scores:best")) ks.push(k);
+      }
+      return ks;
+    })(),
     worldOnDisk: null,
   }));
   ok("Agent 跑到 finish", /完成/.test(rep.stat), rep.stat);
@@ -706,7 +727,10 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     rep.scripts.some((s) => /client/i.test(s)), rep.scripts.join(", "));
   ok("model.build 真的往世界盖了东西", rep.blocks > before.blocks + 60, `${rep.blocks - before.blocks} 格净增`);
   ok("entity.add 放出了一个可被 #名字 取到的实体", rep.models > 0, `${rep.models} 个模型/实体`);
-  ok("storage.set 写的键，脚本用 getDataStorage 读得到（同一套 key）", rep.saved === true);
+  // key 必须落在 map 作用域里**且带 worldId**：官方 getDataStorage 是【单地图】隔离，
+  // 之前没有 worldId，两张图用同名存储会读写同一份数据（跨图串档）。
+  ok("storage.set 写的键落在带 worldId 的 map 作用域里",
+    rep.saved.length === 1 && /dao3_storage:map:[^:]+:scores:best$/.test(rep.saved[0]), JSON.stringify(rep.saved));
   ok("越权动作被拒之后循环没断", /动作不合法/.test(rep.log) && /deleteWholeWorld/.test(rep.log));
   ok("非法动作的回绝理由带可用动作清单", /可用动作只有/.test(rep.log));
   ok("build.check / runtime.* / scene.capture / map.save 都被走了一遍",

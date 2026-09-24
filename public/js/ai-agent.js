@@ -52,19 +52,20 @@ export const TOOLS = [
   { name: "project.create", desc: "新建一张空图并切过去（会丢掉当前未保存的编辑，谨慎用）。",
     args: { name: "地图名", size: "[X,Y,Z] 三个整数，各轴 8..256", terrain: `可选地貌，只能是：${PRESETS.map((p) => p.id).join(" / ")}；省略就是平地` } },
   { name: "map.save", desc: "把当前地图保存到本地世界库（Agent 做完一批改动就该存一次，别等收尾）。" },
-  { name: "map.resource", desc: "列出可用方块名与分类，供 sb.* 与 model.build 选颜色。无参数。" },
+  { name: "map.blocks", desc: "列出可用方块名与分类，供 blocks.edit 与 model.build 选材质。（官方没有这个动词，纯粹是本实现的地编能力）" },
 
   { name: "script.list", desc: "列出本工程所有脚本（文件名、端、行数）。无参数。" },
-  { name: "script.get", desc: "读一个脚本的全文。", args: { entry: "脚本文件名，如 index.js" } },
-  { name: "script.upload", desc: "新建或覆盖一个脚本。落地前先过语法预检，语法不过不会写入。",
+  { name: "script.get", desc: "读一个脚本的全文。", args: { entry: "脚本文件名，如 index.js", side: "可选 server|client；同名脚本分端时用它区分" } },
+  { name: "script.upload", desc: "新建或覆盖一个脚本。落地前先过语法预检，语法不过不会写入。跨文件复用用 CommonJS：require(\"./x.js\") 与 module.exports。",
     args: { entry: "脚本文件名，必须以 .js 结尾", side: "server 或 client（官方契约要求显式声明，不要靠文件名猜）", code: "完整 JavaScript 源码" } },
   { name: "script.rename", desc: "重命名一个脚本。", args: { entry: "现名", newEntry: "新名" } },
 
-  { name: "storage.set", desc: "写一条地图级持久化数据（等价于脚本里的 storage.getDataStorage(name).set(key, value)）。",
-    args: { name: "存储名", key: "键", value: "任意 JSON 值" } },
-  { name: "storage.get", desc: "读一条地图级持久化数据。", args: { name: "存储名", key: "键" } },
-  { name: "storage.list", desc: "分页列出某个存储里的键。", args: { name: "存储名" } },
-  { name: "storage.remove", desc: "删掉一条地图级持久化数据。", args: { name: "存储名", key: "键" } },
+  { name: "storage.set", desc: "写一条持久化数据。scope=project 等价脚本里的 storage.getDataStorage(name)（只这张图），scope=group 是 getGroupStorage（本实现里退化为这台设备共享）。",
+    args: { name: "存储名", key: "键", value: "任意 JSON 值", scope: "可选 project|group，默认 project" } },
+  { name: "storage.get", desc: "读一条持久化数据。", args: { name: "存储名", key: "键", scope: "可选 project|group" } },
+  { name: "storage.list", desc: "列出某个存储里的键。", args: { name: "存储名", scope: "可选 project|group" } },
+  { name: "storage.remove", desc: "删一条持久化数据。官方 storage delete 要带 --yes，这里同样要求显式确认。",
+    args: { name: "存储名", key: "键", scope: "可选 project|group", confirm: "必须传 true 才会真删" } },
 
   { name: "blocks.edit", desc: "立刻执行一段方块沙箱代码（只有 sb.* 全局），返回输出与变更格数。造地形、砌墙用它。",
     args: { code: "sb 沙箱代码：sb.set/del/block/box/sphere/clear/count/size/log" } },
@@ -265,14 +266,25 @@ export function sanitizeAction(parsed) {
     const key = String(raw.key || "").trim();
     if (!name || !key) return { ok: false, error: "storage.set 需要 args.name（存储名）与 args.key" };
     if (raw.value === undefined) return { ok: false, error: "storage.set 需要 args.value（任意 JSON 值）" };
-    args.name = name.slice(0, 64); args.key = key.slice(0, 128); args.value = raw.value;
+    const sc = storageScope(raw.scope);
+    if (sc.err) return { ok: false, error: sc.err };
+    args.name = name.slice(0, 64); args.key = key.slice(0, 128); args.value = raw.value; args.scope = sc.scope;
   } else if (action === "storage.get" || action === "storage.remove") {
     const name = String(raw.name || "").trim();
     const key = String(raw.key || "").trim();
     if (!name || !key) return { ok: false, error: `${action} 需要 args.name 与 args.key` };
-    args.name = name.slice(0, 64); args.key = key.slice(0, 128);
+    const sc = storageScope(raw.scope);
+    if (sc.err) return { ok: false, error: sc.err };
+    args.name = name.slice(0, 64); args.key = key.slice(0, 128); args.scope = sc.scope;
+    // 官方 storage delete 必须带 --yes（cli-commands.md:343），而且删一个不存在的键
+    // 要回"无需删除"而不是成功。这里把 confirm 做成同样的闸门。
+    if (action === "storage.remove" && raw.confirm !== true) {
+      return { ok: false, error: `storage.remove 需要 args.confirm=true 才会真删（对齐官方 storage delete 的 --yes）。要先看有什么，用 storage.list。` };
+    }
   } else if (action === "storage.list") {
-    args.name = String(raw.name || "").trim().slice(0, 64);
+    const sc = storageScope(raw.scope);
+    if (sc.err) return { ok: false, error: sc.err };
+    args.name = String(raw.name || "").trim().slice(0, 64); args.scope = sc.scope;
   } else if (action === "runtime.start") {
     const n = Math.round(Number(raw.ticks));
     args.ticks = Number.isFinite(n) ? Math.max(1, Math.min(200, n)) : 60;
@@ -553,6 +565,14 @@ export function openAgent(E) {
   setTimeout(() => goal.focus(), 60);
 }
 
+/** 官方 storage 有 --scope project|group 两档；映射到我们的 map / group 作用域。 */
+function storageScope(v) {
+  const s = String(v || "project").trim().toLowerCase();
+  if (s === "project" || s === "map") return { scope: "map" };
+  if (s === "group") return { scope: "group" };
+  return { err: `scope 只能是 project 或 group，收到 "${v}"。project=只这张图（官方 getDataStorage），group=主副图共用（官方 getGroupStorage）。` };
+}
+
 /** 执行一个已校验的动作，返回 {ok, obs}。obs 永远是一句能直接喂回模型的话。 */
 async function execTool(E, action, args, spec, onShot) {
   const scripts = () => E.state.scripts || (E.state.scripts = []);
@@ -602,29 +622,31 @@ async function execTool(E, action, args, spec, onShot) {
         return { ok: true, obs: `已把 ${args.entry} 改名为 ${args.newEntry}` };
       }
       case "storage.set": {
-        const k = dataStorageKey("storage", "map", args.name, args.key);
+        const k = dataStorageKey("storage", args.scope, args.name, args.key, E.worldId);
         try { localStorage.setItem(k, JSON.stringify(args.value)); }
         catch (e) { return { ok: false, obs: "写入失败：" + String(e && e.message || e) }; }
-        return { ok: true, obs: `storage.getDataStorage("${args.name}").set("${args.key}", …) 已生效` };
+        return { ok: true, obs: `${args.scope === "group" ? "getGroupStorage" : "getDataStorage"}("${args.name}").set("${args.key}", …) 已生效` };
       }
       case "storage.get": {
-        const raw = localStorage.getItem(dataStorageKey("storage", "map", args.name, args.key));
+        const raw = localStorage.getItem(dataStorageKey("storage", args.scope, args.name, args.key, E.worldId));
         return { ok: true, obs: raw == null ? "（这个键还没有值）" : clip(raw, 1200) };
       }
       case "storage.list": {
-        const pre = dataStoragePrefix("storage", "map", args.name);
+        if (!args.name) return { ok: false, obs: "storage.list 要 args.name（存储名），例如 \"scores\"" };
+        const pre = dataStoragePrefix("storage", args.scope, args.name, E.worldId);
         const ks = [];
         for (let i = 0; i < localStorage.length; i++) {
           const kk = localStorage.key(i);
           if (kk && kk.startsWith(pre)) ks.push(kk.slice(pre.length));
         }
-        return { ok: true, obs: args.name ? `存储「${args.name}」里有 ${ks.length} 个键：${ks.slice(0, 40).join("、")}` : `要 args.name 才能列，例如 "scores"` };
+        return { ok: true, obs: `存储「${args.name}」（${args.scope}）里有 ${ks.length} 个键：${ks.slice(0, 40).join("、")}` };
       }
       case "storage.remove": {
-        const k = dataStorageKey("storage", "map", args.name, args.key);
+        const k = dataStorageKey("storage", args.scope, args.name, args.key, E.worldId);
         const had = localStorage.getItem(k) != null;
         localStorage.removeItem(k);
-        return { ok: true, obs: had ? `已删掉 ${args.name}.${args.key}` : `${args.name}.${args.key} 本来就不存在` };
+        // 官方对删不存在的键要求回"无需删除"，不能报成功（cli-commands.md:343）
+        return { ok: had, obs: had ? `已删掉 ${args.name}.${args.key}` : "无需删除：这个键本来就不存在" };
       }
       case "blocks.edit": {
         const r = runSandboxCode(E, args.code);
