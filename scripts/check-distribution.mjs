@@ -33,6 +33,10 @@ const SECRET_RES = [
   /ghp_[A-Za-z0-9]{20,}/,
   /github_pat_[A-Za-z0-9_]{20,}/,
   /eyJ[A-Za-z0-9_-]{25,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, // JWT
+  // 应用从 2.1 起会经手 OpenAI 兼容密钥（只该待在 localStorage 里）。加进来的原因
+  // 不是"顺手多拦一种"：一旦哪天有 bug 把它写进地图 meta 或导出物，这条就是唯一的哨兵。
+  // 注意别写成会命中源码里那句 redact 正则的形式——`sk-[` 后面不是字符集成员，不匹配。
+  /sk-[A-Za-z0-9]{20,}/,
 ];
 
 function inspect(label, files, readFn, opts = {}) {
@@ -86,6 +90,12 @@ const REQUIRED = [
   // API 参考页与它的生成器：文档站承诺了这一页，生成物或生成脚本丢了就是死链
   "docs/api-reference.md", "docs/api-reference.html", "scripts/build-api-ref.mjs",
   "docs/map-format.md", "docs/map-format.html",
+  // AI 三件套：VOXA 菜单与脚本界面都按名字引用它们，丢一个就是点下去抛错，
+  // 而这类缺失在只跑静态检查时完全看不出来。
+  // 注意别把 test/ 放进来：package.json 的 files 里根本没有 test/，
+  // npm 包刻意不发测试——列进来只会让 tarball 那一项永远红。
+  "public/js/ai.js", "public/js/ai-script.js", "public/js/voxa/ai-model.js",
+  "docs/ai.md", "docs/ai.html",
   "data/upstream/block-id.json", "data/upstream/block-spec.json", "data/upstream/LICENSE.Box3Blocks.txt",
   // 缺了它，fetch:official 在新克隆上直接退出——文档承诺的取回路径就是空的
   "official-project/cids.json",

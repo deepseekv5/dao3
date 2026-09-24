@@ -10,6 +10,8 @@ import {
   parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc,
 } from "./model.js";
 
+import { openAiModel } from "./ai-model.js";
+
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const MODEL_KEY = "dao3_voxa_current";
@@ -370,6 +372,7 @@ class VoxaApp {
       case "extClear": this.view.clearExternal(); this._extDoc = null; this.tip("已清除外部参照"); break;
       case "shareCode": this.shareCode(); break;
       case "pasteCode": this.pasteCode(); break;
+      case "aiModel": openAiModel(this); break;
       case "toggleBones": this.view.setBoneVisible(!this.view.showBones); break;
       case "toggleBoxes": this.view.setBoxesVisible(!this.view.showBoxes); break;
       case "grid": this.view.grid.visible = !this.view.grid.visible; break;

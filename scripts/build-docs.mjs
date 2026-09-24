@@ -22,6 +22,7 @@ const DOCS_LIST = [
   ["data-format", "数据格式", "内核"],
   ["map-format", "标准地图格式", "内核"],
   ["physics", "物理与单位制", "内核"],
+  ["ai", "AI 能力", "内核"],
   ["packaging", "便携包与发布", "交付"],
   ["playground", "网页体验版", "交付"],
   ["dependencies", "依赖清单", "交付"],

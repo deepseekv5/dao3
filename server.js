@@ -379,6 +379,32 @@ function ensureSeed() {
 ensureSeed();
 
 /* --------------------------------- router -------------------------------- */
+/* ---------------- AI 代理 ----------------
+ * 浏览器里直连第三方接口要赌对方开了 CORS，而且密钥会出现在页面的网络面板里发给
+ * 任意域名。这里把它收口成一个只对本机开放的转发：密钥由前端随请求体送来，
+ * 只用于拼这一次上游请求，不落盘、不进日志、出错时先抹掉再回显。
+ */
+const AI_MAX_BODY = 4 * 1024 * 1024;      // 提示词 + 代码上下文
+const AI_MAX_MS = 180000;
+const isLoopback = (ip) => /^(127\.|::1$|::ffff:127\.|localhost$)/.test(String(ip || ""));
+function normalizeAiBase(u) {
+  let x = String(u || "").trim();
+  if (!x) return null;
+  if (!/^https?:\/\//i.test(x)) x = "https://" + x;
+  let p;
+  try { p = new URL(x); } catch { return null; }
+  if (p.protocol !== "http:" && p.protocol !== "https:") return null;
+  // 用户名/密码写在 URL 里会被 fetch 直接带进 Authorization，绕过我们统一的鉴权头，
+  // 也会出现在任何一句错误文本里——一律拒绝，让用户把 key 填在密钥框。
+  if (p.username || p.password) return null;
+  return p.href.replace(/\/+$/, "");
+}
+const scrub = (text, key) => {
+  let s = String(text == null ? "" : text);
+  if (key) s = s.split(key).join("••••");
+  return s.replace(/sk-[A-Za-z0-9_\-]{12,}/g, "sk-••••").slice(0, 600);
+};
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = decodeURIComponent(url.pathname);
@@ -558,6 +584,71 @@ const server = http.createServer((req, res) => {
         if (fs.existsSync(p)) fs.unlinkSync(p);
         return json(res, 200, { ok: true });
       }
+    }
+    if (parts[1] === "ai" && parts[2] === "chat" && req.method === "POST") {
+      // 这个端点会把请求转发到调用者指定的地址。绑到 0.0.0.0 起服务时，
+      // 不挡掉外来来源就等于给全网开了一个免费代理，所以只认回环。
+      if (!isLoopback(req.socket && req.socket.remoteAddress)) {
+        return json(res, 403, { error: "AI 代理只对本机开放" });
+      }
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > AI_MAX_BODY) req.destroy(); });
+      req.on("end", async () => {
+        let cfg = null, key = "";
+        try {
+          cfg = JSON.parse(body);
+        } catch (e) { return json(res, 400, { error: "bad json: " + String(e.message || e).slice(0, 120) }); }
+        const base = normalizeAiBase(cfg.baseUrl);
+        key = String(cfg.key || "").trim();
+        const model = String(cfg.model || "").trim();
+        const msgs = Array.isArray(cfg.messages) ? cfg.messages.slice(0, 40) : null;
+        if (!base) return json(res, 400, { error: "接口地址不合法（只支持 http/https，且不要把密钥写在地址里）" });
+        if (!model) return json(res, 400, { error: "缺少模型名" });
+        if (!key) return json(res, 400, { error: "缺少密钥" });
+        if (!msgs || !msgs.length) return json(res, 400, { error: "缺少 messages" });
+        // 防止把自己打进死循环：上游指向**本服务的同一个 host:port** 时才拒。
+        // 原来只比主机名，于是 127.0.0.1 上跑的 LM Studio / Ollama 全被误杀。
+        try {
+          const up = new URL(base);
+          const upAuthority = up.host.toLowerCase();
+          const selfAuthority = String(req.headers.host || "").toLowerCase();
+          if (upAuthority === selfAuthority) return json(res, 400, { error: "接口地址不能指向本服务" });
+        } catch { return json(res, 400, { error: "接口地址不合法" }); }
+        const clean = msgs.filter((m) => m && typeof m.content === "string")
+          .map((m) => ({ role: /^(system|user|assistant|tool)$/.test(String(m.role)) ? m.role : "user", content: String(m.content).slice(0, 200000) }));
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), AI_MAX_MS);
+        try {
+          const r = await fetch(base + "/chat/completions", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: "Bearer " + key },
+            body: JSON.stringify({
+              model, messages: clean,
+              temperature: Number.isFinite(+cfg.temperature) ? Math.max(0, Math.min(2, +cfg.temperature)) : 0.4,
+              max_tokens: Math.max(1, Math.min(32000, +cfg.maxTokens || 2048)),
+              ...(cfg.json ? { response_format: { type: "json_object" } } : {}),
+            }),
+            signal: ctrl.signal,
+          });
+          const txt = await r.text();
+          let data = null;
+          try { data = JSON.parse(txt); } catch { data = null; }
+          if (!r.ok) {
+            const detail = data && data.error && (data.error.message || data.error) || txt.slice(0, 300);
+            return json(res, 502, { ok: false, status: r.status, error: scrub("上游 " + r.status + "：" + detail, key) });
+          }
+          const choice = data && data.choices && data.choices[0];
+          const out = (choice && choice.message && choice.message.content)
+            ?? (choice && choice.text) ?? "";
+          return json(res, 200, { ok: true, text: String(out || ""), usage: data && data.usage, model: data && data.model });
+        } catch (e) {
+          const aborted = e && (e.name === "AbortError");
+          return json(res, 502, { ok: false, error: scrub(aborted ? "上游超时（" + (AI_MAX_MS / 1000) + " 秒）" : "请求失败：" + (e.message || e), key) });
+        } finally {
+          clearTimeout(timer);
+        }
+      });
+      return;
     }
     return json(res, 404, { error: "no such api" });
   }

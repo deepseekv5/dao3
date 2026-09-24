@@ -1,6 +1,6 @@
 {
   "name": "@deepseekv5/dao3-editor-clone",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": false,
   "description": "dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、20 TPS 定步长物理、体素编辑、VOXA 建模、项目包导入导出。零第三方运行时依赖。",
   "type": "module",
@@ -32,6 +32,7 @@
     "test:e2e": "node test/e2e.mjs",
     "test:play": "node test/play.mjs",
     "test:terrain": "node test/terrain.mjs",
+    "test:ai": "node test/ai.mjs",
     "package": "node scripts/build-portable.mjs",
     "installers": "node scripts/build-installers.mjs",
     "check:dist": "node scripts/check-distribution.mjs",

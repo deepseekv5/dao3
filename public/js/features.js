@@ -3,6 +3,7 @@ import * as THREE from "../vendor/three/three.module.js";
 import { VoxelWorld } from "./world.js";
 import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
+import { wireScriptAi } from "./ai-script.js";
 
 let E; // window.__editor 引用
 
@@ -12,6 +13,7 @@ export function initFeatures(editor) {
   wireSizeModal();
   wireTerrainModal();
   wireScript();
+  wireScriptAi(editor);
   wireModels();
   wirePlayer();
   wireUiEditor();

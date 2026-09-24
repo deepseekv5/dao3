@@ -440,6 +440,50 @@ const cpBack = await page.evaluate(() => {
 });
 ok("退出游玩后检查点回到编辑器", cpBack.n === 5 && cpBack.visible === 5, JSON.stringify(cpBack));
 
+console.log("== AI 代理：密钥不外泄、只对本机、地址要干净 ==");
+// 这三条守的是"用户把密钥交给我们"这个前提。它们一旦退化是静默的：
+// 请求照样成功，只是密钥会出现在错误文本里、或者服务被绑到 0.0.0.0 后变成开放代理。
+{
+  const http = await import("http");
+  // 故意不用 sk- 开头：分发扫描有一条规则专抓 sk-[A-Za-z0-9]{20,}，
+  // 测试夹具要是长得像真密钥，check:dist 就会把自己的测试文件报成泄漏。
+  const KEY = "e2e-fake-key-not-a-real-secret-9f3a";
+  const mock = http.createServer((req, res) => {
+    let b = "";   // 读掉请求体：不读完 Node 会一直挂着连接
+    req.on("data", (c) => b += c);
+    req.on("end", () => {
+      const auth = req.headers.authorization || "";
+      // 密钥错时必须真的回 401：否则代理走不到"抹掉密钥再回显"那条分支，
+      // 断言会空过——第一版就是这样，error 字段是空串却显示 PASS。
+      if (auth !== "Bearer " + KEY) {
+        res.writeHead(401, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: "bad auth: " + auth } }));
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ model: "e2e-mock", choices: [{ message: { role: "assistant", content: "```js\nworld.say(1);\n```" } }] }));
+    });
+  });
+  await new Promise((r) => mock.listen(0, "127.0.0.1", r));
+  const UP = "http://127.0.0.1:" + mock.address().port + "/v1";
+  const call = async (body) => {
+    const r = await fetch(BASE + "/api/ai/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { status: r.status, data: await r.json().catch(() => null) };
+  };
+  const msgs = [{ role: "user", content: "hi" }];
+  const good = await call({ baseUrl: UP, model: "m", key: KEY, messages: msgs });
+  ok("代理能正常转发并取出 content", good.status === 200 && /world\.say/.test(good.data?.text || ""), JSON.stringify(good.data?.text || "").slice(0, 40));
+  const bad = await call({ baseUrl: UP, model: "m", key: "wrong-e2e-key-9x7", messages: msgs });
+  ok("上游 401 转成 502 并带上游原文", bad.status === 502 && /bad auth/.test(bad.data?.error || ""), JSON.stringify(bad.data?.error || "").slice(0, 60));
+  ok("明文密钥已打码（只剩 ••••）", !JSON.stringify(bad.data || "").includes("wrong-e2e-key-9x7") && /••••/.test(bad.data?.error || ""), JSON.stringify(bad.data?.error || "").slice(0, 60));
+  const cred = await call({ baseUrl: "https://user:pass@invalid.example/v1", model: "m", key: KEY, messages: msgs });
+  ok("地址里塞凭据被拒（否则 key 会绕道进 Authorization）", cred.status === 400, JSON.stringify(cred.data?.error || "").slice(0, 40));
+  const self = await call({ baseUrl: BASE + "/v1", model: "m", key: KEY, messages: msgs });
+  ok("上游指向本服务被拒（防自环）", self.status === 400);
+  const nokey = await call({ baseUrl: UP, model: "m", key: "", messages: msgs });
+  ok("缺密钥时 400 而不是打出去", nokey.status === 400);
+  mock.close();
+}
+
 console.log("== 程序化地形：走真实 UI 生成一张群岛 ==");
 // 前面有用例切到别的页面，这里必须显式回到编辑器并等全局就绪，
 // 否则 window.__editor 是 undefined，断言会以一种和地形毫无关系的方式红掉。

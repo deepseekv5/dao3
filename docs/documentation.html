@@ -1,4 +1,4 @@
-<!-- Generated from documentation.src.html by scripts/build-docs.mjs (v2.0.1) — do not edit. -->
+<!-- Generated from documentation.src.html by scripts/build-docs.mjs (v2.1.0) — do not edit. -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -41,7 +41,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a class="on" href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
+    <nav class="doclist"><b>文档目录</b><a class="on" href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
     <nav class="toc"><b>本页内容</b><a class="t2" href="#start">入门</a><a class="t2" href="#core">内核</a><a class="t2" href="#ship">交付</a><a class="t2" href="#visit">怎么访问这批文档</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/tree/main/docs">在 GitHub 查看 docs/</a>
   </aside>
@@ -49,7 +49,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
     <p class="crumb"><a href="./">概览</a> / <span>文档中心</span></p>
     <h1>文档中心</h1>
     <p>
-      这里放着 <b>DAO3 编辑器复刻</b>（dao3.fun / 神奇代码岛编辑器与运行时的本地独立兼容实现）的全部开发文档，共 13 篇。
+      这里放着 <b>DAO3 编辑器复刻</b>（dao3.fun / 神奇代码岛编辑器与运行时的本地独立兼容实现）的全部开发文档，共 14 篇。
       内容与仓库 <code>docs/</code> 下的 <code>*.md</code> <b>同源</b>：由 <code>scripts/build-docs.mjs</code> 编译成 HTML，
       与介绍站共用 <code>site.css</code>，左侧目录在每一页都常驻。<b>要改内容请改 markdown，不要改生成出来的 <code>.html</code>。</b>
     </p>
@@ -79,6 +79,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
       <a class="dc" href="data-format.html"><b>数据格式</b><span>.gz payload、project.json 21 键、player 41 键、compat 的边界、CIDv0 计算</span></a>
       <a class="dc" href="map-format.html"><b>标准地图格式</b><span>字段级规范：payload 7 键与索引算法、实体 22 键取值域、project.json 21 键、CIDv0、方块表、官方 chunks 为何解不出</span></a>
       <a class="dc" href="physics.html"><b>物理与单位制</b><span>为什么是格/tick；碰撞判据的官方依据；子步推进与自动踏步；相机不穿墙</span></a>
+      <a class="dc" href="ai.html"><b>AI 能力</b><span>写脚本与生成体素模型；密钥只走回环代理的四道防线；为什么让模型输出图元而不是一格一格的坐标</span></a>
     </div>
     <h2 id="ship">交付</h2>
     <p>打包、依赖、授权与平台边界：能拿走什么，拿不走什么。</p>
