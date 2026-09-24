@@ -34,7 +34,9 @@ const ok = (name, cond, extra = "") => {
 /* ---------------- 阶段 A：契约与物理（小超平坦世界） ---------------- */
 await page.goto(`${BASE}/edit/${RACING_ID}`, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => !document.getElementById("loading"), { timeout: 90000 });
-await page.evaluate(() => { window.__noAutosave = true; });
+await page.evaluate(() => { window.__noAutosave = true;
+    sessionStorage.setItem("dao3_no_autosave", "1");  // 活过 reload，见 main.js 注释
+  });
 await page.waitForTimeout(2500);
 // 生成 64x64 超平坦作为可控测试场
 await page.evaluate(() => window.__openSizeModal && window.__openSizeModal());
@@ -845,7 +847,9 @@ ok("雪下落/旋转速度与雨速被渲染层读取", envProbe.wxConsumed.fall
 ok("取到官方赛车模板 index.js", raceScript.length > 6000, "len=" + raceScript.length);
 await page.goto(`${BASE}/edit/${RACING_ID}`, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => !document.getElementById("loading"), { timeout: 120000 });
-await page.evaluate(() => { window.__noAutosave = true; });
+await page.evaluate(() => { window.__noAutosave = true;
+    sessionStorage.setItem("dao3_no_autosave", "1");  // 活过 reload，见 main.js 注释
+  });
 await page.waitForTimeout(4000);
 await page.evaluate(() => window.__play());
 await page.waitForFunction(() => !!(window.__game && window.__game.player), { timeout: 30000 });

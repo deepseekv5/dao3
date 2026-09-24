@@ -607,8 +607,12 @@ async function boot() {
       .catch((err) => toast("导出失败: " + (err && err.message || err)));
   }
   if (q.get("play") === "1") setTimeout(() => { if (!game || !game.running) enterPlay(); }, 60);
-  // 自动保存（__noAutosave 供测试/演示标签页禁用，避免覆盖磁盘上的世界）
-  setInterval(() => { if (state.dirty && !window.__noAutosave && !(game && game.running)) { save(); document.getElementById("saveState").textContent = "自动保存 " + new Date().toLocaleTimeString(); } }, 30000);
+  // 自动保存（禁用标记供测试/演示标签页使用，避免覆盖磁盘上的种子世界）。
+  // 只看 window 不够：测试中途 page.goto/reload 会把全局变量冲掉，而 30 秒的存档周期
+  // 不会——于是"跑一次 e2e 就把出厂默认地图换成测试地形"。sessionStorage 活过刷新、
+  // 随标签页关闭而消失，正好是这个开关该有的生命周期。
+  const noAutosave = () => window.__noAutosave || sessionStorage.getItem("dao3_no_autosave") === "1";
+  setInterval(() => { if (state.dirty && !noAutosave() && !(game && game.running)) { save(); document.getElementById("saveState").textContent = "自动保存 " + new Date().toLocaleTimeString(); } }, 30000);
   // 顶部 ▶ 运行按钮
   document.getElementById("btnPublish").onclick = () => { if (game && game.running) { stopPlay(); toast("已返回编辑器"); } else { markDirty(); enterPlay(); } };
 }

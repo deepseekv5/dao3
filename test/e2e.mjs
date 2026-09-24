@@ -59,11 +59,15 @@ if (prompted) {
   await page.waitForFunction(() => !document.getElementById("loading"), { timeout: 60000 });
   await page.waitForTimeout(3000);
   ok("重进后不重复打扰", (await page.locator(".dc-mask").count()) === 0);
-  await page.evaluate(() => { window.__noAutosave = true; });
+  await page.evaluate(() => { window.__noAutosave = true;
+    sessionStorage.setItem("dao3_no_autosave", "1");  // 活过 reload，见 main.js 注释
+  });
 }
 
 // 禁用本标签页的 30s 自动保存，避免测试世界覆盖磁盘上的种子世界
-await page.evaluate(() => { window.__noAutosave = true; });
+await page.evaluate(() => { window.__noAutosave = true;
+    sessionStorage.setItem("dao3_no_autosave", "1");  // 活过 reload，见 main.js 注释
+  });
 let errs = await page.evaluate(() => window.__errs || []);
 ok("启动无 JS 错误", errs.length === 0, errs.slice(0, 3).join(" | "));
 let cellCount = await page.evaluate(() => document.querySelectorAll("#blockLib .block").length);
@@ -413,6 +417,10 @@ console.log("== 程序化地形：走真实 UI 生成一张群岛 ==");
 await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => !!window.__editor && window.__editor.atlas.ready, { timeout: 60000 });
 await page.waitForTimeout(3000);
+// 这一段的结尾会把默认世界换成一张测试地形。要是自动存档还开着，
+// 30 秒后出厂默认地图就被覆盖成测试群岛了——所以先确认存档闸门仍然关着。
+ok("reload 后自动存档仍然禁用", await page.evaluate(
+  () => sessionStorage.getItem("dao3_no_autosave") === "1"));
 const modelsBefore = await page.evaluate(() => window.__editor.renderer.models.children.length);
 await page.evaluate(() => window.__openSizeModal());
 await page.click('#genMode button[data-mode="terrain"]');
