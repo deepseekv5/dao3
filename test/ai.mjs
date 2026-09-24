@@ -129,5 +129,83 @@ console.log("== 配置缺口提示（Node 里没有 localStorage，必须不崩�
   ok("取不到存储时按未配置处理", !crashed && Array.isArray(gaps) && gaps.join("、") === "密钥", crashed || (gaps.join("、") || "无缺口"));
 }
 
+console.log("== 交给 AI 的开发规范（单一来源，不许腐烂） ==");
+{
+  const fs = await import("node:fs");
+  const spec = JSON.parse(fs.readFileSync(new URL("../public/data/api-spec.json", import.meta.url), "utf8"));
+  const official = JSON.parse(fs.readFileSync(new URL("../public/data/api-members.json", import.meta.url), "utf8"));
+  const impl = JSON.parse(fs.readFileSync(new URL("../public/data/api-impl.json", import.meta.url), "utf8"));
+  const { PITFALLS, forbiddenMembers, specBrief } = await import("../public/js/ai-spec.js");
+
+  // 方向要搞对：规格来自 build-api-ref 对 d.ts 的解析，覆盖面**比 api-audit 广**
+  // （它连 interface 与嵌套声明都收，audit 只认顶层 class）。所以该断的是
+  // "官方清单里的东西规格里都得有"，反过来要求相等只会把 audit 的漏网当成规格的错。
+  // 外来类型（Response/Headers/Blob…）被规格有意排除，口径从生成器里读，不在这再抄一份
+  const genSrc = fs.readFileSync(new URL("../scripts/build-api-ref.mjs", import.meta.url), "utf8");
+  const fm = genSrc.match(/const FOREIGN_TYPES = new Set\(\[([^\]]*)\]/);
+  const foreign = new Set(((fm && fm[1]) || "").match(/[A-Za-z_][A-Za-z0-9_]*/g) || []);
+  const notCovered = Object.entries(official).filter(([c, ms]) =>
+    !foreign.has(c) && (!spec.classes[c] || ms.some((n) => !spec.classes[c].m[n])));
+  ok("规格完整覆盖官方清单（audit 认到的，AI 也必须看得到）", notCovered.length === 0,
+    notCovered.map(([c]) => c).join(", ") || `${Object.keys(official).length} 个类全覆盖`);
+  const specOnly = Object.keys(spec.classes).filter((c) => !Array.isArray(official[c]));
+  const specOnlyClasses = specOnly.filter((c) => spec.classes[c].kind === "class");
+  console.log(`NOTE  规格比官方清单多出 ${specOnly.length} 项（interface ${specOnly.length - specOnlyClasses.length} 个属正常；`
+    + `class ${specOnlyClasses.length} 个是 audit 的漏网）` + (specOnlyClasses.length ? `：${specOnlyClasses.join(", ")}` : ""));
+  const flagged = Object.entries(spec.classes).flatMap(([c, d]) => Object.entries(d.m).filter(([, m]) => m.i === 0).map(([n]) => [c, n]));
+  ok("标为未实现的成员，确实不在 api-impl 里", flagged.every(([c, n]) => !(Array.isArray(impl[c]) && impl[c].includes(n))),
+    flagged.map(([c, n]) => c + "." + n).join(", ") || "（无）");
+  ok("禁用清单由数据算出，而不是手抄名单", forbiddenMembers(spec).length === flagged.length,
+    forbiddenMembers(spec).join(", ") || "空");
+  ok("未实现的成员不会混进可用 API 面", !Object.entries(spec.classes).some(([c, d]) => d.tracked === 1 && Object.values(d.m).some((m) => m.i === 0) && forbiddenMembers(spec).length === 0));
+
+  // 语义陷阱条目是手写的（语义没法自动生成），但它引用的成员一旦被改名，
+  // 这条规范就成了空话——所以要钉住它确实指向规格里存在的东西。
+  const missing = PITFALLS.filter((p) => {
+    if (p.api.startsWith("global:")) return false;   // 全局函数由 apiDigest 的可用面保证，不在类表里
+    const [c, n] = [p.api.split(".")[0], p.api.split(".")[1]];
+    if (!spec.classes[c]) return true;
+    if (n && !spec.classes[c].m[n]) return true;
+    return false;
+  }).map((p) => p.api);
+  ok("每条陷阱清单引用的 API 都真实存在", missing.length === 0, missing.join(", ") || `${PITFALLS.length} 条`);
+  ok("每条陷阱都带 rule 文本", PITFALLS.every((p) => p.rule && p.rule.length > 20));
+
+  // 常量必须是 import 来的：这里断言 brief 里出现的就是 gapi.js 的真值
+  const { TICK_MS, PLAYER_DEFAULTS, WORLD_DEFAULTS, ENTITY_QUOTA, STEP_UP } = await import("../public/js/gapi.js");
+  const brief = specBrief("server", { api: "A", forbidden: ["GameDatabase.sql"], names: "grass" });
+  ok("规范里的速度/重力就是运行时的真值（没有第二份数字）",
+    brief.includes(`walkSpeed ${PLAYER_DEFAULTS.walkSpeed}`) && brief.includes(`runSpeed ${PLAYER_DEFAULTS.runSpeed}`)
+    && brief.includes(`gravity ${WORLD_DEFAULTS.gravity}`) && brief.includes(`${TICK_MS}ms`)
+    && brief.includes(String(ENTITY_QUOTA)) && brief.includes(`自动踏步高度 ${STEP_UP}`));
+  ok("禁用项带 ✗ 出现在规范里", /✗ GameDatabase\.sql/.test(brief));
+  ok("服务端与客户端规范分别约束 UI 与全局的差别",
+    specBrief("client", { api: "A", forbidden: [], names: "" }).includes("客户端") && !specBrief("client", { api: "A", forbidden: [], names: "" }).includes("world.gui()"));
+  ok("沙箱规范不提官方 API，只列 sb.*", (() => {
+    const b = specBrief("sandbox", { names: "grass" });
+    return b.includes("sb.set") && b.includes("没有") && !b.includes("world.onTick");
+  })());
+
+  // 建模那条链的规范不在 api-spec 里，而是写在 voxa/ai-model.js 的提示词里。
+  // 它一旦和校验器的常量脱钩，被丢掉图元的是用户，看起来却像"AI 建模不行"，
+  // 所以直接拿**插值之后**的成品来对账：提示词里出现的限额必须就是校验器用的那组数。
+  const { VOXEL_LIMITS } = await import("../public/js/ai.js");
+  const { systemPrompt: modelPrompt } = await import("../public/js/voxa/ai-model.js");
+  const mp = modelPrompt();
+  ok("建模提示词把限额写全了", mp.includes(`1..${VOXEL_LIMITS.size}`)
+    && mp.includes(`最多 ${VOXEL_LIMITS.prims} 个图元`)
+    && mp.includes(`最多 ${VOXEL_LIMITS.parts} 个部件`)
+    && mp.includes(VOXEL_LIMITS.voxels.toLocaleString()), mp.match(/最多 [^\n]+/g)?.join(" / ") || "");
+  ok("建模提示词没有残留未插值的占位符", !/\$\{/.test(mp));
+  ok("建模限额本身还是那几个数（改了要连提示词一起改）",
+    VOXEL_LIMITS.parts === 16 && VOXEL_LIMITS.size === 64 && VOXEL_LIMITS.prims === 400 && VOXEL_LIMITS.voxels === 60000,
+    JSON.stringify(VOXEL_LIMITS));
+  // 提示词说"违反的部分会被程序丢弃"，那校验器就必须真的按这些数丢，
+  // 否则这句话是在骗模型（也骗用户）。
+  const big = validateVoxelProgram({ parts: Array.from({ length: 30 }, (_, i) => ({ name: "p" + i, size: [4, 4, 4], prims: [{ shape: "box", from: [0, 0, 0], to: [3, 3, 3], color: "#777" }] })) });
+  ok("校验器丢件的数量与提示词说的一致", big.models[0].parts.length === VOXEL_LIMITS.parts,
+    `${big.models[0].parts.length} / 声明 ${VOXEL_LIMITS.parts}`);
+}
+
 console.log(fails ? `\n${fails} 项未通过` : "\n全部通过");
 process.exitCode = fails ? 1 : 0;

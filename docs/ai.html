@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a class="on" href="ai.html">AI 能力</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#两个入口">两个入口</a><a class="t2" href="#配置">配置</a><a class="t2" href="#密钥的行程">密钥的行程</a><a class="t2" href="#ai-写脚本">AI 写脚本</a><a class="t2" href="#ai-建模">AI 建模</a><a class="t2" href="#网页体验版没有-ai">网页体验版没有 AI</a><a class="t2" href="#自己验一遍">自己验一遍</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#两个入口">两个入口</a><a class="t2" href="#配置">配置</a><a class="t2" href="#密钥的行程">密钥的行程</a><a class="t2" href="#ai-写脚本">AI 写脚本</a><a class="t3" href="#「看规范」按钮">「看规范」按钮</a><a class="t2" href="#ai-建模">AI 建模</a><a class="t2" href="#网页体验版没有-ai">网页体验版没有 AI</a><a class="t2" href="#自己验一遍">自己验一遍</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/ai.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -64,9 +64,12 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h2 id="ai-写脚本">AI 写脚本</h2>
 <p>它被允许写三种东西，由界面上的「目标 × 端」决定：</p>
 <ul class="lv-0"><li><b>服务端脚本</b>（<code>index.js</code> 之类）：全局是 <code>world / voxels / resources / storage / db / rtc / analytics / gui / randomPick / getEntityBounds</code> 加一批 <code>Game*</code> 枚举。</li><li><b>客户端脚本</b>（文件名含 <code>client</code>）：全局是 <code>world / navigator / ui / input / screen / media / call / callAsync</code> 加 <code>UiBox / UiText / …</code>。</li><li><b>方块沙箱</b>（编辑器「运行」按钮执行）：全局只有 <code>sb / Math / console</code>， <code>sb.set/del/block/box/sphere/clear/count/size/log</code>。</li></ul>
-<p>关键设计：<b>提示词里的 API 清单不是手抄的</b>。它运行时从 <code>public/data/api-members.json</code>（官方全集）∩ <code>public/data/api-impl.json</code>（本实现有的） 现取，实测 72 个类。所以 <code>GameDatabase.sql</code>——目前唯一真缺的那个成员—— 不会出现在清单里，模型不会被鼓励去调一个我们没实现的东西。 手抄清单必然在下一次 <code>npm run audit:api</code> 之后过期，而过期的清单比没有清单更坏。</p>
+<p>关键设计：<b>它被告知的是全套开发规范，不是一份成员名清单</b>。 只给名字是不够的——名字不带单位、不带端、也不带&quot;这个成员我们其实没实现&quot;， 而恰恰是这三类信息决定生成的代码能不能跑。规范由 <code>public/js/ai-spec.js</code> 单点组装， 五个部分各自有防腐措施：</p>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>规范内容</th><th>来源</th><th>为什么不能手抄</th></tr></thead><tbody><tr><td>逐个成员的签名 + 官方中文说明</td><td><code>public/data/api-spec.json</code>（由 <code>npm run build:api-ref</code> 从官方 <code>d.ts</code> 解析）</td><td>手抄会在下一次 audit 之后静默过期</td></tr><tr><td>可用面 = 官方全集 ∩ 本实现到位的</td><td>同上，<code>tracked</code> 类才谈实现</td><td>过期的清单比没有清单更坏</td></tr><tr><td><b>禁用清单</b>（官方有、我们还没有的）</td><td>规格里 <code>i === 0</code> 的成员现算</td><td>不明说，模型就会去调一个 <code>undefined</code></td></tr><tr><td>计时与单位（64ms/tick、速度 0.22/0.4、重力 −0.1、配额 4096、踏步 0.55）</td><td><b>直接 <code>import</code> 自 <code>gapi.js</code></b></td><td>出现第二份数字，就有一份会先腐烂</td></tr><tr><td>与常识相反的官方语义（<code>sunPhase</code> 是相位不是小时、服务端颜色 0..1 而 UI 颜色 0..255、<code>searchBox</code> 是全包含、<code>entity.id</code> 是名字…）</td><td><code>ai-spec.js</code> 的 <code>PITFALLS</code>，手写</td><td>语义没法自动生成，但每条带 <code>api</code> 键，<code>test/ai.mjs</code> 会断言它指向的成员真在规格里</td></tr></tbody></table></div>
+<p>实测体量：服务端规范 45.7KB（22 个核心类逐个成员带签名，其余 78 类给成员名）、 客户端 8.2KB、方块沙箱 1.7KB。服务端那份偏大是有意的——「告诉模型所有开发规范」 和「省 token」是相反方向的两个目标，这里选择前者，并把字符数与 KB 数直接标在界面上， 让你自己判断要不要拿去喂一个上下文很小的本地模型。</p>
 <p>方块名同理，从图集按类别各取几个，不塞全量 383 个。</p>
-<p>官方常量（速度 0.22/0.4、跳跃 0.96、重力 −0.1 格/tick²、20 TPS = 64ms/tick、 <code>entity.id</code> 暴露的是实体<b>名字</b>）都写死在系统提示里，因为它要生成的代码必须 跑在<a href="physics.html">物理与单位制</a>那套约定上。</p>
+<h3 id="「看规范」按钮">「看规范」按钮</h3>
+<p>抽屉底部的<b>看规范</b>会把这一次真正要发出去的 system 文本原样显示出来， 附带类数与禁用项数。它不是文档截图，就是那次请求的内容： <code>test/e2e.mjs</code> 会同时读界面显示的规范和打到本地的实际请求体，要求两者<b>逐字相同</b>—— 否则这个按钮只是给人看的好看东西，模型其实没收到。</p>
 <h2 id="ai-建模">AI 建模</h2>
 <p>让模型逐格报 2 万个坐标是行不通的——语言模型没有可靠的三维空间感，结果是糊成一团噪声。 所以约定它只输出<b>图元</b>，也就是体素美术打形体的真实做法：</p>
 <div class="code code-json"><span class="code-lang">json</span><pre><code>{&quot;name&quot;:&quot;小房子&quot;,&quot;parts&quot;:[{&quot;name&quot;:&quot;墙体&quot;,&quot;size&quot;:[<span class="c-nu">24</span>,<span class="c-nu">20</span>,<span class="c-nu">24</span>],&quot;prims&quot;:[
@@ -79,12 +82,14 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>跨度那条刻意分两种处理：<b>差一两格是模型最常见的 off-by-one</b>（<code>size:12</code> 却写 <code>to:[12,…]</code>），夹回来就是它想要的；而 <code>to:[99,99,99]</code> 这种离谱值夹回来会变成 &quot;填满整个部件框&quot;——实测把一座本来灰底座的小塔涂成了红块。所以跨度超过框 2 格以上 直接丢，计入预览里那句「丢弃 N 个越界或超配额图元」，而不是悄悄改你的设计。</p>
 <p>全部图元都被丢掉时<b>明确报错</b>（<code>没有可用的部件：图元全部越界或超出配额</code>）， 不返回一个空部件让你以为生成成功了。</p>
 <p>展开是确定性的：同一个程序两次展开逐格相同，坐标必在框内、无重复 （<code>test/ai.mjs</code> 里直接断言这三条）。</p>
+<p>上面这张表里的每个数字，同时也是<b>发给模型的提示词里的数字</b>——两边都取自 <code>ai.js</code> 导出的 <code>VOXEL_LIMITS</code>。这条是刻意钉住的：提示词写着&quot;一个部件最多 40 个图元&quot; 而校验器实际放行 400 个的话，被丢掉的那一半看起来像&quot;AI 建模不行&quot;， 其实是我们的规范自相矛盾。<code>test/ai.mjs</code> 会拿插值之后的成品提示词逐条对账。</p>
 <h2 id="网页体验版没有-ai">网页体验版没有 AI</h2>
 <p><code>/dao3play</code> 是静态托管，没有 <code>server.js</code>，所以没有 <code>/api/ai/chat</code> 代理，AI 入口也不在。 这是刻意的：体验版只跑官方赛车模板，没有编辑需求，而少了服务端就绝不该假装能调用。 缺代理时前端给的是能照着修的一句话，不是静默失败。</p>
 <h2 id="自己验一遍">自己验一遍</h2>
-<div class="code code-bash"><span class="code-lang">bash</span><pre><code>node test/ai.mjs          # 27 条：解析、校验、展开、配额，纯离线不联网
-npm run test:e2e          # 含代理那 6 条：转发、401 打码、凭据地址、自环、缺密钥</code></pre></div>
+<div class="code code-bash"><span class="code-lang">bash</span><pre><code>node test/ai.mjs          # 41 条：解析、校验、展开、配额、规范，纯离线不联网
+npm run test:e2e          # AI 那 21 条：代理 6 条 + 走真实 UI 的规范 15 条</code></pre></div>
 <p>代理那 6 条不需要真密钥：测试自己在一个随机端口上起一个假的 <code>/v1/chat/completions</code>，故意让它在 401 里回显 <code>Authorization</code>， 再断言回到前端的文本里只剩 <code>Bearer ••••</code>。</p>
+<p>规范那 15 条同样不联网：起一个只记录请求体的本地 mock，从编辑器里点真实的 「AI 生成」→「看规范」→「生成」，然后核对<b>模型侧收到的 system 消息</b>与界面显示的那份 逐字相同、user 消息带了端与需求、密钥没有混进 messages。</p>
     <nav class="pager"><a href="physics.html"><small>上一篇</small><b>物理与单位制</b></a><a class="next" href="packaging.html"><small>下一篇</small><b>便携包与发布</b></a></nav>
   </article>
 </main>

@@ -111,10 +111,14 @@ export function extractJson(text) {
 /* ---------------- 体素程序：校验与落地 ---------------- */
 // 模型不擅长逐格报坐标，所以让它输出**积木式图元**（长方体 / 椭球 / 圆柱），
 // 这正是体素美术打草稿的做法，也让我们能硬性限制规模。
-const MAX_PARTS = 16;
-const MAX_SIZE = 64;
-const MAX_PRIMS = 400;
-const MAX_VOXELS = 60000;
+// 这四个数既是**给模型看的规范**，也是校验器实际执行的闸门：voxa/ai-model.js 直接
+// import 它们来拼提示词。两边共用一份，才不会出现"界面写最多 40 个图元、代码放行 400 个"
+// 这种自相矛盾——那时被丢掉的一半看起来像模型不行，其实是我们自己的规范错了。
+export const MAX_PARTS = 16;
+export const MAX_SIZE = 64;
+export const MAX_PRIMS = 400;
+export const MAX_VOXELS = 60000;
+export const VOXEL_LIMITS = { parts: MAX_PARTS, size: MAX_SIZE, prims: MAX_PRIMS, voxels: MAX_VOXELS };
 const HEX_RE = /^#?[0-9a-fA-F]{6}$/;
 
 const clampInt = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.round(Number(v) || 0)));

@@ -18,7 +18,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.resolve(process.argv[2] || path.join(ROOT, "..", "DAO3-便携包"));
 
 // 版本号只有一个来源：package.json。写死在这里会让 zip 与 .dmg 的版号各说各话。
-const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
+const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
+const VERSION = PKG.version;
 if (!VERSION) { console.error("package.json 缺 version"); process.exit(1); }
 
 // 顶层文件：原样复制
@@ -47,10 +48,11 @@ const RENAME = {
 const LICENSED_DATA = [
   "data/upstream/block-id.json", "data/upstream/block-spec.json", "data/upstream/LICENSE.Box3Blocks.txt",
 ];
-// 已经构建好的图集产物（派生自 Apache 纹理，随包分发以免用户必须装 Unity 才能跑）
-const BUILT_DATA = ["public/data/block-atlas.json", "public/data/block-atlas.png",
-  // API 参考文档的"本地"列与运行时对账探针都读这三份；缺了文档就只剩官方那一半
-  "public/data/api-members.json", "public/data/api-methods.json", "public/data/api-impl.json"];
+// 已经构建好的数据产物（图集派生自 Apache 纹理，随包分发以免用户必须装 Unity 才能跑）。
+// 名单**取自 package.json 的 files**：同一批生成物之前在 files / check-distribution /
+// 这里各抄了一份，新增 api-spec.json 时只有前两处改了，便携包里的「AI 生成」于是
+// 静默退化成只给成员名。少一个数组长三份，就是这种错。
+const BUILT_DATA = (PKG.files || []).filter((f) => f.startsWith("public/data/") && /\.[a-z]+$/i.test(f));
 // 官方地图的 CID 清单（824B 的哈希索引，不含任何素材本体）：供 fetch 脚本使用。
 // 赛车模板地图数据（2.8MB gz）按仓库所有者的决定随包分发，但服务端不自动装——
 // 必须用户在应用内确认授权后才 copy 进 server/data/worlds（见 server.js /api/consent）。

@@ -382,9 +382,57 @@ for (const list of byGroup.values()) list.sort((a, b) => a.name.localeCompare(b.
 const order = [...GROUPS.map((g) => g[0]), "其它类型"].filter((g) => byGroup.has(g));
 const TYPES = new Set(decls.map((d) => d.name));
 
-/* ---------------- 生成 ---------------- */
+/* ---------------- 统计（人和机器两份产物都要用）---------------- */
 const totalMembers = decls.reduce((s, d) => s + d.members.length, 0);
 const withDoc = decls.reduce((s, d) => s + d.members.filter((m) => m.doc).length, 0);
+
+/* ---------------- 机器可读规格（喂给 AI 用）----------------
+ * api-reference.md 是给人查的，AI 需要的是另一件事：能在一次请求里带上的
+ * "签名 + 官方中文语义 + 本地到底有没有"。所以这里把同一份解析结果压成 JSON，
+ * 而不是让前端去 grep Markdown——那等于再造一份会漂移的副本。
+ * 说明截到 110 字：官方 doc 里最长的几百字，全带上只是烧上下文。
+ */
+const FOREIGN_TYPES = new Set(["Response", "Headers", "FetchError", "AbortError", "Blob", "BodyMixin"]);
+const SPEC_OUT = path.join(ROOT, "public/data/api-spec.json");
+{
+  const cut = (t, n) => { const x = String(t || "").replace(/\s+/g, " ").trim(); return x.length > n ? x.slice(0, n - 1) + "…" : x; };
+  const classes = {};
+  for (const d of decls) {
+    if (!d.members || !d.members.length) continue;
+    // 客户端 d.ts 里 bundled 了 node-fetch / DOM 的类型，这几个会混进"本项目的 API 面"，
+    // 让模型以为 Response.json 是 DAO3 造的接口。注意 EventEmitter 不在此列——
+    // 它是官方客户端全局（CLIENT_GLOBALS 里有），剔掉就等于少告诉模型一个真能用的类。
+    if (FOREIGN_TYPES.has(d.name)) continue;
+    const tracked = trackedOf(d);
+    const mm = {};
+    for (const m of d.members) {
+      if (mm[m.name]) continue;   // 同名重载只留第一条（签名已足够，说明同源）
+      mm[m.name] = { s: cut(m.sig, 160), d: cut(m.doc, 110) };
+      if (tracked) mm[m.name].i = has(d.name, m.name) ? 1 : 0;
+    }
+    classes[d.name] = { side: d.file, kind: d.kind, tracked: tracked ? 1 : 0, d: cut(d.doc, 110), m: mm };
+  }
+  // 兜底合并：api-audit 与本页是**两个解析器**，对同一份 d.ts 偶有分歧——
+  // GameHttpRequest / GameHttpResponse / UiComponent 这边解析出 0 个成员，audit 认到了。
+  // AI 拿到的面不能比审计知道的还少（http.fetch() 的返回值就是 GameHttpResponse），
+  // 所以这类类按"只有成员名、没有签名与说明"补进来，而不是留一个空洞。
+  let merged = 0;
+  let official = {};
+  try { official = JSON.parse(fs.readFileSync(path.join(ROOT, "public/data/api-members.json"), "utf8")); } catch { official = {}; }
+  for (const [cls, ms] of Object.entries(official)) {
+    if (FOREIGN_TYPES.has(cls) || classes[cls]) continue;
+    const mm = {};
+    for (const n of ms) mm[n] = { s: "", d: "" };
+    classes[cls] = { side: cls.startsWith("Ui") ? "client" : "server", kind: "class", tracked: 0, d: "", m: mm };
+    merged++;
+  }
+  const spec = { generated: "npm run build:api-ref", types: decls.length, members: totalMembers, merged, classes };
+  fs.writeFileSync(SPEC_OUT, JSON.stringify(spec));
+  console.log(`api-spec.json ← ${Object.keys(classes).length} 个类 / ${totalMembers} 个成员 / `
+    + `${(fs.statSync(SPEC_OUT).size / 1024).toFixed(0)} KB`);
+}
+
+/* ---------------- 生成 ---------------- */
 const L = [];
 L.push("# API 参考");
 L.push("");

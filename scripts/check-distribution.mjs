@@ -87,6 +87,12 @@ const REQUIRED = [
   "public/vendor/three/LICENSE", "public/vendor/utils/BufferGeometryUtils.js",
   "public/data/block-atlas.png", "public/data/block-atlas.json",
   "public/data/api-members.json", "public/data/api-methods.json", "public/data/api-impl.json",
+  // AI 写代码的规范正文就从这一份里取签名与官方中文说明；丢了它前端会退到
+  // "只写最基础的调用"，看起来仍能生成，实际已经把可用面整个丢了。
+  "public/data/api-spec.json",
+  // AI 写代码的规范正文全部来自这一份生成物：漏了它，便携包里的「AI 生成」会静默退化成
+  // 只给成员名（fetch 失败被 catch 掉，界面不报错），看起来像模型变笨了。
+  "public/data/api-spec.json",
   // API 参考页与它的生成器：文档站承诺了这一页，生成物或生成脚本丢了就是死链
   "docs/api-reference.md", "docs/api-reference.html", "scripts/build-api-ref.mjs",
   "docs/map-format.md", "docs/map-format.html",

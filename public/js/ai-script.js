@@ -9,80 +9,98 @@
 // 一个我们根本没实现的成员——那比模型不会写代码更难查。
 
 import { chat, aiReady, openSettings, extractCode, configGaps } from "./ai.js";
+import { forbiddenMembers, specBrief, SANDBOX_BRIEF } from "./ai-spec.js";
 
-let _digest = null;
-let _digestKey = "";
+let _spec = null;        // public/data/api-spec.json（生成物）
+let _digest = {};        // 按端缓存的成品片段
+let _blockNames = "";
 
-/** 类 → 已实现成员清单。未实现的成员**不写进提示词**：告诉模型"可以用"结果跑不通，
- *  比不告诉更糟。 */
-export async function apiDigest(atlas) {
-  const key = (atlas && atlas.ready ? "atlas" : "noatlas");
-  if (_digest && _digestKey === key) return _digest;
-  const grab = async (p) => { try { return await (await fetch(p)).json(); } catch { return null; } };
-  const [members, impl] = await Promise.all([
-    grab("/data/api-members.json"), grab("/data/api-impl.json"),
-  ]);
-  const lines = [];
-  if (members && impl) {
-    for (const [cls, mem] of Object.entries(members)) {
-      const done = new Set(Array.isArray(impl[cls]) ? impl[cls] : []);
-      if (!done.size) continue;
-      const keep = mem.filter((m) => done.has(m)).slice(0, 30);
-      if (!keep.length) continue;
-      lines.push(`${cls}: ${keep.join(", ")}${mem.length > keep.length ? " …" : ""}`);
-    }
-  }
-  // 方块名从图集现取：每个类别挑几个，够模型写出 sb.set(...,"grass") 就行；
-  // 全量 383 个名字塞进提示词只是烧 token。
-  let names = "";
-  if (atlas && typeof atlas.list === "function") {
+/**
+ * 这些类给**完整签名 + 官方中文说明**，其余只给成员名。
+ * 依据是"脚本实际会碰到的东西"：全给说明约 90KB，每次请求都带上纯属烧上下文；
+ * 全给名字又丢掉了单位与语义。核心清单以 side 划分，客户端脚本用的类差别很大。
+ */
+const CORE = {
+  server: ["GameWorld", "GameEntity", "GamePlayer", "GamePlayerEntity", "GameVector3", "GameBounds3",
+    "GameRGBColor", "GameRGBAColor", "GameQuaternion", "GameDataStorage", "GameGroupStorage",
+    "GameQueryResult", "GameHttpFetchResponse", "GameGUI", "GameWidget",
+    "GameButtonType", "GameDialogType", "GameCameraMode", "GameInputDirection", "GameEasing", "GameBodyPart", "GameAssetType"],
+  client: ["GameWorld", "GameEntity", "Vec3", "Vec2", "Coord2", "UiBox", "UiText", "UiInput", "UiImage",
+    "UiScrollBox", "UiScreen", "Audio", "Navigator", "EventEmitter", "GameRGBColor", "GameRGBAColor"],
+};
+
+async function loadSpec() {
+  if (_spec) return _spec;
+  try { _spec = await (await fetch("/data/api-spec.json")).json(); }
+  catch { _spec = { classes: {} }; }
+  return _spec;
+}
+
+/**
+ * 组装提示词里的 API 面。未实现的成员**一律不写进可用清单**，
+ * 而是另外列进"绝对不要用"的禁用段——告诉模型"可以用"结果跑不通，
+ * 比不提更糟；而明确列出禁用的那几条，能挡住模型凭通用知识去猜它。
+ */
+export async function apiDigest(atlas, side = "server") {
+  const spec = await loadSpec();
+  if (atlas && atlas.ready && !_blockNames) {
     const byCat = new Map();
     for (const b of atlas.list()) {
       const arr = byCat.get(b.category) || [];
       if (arr.length < 6) arr.push(b.name);
       byCat.set(b.category, arr);
     }
-    names = [...byCat.entries()].map(([c, ns]) => `${c}: ${ns.join(" ")}`).join("；");
+    _blockNames = [...byCat.entries()].map(([c, ns]) => `${c}: ${ns.join(" ")}`).join("；");
   }
-  _digest = { api: lines.join("\n"), names };
-  _digestKey = key;
-  return _digest;
+  const cacheKey = side + ":" + Object.keys(spec.classes).length;
+  if (_digest[cacheKey]) return _digest[cacheKey];
+
+  const core = new Set(CORE[side] || []);
+  const full = [], brief = [];
+  for (const [cls, d] of Object.entries(spec.classes)) {
+    if (d.side !== (side === "client" ? "client" : "server") && d.side !== "both") continue;
+    const names = Object.keys(d.m).filter((n) => d.m[n].i !== 0);   // 未实现的不进可用清单
+    if (!names.length) continue;
+    if (core.has(cls)) {
+      full.push(`${cls} — ${d.d || ""}`.trim());
+      for (const n of names) {
+        const m = d.m[n];
+        full.push(`  ${cls}.${n}${m.s && !m.s.startsWith(cls) ? "  ·  " + m.s : ""}${m.d ? "  —  " + m.d : ""}`);
+      }
+      full.push("");
+    } else {
+      brief.push(`${cls}: ${names.join(", ")}`);
+    }
+  }
+  const out = {
+    api: full.join("\n") + "\n【其余可用类型（只有成员名，签名请按常识与类型名推断）】\n" + brief.join("\n"),
+    forbidden: forbiddenMembers(spec),
+    names: _blockNames,
+    counts: { fullClasses: core.size, classes: Object.keys(spec.classes).length },
+  };
+  _digest[cacheKey] = out;
+  return out;
 }
 
-const SERVER_GLOBALS = "world, voxels, resources, storage, db, rtc, analytics, gui, randomPick, getEntityBounds, GameVector3, GameBounds3, GameRGBColor, GameRGBAColor, GameQuaternion, GameCameraMode, GameDialogType, GameEasing, GameBodyPart, SocialType 等枚举";
-const CLIENT_GLOBALS = "world, navigator, screenWidth, screenHeight, ui, input, screen, media, call, callAsync, UiBox, UiText, UiInput, UiImage, UiScrollBox, Audio, Vec3";
-
-export function buildSystemPrompt(digest) {
-  return `你在为「神奇代码岛 DAO3」的本地兼容实现写地图脚本。语言是浏览器里的 JavaScript（支持顶层 await）。
-
-【目标 A：游戏脚本】运行模式执行，文件名决定端：
-- 服务端文件（如 index.js）可用全局：${SERVER_GLOBALS}
-- 客户端文件（名字里含 client）可用全局：${CLIENT_GLOBALS}
-- 官方常量与单位（必须照用，不要自己编）：物理固定 20 TPS，1 tick = 64ms；
-  walkSpeed 0.22、runSpeed 0.4、jumpPower 0.96、gravity -0.1（单位：格/tick、格/tick²）；
-  坐标单位是"格"，1 格 = 1 方块；角度用弧度；颜色分量取值 0..1。
-- 实体选择器：'#名字' 与 '.标签'；**entity.id 暴露的是实体名字**（如 "检查点-0"），
-  要序号就从名字里取数字，不要假设 id 是数字。
-- 常用写法：world.onTick(async () => {...})、world.querySelectorAll('.标签')、
-  entity.player.say / directMessage / sound({sample:"a.mp3",gain:1})、
-  world.addCollisionFilter(a,b)、storage.getDataStorage(namespace).get/set。
-
-【目标 B：方块沙箱脚本】编辑器「运行」按钮执行，只改体素，全局只有 sb / Math / console：
-sb.set(x,y,z,block)、sb.del(x,y,z)、sb.block(name)、sb.box([x0,y0,z0],[x1,y1,z1],block,shell?)、
-sb.sphere([x,y,z],r,block)、sb.clear()、sb.count()、sb.size()、sb.log(msg)。
-block 可以是图集里的方块名。可用方块名举例（按类别）：${digest.names || "grass dirt stone sand water snow wood glass"}。
-
-【本实现真实可用的 API 面（类 → 成员）】
-${digest.api || "（清单未取到，只写最基础的 world/entity/player 调用）"}
-
-【硬性要求】
-1. 先判断用户要的是 A 还是 B，不明确就做 A 且优先只用到 world/entity/player。
-2. 只用上面列出的全局与成员。清单里没有的一律不要用，改成更简单的等价写法。
-3. 输出**恰好一个** \`\`\`js 代码块；块外最多两句中文，说明这段做什么、怎么触发。
-4. 不要 import/require，不要假设有 DOM（目标 B 里连 document 都没有），不要写死玩家数量。
-5. 循环里用 await sleep(ticks) 之类不存在——要延时就用清单里真实存在的方式，或按 tick 计数。
-6. 代码要能直接运行，不留 TODO 占位。`;
+/** 系统提示 = 开发规范（ai-spec.js，单一来源）+ API 面。 */
+export async function buildSystemPrompt(side, digest) {
+  const d = digest || await apiDigest(null, side);
+  const head = `你在为「神奇代码岛 DAO3」的本地兼容实现写地图脚本。语言是浏览器里的 JavaScript（服务端脚本支持顶层 await）。
+产出必须只跑在这套实现上：下面列出的全局、类型与成员就是全部可用面，没列出来的一律当作不存在。
+`;
+  if (side === "sandbox") {
+    return head + specBrief("sandbox", d) + "\n\n" + OUTPUT_RULES;
+  }
+  return head + specBrief(side, d) + "\n\n" + OUTPUT_RULES;
 }
+
+const OUTPUT_RULES = `【输出要求】
+1. 先判断该写服务端、客户端还是方块沙箱；用户没说清就默认服务端，并在说明里点出这个选择。
+2. 只用规范里列出的全局与成员。清单里没有的**不要用**，改成更简单的等价写法。
+3. 输出恰好一个 \`\`\`js 代码块；块外最多两句中文，说明这段做什么、怎么触发。
+4. 不要 import/require，不要假设 DOM，不要写死玩家数量，不要留 TODO 占位。
+5. 延时/冷却一律按 tick 计数（${"1 tick = 64ms"}），没有 sleep()。
+6. 代码要能直接运行。`;
 
 /* ---------------- 面板 ---------------- */
 
@@ -167,6 +185,7 @@ function open(E) {
     </div>
     <div class="ai-acts">
       <button data-k="cfg">接口设置</button>
+      <button data-k="viewSpec" title="看看这次到底把哪些规范发给了模型">看规范</button>
       <button data-k="gen" class="primary">生成</button>
       <span style="flex:1"></span>
       <button data-k="applyNew" disabled>新建文件</button>
@@ -208,8 +227,8 @@ function open(E) {
     const ctrl = new AbortController();
     busy = ctrl;
     try {
-      const digest = await apiDigest(E.atlas);
-      const msgs = [{ role: "system", content: buildSystemPrompt(digest) }];
+      const digest = await apiDigest(E.atlas, side);
+      const msgs = [{ role: "system", content: await buildSystemPrompt(side, digest) }];
       let user = `目标：${mode === "revise" ? "改写下面这份现有脚本" : "写一份新脚本"}；端：${side === "sandbox" ? "方块沙箱" : side}。\n需求：${prompt}`;
       if (mode === "revise") {
         const cur = curScriptSafe(E);
@@ -230,6 +249,22 @@ function open(E) {
     }
   };
 
+  q("viewSpec").onclick = async () => {
+    const side = q("side").value;
+    state("整理规范中…");
+    try {
+      const digest = await apiDigest(E.atlas, side);
+      const text = await buildSystemPrompt(side, digest);
+      const out = q("out");
+      out.hidden = false;
+      out.innerHTML = "";
+      const pre = document.createElement("code");
+      pre.textContent = text;
+      out.appendChild(pre);
+      const kb = (text.length / 1024).toFixed(1);
+      state(`规范 ${(text.length).toLocaleString()} 字符（${kb}KB）· 核心类 ${digest.counts.fullClasses} 个 / 全库 ${digest.counts.classes} 类 · 禁用 ${digest.forbidden.length} 项`, "ok");
+    } catch (err) { state("取规范失败：" + (err.message || err), "bad"); }
+  };
   q("applyNew").onclick = () => applyTo(E, code, true, state);
   q("applyCur").onclick = () => applyTo(E, code, false, state);
   if (!aiReady()) state("先点「接口设置」填地址、模型与密钥");

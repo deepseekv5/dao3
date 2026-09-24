@@ -484,6 +484,93 @@ console.log("== AI 代理：密钥不外泄、只对本机、地址要干净 =="
   mock.close();
 }
 
+console.log("== 交给模型的开发规范：走真实 UI，且以模型侧收到的为准 ==");
+// 这一组断言守的是"AI 写出来的代码能不能跑"这件事的根：规范必须**真的进到
+// system 消息里**。只测 prompt 文本长度没意义，所以这里同时读界面显示的规范、
+// 以及生成时打到本地的实际请求体，要求两者逐字相同（否则「看规范」就成了摆设）。
+{
+  const http = await import("http");
+  const KEY = "e2e-spec-fake-key-3c81";
+  let sent = null;
+  const spy = http.createServer((req, res) => {
+    let b = "";
+    req.on("data", (c) => b += c);
+    req.on("end", () => {
+      try { sent = JSON.parse(b); } catch { sent = null; }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ model: "e2e-spy", choices: [{ message: { role: "assistant", content: "```js\nworld.say('ok');\n```" } }] }));
+    });
+  });
+  await new Promise((r) => spy.listen(0, "127.0.0.1", r));
+  const UP = "http://127.0.0.1:" + spy.address().port + "/v1";
+
+  await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => !!window.__editor && !!window.__editor.atlas, null, { timeout: 60000 });
+  await page.evaluate(() => { window.__noAutosave = true; sessionStorage.setItem("dao3_no_autosave", "1"); });
+  await page.click('.mtab[data-menu="script"]');
+  await page.waitForFunction(() => document.getElementById("scriptScreen").classList.contains("show"), { timeout: 5000 });
+  ok("脚本界面有「AI 生成」入口", (await page.locator("#aiScriptBtn").count()) === 1);
+  await page.click("#aiScriptBtn");
+  await page.waitForSelector('.ai-drawer [data-k="viewSpec"]');
+
+  const showSpec = async (side) => {
+    await page.selectOption('.ai-drawer [data-k="side"]', side);
+    await page.evaluate(() => { const o = document.querySelector('.ai-drawer [data-k="out"]'); if (o) o.textContent = ""; });
+    await page.click('.ai-drawer [data-k="viewSpec"]');
+    await page.waitForFunction(() => (document.querySelector('.ai-drawer [data-k="out"] code')?.textContent || "").length > 200
+      || /失败/.test(document.querySelector('.ai-drawer [data-k="state"]').textContent), null, { timeout: 20000 });
+    return page.evaluate(() => ({
+      text: document.querySelector('.ai-drawer [data-k="out"] code')?.textContent || "",
+      state: document.querySelector('.ai-drawer [data-k="state"]').textContent,
+    }));
+  };
+
+  const srv = await showSpec("server");
+  ok("服务端规范非空且体量合理", srv.text.length > 8000 && srv.text.length < 200000, `${srv.text.length} 字符`);
+  ok("规范带真值常量（和运行时同一份数字）",
+    /\b64ms\b/.test(srv.text) && /walkSpeed 0\.22/.test(srv.text) && /gravity -0\.1/.test(srv.text)
+    && /4096/.test(srv.text) && /自动踏步高度 0\.55/.test(srv.text));
+  ok("规范带反直觉语义（sunPhase / 颜色量程）",
+    /sunPhase 是 0\.\.1 的相位/.test(srv.text) && /0\.\.255/.test(srv.text));
+  ok("规范明确列出本实现没有的成员并禁止使用", /绝对不要用/.test(srv.text) && /✗ GameDatabase\.sql/.test(srv.text));
+  ok("禁用清单条数与界面回报一致", /禁用 (\d+) 项/.test(srv.state)
+    && +srv.state.match(/禁用 (\d+) 项/)[1] === (srv.text.match(/^✗ |^  ✗ /gm) || []).length, srv.state);
+  ok("规范带逐个成员的签名与官方中文说明",
+    /GameWorld\.\w+.*—/.test(srv.text) && /GameWorld\.entityQuota/.test(srv.text));
+  const cli = await showSpec("client");
+  ok("客户端规范换了面：有 UI、没有服务端专属写法",
+    /客户端脚本/.test(cli.text) && !/world\.gui\(\)/.test(cli.text) && cli.text.length < srv.text.length);
+  const sbx = await showSpec("sandbox");
+  ok("方块沙箱规范只讲 sb.*，不混官方 API",
+    /sb\.set/.test(sbx.text) && !/world\.onTick/.test(sbx.text) && sbx.text.length < 4000, `${sbx.text.length} 字符`);
+
+  // 换端后回到服务端，让「生成」与上面读到的规范是同一份
+  await page.selectOption('.ai-drawer [data-k="side"]', "server");
+  await page.evaluate((cfg) => localStorage.setItem("dao3_ai_config", JSON.stringify(cfg)),
+    { baseUrl: UP, model: "e2e-spy", key: KEY, temperature: 0.4, maxTokens: 256 });
+  await page.fill('.ai-drawer [data-k="prompt"]', "玩家进入区域就提示一句话");
+  await page.click('.ai-drawer [data-k="gen"]');
+  await page.waitForFunction(() => /已生成/.test(document.querySelector('.ai-drawer [data-k="state"]').textContent)
+    || /｜缺口/.test(document.querySelector('.ai-drawer [data-k="state"]').textContent), null, { timeout: 30000 });
+  const st = await page.evaluate(() => document.querySelector('.ai-drawer [data-k="state"]').textContent);
+  ok("走真实 UI 能生成并回填代码", /已生成/.test(st), st);
+  const sys = (sent?.messages || []).find((m) => m.role === "system")?.content || "";
+  ok("模型侧收到的 system 就是界面上那份规范", sys.length > 8000 && sys === srv.text,
+    `system ${sys.length} 字符 / 界面 ${srv.text.length} 字符`);
+  const usr = (sent?.messages || []).find((m) => m.role === "user")?.content || "";
+  ok("user 消息带上了需求与端", /端：server/.test(usr) && /需求：.*区域/.test(usr) && /写一份新脚本/.test(usr),
+    JSON.stringify(usr.slice(0, 60)));
+  ok("请求体里没有把密钥塞进 messages", !JSON.stringify(sent?.messages || "").includes(KEY));
+
+  await page.click('.ai-drawer .ai-x');
+  await page.waitForSelector('.ai-drawer', { state: "detached" });
+  // 用完就清掉：留着假密钥，后面的用例会以为接口"已配置"
+  await page.evaluate(() => localStorage.removeItem("dao3_ai_config"));
+  ok("生成过后页面无未捕获异常", (await page.evaluate(() => (window.__errs || []).length)) === 0,
+    (await page.evaluate(() => (window.__errs || []).slice(0, 2).join(" | "))) || "");
+  spy.close();
+}
+
 console.log("== 程序化地形：走真实 UI 生成一张群岛 ==");
 // 前面有用例切到别的页面，这里必须显式回到编辑器并等全局就绪，
 // 否则 window.__editor 是 undefined，断言会以一种和地形毫无关系的方式红掉。

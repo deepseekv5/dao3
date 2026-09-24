@@ -65,6 +65,7 @@
     "public/data/block-atlas.png",
     "public/data/api-members.json",
     "public/data/api-methods.json",
+    "public/data/api-spec.json",
     "run.sh",
     "run-win.ps1",
     "启动-Windows.bat",

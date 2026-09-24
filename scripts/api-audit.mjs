@@ -66,7 +66,10 @@ function implemented(name) {
 
 /** 从 d.ts 里取一个类的成员（顶层两空格缩进的那些） */
 function membersOf(lines, className) {
-  const i = lines.findIndex((l) => new RegExp(`^(?:export\\s+)?declare\\s+(?:class|interface)\\s+${className}[\\s({:]`).test(l)
+  // 类名后面允许 `<`：泛型类（GameAnimation<K,T>、QueryList<T>）在上一版里因为分隔符
+  // 字符类没有 `<` 而整个类被判定"没有成员声明"，于是从 api-members.json 里凭空消失，
+  // 运行时探针从未核对过这 8 个类——分母少了整类，覆盖率还反而好看。
+  const i = lines.findIndex((l) => new RegExp(`^(?:export\\s+)?declare\\s+(?:class|interface)\\s+${className}[\\s({:<]`).test(l)
     || new RegExp(`^${className}\\s*(?:<[^>]*>)?\\s*(?:extends[^{]*)?\\{`).test(l));
   if (i < 0) return [];
   const out = [];

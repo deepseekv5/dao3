@@ -136,21 +136,21 @@ _world / player / entity：跑图时最常碰的那一圈_
 
 > 游戏动画类，用于控制和管理动画播放。
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `target` | `target: TargetType` | 动画目标对象（可能是世界、玩家或实体）。 | — |
-| `keyframes` | `keyframes: () => Partial<KeyframeType>[]` | 返回所有动画关键帧。 | — |
-| `play` | `play: (playback?: Partial<GameAnimationPlaybackConfig>) => void` | 开始或重新开始播放动画。 | — |
-| `cancel` | `cancel: () => void` | 取消当前动画播放。 | — |
-| `onReady` | `onReady: GameEventChannel<GameAnimationEvent<KeyframeType, TargetType>>` | 当动画开始时触发。 | — |
-| `nextReady` | `nextReady: GameEventFuture<GameAnimationEvent<KeyframeType, TargetType>>` | 获取下一个动画准备完成的事件。 | — |
-| `onFinish` | `onFinish: GameEventChannel<GameAnimationEvent<KeyframeType, TargetType>>` | 当动画成功完成时触发。 | — |
-| `nextFinish` | `nextFinish: GameEventFuture<GameAnimationEvent<KeyframeType, TargetType>>` | 获取下一个动画完成的事件。 | — |
-| `currentTime` | `currentTime: number` | 动画的当前播放时间（以动画帧为单位）。 | — |
-| `startTime` | `startTime: number` | 动画的开始刻度 | — |
-| `playState` | `playState: GameAnimationPlaybackState` | 动画的当前播放状态 | — |
-| `playbackRate` | `playbackRate: number` | 播放速率（每刻度的帧数） | — |
-| `then` | `then<T>( resolve: (event: GameAnimationEvent<KeyframeType, TargetType>) => T` | — | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `target` | `target: TargetType` | 动画目标对象（可能是世界、玩家或实体）。 | ✅ |
+| `keyframes` | `keyframes: () => Partial<KeyframeType>[]` | 返回所有动画关键帧。 | ✅ |
+| `play` | `play: (playback?: Partial<GameAnimationPlaybackConfig>) => void` | 开始或重新开始播放动画。 | ✅ |
+| `cancel` | `cancel: () => void` | 取消当前动画播放。 | ✅ |
+| `onReady` | `onReady: GameEventChannel<GameAnimationEvent<KeyframeType, TargetType>>` | 当动画开始时触发。 | ✅ |
+| `nextReady` | `nextReady: GameEventFuture<GameAnimationEvent<KeyframeType, TargetType>>` | 获取下一个动画准备完成的事件。 | ✅ |
+| `onFinish` | `onFinish: GameEventChannel<GameAnimationEvent<KeyframeType, TargetType>>` | 当动画成功完成时触发。 | ✅ |
+| `nextFinish` | `nextFinish: GameEventFuture<GameAnimationEvent<KeyframeType, TargetType>>` | 获取下一个动画完成的事件。 | ✅ |
+| `currentTime` | `currentTime: number` | 动画的当前播放时间（以动画帧为单位）。 | ✅ |
+| `startTime` | `startTime: number` | 动画的开始刻度 | ✅ |
+| `playState` | `playState: GameAnimationPlaybackState` | 动画的当前播放状态 | ✅ |
+| `playbackRate` | `playbackRate: number` | 播放速率（每刻度的帧数） | ✅ |
+| `then` | `then<T>( resolve: (event: GameAnimationEvent<KeyframeType, TargetType>) => T` | — | ✅ |
 
 ### GameAnimationDirection
 
@@ -164,12 +164,12 @@ _（无成员级声明：枚举或纯数据形状。）_
 
 > 表示游戏动画中的一个事件，封装了当前帧数、目标对象、动画详情和取消状态等信息。
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `tick` | `tick: number` | — | — |
-| `target` | `target: TargetType` | — | — |
-| `animation` | `animation: GameAnimation<KeyframeType, TargetType>` | — | — |
-| `cancelled` | `cancelled: boolean` | — | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `tick` | `tick: number` | — | ✅ |
+| `target` | `target: TargetType` | — | ✅ |
+| `animation` | `animation: GameAnimation<KeyframeType, TargetType>` | — | **缺** |
+| `cancelled` | `cancelled: boolean` | — | ✅ |
 
 ### GameAnimationPlaybackConfig
 
@@ -494,12 +494,12 @@ _（无成员级声明：枚举或纯数据形状。）_
 
 > 游戏动作控制器类，用于管理和控制目标的动作播放。
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `loadByName` | `loadByName: ( config: string \| GameMotionConfig[] \| GameMotionClipConfig ) => GameMotionHandler<TargetType>` | 通过名称（可以是动作列表）创建动作处理器。<br>• config：动作配置，可以是字符串、动作配置数组或单个动作剪辑配置。<br>• 返回值：返回一个 `GameMotionHandler` 实例，用于处理指定的动作。 | — |
-| `pause` | `pause: () => void` | 暂停当前动作。 | — |
-| `resume` | `resume: () => void` | 恢复暂停的动作。 | — |
-| `setDefaultMotionByName` | `setDefaultMotionByName: (motionName?: string) => void` | 通过名称设置默认动作。<br>• motionName：动作名称，可选参数。 | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `loadByName` | `loadByName: ( config: string \| GameMotionConfig[] \| GameMotionClipConfig ) => GameMotionHandler<TargetType>` | 通过名称（可以是动作列表）创建动作处理器。<br>• config：动作配置，可以是字符串、动作配置数组或单个动作剪辑配置。<br>• 返回值：返回一个 `GameMotionHandler` 实例，用于处理指定的动作。 | ✅ |
+| `pause` | `pause: () => void` | 暂停当前动作。 | ✅ |
+| `resume` | `resume: () => void` | 恢复暂停的动作。 | ✅ |
+| `setDefaultMotionByName` | `setDefaultMotionByName: (motionName?: string) => void` | 通过名称设置默认动作。<br>• motionName：动作名称，可选参数。 | ✅ |
 
 ### GameMotionEvent
 
@@ -507,12 +507,12 @@ _（无成员级声明：枚举或纯数据形状。）_
 
 > 表示与游戏动作相关的事件，携带有关目标和事件状态的信息。
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `tick` | `tick: number` | 发生事件的刻度。 | — |
-| `target` | `readonly target: TargetType` | 事件的目标对象。 | — |
-| `motionHandler` | `motionHandler: GameMotionHandler<TargetType>` | 动作事件处理器，特定于目标对象。 | — |
-| `cancelled` | `readonly cancelled: boolean` | 表示事件是否被取消。 | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `tick` | `tick: number` | 发生事件的刻度。 | ✅ |
+| `target` | `readonly target: TargetType` | 事件的目标对象。 | ✅ |
+| `motionHandler` | `motionHandler: GameMotionHandler<TargetType>` | 动作事件处理器，特定于目标对象。 | ✅ |
+| `cancelled` | `readonly cancelled: boolean` | 表示事件是否被取消。 | ✅ |
 
 ### GameMotionHandler
 
@@ -520,15 +520,15 @@ _（无成员级声明：枚举或纯数据形状。）_
 
 > 游戏动作处理器类，用于控制单个动作序列的播放。
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `target` | `readonly target: TargetType` | 动作目标对象（实体）。 | — |
-| `play` | `play: () => void` | 开始播放动作。 | — |
-| `cancel` | `cancel: () => void` | 取消当前动作播放。 | — |
-| `onFinish` | `onFinish: GameEventChannel<GameMotionEvent<TargetType>>` | 当动作成功完成时触发的事件。 | — |
-| `nextFinish` | `nextFinish: GameEventFuture<GameMotionEvent<TargetType>>` | 下一次动作完成时的未来事件。 | — |
-| `onCancel` | `onCancel: GameEventChannel<GameMotionEvent<TargetType>>` | 当动作被取消时触发的事件。 | — |
-| `nextCancel` | `nextCancel: GameEventFuture<GameMotionEvent<TargetType>>` | 下一次动作取消时的未来事件。 | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `target` | `readonly target: TargetType` | 动作目标对象（实体）。 | ✅ |
+| `play` | `play: () => void` | 开始播放动作。 | ✅ |
+| `cancel` | `cancel: () => void` | 取消当前动作播放。 | ✅ |
+| `onFinish` | `onFinish: GameEventChannel<GameMotionEvent<TargetType>>` | 当动作成功完成时触发的事件。 | ✅ |
+| `nextFinish` | `nextFinish: GameEventFuture<GameMotionEvent<TargetType>>` | 下一次动作完成时的未来事件。 | ✅ |
+| `onCancel` | `onCancel: GameEventChannel<GameMotionEvent<TargetType>>` | 当动作被取消时触发的事件。 | ✅ |
+| `nextCancel` | `nextCancel: GameEventFuture<GameMotionEvent<TargetType>>` | 下一次动作取消时的未来事件。 | ✅ |
 
 ### GamePlayer
 
@@ -1364,16 +1364,16 @@ _（无成员级声明：枚举或纯数据形状。）_
 
 > 游戏数据存储类，用于对特定存储空间内的数据进行操作。 存储数据的类型。
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `key` | `readonly key: string` | 数据存储空间的名称。 | — |
-| `increment` | `increment: (key: string, value?: number) => Promise<number>` | 以原子方式递增给定键的值。如果键不存在，则会创建并设置初始值。如果对应的值不是数字，则会报错。 通过此方式修改值时不会触发数据锁定。<br>• key：需要递增的键。<br>• value：递增量，默认为 1。<br>• 返回值：返回一个 Promise，解析为累加后的数值。 | — |
-| `set` | `set: (key: string, value: T) => Promise<void>` | 设置指定键的值。<br>• key：需要设置的键。<br>• value：需要设置的值。<br>• 返回值：返回一个 Promise，在设置完成后解析。 | — |
-| `update` | `update: ( key: string, handler: (prevValue: ReturnValue<T>) => T ) => Promise<void>` | 使用处理器函数更新指定键的值。<br>• key：需要更新的键。<br>• handler：一个接收旧值并返回新值的处理器函数。<br>• 返回值：返回一个 Promise，在更新完成后解析。 | — |
-| `get` | `get: (key: string) => Promise<ReturnValue<T>>` | 获取指定键的值。<br>• key：需要获取的键。<br>• 返回值：返回一个 Promise，解析为获取操作的结果。 | — |
-| `list` | `list: (options: ListPageOptions) => Promise<QueryList<T>>` | 根据指定选项获取数据列表。<br>• options：分页和排序选项。<br>• 返回值：返回一个 Promise，解析为查询结果列表。 | — |
-| `remove` | `remove: (key: string) => Promise<ReturnValue<T>>` | 删除指定键的数据。<br>• key：需要删除的键。<br>• 返回值：返回一个 Promise，解析为被删除的数据。 | — |
-| `destroy` | `destroy: () => Promise<void>` | 销毁此数据存储空间，并删除所有数据。<br>• 返回值：返回一个 Promise，在销毁完成后解析。 | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `key` | `readonly key: string` | 数据存储空间的名称。 | ✅ |
+| `increment` | `increment: (key: string, value?: number) => Promise<number>` | 以原子方式递增给定键的值。如果键不存在，则会创建并设置初始值。如果对应的值不是数字，则会报错。 通过此方式修改值时不会触发数据锁定。<br>• key：需要递增的键。<br>• value：递增量，默认为 1。<br>• 返回值：返回一个 Promise，解析为累加后的数值。 | ✅ |
+| `set` | `set: (key: string, value: T) => Promise<void>` | 设置指定键的值。<br>• key：需要设置的键。<br>• value：需要设置的值。<br>• 返回值：返回一个 Promise，在设置完成后解析。 | ✅ |
+| `update` | `update: ( key: string, handler: (prevValue: ReturnValue<T>) => T ) => Promise<void>` | 使用处理器函数更新指定键的值。<br>• key：需要更新的键。<br>• handler：一个接收旧值并返回新值的处理器函数。<br>• 返回值：返回一个 Promise，在更新完成后解析。 | ✅ |
+| `get` | `get: (key: string) => Promise<ReturnValue<T>>` | 获取指定键的值。<br>• key：需要获取的键。<br>• 返回值：返回一个 Promise，解析为获取操作的结果。 | ✅ |
+| `list` | `list: (options: ListPageOptions) => Promise<QueryList<T>>` | 根据指定选项获取数据列表。<br>• options：分页和排序选项。<br>• 返回值：返回一个 Promise，解析为查询结果列表。 | ✅ |
+| `remove` | `remove: (key: string) => Promise<ReturnValue<T>>` | 删除指定键的数据。<br>• key：需要删除的键。<br>• 返回值：返回一个 Promise，解析为被删除的数据。 | ✅ |
+| `destroy` | `destroy: () => Promise<void>` | 销毁此数据存储空间，并删除所有数据。<br>• 返回值：返回一个 Promise，在销毁完成后解析。 | ✅ |
 
 ### GameDialogType
 
@@ -1725,15 +1725,15 @@ _ClientAPI：ui / input / screen / media / audio_
 
 > 事件处理模块
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `on` | `on<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 监听指定的事件。<br>• type：监听的事件类型，是个字符串。<br>• listener：监听到事件类型后的处理函数。 | — |
-| `once` | `once<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 与 on 的区别是仅触发一次。<br>• type：监听的事件类型，是个字符串。<br>• listener：监听到事件类型后的处理函数。 | — |
-| `remove` | `remove<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 移除找到的第一个 listener。<br>• type：要移除的事件类型。<br>• listener：要移除的事件处理函数。 | — |
-| `removeAll` | `removeAll<K extends keyof EventMap>( type?: K, listener?: (event: EventMap[K]) => void ): void` | 移除找到的所有 listener，不传则移除事件下所有。<br>• type：要移除的事件类型。<br>• listener：可选，要移除的事件处理函数。 | — |
-| `add` | `add<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 与 on 是同一个方法，只是方法名不同。<br>• type：监听的事件类型，是个字符串。<br>• listener：监听到事件类型后的处理函数。 | — |
-| `off` | `off<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 与 remove 是同一个方法，只是方法名不同。<br>• type：要移除的事件类型。<br>• listener：要移除的事件处理函数。 | — |
-| `emit` | `emit<K extends keyof EventMap>(type: K, event: EventMap[K]): void` | 触发指定的事件 | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `on` | `on<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 监听指定的事件。<br>• type：监听的事件类型，是个字符串。<br>• listener：监听到事件类型后的处理函数。 | ✅ |
+| `once` | `once<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 与 on 的区别是仅触发一次。<br>• type：监听的事件类型，是个字符串。<br>• listener：监听到事件类型后的处理函数。 | ✅ |
+| `remove` | `remove<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 移除找到的第一个 listener。<br>• type：要移除的事件类型。<br>• listener：要移除的事件处理函数。 | ✅ |
+| `removeAll` | `removeAll<K extends keyof EventMap>( type?: K, listener?: (event: EventMap[K]) => void ): void` | 移除找到的所有 listener，不传则移除事件下所有。<br>• type：要移除的事件类型。<br>• listener：可选，要移除的事件处理函数。 | ✅ |
+| `add` | `add<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 与 on 是同一个方法，只是方法名不同。<br>• type：监听的事件类型，是个字符串。<br>• listener：监听到事件类型后的处理函数。 | ✅ |
+| `off` | `off<K extends keyof EventMap>( type: K, listener: (event: EventMap[K]) => void ): void` | 与 remove 是同一个方法，只是方法名不同。<br>• type：要移除的事件类型。<br>• listener：要移除的事件处理函数。 | ✅ |
+| `emit` | `emit<K extends keyof EventMap>(type: K, event: EventMap[K]): void` | 触发指定的事件 | ✅ |
 
 ### FetchError
 
@@ -2241,11 +2241,11 @@ _（无成员级声明：枚举或纯数据形状。）_
 
 > 数据查询列表类，用于处理分页查询结果。 列表中数据的类型。
 
-| 成员 | 签名 | 说明 |
-| --- | --- | --- |
-| `getCurrentPage` | `getCurrentPage: () => ReturnValue<T>[]` | 获取当前页的键值对数组。<br>• 返回值：返回当前页的键值对内容。 | — |
-| `nextPage` | `nextPage: () => Promise<void>` | 翻到下一页。执行后，`QueryList.getCurrentPage` 将返回下一页的键值对内容。<br>• 返回值：返回一个 Promise，在翻页操作完成后解析。 | — |
-| `isLastPage` | `readonly isLastPage: boolean` | 是否为最后一页。如果已经翻到末尾之后，此值也为 `true`。 | — |
+| 成员 | 签名 | 说明 | 本地 |
+| --- | --- | --- | --- |
+| `getCurrentPage` | `getCurrentPage: () => ReturnValue<T>[]` | 获取当前页的键值对数组。<br>• 返回值：返回当前页的键值对内容。 | ✅ |
+| `nextPage` | `nextPage: () => Promise<void>` | 翻到下一页。执行后，`QueryList.getCurrentPage` 将返回下一页的键值对内容。<br>• 返回值：返回一个 Promise，在翻页操作完成后解析。 | ✅ |
+| `isLastPage` | `readonly isLastPage: boolean` | 是否为最后一页。如果已经翻到末尾之后，此值也为 `true`。 | ✅ |
 
 ### ServerRemoteChannel
 

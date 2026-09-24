@@ -7,12 +7,15 @@
 //
 // 展开与校验在 ai.js（validateVoxelProgram / programToVoxels），这里只负责
 // 问、预览、以及**用户点确认之后**才写进工程——写之前先 snapshot 进撤销栈。
-import { chat, aiReady, openSettings, extractJson, validateVoxelProgram, programToVoxels } from "../ai.js";
+import { chat, aiReady, openSettings, extractJson, validateVoxelProgram, programToVoxels, VOXEL_LIMITS } from "../ai.js";
 import { newPart, addPart, setVoxel } from "./model.js";
 
 const $ = (id) => document.getElementById(id);
 
-function systemPrompt() {
+// 提示词里的每个上限都从 VOXEL_LIMITS 取，因为校验器就是用同一组数把越界的图元丢掉。
+// 写死一份的话，改了闸门而忘了改文案，模型就会照着过时的规则排版。
+export function systemPrompt() {
+  const L = VOXEL_LIMITS;
   return `你是体素模型生成器。只输出**一个 JSON 对象**，不要解释、不要 markdown 围栏。
 
 形状：
@@ -24,9 +27,9 @@ function systemPrompt() {
 ]}]}
 
 规则（违反的部分会被程序丢弃，请严格遵守）：
-- size 是部件框大小，三个值都在 1..64；坐标从 0 起，最大到 size-1，**不能越界**。
+- size 是部件框大小，三个值都在 1..${L.size}；坐标从 0 起，最大到 size-1，**不能越界**。
 - y 轴向上。模型要立在 y=0 上：最低的一层图元从 y=0 开始。
-- 一个部件最多 40 个图元，整个模型最多 16 个部件，总体素数控制在 2 万以内。
+- 一个部件最多 ${L.prims} 个图元，整个模型最多 ${L.parts} 个部件，总体素数硬上限 ${L.voxels.toLocaleString()}（超了直接丢，建议控制在 2 万以内）。
 - color 用 #rrggbb 十六进制；需要发光就加 "emissive": 1~15。
 - 墙、屋顶、容器这类用 "shell":true 做成空心，省体素也才看得见内部。
 - 先大形体（底座/主体），再中等（屋顶/四肢/尾巴），最后细节（眼睛/按钮/把手，半径 1~2）。
