@@ -433,5 +433,50 @@ ok("生成的是地形而不是空图", gen.cells > 1000, `${gen.cells} 格`);
 ok("群岛真的带水体", gen.water > 1000 && gen.gen.wetPct >= 50, `${gen.water} 水格 / 淹 ${gen.gen && gen.gen.wetPct}%`);
 ok("水面单独成网格桶", await page.evaluate(() => [...window.__editor.renderer.chunkMeshes.values()].some((r) => r && r.water)));
 
+console.log("== 昼夜：编辑器与运行时必须给同一个夜晚度 ==");
+// 这条断言守的是两处真实漂移：
+//   1) 相位→太阳方向的公式原来有 4 份手抄副本，其中 3 份写成 a=(h*1.25-0.12)π，
+//      只在 0..π 之间走，太阳升起来就不落下去（实测「午夜」和「正午」的 sunDir.y 都是 0.793）。
+//   2) 运行时把 sunDir.y 夹成 max(0.05, y) 再交给 renderer 反推 night，
+//      归一化后 z 分量把 0.05 稀释成 0.164 —— 午夜的天空比黎明还亮。
+const phases = [["正午", 0.25, 0], ["黄昏", 0.5, 0.5], ["子夜", 0.75, 1]];
+const edNight = {};
+for (const [name, ph, want] of phases) {
+  await page.evaluate((v) => {
+    const e = window.__editor;
+    e.state.terrain.dayNight = v; e.applyTerrain();
+  }, ph);
+  await page.waitForTimeout(300);
+  const got = await page.evaluate(() => {
+    const r = window.__editor.renderer;
+    return { night: +r.skyMat.uniforms.night.value.toFixed(3), sunI: +r.sun.intensity.toFixed(2), elev: +r.skyMat.uniforms.sunDir.value.y.toFixed(3) };
+  });
+  edNight[ph] = got.night;
+  ok(`编辑器 ${name} 夜晚度 ${want}`, Math.abs(got.night - want) < 0.02, JSON.stringify(got));
+}
+ok("太阳在正午在上、子夜在下", edNight[0.25] === 0 && edNight[0.75] === 1);
+await page.evaluate(() => window.__play && window.__play());
+await page.waitForFunction(() => window.__game && window.__game.running, { timeout: 30000 });
+await page.waitForTimeout(2500);
+for (const [name, ph, want] of phases) {
+  const got = await page.evaluate((v) => {
+    const g = window.__game;
+    g.lightMode = "natural"; g.gameRules.doDaylightCycle = false;
+    g.sunPhase = v; g._sunDirFixed = false;
+    g._stepEnvironment(); g._applyEnvironment();
+    return +window.__editor.renderer.skyMat.uniforms.night.value.toFixed(3);
+  }, ph);
+  ok(`运行时 ${name} 与编辑器同值`, Math.abs(got - edNight[ph]) < 0.02 && Math.abs(got - want) < 0.02,
+    `运行时 ${got} / 编辑器 ${edNight[ph]} / 期望 ${want}`);
+}
+ok("子夜看得见星星（night 已进天空着色器）", await page.evaluate(() => {
+  const u = window.__editor.renderer.skyMat.uniforms;
+  return u.night.value === 1 && !!u.uTime;
+}));
+await page.evaluate(() => window.__stopPlay && window.__stopPlay());
+await page.waitForTimeout(1200);
+const sunAfter = await page.evaluate(() => window.__editor.state.terrain.sunIntensity);
+ok("夜里退出游玩不把编辑器的日照强度写暗", sunAfter > 2.0, String(sunAfter));
+
 await browser.close();
 console.log("== 测试完成（截图在 test/out/*.png） ==");

@@ -13,6 +13,7 @@ import {
   attachChannels, makeChannel, consoleDiv, esc, fmt, Sound, GameAnimation, makeMotionController,
 } from "./gapi.js";
 import { createClientApi, createAudioClass } from "./clientui.js";
+import { sunDirFromPhase, nightFromElev } from "./sun.js";
 
 export * from "./gapi.js";
 
@@ -2024,8 +2025,9 @@ const ZERO = new GameVector3();
       this.time = ((this.sunPhase + 0.25) * 24000) % 24000;
     }
     if (!this._sunDirFixed) {
-      const th = (this.sunPhase - 0.25) * Math.PI * 2;
-      this.sunDirection = new GameVector3(Math.sin(th) * 0.55, Math.cos(th), Math.sin(th * 0.5) * 0.3);
+      // 相位→方向用 renderer 里的唯一一份实现，编辑器预览与运行时不可能再漂移
+      const d = sunDirFromPhase(this.sunPhase);
+      this.sunDirection = new GameVector3(d[0], d[1], d[2]);
     }
     if (this.gameRules.doWeatherCycle !== false) this._stepWeather();
   }
@@ -2050,9 +2052,17 @@ const ZERO = new GameVector3();
   _applyEnvironment() {
     const r = this.e.renderer;
     const env = this._zoneEnv || {};
-    const night = clamp(1 - Math.max(0, this.sunDirection.y) * 2.4, 0, 1);
+    // 夜晚度用 sun.js 里那一条曲线，和编辑器/天空着色器完全一致。
+    // 原来这里是 clamp(1 - max(0,y)*2.4, 0, 1)：太阳一落到地平线就直接算"全黑"，
+    // 于是运行时黎明/黄昏的 night=1，而编辑器同一时刻是 0.5 —— 晨昏蒙影在两边不是一回事。
+    const night = nightFromElev(this.sunDirection.y);
     r.setTerrain({
-      sunDir: [this.sunDirection.x, Math.max(0.05, this.sunDirection.y), this.sunDirection.z],
+      // 不能把 y 夹成 Math.max(0.05, y)：renderer 是从 sunDir.y 反推 night 的，
+      // 而这个向量还要按长度归一，z 分量 0.3 会把夹出来的 0.05 稀释成 0.164 ——
+      // 于是**午夜的天空比黎明还亮**（实测 night：午夜 0.000 / 黎明 0.148）。
+      // 太阳该落下去就让它落下去，夜晚度改用下面显式传进去的同一个 night。
+      sunDir: [this.sunDirection.x, this.sunDirection.y, this.sunDirection.z],
+      night,
       sunIntensity: luma(this.sunLight) * (1 - night * 0.9) * 2.6,
       ambient: Number.isFinite(+this.globalLight) ? Math.max(0, Math.min(1, +this.globalLight)) : 0.1 + (1 - night) * 0.18,
       skyTop: rgbHex(this.skyTopLight, night),

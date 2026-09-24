@@ -9,6 +9,7 @@
 import { BlockAtlas } from "./atlas.js";
 import { VoxelWorld } from "./world.js";
 import { VoxelRenderer } from "./renderer.js";
+import { sunDirFromPhase } from "./sun.js";
 import { GameRuntime, logGameError } from "./game.js";
 import * as THREE from "../vendor/three/three.module.js";
 
@@ -277,17 +278,13 @@ async function boot_() {
     assets.placedModels = placed;
   }
 
-  function sunDirFromDayNight(h) {
-    const a = (h * 1.25 - 0.12) * Math.PI;
-    return [Math.cos(a), Math.sin(a), 0.35];
-  }
   function applyTerrain() {
     const t = state.terrain;
     renderer.setTerrain({
       skyTop: t.skyTop, skyBottom: t.skyBottom, fogDensity: t.fogDensity,
       sunIntensity: t.sunIntensity, ambient: t.ambient, hemi: t.hemi,
       shadows: t.shadows, grid: t.grid, glow: t.glow, exposure: t.exposure,
-      sunDir: sunDirFromDayNight(t.dayNight),
+      sunDir: sunDirFromPhase(t.dayNight),
     });
   }
   let toastTimer;

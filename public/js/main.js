@@ -3,6 +3,7 @@ import { BlockAtlas } from "./atlas.js";
 import * as THREE from "../vendor/three/three.module.js";
 import { VoxelWorld } from "./world.js";
 import { VoxelRenderer } from "./renderer.js";
+import { sunDirFromPhase } from "./sun.js";
 import { History } from "./history.js";
 import { TOOLS, readSelection, eraseSelection, pasteVoxels } from "./tools.js";
 import { mirror, rotate90, flip } from "./ops.js";
@@ -131,9 +132,10 @@ function stopPlay() {
   game.stop();
   if (game.spawnPoint) state.meta.spawnPoint = game.spawnPoint;
   // 运行期改的东西不落盘（官方口径：运行是预览）；以前这里把运行时默认 gameRules 反写进 meta，
-  // 导致「跑一次自动化测试」就把默认值固化进地图存档
-  state.terrain.sunIntensity = renderer.sun.intensity;
-  state.terrain.dayNight = renderer.getDayNight ? renderer.getDayNight() : state.terrain.dayNight;
+  // 导致「跑一次自动化测试」就把默认值固化进地图存档。
+  // 下面两行同样违反该口径，已删：sun.intensity 是**被夜景衰减过**的值（setTerrain 里
+  // *(1 - night*0.85)），夜里跑一次再退出就把编辑器的日照强度永久写暗；
+  // 而 renderer.getDayNight 全项目根本没有定义，第二行是条永远走 fallback 的死分支。
   applyTerrain();
   document.getElementById("gameHint")?.classList.remove("show");
   document.activeElement && document.activeElement.blur && document.activeElement.blur();
@@ -416,10 +418,9 @@ function applyTerrain() {
     skyTop: t.skyTop, skyBottom: t.skyBottom, fogDensity: t.fogDensity,
     sunIntensity: t.sunIntensity, ambient: t.ambient, hemi: t.hemi,
     shadows: t.shadows, grid: t.grid, glow: t.glow, exposure: t.exposure,
-    sunDir: sunDirFromDayNight(t.dayNight),
+    sunDir: sunDirFromPhase(t.dayNight),
   });
 }
-function sunDirFromDayNight(h) { const a = (h * 1.25 - 0.12) * Math.PI; return [Math.cos(a), Math.sin(a), 0.35]; }
 
 let toastTimer;
 function toast(msg) { const el = document.getElementById("toast"); if (!el) return; el.textContent = msg; el.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 2600); }
@@ -567,7 +568,7 @@ async function boot() {
     viewport.addEventListener("pointerup", (e) => toolDispatch(e, "onUp"));
     viewport.addEventListener("contextmenu", (e) => e.preventDefault());
   }
-  ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, sunDirFromDayNight, enterPlay, stopPlay, setFirstPerson, importProject });
+  ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
   window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles };
   initFeatures(window.__editor);
   restoreEntityMarkers();

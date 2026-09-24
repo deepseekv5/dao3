@@ -2,6 +2,7 @@
 import { mirror, rotate90, flip } from "./ops.js";
 import * as io from "./io.js";
 import { moveSelectedModel, refreshModelList } from "./features.js";
+import { sunDirFromPhase } from "./sun.js";
 
 // 内联 SVG 图标集（不用 emoji，保证任意平台呈现一致）
 const I = window.__icons = {
@@ -68,7 +69,7 @@ const RAIL = [
 // 分类中文名取自官方 blockworld-ui.zh-CN.json 的 categories
 const CAT_ZH = { nature: "自然", structure: "结构", light: "光源", color: "颜色", element: "元素", letter: "字母", number: "数字", symbol: "符号", food: "食物", misc: "杂项", building: "建筑", glass: "玻璃", other: "杂项" };
 
-export function buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, sunDirFromDayNight, enterPlay, stopPlay, setFirstPerson, importProject }) {
+export function buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject }) {
   const api = {};
   const $ = (id) => document.getElementById(id);
   const recent = [];
@@ -491,8 +492,9 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     const setTimeOfDay = (v, fromSlider) => {
       state.meta.time = v;
       state.terrain.dayNight = v / 24000;
-      const a = ((v / 24000) * 1.25 - 0.12) * Math.PI;
-      renderer.setTerrain({ sunDir: [Math.cos(a), Math.sin(a), 0.35] });
+      // 相位→方向用 renderer 里的唯一一份实现：以前这里是手抄的第二份副本，
+      // 两份一漂移，编辑器预览和实际游玩的天空就对不上了
+      renderer.setTerrain({ sunDir: sunDirFromPhase(state.terrain.dayNight) });
       if (!fromSlider) {
         const s = timeRow && timeRow.querySelector("input");
         if (s) { s.value = v; timeRow.querySelector("em").textContent = v; }
