@@ -407,5 +407,31 @@ ok("API 参考是生成物且带官方中文说明",
   ref.includes("npm run build:api-ref") && ref.includes("当前运行世界的公共 URL"),
   (ref.length / 1024).toFixed(0) + "KB");
 
+console.log("== 程序化地形：走真实 UI 生成一张群岛 ==");
+// 前面有用例切到别的页面，这里必须显式回到编辑器并等全局就绪，
+// 否则 window.__editor 是 undefined，断言会以一种和地形毫无关系的方式红掉。
+await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
+await page.waitForFunction(() => !!window.__editor && window.__editor.atlas.ready, { timeout: 60000 });
+await page.waitForTimeout(3000);
+const modelsBefore = await page.evaluate(() => window.__editor.renderer.models.children.length);
+await page.evaluate(() => window.__openSizeModal());
+await page.click('#genMode button[data-mode="terrain"]');
+await page.selectOption("#tnPreset", "islands");
+await page.evaluate(() => { document.getElementById("szX").value = 64; document.getElementById("szZ").value = 64; document.getElementById("szY").value = 48; });
+await page.click("#sizeOk");
+await page.waitForTimeout(4000);
+const gen = await page.evaluate(() => {
+  const e = window.__editor, w = e.world;
+  const waterId = e.atlas.get("water") ? e.atlas.get("water").id : 364;
+  let water = 0; for (const [, c] of w.map) if (c.id === waterId) water++;
+  return { shape: w.shape, cells: w.size(), water, models: e.renderer.models.children.length, gen: e._lastGen };
+});
+await shot("terrain-islands-e2e");   // 趁页面还活着先截图：排在最后会拍到已关闭的 context
+ok("地貌预设出现在下拉里", gen.gen && gen.gen.preset === "islands", JSON.stringify(gen.gen && { preset: gen.gen.preset, wetPct: gen.gen.wetPct }));
+ok("换世界后旧场景模型清空", modelsBefore > 0 && gen.models === 0, `${modelsBefore} → ${gen.models}`);
+ok("生成的是地形而不是空图", gen.cells > 1000, `${gen.cells} 格`);
+ok("群岛真的带水体", gen.water > 1000 && gen.gen.wetPct >= 50, `${gen.water} 水格 / 淹 ${gen.gen && gen.gen.wetPct}%`);
+ok("水面单独成网格桶", await page.evaluate(() => [...window.__editor.renderer.chunkMeshes.values()].some((r) => r && r.water)));
+
 await browser.close();
 console.log("== 测试完成（截图在 test/out/*.png） ==");
