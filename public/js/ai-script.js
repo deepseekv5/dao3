@@ -8,7 +8,7 @@
 // 手抄一份必然在下一次 api-audit 之后过期，而过期的清单会让模型自信地调用
 // 一个我们根本没实现的成员——那比模型不会写代码更难查。
 
-import { chat, aiReady, openSettings, extractCode, configGaps } from "./ai.js";
+import { chat, aiReady, openSettings, extractCode, configGaps, checkSyntax } from "./ai.js";
 import { forbiddenMembers, specBrief, SANDBOX_BRIEF } from "./ai-spec.js";
 
 let _spec = null;        // public/data/api-spec.json（生成物）
@@ -77,21 +77,30 @@ export async function apiDigest(atlas, side = "server") {
     forbidden: forbiddenMembers(spec),
     names: _blockNames,
     counts: { fullClasses: core.size, classes: Object.keys(spec.classes).length },
+    spec,                                  // Agent 的 checkScripts 要拿它判"未实现成员"
   };
   _digest[cacheKey] = out;
   return out;
 }
 
-/** 系统提示 = 开发规范（ai-spec.js，单一来源）+ API 面。 */
-export async function buildSystemPrompt(side, digest) {
+/**
+ * 系统提示的**规范部分**（不含输出格式要求）。
+ * 单独拆出来是因为同一个 Agent 与单次生成要的是同一份开发规范，
+ * 但产出契约完全不同：一个要 ```js 代码块，一个要动作 JSON。
+ * 如果只有 buildSystemPrompt，Agent 就只能带着"输出恰好一个 js 代码块"
+ * 这句话去跑——它会真的回一段代码而不是动作，整个循环卡在第一步。
+ */
+export async function specPrompt(side, digest) {
   const d = digest || await apiDigest(null, side);
   const head = `你在为「神奇代码岛 DAO3」的本地兼容实现写地图脚本。语言是浏览器里的 JavaScript（服务端脚本支持顶层 await）。
 产出必须只跑在这套实现上：下面列出的全局、类型与成员就是全部可用面，没列出来的一律当作不存在。
 `;
-  if (side === "sandbox") {
-    return head + specBrief("sandbox", d) + "\n\n" + OUTPUT_RULES;
-  }
-  return head + specBrief(side, d) + "\n\n" + OUTPUT_RULES;
+  return head + specBrief(side, d);
+}
+
+/** 系统提示 = 开发规范（ai-spec.js，单一来源）+ 单次生成的输出契约。 */
+export async function buildSystemPrompt(side, digest) {
+  return await specPrompt(side, digest) + "\n\n" + OUTPUT_RULES;
 }
 
 const OUTPUT_RULES = `【输出要求】
@@ -187,6 +196,8 @@ function open(E) {
       <button data-k="cfg">接口设置</button>
       <button data-k="viewSpec" title="看看这次到底把哪些规范发给了模型">看规范</button>
       <button data-k="gen" class="primary">生成</button>
+      <button data-k="more" disabled title="接着上一轮继续改，它会记得自己写过什么">再改一轮</button>
+      <button data-k="grabErr" title="把控制台里最近那条运行报错贴进需求，让它自己修">带上报错</button>
       <span style="flex:1"></span>
       <button data-k="applyNew" disabled>新建文件</button>
       <button data-k="applyCur" disabled>写入当前文件</button>
@@ -198,6 +209,8 @@ function open(E) {
   const state = (msg, cls) => { const n = q("state"); n.textContent = msg; n.className = "ai-state" + (cls ? " " + cls : ""); };
   let code = "";
   let busy = null;
+  // 当前这轮对话（含 system）。换端 / 重新生成都要重建，所以只由 gen 负责赋值。
+  let convo = null;
 
   d.querySelector(".ai-x").onclick = close;
   d.querySelectorAll(".ai-chips button").forEach((b) => {
@@ -205,16 +218,33 @@ function open(E) {
   });
   q("cfg").onclick = () => openSettings(() => state(aiReady() ? "接口已配置" : "还没填完", aiReady() ? "ok" : "bad"));
 
-  const setCode = (c) => {
+  const setCode = (c, round) => {
     code = c;
     const out = q("out");
     out.hidden = false;
-    out.innerHTML = "";
+    out.replaceChildren();
     const pre = document.createElement("code");
     pre.textContent = c;
     out.appendChild(pre);
-    q("applyNew").disabled = !c;
-    q("applyCur").disabled = !c || !curScriptSafe(E);
+    // 语法预检决定"能不能落地"，不决定"能不能看"：把模型的产出藏起来只会让人以为
+    // 它没反应，而一句带行列号的编译错误正是下一轮最好的输入。
+    const syn = checkSyntax(c);
+    q("applyNew").disabled = !c || !syn.ok;
+    q("applyCur").disabled = !c || !syn.ok || !curScriptSafe(E);
+    q("more").disabled = !convo;
+    return syn.ok ? `已生成 ${c.split("\n").length} 行 · 语法通过${round ? ` · 第 ${round} 轮` : ""}`
+      : `语法不过，先别写入：${syn.error}`;
+  };
+
+  /** 把一轮对话推进 convo（不含 system，system 单独存以便换端后重建）。 */
+  const ask = async (userText, ctrl, round) => {
+    convo.push({ role: "user", content: userText });
+    const r = await chat(convo.slice(), { signal: ctrl.signal });
+    convo.push({ role: "assistant", content: r.text });
+    // 上下文只留最近 8 条：一次"再改一轮"平均 2 条，够四五轮来回，
+    // 再多就把 45KB 的规范之外又叠了一层旧对话，收益递减而挤占窗口。
+    if (convo.length > 9) convo.splice(1, convo.length - 9);
+    return { js: extractCode(r.text), model: r.model, msg: setCode(extractCode(r.text), round) };
   };
 
   q("gen").onclick = async () => {
@@ -228,25 +258,56 @@ function open(E) {
     busy = ctrl;
     try {
       const digest = await apiDigest(E.atlas, side);
-      const msgs = [{ role: "system", content: await buildSystemPrompt(side, digest) }];
+      convo = [{ role: "system", content: await buildSystemPrompt(side, digest) }];
       let user = `目标：${mode === "revise" ? "改写下面这份现有脚本" : "写一份新脚本"}；端：${side === "sandbox" ? "方块沙箱" : side}。\n需求：${prompt}`;
       if (mode === "revise") {
         const cur = curScriptSafe(E);
         if (!cur) throw new Error("当前没有选中的脚本文件，先选一个或改成「生成新脚本」");
         user += `\n\n当前文件 ${cur.name} 的内容：\n\`\`\`js\n${cur.code.slice(0, 12000)}\n\`\`\``;
       }
-      msgs.push({ role: "user", content: user });
-      const r = await chat(msgs, { signal: ctrl.signal });
-      const js = extractCode(r.text);
-      setCode(js);
-      state(`已生成 ${js.split("\n").length} 行 · ${r.model}`, "ok");
+      const r = await ask(user, ctrl);
+      state(r.msg + " · " + r.model, r.msg.startsWith("语法不过") ? "bad" : "ok");
     } catch (e) {
+      convo = null;
       if (e && e.name === "AbortError") state("已取消");
       else state((e && (e.message || String(e))) + "｜缺口：" + (configGaps().join("、") || "无"), "bad");
     } finally {
       q("gen").disabled = false;
       busy = null;
     }
+  };
+
+  // 「再改一轮」：同一份规范、同一份对话，只把新指令追加进去。
+  // 没有这个的话用户每次调整都要重述需求，而模型每次都要重新猜上一版写了什么。
+  q("more").onclick = async () => {
+    const extra = q("prompt").value.trim();
+    if (!extra) return state("先写要怎么改，再点「再改一轮」", "bad");
+    if (!convo) return state("还没有上一轮可续，先点「生成」", "bad");
+    state("改稿中…");
+    q("more").disabled = true;
+    const ctrl = new AbortController();
+    busy = ctrl;
+    try {
+      const r = await ask("在上一版基础上继续改：" + extra, ctrl, convo.filter((m) => m.role === "user").length + 1);
+      state(r.msg + " · " + r.model, r.msg.startsWith("语法不过") ? "bad" : "ok");
+    } catch (e) {
+      if (e && e.name === "AbortError") state("已取消");
+      else state(String(e && (e.message || e)), "bad");
+    } finally {
+      q("more").disabled = !convo;
+      busy = null;
+    }
+  };
+
+  // 控制台最近一条报错是现成的、比人话精确得多的输入。不自动带上是刻意的：
+  // 自动贴会把用户刚写的需求文字盖掉，而且不是每次报错都想让 AI 介入。
+  q("grabErr").onclick = () => {
+    const t = (document.getElementById("scriptOut") || {}).textContent || "";
+    if (!t.trim()) return state("控制台还是空的——先点一次「运行」让它产出结果或报错", "bad");
+    q("prompt").value = (q("prompt").value.trim() ? q("prompt").value.trim() + "\n\n" : "")
+      + `这份代码运行时报错，请修掉后重发完整代码。\n控制台原文：\n${t.slice(0, 2000)}`;
+    state("已把报错贴进需求，点「生成」或「再改一轮」", "ok");
+    q("prompt").focus();
   };
 
   q("viewSpec").onclick = async () => {
@@ -257,7 +318,7 @@ function open(E) {
       const text = await buildSystemPrompt(side, digest);
       const out = q("out");
       out.hidden = false;
-      out.innerHTML = "";
+      out.replaceChildren();
       const pre = document.createElement("code");
       pre.textContent = text;
       out.appendChild(pre);

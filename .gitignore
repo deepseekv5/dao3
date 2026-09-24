@@ -37,6 +37,7 @@ DAO3-便携包-*.zip
 dist/
 run.pid
 run.out
+start.out
 *.log
 .DS_Store
 

@@ -585,6 +585,56 @@ const server = http.createServer((req, res) => {
         return json(res, 200, { ok: true });
       }
     }
+    if (parts[1] === "ai" && parts[2] === "models" && req.method === "POST") {
+      // 和 /api/ai/chat 同一条边界：只对本机、密钥不落地、错误文本先擦再回显。
+      if (!isLoopback(req.socket && req.socket.remoteAddress)) {
+        return json(res, 403, { error: "AI 代理只对本机开放" });
+      }
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 64 * 1024) req.destroy(); });
+      req.on("end", async () => {
+        let cfg = null, key = "";
+        try { cfg = JSON.parse(body); } catch (e) { return json(res, 400, { error: "bad json" }); }
+        const base = normalizeAiBase(cfg.baseUrl);
+        key = String(cfg.key || "").trim();
+        if (!base) return json(res, 400, { error: "接口地址不合法（只支持 http/https，且不要把密钥写在地址里）" });
+        if (!key) return json(res, 400, { error: "缺少密钥" });
+        try {
+          const up = new URL(base);
+          if (up.host.toLowerCase() === String(req.headers.host || "").toLowerCase()) {
+            return json(res, 400, { error: "接口地址不能指向本服务" });
+          }
+        } catch { return json(res, 400, { error: "接口地址不合法" }); }
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 20000);
+        try {
+          const r = await fetch(base + "/models", { headers: { authorization: "Bearer " + key }, signal: ctrl.signal });
+          const txt = await r.text();
+          let data = null;
+          try { data = JSON.parse(txt); } catch { data = null; }
+          if (!r.ok) {
+            // 很多兼容网关压根没实现 /models。这不是用户的配置错了，界面要能分清
+            // "这个服务不提供列表"和"地址或密钥错了"，否则人人都会以为是自己填坏了。
+            if (r.status === 404 || r.status === 405) {
+              return json(res, 200, { ok: true, models: [], note: "这个服务没有 /models 端点（" + r.status + "），模型名手输即可" });
+            }
+            const detail = data && data.error && (data.error.message || data.error) || txt.slice(0, 300);
+            return json(res, 502, { ok: false, status: r.status, error: scrub("上游 " + r.status + "：" + detail, key) });
+          }
+          const raw = (data && (data.data || data.models)) || [];
+          const models = (Array.isArray(raw) ? raw : [])
+            .map((m) => (typeof m === "string" ? m : m && (m.id || m.name)))
+            .filter((s) => typeof s === "string" && s).slice(0, 2000);
+          return json(res, 200, { ok: true, models });
+        } catch (e) {
+          const aborted = e && (e.name === "AbortError");
+          return json(res, 502, { ok: false, error: scrub(aborted ? "上游超时（20 秒）" : "请求失败：" + (e.message || e), key) });
+        } finally {
+          clearTimeout(timer);
+        }
+      });
+      return;
+    }
     if (parts[1] === "ai" && parts[2] === "chat" && req.method === "POST") {
       // 这个端点会把请求转发到调用者指定的地址。绑到 0.0.0.0 起服务时，
       // 不挡掉外来来源就等于给全网开了一个免费代理，所以只认回环。
@@ -735,10 +785,22 @@ const server = http.createServer((req, res) => {
   });
 });
 
+// 探测与真正 listen 之间端口仍可能被抢走（另一个进程刚好起在这个空档）。
+// 没有这个 handler 的话 Node 会把 EADDRINUSE 当未处理错误抛出来，
+// 用户看到的是一坨堆栈而不是一句"端口被占了，换个端口"。
+server.on("error", (e) => {
+  if (e && e.code === "EADDRINUSE") {
+    console.error(`✗ 端口 ${PORT} 已被占用。改用其他端口：node start.mjs --port=5200`);
+    process.exit(1);
+  }
+  console.error("服务启动失败：" + (e && e.message ? e.message : e));
+  process.exit(1);
+});
+
 server.listen(PORT, HOST, () => {
   console.log(`DAO3 编辑器复刻 本地服务已启动:`);
-  console.log(`  编辑器:  http://${HOST}:${PORT}/edit/216d665d3ca92bd1b9a2`);
-  console.log(`  世界列表: http://${HOST}:${PORT}/api/worlds`);
+  console.log(`  编辑器:  http://127.0.0.1:${PORT}/edit/216d665d3ca92bd1b9a2`);
+  console.log(`  世界列表: http://127.0.0.1:${PORT}/api/worlds`);
   console.log(`  静态目录: ${PUBLIC}`);
   // 从 .dmg / 只读位置运行时这里会指向用户目录，必须打印出来，否则用户找不到自己存的图
   console.log(`  数据目录: ${DATA_ROOT}`);

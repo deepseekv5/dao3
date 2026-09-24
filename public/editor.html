@@ -8,7 +8,13 @@
 <link rel="stylesheet" href="/css/editor.css"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
 <script type="importmap">{"imports":{"three":"/vendor/three/three.module.js"}}</script>
-<script>window.__errs=[];window.addEventListener("error",e=>window.__errs.push((e.message||e.error||("load-fail "+(e.target&&e.target.src||e.target&&e.target.href||"")))+" @ "+(e.filename||"")+":"+(e.lineno||"")),true);window.addEventListener("unhandledrejection",e=>window.__errs.push("reject: "+(e.reason&&e.reason.stack||e.reason)));</script>
+<script>window.__errs=[];window.__errLog=[];
+// 两份账：__errs 会被运行控制台 shift 掉，__errLog 只进不出（截成环形）。
+// AI Agent 的 playtest 读的是后者——只读前者的话报错被控制台吃掉，它会把坏地图看成干净的。
+window.__noteErr=function(m){try{window.__errs.push(m);window.__errLog.push(m);if(window.__errLog.length>300)window.__errLog.splice(0,window.__errLog.length-300);}catch(e){}};
+window.addEventListener("error",e=>window.__noteErr((e.message||e.error||("load-fail "+(e.target&&e.target.src||e.target&&e.target.href||"")))+" @ "+(e.filename||"")+":"+(e.lineno||"")),true);
+window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.reason&&e.reason.stack||e.reason)));
+</script>
 </head>
 <body>
 <div id="loading"><div class="load-logo"></div><div class="load-bar"><i></i></div><span>正在启动容器…</span></div>

@@ -10,7 +10,7 @@ import os from "node:os";
 import net from "node:net";
 import path from "node:path";
 import http from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -207,6 +207,33 @@ const spawnGroup = (argv, opts) => {
   ok("端口被自己的旧实例占用时要得回来", reclaimed, out2.split("\n").find((l) => l.includes("端口")) || "");
   s2.kill(); ours.kill();
   await sleep(600);
+}
+
+/* ---------------- 静态：每个模块都必须能按 ESM 解析 ---------------- */
+// 起因是一次改 ai.js 时把 listModels 插进了 CSS 模板字符串中间，于是 ai.js 里
+// 出现两个 const STYLE 和半截裸露的 CSS。后果不是报错弹窗，而是编辑器**永远停在
+// loading 转圈**——浏览器只留一句 SyntaxError，测试里看不到文件名，排查成本极高。
+// node --check 默认按 CommonJS 解析 .js，抓不到这类只存在于 ESM 语境下的错误，
+// 所以必须显式 --input-type=module。
+{
+  const files = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".js")) files.push(p);
+    }
+  };
+  walk(path.join(ROOT, "public", "js"));
+  let broken = [];
+  for (const f of files) {
+    const r = spawnSync(process.execPath, ["--input-type=module", "--check"], {
+      input: fs.readFileSync(f), encoding: "utf8",
+    });
+    if (r.status !== 0) broken.push(path.relative(ROOT, f) + ": " + String(r.stderr || "").split("\n")[0]);
+  }
+  ok("public/js 下每个模块都按 ESM 解析得通过", broken.length === 0,
+    broken.slice(0, 4).join(" | ") || `${files.length} 个模块`);
 }
 
 console.log(process.exitCode ? "\n发布物行为有问题" : "\n发布物行为全部通过");

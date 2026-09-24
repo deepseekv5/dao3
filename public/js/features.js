@@ -4,6 +4,7 @@ import { VoxelWorld } from "./world.js";
 import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
+import { openAgent } from "./ai-agent.js";
 
 let E; // window.__editor 引用
 
@@ -14,6 +15,7 @@ export function initFeatures(editor) {
   wireTerrainModal();
   wireScript();
   wireScriptAi(editor);
+  wireAgentBtn(editor);
   wireModels();
   wirePlayer();
   wireUiEditor();
@@ -463,12 +465,19 @@ export function addEntityMarker(d) {
 }
 
 /* ------------------------------ 脚本运行（sb 方块沙箱） ------------------------------ */
-function runScript() {
-  const e = E, w = e.world, atlas = e.atlas;
+/**
+ * 跑一段方块沙箱代码，把结果当**数据**返回。这是唯一的执行体：
+ * runScript() 只负责把它接到 DOM 上，AI Agent 直接调它拿观察结果。
+ *
+ * 之所以要能"不看界面、只要结果"地调用：Agent 下一步做什么，依据就是这一轮的
+ * 输出文本、变更格数和报错原文。让它去读 #scriptOut 的 DOM 等于把渲染时序引进来。
+ * 出错时不抛异常而是返回 {ok:false, error, line}——Agent 要能把报错原样喂回模型。
+ * @returns {{ok: boolean, out: string, changes: number, error?: string, line?: number}}
+ */
+export function runSandboxCode(e, code) {
+  const w = e.world, atlas = e.atlas;
   const out = document.getElementById("scriptOut");
-  out.style.color = "";
-  const idx = e.__scriptIdx == null ? 0 : e.__scriptIdx;
-  const code = (e.state.scripts[idx] || { code: "" }).code;
+  if (out) out.style.color = "";
   const changes = new Map();
   const apply = (x, y, z, id) => {
     if (!w.inBounds(x, y, z)) return;
@@ -496,35 +505,67 @@ function runScript() {
     clear: () => { for (const k of [...w.map.keys()]) { const [x, y, z] = w.unpack(k); apply(x, y, z, 0); } },
     count: () => { let n = w.size(); for (const c of changes.values()) { if (c.newId && !c.oldId) n++; else if (!c.newId && c.oldId) n--; } return n; },
     size: () => w.shape.slice(),
-    log: (m) => { out.textContent = String(m); },
+    log: (m) => { if (out) out.textContent = String(m); },
   };
+  const lines = [];
   try {
     const fn = new Function("sb", "Math", "console", code);
     _errLine = -1; // 清除上次错误行标记
     // 沙箱 console：官方脚本常用 clear/warn/info，一并支持
     fn(sb, Math, {
-      log: (...a) => { out.textContent += (out.textContent ? "\n" : "") + a.join(" "); },
-      error: (...a) => { out.textContent += (out.textContent ? "\n" : "") + "错误: " + a.join(" "); },
-      warn: (...a) => { out.textContent += (out.textContent ? "\n" : "") + "警告: " + a.join(" "); },
-      info: (...a) => { out.textContent += (out.textContent ? "\n" : "") + a.join(" "); },
-      clear: () => { out.textContent = ""; },
+      log: (...a) => { lines.push(a.join(" ")); },
+      error: (...a) => { lines.push("错误: " + a.join(" ")); },
+      warn: (...a) => { lines.push("警告: " + a.join(" ")); },
+      info: (...a) => { lines.push(a.join(" ")); },
+      clear: () => { lines.length = 0; },
     });
     const list = [...changes.values()].filter((c) => c.oldId !== c.newId);
     e.history.commit(list, "script");
     e.renderer.rebuildAll();
     e.updateStatus();
     if (e.ui && e.ui.refreshTree) e.ui.refreshTree();
-    if (!out.textContent) out.textContent = "运行成功 · " + list.length + " 处变更";
-    out.style.color = "";
+    const text = lines.join("\n");
+    const shown = text || "运行成功 · " + list.length + " 处变更";
+    if (out) { out.textContent = shown; out.style.color = ""; }
+    return { ok: true, out: shown, changes: list.length };
   } catch (err) {
     // 官方 scriptErrorFound：定位出错行并在编辑器里高亮
     // 实测 V8：new Function 包裹后栈行号 = 代码行号 + 2（代码第3行报栈第5行）
     const m = String(err.stack || "").match(/<anonymous>:(\d+):\d+/);
     _errLine = m ? Math.max(0, parseInt(m[1], 10) - 3) : -1;
-    out.textContent = (m ? `第 ${_errLine + 1} 行错误: ` : "错误: ") + (err.message || err);
-    out.style.color = "#ff6b6b";
+    const error = String(err && err.message || err || "");
+    if (out) {
+      out.textContent = (m ? `第 ${_errLine + 1} 行错误: ` : "错误: ") + error;
+      out.style.color = "#ff6b6b";
+    }
     renderCodeEditor();
+    return { ok: false, out: "", changes: 0, error, line: _errLine };
   }
+}
+
+function runScript() {
+  const e = E;
+  const idx = e.__scriptIdx == null ? 0 : e.__scriptIdx;
+  const code = (e.state.scripts[idx] || { code: "" }).code;
+  return runSandboxCode(e, code);
+}
+
+/**
+ * 「AI Agent」入口。和「AI 生成」并排放在脚本界面标题栏右侧——
+ * 两者是同一件事的两档：那一档你问一句它答一段，这一档你给个目标它自己跑十几轮。
+ * 放一起是为了让人自己选要不要交出控制权，而不是偷偷给 AI 加一个自动执行的开关。
+ */
+function wireAgentBtn(editor) {
+  const head = document.querySelector("#scriptScreen .ss-head");
+  if (!head || document.getElementById("aiAgentBtn")) return;
+  const btn = document.createElement("button");
+  btn.id = "aiAgentBtn";
+  btn.title = "给一个目标，让它自己写脚本、盖模型、跑一遍验证、再按报错修正";
+  btn.textContent = "AI Agent";
+  btn.style.cssText = "border-color:#123a2a;color:#7ee0a8";
+  const anchor = document.getElementById("scriptRun");
+  head.insertBefore(btn, anchor || null);
+  btn.onclick = () => openAgent(editor);
 }
 
 /* ------------------------------ 模型 (.glb / 选区体素) ------------------------------ */

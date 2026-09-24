@@ -421,8 +421,27 @@ export function reportError(err) {
   const msg = err && err.message ? err.message : String(err);
   const el = document.getElementById("gameConsole");
   if (el) consoleDiv(el, "事件错误: " + msg, "err");
-  window.__errs && window.__errs.push && window.__errs.push(msg);
+  noteError(msg);
 }
+/**
+ * 运行期错误的唯一入口。**两份**：__errs 是给游戏控制台消费的（logGameError 会 shift 走），
+ * __errLog 是只进不出的环形账本。Agent 的 playtest 必须读后者——读前者的话，
+ * 报错全被控制台吃掉了，它只会看到"没有异常"，把一个坏地图判成好的。
+ */
+export function noteError(msg) {
+  const s = String(msg == null ? "" : msg);
+  if (!s) return;
+  try {
+    // editor.html 里那份 __noteErr 是同一件事的实现（要早于模块加载就能收 window.onerror），
+    // 有它就复用，免得两处各写一份环形截断逻辑而将来只改一处。
+    if (typeof window.__noteErr === "function") return window.__noteErr(s);
+    window.__errs && window.__errs.push && window.__errs.push(s);
+    const log = window.__errLog || (window.__errLog = []);
+    log.push(s);
+    if (log.length > ERR_LOG_MAX) log.splice(0, log.length - ERR_LOG_MAX);
+  } catch { /* 没有 window（Node 里直接 import gapi.js 的单测） */ }
+}
+const ERR_LOG_MAX = 300;
 export function consoleDiv(el, text, kind) {
   const p = el || document.getElementById("gameConsole");
   if (!p) return;

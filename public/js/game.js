@@ -11,9 +11,19 @@ import {
   sleep, randomPick, getEntityBounds, clamp, clamp01, toVec3, packId, baseId, rotOf, rotateVecByTurn,
   luma, rgbHex, pickEnv, sampleRamp, sampleRampNum, newParticle, matchSelector, keyCodeOf, rayHitsBox, rgbaOf, colorTriple,
   attachChannels, makeChannel, consoleDiv, esc, fmt, Sound, GameAnimation, makeMotionController,
+  noteError,
 } from "./gapi.js";
 import { createClientApi, createAudioClass } from "./clientui.js";
 import { sunDirFromPhase, nightFromElev } from "./sun.js";
+
+/**
+ * 地图级持久化数据的键名，只在这里定义一次。
+ * 编辑器的存储面板与 AI Agent 的 storage.* 动作都必须走它：复制一份字符串模板，
+ * 改了这边就会让 Agent 写到脚本读不到的地方——写进去、读不出来、还不报错，
+ * 是最难查的那类 bug。
+ */
+export const dataStoragePrefix = (ns, scope, name) => `dao3_${ns}:${scope}:${name}:`;
+export const dataStorageKey = (ns, scope, name, key) => dataStoragePrefix(ns, scope, name) + key;
 
 export * from "./gapi.js";
 
@@ -2330,7 +2340,7 @@ void main() {
         if (m) where = ` @ ${m[1]}.js:${m[2]}`;
       }
       consoleDiv(this.hud.console, `[${name}] ${msg}${where}`, "err");
-      window.__errs && window.__errs.push && window.__errs.push(`[${name}] ${msg}`);
+      noteError(`[${name}] ${msg}`);
     };
     try {
       // 官方脚本大量在文件顶层直接写 await（`const r = await http.fetch(…)`），
@@ -2490,11 +2500,11 @@ void main() {
   /** 官方 GameDataStorage：一块命名空间下的键值库，list 返回可翻页的 QueryList */
   _dataStorage(ns, scope, name) {
     const rt = this;
-    const k = (x) => `dao3_${ns}:${scope}:${name}:${x}`;
+    const k = (x) => dataStorageKey(ns, scope, name, x);
     const read = (x) => { try { const v = localStorage.getItem(k(x)); return v == null ? null : JSON.parse(v); } catch { return null; } };
     const write = (x, v) => { try { localStorage.setItem(k(x), JSON.stringify(v)); return true; } catch { return false; } };
     const keys = () => {
-      const pre = `dao3_${ns}:${scope}:${name}:`, out = [];
+      const pre = dataStoragePrefix(ns, scope, name), out = [];
       try {
         for (let i = 0; i < localStorage.length; i++) {
           const kk = localStorage.key(i);

@@ -1,6 +1,7 @@
 // e2e.mjs — 端到端回归测试（playwright-core + 本地缓存 chromium）
 // 运行：node test/e2e.mjs
 import fs from "fs";
+import path from "path";
 import { fileURLToPath } from "url";
 import { resolveChromium, chromeArgs, playwright, resolveBase } from "./browser.mjs";
 const pw = await playwright();
@@ -12,6 +13,20 @@ const EDITOR_URL = BASE + "/edit/216d665d3ca92bd1b9a2";
 // 中文目录名用 fileURLToPath 解码，避免 URL.pathname 的百分号编码
 const OUT = fileURLToPath(new URL("./out/", import.meta.url));
 fs.mkdirSync(OUT, { recursive: true });
+
+/*
+ * 出厂种子世界的护栏。Agent 的 map.save 是真会写盘的（那就是它的功能），
+ * 而这个套件全程对着出厂地图跑——没有这道护栏，跑一次 e2e 就把默认地图
+ * 改成测试残留（历史上真发生过：199 个实体变 200、2 个脚本变 4）。
+ * 所以开局备份、收工还原，并且**断言还原成功**：静默失败的备份等于没备份。
+ */
+const ROOT_DIR = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
+const SEED_ID = "216d665d3ca92bd1b9a2";
+const SEED_FILE = path.join(ROOT_DIR, "server", "data", "worlds", SEED_ID + ".json.gz");
+const SEED_BAK = path.join(OUT, "seed-world-backup.json.gz");
+const seedExisted = fs.existsSync(SEED_FILE);
+if (seedExisted) fs.copyFileSync(SEED_FILE, SEED_BAK);
+const seedBytesBefore = seedExisted ? fs.statSync(SEED_FILE).size : 0;
 
 const home = process.env.HOME;
 const exe = resolveChromium();
@@ -571,6 +586,158 @@ console.log("== 交给模型的开发规范：走真实 UI，且以模型侧收�
   spy.close();
 }
 
+console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出来 ==");
+// 这里不给它真模型：本地 mock 按预定脚本依次返回动作 JSON，于是"Agent 跑完了"
+// 这件事的可信断言全部落在**世界状态**上——方块多了没有、文件写进去没有、
+// 非法动作有没有被打回去继续。只测"界面出现了日志"是没有意义的。
+{
+  const http = await import("http");
+  const KEY = "e2e-agent-fake-key-7b2d";
+  const STEPS = [
+    '{"action":"project.info","thought":"先看世界多大"}',
+    '{"action":"deleteWholeWorld"}',                                   // 故意越权，必须被拒且不打断循环
+    '{"action":"blocks.edit","args":{"code":"sb.box([2,2,2],[4,4,4],\'stone\'); console.log(sb.count());"}}',
+    '{"action":"script.upload","args":{"entry":"agentMade.js","side":"server","code":"world.onTick(() => {});"}}',
+    '{"action":"script.upload","args":{"entry":"agentHud.js","side":"client","code":"ui.text(\'ok\');"}}',
+    '{"action":"model.build","args":{"at":[8,8,8],"program":{"name":"塔","parts":[{"name":"p","size":[6,6,6],"prims":[{"shape":"box","from":[0,0,0],"to":[3,3,3],"color":"#ff2d2d"}]}]}}}',
+    '{"action":"entity.add","args":{"name":"起点-0","label":"检查点","at":[3,5,3]}}',
+    '{"action":"storage.set","args":{"name":"scores","key":"best","value":42}}',
+    '{"action":"storage.get","args":{"name":"scores","key":"best"}}',
+    '{"action":"build.check"}',
+    '{"action":"runtime.start","args":{"ticks":30}}',
+    '{"action":"runtime.logs","args":{"level":"error"}}',
+    '{"action":"runtime.stop"}',
+    '{"action":"scene.capture"}',
+    '{"action":"map.save"}',
+    '{"action":"finish","args":{"summary":"石头台子 + 红塔 + 起点实体 + 服务端与客户端脚本，已存盘"}}',
+  ];
+  const seen = [];
+  let n = 0;
+  const mock = http.createServer((req, res) => {
+    let b = "";
+    req.on("data", (c) => b += c);
+    req.on("end", () => {
+      const payload = (() => { try { return JSON.parse(b); } catch { return {}; } })();
+      if ((req.headers.authorization || "") !== "Bearer " + KEY) {
+        res.writeHead(401, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: { message: "bad auth" } }));
+      }
+      if (req.url.endsWith("/models")) {
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ data: [{ id: "mock-a" }, { id: "mock-b" }] }));
+      }
+      seen.push(payload.messages || []);
+      const body = n < STEPS.length ? STEPS[n] : '{"action":"finish","args":{"summary":"兜底收工"}}';
+      n++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ model: "e2e-agent", choices: [{ message: { role: "assistant", content: body } }] }));
+    });
+  });
+  await new Promise((r) => mock.listen(0, "127.0.0.1", r));
+  const UP = "http://127.0.0.1:" + mock.address().port + "/v1";
+
+  await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => !!window.__editor && !!window.__editor.atlas, null, { timeout: 60000 });
+  await page.evaluate(() => { window.__noAutosave = true; sessionStorage.setItem("dao3_no_autosave", "1"); });
+  const before = await page.evaluate(() => ({ blocks: window.__editor.world.size(), scripts: (window.__editor.state.scripts || []).length }));
+  ok("起点是一张有内容、没有 agentMade.js 的图", before.blocks > 0
+    && !(await page.evaluate(() => (window.__editor.state.scripts || []).some((s) => s.name === "agentMade.js"))),
+    JSON.stringify(before));
+
+  await page.click('.mtab[data-menu="script"]');
+  await page.waitForFunction(() => document.getElementById("scriptScreen").classList.contains("show"), { timeout: 5000 });
+  ok("脚本界面有「AI Agent」入口", (await page.locator("#aiAgentBtn").count()) === 1);
+  await page.click("#aiAgentBtn");
+  await page.waitForSelector("#aiAgent [data-k=\"run\"]");
+  // 真命中测试：上一版 #aiAgent 的 CSS 少了一个分号，z-index 整条被解析器丢掉，
+  // 小窗被 z-index:90 的脚本界面盖住——尺寸、位置、可见性全正常，只有点不动。
+  // 所以这里不看样式，直接问"按钮中心那个点上，浏览器认为是谁"。
+  const hit = await page.evaluate(() => {
+    const bad = [];
+    for (const k of ["cfg", "run", "stop", "budget", "goal"]) {
+      const el = document.querySelector(`#aiAgent [data-k="${k}"]`);
+      if (!el) { bad.push(k + ":不存在"); continue; }
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!top || !el.contains(top)) bad.push(`${k}:${top ? (top.id || top.className || top.tagName) : "null"}`);
+    }
+    return bad;
+  });
+  ok("小窗每个按钮都能被真的点到（没有被脚本界面盖住）", hit.length === 0, hit.join(", ") || "");
+
+  // 自动保存的真实验收：只往输入框里打字，一个"保存"按钮都不点
+  await page.click('#aiAgent [data-k="cfg"]');
+  await page.waitForSelector("#aiSettings");
+  await page.fill('#aiSettings [data-k="baseUrl"]', UP);
+  await page.fill('#aiSettings [data-k="key"]', KEY);
+  await page.fill('#aiSettings [data-k="model"]', "e2e-agent");
+  await page.waitForFunction((want) => {
+    const c = JSON.parse(localStorage.getItem("dao3_ai_config") || "{}");
+    return c.baseUrl === want.UP && c.key === want.KEY && c.model === want.MODEL;
+  }, { UP, KEY, MODEL: "e2e-agent" }, { timeout: 5000 });
+  ok("不点保存也已经写进 localStorage（自动保存）", true);
+  ok("标题栏出现了「已自动保存」标记", await page.evaluate(() => /已自动保存/.test(document.querySelector("#aiSettings h3").textContent)));
+  await page.click('#aiSettings [data-k="models"]');
+  await page.waitForFunction(() => document.querySelectorAll("#aiModelList option").length >= 2, null, { timeout: 15000 });
+  ok("拉取模型列表能填进 datalist", (await page.locator("#aiModelList option").count()) >= 2);
+  await page.click('#aiSettings [data-k="close"]');
+  ok("关掉设置后不残留遮罩", (await page.locator("#aiSettings").count()) === 0);
+
+  await page.fill('#aiAgent [data-k="goal"]', "造一个石头台子，上面立一座红塔，加一个起点实体和两端脚本，跑一遍再存盘");
+  await page.fill('#aiAgent [data-k="budget"]', "24");
+  await page.click('#aiAgent [data-k="run"]');
+  await page.waitForFunction(() => /完成|预算用尽|中断/.test(document.querySelector('#aiAgent [data-k="stat"]').textContent),
+    null, { timeout: 180000 });
+  const rep = await page.evaluate(() => ({
+    stat: document.querySelector('#aiAgent [data-k="stat"]').textContent,
+    log: document.querySelector("#aiAgent .ag-body").textContent,
+    blocks: window.__editor.world.size(),
+    scripts: (window.__editor.state.scripts || []).map((s) => s.name),
+    models: (window.__editor.state.models || []).length,
+    canUndo: (window.__editor.history.stack || []).length,
+    errs: (window.__errLog || []).slice(),
+    saved: !!localStorage.getItem("dao3_storage:map:scores:best"),
+    worldOnDisk: null,
+  }));
+  ok("Agent 跑到 finish", /完成/.test(rep.stat), rep.stat);
+  ok("它真的用 sb 盖出了方块", rep.blocks > before.blocks, `${before.blocks} → ${rep.blocks}`);
+  ok("服务端脚本落地了", rep.scripts.includes("agentMade.js"), rep.scripts.join(", "));
+  ok("客户端脚本被按端规范改了名（side=client → 文件名含 client）",
+    rep.scripts.some((s) => /client/i.test(s)), rep.scripts.join(", "));
+  ok("model.build 真的往世界盖了东西", rep.blocks > before.blocks + 60, `${rep.blocks - before.blocks} 格净增`);
+  ok("entity.add 放出了一个可被 #名字 取到的实体", rep.models > 0, `${rep.models} 个模型/实体`);
+  ok("storage.set 写的键，脚本用 getDataStorage 读得到（同一套 key）", rep.saved === true);
+  ok("越权动作被拒之后循环没断", /动作不合法/.test(rep.log) && /deleteWholeWorld/.test(rep.log));
+  ok("非法动作的回绝理由带可用动作清单", /可用动作只有/.test(rep.log));
+  ok("build.check / runtime.* / scene.capture / map.save 都被走了一遍",
+    /build\.check/.test(rep.log) && /runtime\.start/.test(rep.log) && /runtime\.logs/.test(rep.log)
+    && /runtime\.stop/.test(rep.log) && /scene\.capture/.test(rep.log) && /map\.save/.test(rep.log));
+  ok("每一步都有观察结果回喂", /观察|格变更|语法|尺寸|已保存|日志/.test(rep.log));
+  ok("改动全部进了撤销栈（可撤销是承诺）", rep.canUndo >= 2, `撤销栈 ${rep.canUndo} 层`);
+  /*
+   * 这里**不该**断言"零报错"：测试故意喂了一份用了不存在 API 的客户端脚本
+   * （ui.text 不是我们的成员），就是要看 runtime.start 抓不抓得到。
+   * 断言"一个都没抓到"会让这个用例在它该报警的时候反而失败。
+   * 所以断言：只出现我们埋的那一条，且 Agent 把它当观察结果吃了下去。
+   */
+  ok("runtime.start 抓到了我们故意埋的那条脚本异常，且只有这一条",
+    rep.errs.length === 1 && /agentHudClient\.js/.test(rep.errs[0]) && /ui\.text is not a function/.test(rep.errs[0]),
+    JSON.stringify(rep.errs));
+  ok("这条异常被当作观察结果回喂，而不是把循环打断",
+    /运行时异常/.test(rep.log) && /agentHudClient/.test(rep.log));
+  ok("模型侧确实收到过规范 + 动作说明", seen.length >= 10
+    && (seen[0][0].content || "").includes("【可用 API 面】")
+    && (seen[0][0].content || "").includes("project.info"),
+    `${seen.length} 次调用`);
+  ok("第二轮起把上一轮的观察带了回去", (seen[1] || []).some((m) => /观察：|失败：/.test(m.content || "")),
+    `${(seen[1] || []).length} 条消息`);
+
+  await page.click('#aiAgent .ai-x');
+  await page.waitForSelector("#aiAgent", { state: "detached" });
+  await page.evaluate(() => localStorage.removeItem("dao3_ai_config"));
+  mock.close();
+}
+
 console.log("== 程序化地形：走真实 UI 生成一张群岛 ==");
 // 前面有用例切到别的页面，这里必须显式回到编辑器并等全局就绪，
 // 否则 window.__editor 是 undefined，断言会以一种和地形毫无关系的方式红掉。
@@ -647,5 +814,13 @@ const sunAfter = await page.evaluate(() => window.__editor.state.terrain.sunInte
 ok("夜里退出游玩不把编辑器的日照强度写暗", sunAfter > 2.0, String(sunAfter));
 
 
+/* 收工：把出厂地图还原回去，并确认还原到位。 */
 await browser.close();
+if (seedExisted) {
+  fs.copyFileSync(SEED_BAK, SEED_FILE);
+  const back = fs.existsSync(SEED_FILE) ? fs.statSync(SEED_FILE).size : -1;
+  ok("出厂种子世界没有被测试留在脏状态（已还原）", back === seedBytesBefore,
+    `${seedBytesBefore} → ${back} 字节`);
+  fs.rmSync(SEED_BAK, { force: true });
+}
 console.log("== 测试完成（截图在 test/out/*.png） ==");

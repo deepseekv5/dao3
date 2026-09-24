@@ -65,7 +65,10 @@ export async function chat(messages, opts = {}) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         baseUrl: c.baseUrl, model: c.model, key: c.key,
-        messages, temperature: c.temperature, maxTokens: c.maxTokens,
+        messages, temperature: c.temperature,
+        // opts 覆盖设置：Agent 一轮要吐一整个动作（含代码），2048 常常正好截在
+        // JSON 中间，而"被截断的 JSON"在界面上表现为一句莫名其妙的解析失败。
+        maxTokens: Number.isFinite(+opts.maxTokens) && +opts.maxTokens > 0 ? +opts.maxTokens : c.maxTokens,
         json: !!opts.json,
       }),
       signal: ctrl.signal,
@@ -106,6 +109,34 @@ export function extractJson(text) {
   const end = raw.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("回答里没有找到 JSON");
   return JSON.parse(raw.slice(start, end + 1));
+}
+
+/**
+ * 语法预检：只编译，不执行。
+ *
+ * 存在的理由不是"防止跑坏"（脚本本来就是沙箱执行），而是省一轮往返：
+ * 语法不过的产物送去运行只能拿到一句 V8 的报错，再回喂给模型重来，
+ * 一来一回是两次几十秒的网络。在落地前就把它挡下来，并把编译器的原话
+ * 直接当观察结果喂回去，模型一次就能改对。
+ *
+ * 官方服务端脚本支持顶层 await，所以 `new Function(code)` 会因为 await 而
+ * 报 SyntaxError——那不是模型的错。两种包法都试一遍，只有都过不去才算错。
+ * @returns {{ok: true} | {ok: false, error: string}}
+ */
+export function checkSyntax(code) {
+  const src = String(code || "");
+  if (!src.trim()) return { ok: false, error: "代码是空的" };
+  let plainErr = null;
+  try { new Function(src); return { ok: true }; } catch (e) { plainErr = e; }
+  try {
+    new Function("return (async () => {\n" + src + "\n})");
+    return { ok: true };
+  } catch (e) {
+    // 顶层 await 那条路也过不去，说明是真语法错。报哪个？两个都在，
+    // 但同步那份的行列号对模型更有用（async 包法整体下移了一行）。
+    const err = String(plainErr && plainErr.message || e.message || e);
+    return { ok: false, error: err.slice(0, 300) };
+  }
 }
 
 /* ---------------- 体素程序：校验与落地 ---------------- */
@@ -259,10 +290,48 @@ export function programToVoxels(part) {
   return [...map.values()];
 }
 
-/* ---------------- 共享设置面板 ---------------- */
+/* ---------------- 模型列表 ---------------- */
+
+/**
+ * 从填好的接口地址拉模型列表（OpenAI 兼容的 GET /models）。
+ * 和 chat 一样只走本地代理：浏览器直连要赌对方开 CORS，而且密钥会离开这台设备
+ * 的进程边界，代理已经替我们把这两件事都挡下了。
+ * 拉不到不是错误——很多兼容网关干脆没实现 /models，这时界面退回手输模型名。
+ * @returns {Promise<{models: string[], note: string}>}
+ */
+export async function listModels() {
+  const gaps = configGaps().filter((g) => g !== "模型名");   // 模型名正是我们要去问的东西
+  if (gaps.length) throw new Error("还没配置 AI：" + gaps.join("、") + " 未填");
+  const c = loadConfig();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  let resp;
+  try {
+    resp = await fetch("/api/ai/models", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ baseUrl: c.baseUrl, key: c.key }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") throw new Error("拉模型列表超时（20 秒）");
+    throw new Error("连不上本地服务的 AI 代理：" + redact(e.message || e));
+  } finally {
+    clearTimeout(timer);
+  }
+  let data = null;
+  try { data = await resp.json(); } catch { data = null; }
+  if (!resp.ok || !data || data.ok === false) {
+    throw new Error(redact((data && (data.error || data.detail)) || ("HTTP " + resp.status)));
+  }
+  const list = Array.isArray(data.models) ? data.models.filter((m) => typeof m === "string" && m) : [];
+  return { models: [...new Set(list)].sort(), note: redact(data.note || "") };
+}
 
 const STYLE = `
-.ai-mask{position:fixed;inset:0;background:rgba(8,10,14,.62);display:flex;align-items:center;justify-content:center;z-index:9000}
+/* 设置面板必须压过 AI Agent 小窗（#aiAgent 是 9100）：它是从那个小窗里点开的，
+   压在下面就成了"点了接口设置没反应"。 */
+.ai-mask{position:fixed;inset:0;background:rgba(8,10,14,.62);display:flex;align-items:center;justify-content:center;z-index:9500}
 .ai-box{width:min(520px,92vw);max-height:88vh;overflow:auto;background:#151a22;border:1px solid #2a3444;border-radius:12px;padding:18px 20px;color:#dfe6f0;box-shadow:0 18px 60px rgba(0,0,0,.5);font-size:13px}
 .ai-box h3{margin:0 0 4px;font-size:15px}
 .ai-box .ai-sub{margin:0 0 14px;color:#8b98ab;font-size:12px;line-height:1.6}
@@ -295,7 +364,15 @@ function el(tag, cls, text) {
   return n;
 }
 
-/** 打开设置面板（编辑器与 VOXA 共用同一个）。onDone 在保存后回调。 */
+/**
+ * 打开设置面板（编辑器与 VOXA 共用同一个）。
+ *
+ * **边填边存**：每个输入变化都去抖写入 localStorage，面板上没有"保存"这个动作。
+ * 原因是密钥这件事用户一定会分几次改（贴地址、试模型名、换一个 key），
+ * 而"改了没点保存就去点测试"会拿旧值发请求——报出来的错还是 upstream 的错，
+ * 看着像地址填错了，其实是自己没点按钮。自动保存把这类假故障直接消掉。
+ * onDone 在关闭时回调（值已经存好了）。
+ */
 export function openSettings(onDone) {
   ensureStyle();
   document.getElementById("aiSettings")?.remove();
@@ -304,13 +381,15 @@ export function openSettings(onDone) {
   mask.id = "aiSettings";
   const box = el("div", "ai-box");
   box.appendChild(el("h3", null, "AI 接口设置"));
-  box.appendChild(el("p", "ai-sub", "填任意 OpenAI 兼容服务：OpenAI 官方、One-API / 各类中转站、LM Studio、Ollama 的 openai 兼容端点都可以。"));
+  box.appendChild(el("p", "ai-sub", "填任意 OpenAI 兼容服务：OpenAI 官方、One-API / 各类中转站、LM Studio、Ollama 的 openai 兼容端点都可以。改动即时保存，不需要点保存按钮。"));
 
   const mk = (label, key, type, ph) => {
     const row = el("div", "ai-row");
     row.appendChild(el("label", null, label));
     const i = el("input");
     i.type = type || "text"; i.value = c[key] ?? ""; i.placeholder = ph || "";
+    // data-k 既是给自动保存认字段的钩子，也是自动化测试定位这四个输入框的锚点。
+    // 用类名或 nth-child 定位的话，改一下布局就会让测试红得不明所以。
     i.dataset.k = key;
     row.appendChild(i); box.appendChild(row);
     return i;
@@ -319,11 +398,15 @@ export function openSettings(onDone) {
   const key = mk("密钥 API Key", "key", "password", "sk-…");
   const grid = el("div", "ai-grid2");
   const wrap = (label, node) => { const r = el("div", "ai-row"); r.appendChild(el("label", null, label)); r.appendChild(node); return r; };
-  const model = el("input"); model.value = c.model || ""; model.placeholder = "gpt-4o-mini";
+  const model = el("input");
+  model.value = c.model || ""; model.placeholder = "gpt-4o-mini"; model.setAttribute("list", "aiModelList");
+  model.dataset.k = "model";
   const temp = el("input"); temp.type = "number"; temp.min = "0"; temp.max = "2"; temp.step = "0.1"; temp.value = c.temperature;
+  temp.dataset.k = "temperature";
   grid.appendChild(wrap("模型名", model));
   grid.appendChild(wrap("温度", temp));
   box.appendChild(grid);
+  const dl = el("datalist"); dl.id = "aiModelList"; box.appendChild(dl);
 
   const stat = el("div", "ai-stat");
   const note = el("div", "ai-note ai-warn",
@@ -332,11 +415,33 @@ export function openSettings(onDone) {
   box.appendChild(note);
 
   const acts = el("div", "ai-acts");
-  const testBtn = el("button", null, "测试连接");
-  const closeBtn = el("button", null, "取消");
-  const saveBtn = el("button", "primary", "保存");
+  const listBtn = el("button", null, "拉取模型列表"); listBtn.dataset.k = "models";
+  const wipeBtn = el("button", null, "清除密钥"); wipeBtn.dataset.k = "wipe";
+  const testBtn = el("button", null, "测试连接"); testBtn.dataset.k = "test";
+  const closeBtn = el("button", "primary", "关闭"); closeBtn.dataset.k = "close";
+  listBtn.onclick = async () => {
+    stat.className = "ai-stat"; stat.textContent = "正在拉取…"; listBtn.disabled = true;
+    try {
+      const r = await listModels();
+      dl.replaceChildren();
+      for (const m of r.models) { const o = document.createElement("option"); o.value = m; dl.appendChild(o); }
+      if (!r.models.length) {
+        stat.className = "ai-stat bad";
+        stat.textContent = r.note || "这个服务没实现 /models，模型名手输即可";
+      } else {
+        stat.className = "ai-stat ok";
+        stat.textContent = `拿到 ${r.models.length} 个模型，可直接从模型名下拉里选`;
+        if (!model.value.trim()) { model.value = r.models[0]; saveFrom(); }
+      }
+    } catch (e) {
+      stat.className = "ai-stat bad"; stat.textContent = redact(e.message || e).slice(0, 160);
+    } finally { listBtn.disabled = false; }
+  };
+  wipeBtn.onclick = () => {
+    key.value = ""; clearKey();
+    stat.className = "ai-stat"; stat.textContent = "密钥已清除（其余设置保留）";
+  };
   testBtn.onclick = async () => {
-    saveFrom();
     stat.className = "ai-stat"; stat.textContent = "正在请求…";
     testBtn.disabled = true;
     try {
@@ -348,14 +453,14 @@ export function openSettings(onDone) {
       stat.textContent = redact(e.message || e).slice(0, 160);
     } finally { testBtn.disabled = false; }
   };
-  closeBtn.onclick = () => mask.remove();
-  saveBtn.onclick = () => { saveFrom(); mask.remove(); onDone && onDone(loadConfig()); };
-  mask.onclick = (ev) => { if (ev.target === mask) mask.remove(); };
-  acts.append(stat, testBtn, closeBtn, saveBtn);
+  closeBtn.onclick = () => hide();
+  mask.onclick = (ev) => { if (ev.target === mask) hide(); };
+  acts.append(stat, listBtn, wipeBtn, testBtn, closeBtn);
   box.appendChild(acts);
   mask.appendChild(box);
   document.body.appendChild(mask);
 
+  let t = null;
   function saveFrom() {
     return saveConfig({
       baseUrl: url.value.trim().replace(/\/+$/, "") || DEFAULTS.baseUrl,
@@ -364,4 +469,29 @@ export function openSettings(onDone) {
       temperature: Math.max(0, Math.min(2, Number(temp.value) || 0)),
     });
   }
+  /** 只写 localStorage，不碰界面文案：测试连接的结果占的是同一行 stat，别互相踩。 */
+  function autosave() {
+    saveFrom();
+    document.getElementById("aiSavedAt")?.remove();
+    const tag = el("span", null, "已自动保存 " + new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+    tag.id = "aiSavedAt"; tag.style.cssText = "color:#6fd08c;font-size:11px;margin-left:6px";
+    box.querySelector("h3").appendChild(tag);
+  }
+  for (const i of [url, key, model, temp]) {
+    i.addEventListener("input", () => {
+      clearTimeout(t);
+      // 150ms：比人手快，比"每次按键都写一遍 JSON"省。密钥框尤其不该每敲一个字符
+      // 就整份序列化一次。
+      t = setTimeout(autosave, 150);
+    });
+  }
+  function hide() {
+    clearTimeout(t);
+    autosave();
+    mask.remove();
+    onDone && onDone(loadConfig());
+  }
+  // 面板一打开就把当前值对齐写一遍：DEFAULTS 里补出来的字段（比如从没碰过 temperature）
+  // 应该在第一次打开设置后就存在于 localStorage，否则各调用点拿到的形状不一致。
+  saveFrom();
 }

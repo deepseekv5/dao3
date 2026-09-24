@@ -207,5 +207,121 @@ console.log("== 交给 AI 的开发规范（单一来源，不许腐烂） ==");
     `${big.models[0].parts.length} / 声明 ${VOXEL_LIMITS.parts}`);
 }
 
+console.log("== Agent 动作协议：它想干什么，都得先过这一关 ==");
+{
+  const A = await import("../public/js/ai-agent.js");
+  const { parseAction, sanitizeAction, normalizeAction, clip, TOOL_NAMES, toolBrief } = A;
+
+  ok("围栏里的动作能取出来", parseAction('```json\n{"action":"project.info"}\n```').action === "project.info");
+  ok("动作前后有废话也能取出来", parseAction('好的，我先看看：{"action":"script.list"} 可以吗').action === "script.list");
+  let noAct = false; try { parseAction('{"thought":"想一下"}'); } catch { noAct = true; }
+  ok("没有 action 字段时明确报错而不是当成无动作", noAct);
+
+  // 摊平写法（模型命中率更高）不能把 action / thought 当成参数带下去
+  const flat = parseAction('{"action":"script.get","thought":"先看看","entry":"index.js"}');
+  ok("摊平写法里的 entry 被当成参数", flat.args.entry === "index.js");
+  ok("摊平写法不污染参数表", !("action" in flat.args) && !("thought" in flat.args), JSON.stringify(flat.args));
+
+  // 动作名对齐官方 apc / engine-openapi-mcp 的 <组>.<动词> 形状，
+  // 并且旧的驼峰写法必须还能归一化——模型两种都会输出。
+  ok("动作名都是官方 apc 那种 组.动词 形状",
+    TOOL_NAMES.every((n) => /^[a-z]+\.[a-zA-Z]+$/.test(n) || n === "finish"), TOOL_NAMES.join(" "));
+  ok("覆盖了官方契约里的脚本与存储动作",
+    ["script.upload", "script.get", "script.list", "storage.set", "storage.get", "storage.list", "storage.remove"]
+      .every((n) => TOOL_NAMES.includes(n)));
+  ok("旧驼峰名与 model 爱写的写法都能归一化",
+    normalizeAction("inspectWorld") === "project.info"
+    && normalizeAction("writeScript") === "script.upload"
+    && normalizeAction("script.saveOrUpdate") === "script.upload"
+    && normalizeAction("playtest") === "runtime.start"
+    && normalizeAction("storage.page") === "storage.list"
+    && normalizeAction("Script.Upload") === "script.upload"
+    && normalizeAction("deleteEverything") === null, );
+  ok("别名动作最终以正式名执行，参数照旧", (() => {
+    const r = sanitizeAction({ action: "writeScript", args: { name: "index.js", code: "world.say(1);" } });
+    return r.ok && r.action === "script.upload" && r.args.entry === "index.js";
+  })());
+
+  ok("未知动作被拒，并把可用动作告诉模型", (() => {
+    const r = sanitizeAction({ action: "deleteWorld", args: {} });
+    return !r.ok && TOOL_NAMES.every((n) => r.error.includes(n));
+  })());
+  ok("脚本文件名挡掉路径穿越", !sanitizeAction({ action: "script.upload", args: { entry: "../../server.js", code: "a" } }).ok);
+  ok("反斜杠路径也被挡掉", !sanitizeAction({ action: "script.upload", args: { entry: "..\\x.js", code: "a" } }).ok);
+  ok("非 .js 文件名被拒", !sanitizeAction({ action: "script.upload", args: { entry: "index.txt", code: "a" } }).ok);
+  ok("空代码不落地", !sanitizeAction({ action: "script.upload", args: { entry: "index.js", code: "   " } }).ok);
+  ok("语法不过的代码不落地", !sanitizeAction({ action: "script.upload", args: { entry: "index.js", code: "const a = {" } }).ok);
+  ok("语法通过的代码原样放行", (() => {
+    const r = sanitizeAction({ action: "script.upload", args: { entry: "index.js", code: "world.onTick(() => {});" } });
+    return r.ok && r.args.code.startsWith("world.onTick");
+  })());
+  ok("顶层 await 不算语法错误（官方服务端脚本支持它）",
+    sanitizeAction({ action: "script.upload", args: { entry: "index.js", code: "const r = await http.fetch('https://x'); world.say(r);" } }).ok);
+  ok("超长代码被拒而不是截断", !sanitizeAction({
+    action: "script.upload", args: { entry: "index.js", code: "// " + "x".repeat(30000) },
+  }).ok);
+
+  // 端必须显式，而且和文件名不能互相打脸：本实现按文件名判端，
+  // 声明 server 却给个 clientX.js 会静默当客户端脚本跑。
+  ok("side=client 会自动把文件名改成带 Client 的写法", (() => {
+    const r = sanitizeAction({ action: "script.upload", args: { entry: "hud.js", side: "client", code: "ui.text('a');" } });
+    return r.ok && r.args.side === "client" && /client/i.test(r.args.entry);
+  })());
+  ok("side 与文件名冲突时直接拒，不和稀泥", !sanitizeAction({
+    action: "script.upload", args: { entry: "clientHud.js", side: "server", code: "world.say(1);" },
+  }).ok);
+  ok("非法 side 值被拒并说明只能填什么", (() => {
+    const r = sanitizeAction({ action: "script.upload", args: { entry: "index.js", side: "both", code: "a=1" } });
+    return !r.ok && /server 或 client/.test(r.error);
+  })());
+
+  ok("runtime.start 的 tick 数被夹进安全区间",
+    sanitizeAction({ action: "runtime.start", args: { ticks: 1e9 } }).args.ticks === 200
+    && sanitizeAction({ action: "runtime.start", args: { ticks: -5 } }).args.ticks === 1
+    && sanitizeAction({ action: "runtime.start", args: {} }).args.ticks === 60);
+  ok("model.build 没有 at 就要求补，而不是默认盖在原点",
+    !sanitizeAction({ action: "model.build", args: { program: { parts: [] } } }).ok);
+  ok("entity.add 不给实体名就拒（脚本取不到它，等于白放）",
+    !sanitizeAction({ action: "entity.add", args: { at: [1, 1, 1] } }).ok);
+  ok("project.create 的非法地貌被拒，而不是悄悄变成平地", (() => {
+    const r = sanitizeAction({ action: "project.create", args: { size: [64, 32, 64], terrain: "mountainz" } });
+    return !r.ok && /plains/.test(r.error);
+  })());
+  ok("project.create 的尺寸越界被拒", !sanitizeAction({ action: "project.create", args: { size: [9999, 32, 64] } }).ok);
+  ok("storage.set 缺 value 时拒（而不是写成 undefined）",
+    !sanitizeAction({ action: "storage.set", args: { name: "s", key: "k" } }).ok
+    && sanitizeAction({ action: "storage.set", args: { name: "s", key: "k", value: null } }).ok);
+  ok("finish 没有小结也不会变成空字符串",
+    /没有写小结/.test(sanitizeAction({ action: "finish", args: {} }).args.summary));
+
+  ok("动作说明书覆盖每个动作且和名单同步", TOOL_NAMES.every((n) => toolBrief().includes(n))
+    && (toolBrief().match(/^- /gm) || []).length === TOOL_NAMES.length);
+  ok("观察文本超长时头尾都保留、中间截断", (() => {
+    const s = "HEAD" + "x".repeat(4000) + "TAIL";
+    const c = clip(s, 400);
+    return c.startsWith("HEAD") && c.endsWith("TAIL") && c.length < s.length
+      && c.length <= 400 && /省略/.test(c);
+  })());
+  ok("观察文本不长时逐字不变", clip("短句", 400) === "短句");
+}
+
+console.log("== 设置自动保存：改了就该在 localStorage 里 ==");
+{
+  const fs2 = await import("node:fs");
+  const src = fs2.readFileSync(new URL("../public/js/ai.js", import.meta.url), "utf8");
+  // openSettings 是要浏览器的，这里断言的是"自动保存这件事写进了实现"，
+  // 真正点了输入框能不能存住由 test/e2e.mjs 在浏览器里验。
+  ok("面板挂了 input 监听做自动保存", /addEventListener\("input"/.test(src) && /function autosave/.test(src));
+  ok("界面上没有「保存」按钮了（有就说明自动保存是假的）", !/el\("button", ?"primary", ?"保存"\)/.test(src));
+  ok("关闭前兜底再存一次", /function hide\(\) \{[\s\S]*?autosave\(\);/.test(src));
+  ok("有清除密钥入口", /清除密钥/.test(src) && /clearKey\(\)/.test(src));
+  ok("模型列表走本地代理而不是浏览器直连", /fetch\("\/api\/ai\/models"/.test(src));
+  const srv = fs2.readFileSync(new URL("../server.js", import.meta.url), "utf8");
+  ok("服务端也开了 /api/ai/models 且只认回环",
+    /parts\[2\] === "models"/.test(srv) && /AI 代理只对本机开放/.test(srv));
+  ok("模型列表的报错也先擦密钥", /scrub\("上游 " \+ r\.status \+ "：" \+ detail, key\)/.test(srv));
+  ok("没有 /models 端点时不算用户配置错", /没有 \/models 端点/.test(srv));
+}
+
 console.log(fails ? `\n${fails} 项未通过` : "\n全部通过");
 process.exitCode = fails ? 1 : 0;

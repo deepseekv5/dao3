@@ -47,24 +47,60 @@ function ensureAtlas() {
 }
 
 async function freePort(preferred) {
+  // 探测打在 127.0.0.1，而不是服务真正要绑的 0.0.0.0。理由不是风格：
+  // 本机另一个 dev server（vite 之类）通常只占 127.0.0.1:5173，而在这种机器上
+  // 绑 0.0.0.0:5173 **是会成功的**——于是启动器报"已启动，打开 http://127.0.0.1:5173/"，
+  // 用户点开的却是那个不相干的项目。要问的是"用户会打开的那个地址空不空"。
+  // 真正绑上之后还有一道 whoami 复核，见 verifyOurs。
   const tryPort = (p) => new Promise((resolve) => {
     const srv = net.createServer();
     srv.once("error", () => resolve(false));
     srv.once("listening", () => srv.close(() => resolve(true)));
-    srv.listen(p, HOST === "0.0.0.0" ? "127.0.0.1" : HOST);
+    srv.listen(p, "127.0.0.1");
   });
-  for (const p of [preferred, 5173, 5174, 8080, 3000, 0]) {
-    if (p === 0) return new Promise((resolve) => {
-      const s = net.createServer();
-      s.listen(0, "127.0.0.1", () => { const port = s.address().port; s.close(() => resolve(port)); });
-    });
-    if (await tryPort(p)) return p;
-    if (p === preferred && (await reclaimOurs(p)) && await tryPort(p)) {
-      console.log(`▸ 已停掉上一个 DAO3 实例，重新使用端口 ${p}`);
-      return p;
+  for (const p of [...new Set([preferred, 5173, 5174, 8080, 3000])]) {
+    // 先看是不是我们自己的旧实例：是就拿回来。这一步必须在 tryPort 之前——
+    // 旧逻辑只对 preferred 做回收，于是 5174 上留着一个没退干净的 DAO3 时，
+    // 它会跳过回收往下找，最后把 5173 这个其实被占的号返回出去，
+    // server.js 起手就是一个未处理的 EADDRINUSE 崩在用户脸上。
+    const who = await whoami(p);
+    if (who && who.app === "dao3-editor-clone") {
+      if (await reclaimOurs(p)) {
+        console.log(`▸ 已停掉上一个 DAO3 实例${p === preferred ? "，" : `（端口 ${p} 上的），`}重新使用端口 ${p}`);
+        return p;
+      }
+      continue;
     }
+    if (await tryPort(p)) return p;
+    // 不认识的一律不动：端口上可能是用户另一个项目的 dev server，静默 kill 不可接受。
+    console.log(`▸ 端口 ${p} 被占用（不是 DAO3，不会去杀它），改用其他端口`);
+    console.log(`  想查是谁：lsof -nP -iTCP:${p} -sTCP:LISTEN   （Windows：netstat -ano | findstr :${p}）`);
   }
-  return 5173;
+  const p = await ephemeralPort();
+  if (p) return p;
+  console.error("✗ 找不到可用端口（5173/5174/8080/3000 都被占用，且随机端口也拿不到）");
+  process.exit(1);
+}
+
+/**
+ * 起来之后复核一次：127.0.0.1:PORT 上答话的必须是我们自己。
+ * 少了这一步，"端口被别人以更具体的地址占着"这种情况会打印出一个
+ * 点开是别的项目的 URL——比直接报错难查得多，因为看起来一切正常。
+ */
+async function verifyOurs(port) {
+  const who = await whoami(port);
+  if (!who || who.app === "dao3-editor-clone") return true;
+  console.error(`✗ 127.0.0.1:${port} 上答话的不是本服务，而是另一个程序（本服务绑在 ${HOST}:${port}）。`);
+  console.error(`  换个端口就能回到本机地址：node start.mjs --port=5200`);
+  return false;
+}
+
+function ephemeralPort() {
+  return new Promise((resolve) => {
+    const s = net.createServer();
+    s.once("error", () => resolve(0));
+    s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); });
+  });
 }
 
 /** 端口上跑的是不是「我们自己的」DAO3 服务？是就把它停掉，把端口要回来。 */
@@ -162,6 +198,10 @@ await new Promise((resolve) => {
   };
   setTimeout(probe, 300);
 });
+if (!(await verifyOurs(PORT))) {
+  server.kill("SIGTERM");
+  process.exit(1);
+}
 
 console.log("");
 console.log(`  工作台   ${url}`);
