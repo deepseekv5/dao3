@@ -247,6 +247,7 @@ async function boot_() {
      结果就是玩家被埋进一片青色围栏里。 */
   {
     const ents = state.entities.filter((d) => d && (d.mesh || d.meshName));
+    const placedSrc = new Set();
     let placed = 0;
     for (const d of ents) {
       const base = String(d.mesh || d.meshName).replace(/.*[\\/]/, "").replace(/\.(vb|vox|glb|gltf|fbx|obj)$/i, "");
@@ -270,7 +271,13 @@ async function boot_() {
         fixed: !!d.fixed, gravity: !!d.gravity, anchorOffset: d.anchorOffset || null,
       });
       placed++;
+      placedSrc.add(d);
     }
+    // 已经摆成场景模型的实体必须从 state.entities 里摘掉，和编辑器 main.js 的
+    // applySceneModels 同一件事。体验版原来漏了这一步：同一个检查点被注册两遍
+    // （一遍外部模型、一遍自建对象），官方脚本 destroy() 掉的是后者，
+    // 于是赛道上那 5 块红白检查点板子怎么都藏不掉。
+    state.entities = state.entities.filter((d) => !placedSrc.has(d));
     if (ents.length && !placed) {
       fail([{ b: "赛道模型一个都没摆进场景。", text: "" }, `带网格的实体 ${ents.length} 个，全部没取到对应资产。`]);
       return;
@@ -375,7 +382,9 @@ async function boot_() {
     isTouch,
     timing,
     voxels: () => world.size(),
-    registryEntities: () => state.entities.length,
+    // 官方实体表的条数：读 meta.entities 而不是 state.entities——后者是摆完场景模型后
+    // 的工作副本（带网格的实体会被摘出去，见上面的去重注释），拿它当"表在不在"会误报 0。
+    registryEntities: () => (state.meta && state.meta.entities ? state.meta.entities.length : state.entities.length),
     liveEntities: () => game.entities.length,
     tick: () => game.currentTick,
     running: () => !!(game && game.running),

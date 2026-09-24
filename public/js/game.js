@@ -493,7 +493,19 @@ export class GameRuntime {
     ent._dispose = () => {
       if (ent._points) { r.scene.remove(ent._points); ent._points.geometry.dispose(); ent._points = null; }
       rt.tags && rt.tags.remove(ent);
-      if (ent._obj && ent._obj.parent && !ent._external) ent._obj.parent.remove(ent._obj);
+      if (!ent._obj) return;
+      if (ent._external) {
+        // 外部对象（编辑器摆好的场景模型）不能从场景里摘走——它属于地图，
+        // 摘了就回不来。但 destroy() 必须**看起来**生效：官方赛车模板的
+        // `entity.destroy(); // 摧毁检查点, 因为我们只需要index和bounds`
+        // 就是靠这句把 5 块红白检查点板子从赛道上清掉，原来只隐藏了逻辑实体、
+        // 网格照旧杵在画面里。改成游玩期间隐藏，退出时由 stopPlay 还原。
+        ent._obj.visible = false;
+        rt._hidExternals = rt._hidExternals || [];
+        if (!rt._hidExternals.includes(ent._obj)) rt._hidExternals.push(ent._obj);
+        return;
+      }
+      if (ent._obj.parent) ent._obj.parent.remove(ent._obj);
     };
     ent.hurt = (amount, options) => {
       if (!ent.enableDamage) return;   // 官方：未开伤害的实体不受伤害

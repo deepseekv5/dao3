@@ -137,6 +137,11 @@ function stopPlay() {
   // *(1 - night*0.85)），夜里跑一次再退出就把编辑器的日照强度永久写暗；
   // 而 renderer.getDayNight 全项目根本没有定义，第二行是条永远走 fallback 的死分支。
   applyTerrain();
+  // 运行模式会改场景对象的 visible：脚本 destroy() 掉检查点时是"游玩期间隐藏"
+  // （外部模型不能真摘走，见 game.js _dispose），meshInvisible 也走同一条路。
+  // 退出必须把编辑器自己的可见性重新贴回去，否则作者回到编辑器会发现
+  // 5 个检查点凭空消失了。
+  for (const m of state.models || []) if (m.object) m.object.visible = !m.hidden;
   document.getElementById("gameHint")?.classList.remove("show");
   document.activeElement && document.activeElement.blur && document.activeElement.blur();
 }

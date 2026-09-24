@@ -411,6 +411,35 @@ ok("API 参考是生成物且带官方中文说明",
   ref.includes("npm run build:api-ref") && ref.includes("当前运行世界的公共 URL"),
   (ref.length / 1024).toFixed(0) + "KB");
 
+console.log("== 检查点辅助网格：跑图时隐藏，退出后必须回到编辑器 ==");
+// 这段必须跑在默认赛车图上（方格网格是那 5 个检查点的模型），
+// 而它后面的地形用例会整张换掉世界，所以先确保自己站在编辑器默认世界上。
+await page.goto(EDITOR_URL, { waitUntil: "domcontentloaded" });
+await page.waitForFunction(() => !!window.__editor && window.__editor.atlas.ready, { timeout: 60000 });
+await page.waitForTimeout(3000);
+const cpState = await page.evaluate(() => {
+  const mods = (window.__editor.state.models || []).filter((m) => /方格/.test(String(m.meshName || "")));
+  return { n: mods.length, visible: mods.filter((m) => m.object && m.object.visible).length };
+});
+ok("编辑器里 5 块检查点网格可见", cpState.n === 5 && cpState.visible === 5, JSON.stringify(cpState));
+await page.evaluate(() => window.__play && window.__play());
+await page.waitForFunction(() => window.__game && window.__game.running, { timeout: 30000 });
+await page.waitForTimeout(3500);
+const cpPlay = await page.evaluate(() => {
+  const mods = (window.__editor.state.models || []).filter((m) => /方格/.test(String(m.meshName || "")));
+  return { n: mods.length, visible: mods.filter((m) => m.object && m.object.visible).length,
+    ents: window.__game.entities.filter((e) => /检查点/.test(String(e.id))).length };
+});
+ok("运行模式里检查点网格已隐藏", cpPlay.visible === 0, JSON.stringify(cpPlay));
+ok("脚本确实 destroy 掉了检查点实体", cpPlay.ents === 0, "剩余 " + cpPlay.ents + " 个");
+await page.evaluate(() => window.__stopPlay && window.__stopPlay());
+await page.waitForTimeout(1500);
+const cpBack = await page.evaluate(() => {
+  const mods = (window.__editor.state.models || []).filter((m) => /方格/.test(String(m.meshName || "")));
+  return { n: mods.length, visible: mods.filter((m) => m.object && m.object.visible).length };
+});
+ok("退出游玩后检查点回到编辑器", cpBack.n === 5 && cpBack.visible === 5, JSON.stringify(cpBack));
+
 console.log("== 程序化地形：走真实 UI 生成一张群岛 ==");
 // 前面有用例切到别的页面，这里必须显式回到编辑器并等全局就绪，
 // 否则 window.__editor 是 undefined，断言会以一种和地形毫无关系的方式红掉。
@@ -485,6 +514,7 @@ await page.evaluate(() => window.__stopPlay && window.__stopPlay());
 await page.waitForTimeout(1200);
 const sunAfter = await page.evaluate(() => window.__editor.state.terrain.sunIntensity);
 ok("夜里退出游玩不把编辑器的日照强度写暗", sunAfter > 2.0, String(sunAfter));
+
 
 await browser.close();
 console.log("== 测试完成（截图在 test/out/*.png） ==");

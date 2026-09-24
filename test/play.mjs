@@ -138,6 +138,14 @@ const scriptProof = await page.evaluate(() => {
 });
 ok("官方脚本已执行（world.addCollisionFilter 生效）", scriptProof.filters >= 1, JSON.stringify(scriptProof.filters));
 ok("脚本把 5 个检查点实体改成了运行时状态（实体数变化）", scriptProof.registry >= 0, "registry=" + scriptProof.registry);
+// 官方 index.js 里 `entity.destroy(); // 摧毁检查点, 因为我们只需要index和bounds`
+// 说明那 5 块 40³ 的方格网格只是给编辑器看位置用的辅助图形，跑图时不该挡在赛道上。
+// destroy() 过去只摘逻辑实体、外部场景模型被 _external 守卫留着，于是红板子照旧杵着。
+const cpMeshes = await page.evaluate(() => {
+  const mods = ((window.__game && window.__game.e.state.models) || []).filter((m) => /方格/.test(String(m.meshName || "")));
+  return { n: mods.length, visible: mods.filter((m) => m.object && m.object.visible).length };
+});
+ok("检查点辅助网格在跑图时不出现", cpMeshes.n === 5 && cpMeshes.visible === 0, JSON.stringify(cpMeshes));
 // 官方 index.js 是 8367 字符的真脚本：它必须"运行成功"而不是抛错后被吞掉
 const scriptRun = await page.evaluate(() => window.__play.consoleText());
 ok("两个官方脚本都跑到「运行成功」", /index\.js 运行成功/.test(scriptRun) && /clientIndex\.js 运行成功/.test(scriptRun),
