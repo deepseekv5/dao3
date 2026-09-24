@@ -3,7 +3,7 @@
 ; 输入是 build-portable.mjs 产出的便携包目录，不在本机伪造。
 
 #define MyAppName "DAO3 编辑器复刻"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.0.1"
 #define MyAppPublisher "deepseekv5"
 #define MyAppURL "https://deepseekv5.github.io/dao3/"
 ; Source: 条目是相对**脚本所在目录**（installer\）解析的，不是仓库根。
