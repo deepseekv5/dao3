@@ -82,6 +82,10 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
 
   // ---------- 左上：分类图标栏 + 方块网格 ----------
   const catRail = $("catRail"), lib = $("blockLib"), search = $("blockSearch");
+  // buildUI 是按值收下 world 的，而 replaceWorld / 导入项目包会换掉 main.js 里那个
+  // 变量——闭包里这份就永远停在上一张图。表现不是报错，是"镜像/旋转/导出 .vox
+  // 操作的是你已经看不见的那张世界"，属于会悄悄毁数据的那一类。
+  const liveWorld = () => (window.__editor && window.__editor.world) || world;
   let activeCat = "nature";
   function renderRail() {
     catRail.innerHTML = "";
@@ -132,9 +136,9 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   gt.innerHTML = '<div class="panel-title">全局变换</div>';
   const wrap = document.createElement("div"); wrap.className = "global-toolbar"; gt.appendChild(wrap);
   const gbtn = (label, title, fn) => { const b = document.createElement("button"); b.textContent = label; b.title = title; b.onclick = () => { fn(); toast(title); }; wrap.appendChild(b); };
-  for (const ax of ["x", "y", "z"]) gbtn("镜" + ax.toUpperCase(), `沿 ${ax.toUpperCase()} 轴镜像`, () => commitOp(mirror(world, ax, state.selection)));
-  for (const ax of ["x", "y", "z"]) gbtn("转" + ax.toUpperCase(), `绕 ${ax.toUpperCase()} 轴旋转90°`, () => commitOp(rotate90(world, ax, 1, state.selection)));
-  for (const ax of ["x", "y", "z"]) gbtn("翻" + ax.toUpperCase(), `沿 ${ax.toUpperCase()} 轴翻转`, () => commitOp(flip(world, ax, state.selection)));
+  for (const ax of ["x", "y", "z"]) gbtn("镜" + ax.toUpperCase(), `沿 ${ax.toUpperCase()} 轴镜像`, () => commitOp(mirror(liveWorld(), ax, state.selection)));
+  for (const ax of ["x", "y", "z"]) gbtn("转" + ax.toUpperCase(), `绕 ${ax.toUpperCase()} 轴旋转90°`, () => commitOp(rotate90(liveWorld(), ax, 1, state.selection)));
+  for (const ax of ["x", "y", "z"]) gbtn("翻" + ax.toUpperCase(), `沿 ${ax.toUpperCase()} 轴翻转`, () => commitOp(flip(liveWorld(), ax, state.selection)));
   function commitOp(changes) { if (changes && changes.length) history.commit(changes, "op"); }
 
   // ---------- 中央浮动工具条 ----------
@@ -197,7 +201,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     tree.innerHTML = "";
     renderEntityTree();
     const present = new Map();
-    for (const [, c] of world.map) present.set(c.id, (present.get(c.id) || 0) + 1);
+    for (const [, c] of liveWorld().map) present.set(c.id, (present.get(c.id) || 0) + 1);
     if (!present.size) {
       const empty = document.createElement("div");
       empty.className = "muted";
@@ -491,7 +495,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
       // 官方 confirmResetSpawnPoint：已有出生点时先确认覆盖
       if (state.meta.spawnPoint) { if (confirm("已存在出生点，确认覆盖？")) setIt(); } else setIt();
     }));
-    spawnBtns.appendChild(wbtn("使用世界中心最高点", "center", () => { const w = world; const sx = Math.floor(w.shape[0]/2), sz = Math.floor(w.shape[2]/2); for (let y=w.shape[1]-1;y>=0;y--) if (w.get(sx,y,sz)) { state.meta.spawnPoint = [sx,y+1,sz]; break; } updateSpawnText(); markDirty(); toast("出生点已设为中心最高点"); }));
+    spawnBtns.appendChild(wbtn("使用世界中心最高点", "center", () => { const w = liveWorld(); const sx = Math.floor(w.shape[0]/2), sz = Math.floor(w.shape[2]/2); for (let y=w.shape[1]-1;y>=0;y--) if (w.get(sx,y,sz)) { state.meta.spawnPoint = [sx,y+1,sz]; break; } updateSpawnText(); markDirty(); toast("出生点已设为中心最高点"); }));
     spawnBtns.appendChild(wbtn("清除出生点", "clear", () => { if (!state.meta.spawnPoint) { toast("尚未设置出生点"); return; } state.meta.spawnPoint = null; updateSpawnText(); markDirty(); toast("出生点已清除"); }));
     worldTab.appendChild(spawnBtns);
 
@@ -730,11 +734,11 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   [["返回主界面", () => $("btnHome").click()],
    ["新建世界", () => window.__openSizeModal && window.__openSizeModal()], ["保存 (Ctrl+S)", save],
    ["导入项目包 (.zip)", () => pickFile(".zip", async (f) => { await importProject(f); })],
-   ["导出项目包 (.zip) 全部内容", () => io.exportProjectZip({ world, state }).then((r) => toast(`已导出 ${r.entries} 个文件 · ${(r.bytes / 1048576).toFixed(1)} MB`))],
+   ["导出项目包 (.zip) 全部内容", () => io.exportProjectZip({ world: liveWorld(), state }).then((r) => toast(`已导出 ${r.entries} 个文件 · ${(r.bytes / 1048576).toFixed(1)} MB`))],
    ["生成地形…（只换方块）", () => window.__openTerrainModal && window.__openTerrainModal()],
    ["导入 .gz 地图", () => pickFile(".gz,.json", async (f) => replace(await io.importGz(f, atlas)))],
-   ["导入 .vox", () => pickFile(".vox", async (f) => replace(await io.importVox(f, atlas)))], ["导出 .gz", () => io.exportGz(world, { ...state.meta, terrain: state.terrain })],
-   ["导出 .vox", () => io.exportVox(world, atlas)], ["导出 .glb", () => io.exportGlb(renderer, state.meta)],
+   ["导入 .vox", () => pickFile(".vox", async (f) => replace(await io.importVox(f, atlas)))], ["导出 .gz", () => io.exportGz(liveWorld(), { ...state.meta, terrain: state.terrain })],
+   ["导出 .vox", () => io.exportVox(liveWorld(), atlas)], ["导出 .glb", () => io.exportGlb(renderer, state.meta)],
    ["游玩手册（键位与玩法）", () => window.open("/manual", "_blank", "noopener")],
    ["免责声明", () => (window.__showDisclaimer ? window.__showDisclaimer() : null)]].forEach(([label, fn]) => {
     const b = document.createElement("button"); b.className = "witem"; b.style.textAlign = "left"; b.innerHTML = `<b>${label}</b>`; b.onclick = () => { fileMenu.classList.remove("show"); fn(); };

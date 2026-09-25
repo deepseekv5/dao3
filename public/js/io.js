@@ -255,6 +255,109 @@ export function fromOfficialPlayer(o = {}) {
   return p;
 }
 
+  // 一张"实体表"有三种历史形状，都得吃下：
+  //   · 数组                          —— 我们的 entities/models.json
+  //   · {id: 记录}                    —— 官方 dao3 的 json/entities.json（id 只在键上，记录体里没有）
+  //   · {id: {type:1|2, value:{…}}}   —— 官方 entitiesTree（type 2 是分组，不是实体）
+  // 之前只认第一种和最后一种，于是官方包导进来是 0 个实体、画面里一个标记都没有。
+export const normalizeEntities = (j) => {
+    if (Array.isArray(j)) return j;
+    if (!j || typeof j !== "object") return [];
+    if (Array.isArray(j.entities)) return j.entities;
+    const out = [];
+    for (const [k, v] of Object.entries(j)) {
+      if (!v || typeof v !== "object" || v.type === 2) continue;
+      const rec = v.value && typeof v.value === "object" ? v.value : v;
+      const r = Object.assign({ id: k }, rec, v.name != null && rec.name == null ? { name: v.name } : {});
+      // 官方 mesh 是 "mesh/石王座.vb" 这种带目录带扩展的引用，而我们全链路（资产表键、
+      // ensure() 取模型、模型下拉）用的都是裸名。不归一就直接 404，34 个雕像全变占位盒。
+      if (typeof r.mesh === "string") r.mesh = r.mesh.replace(/^.*\/(?=[^/]*$)/, "").replace(/\.(vb|vox|glb|gltf)$/i, "");
+      out.push(r);
+    }
+    return out;
+  };
+export const flattenTree = (j) => Object.values(j || {}).filter((n) => n && n.type === 1).map((n) => {
+    const v = n.value || {};
+    return {
+      id: n.id, name: n.name, parentId: n.parentId, tags: v.tags || [],
+      mesh: String(v.mesh || "").replace(/^mesh\//, "").replace(/\.vb$/, ""), meshId: v.meshId ?? null,
+      position: v.position, orientation: v.orientation || [0, 0, 0, 1], scale: v.scale || [1, 1, 1],
+      bounds: v.bounds || [0, 0, 0], collision: !!v.collision, fixed: !!v.fixed, gravity: !!v.gravity,
+      mass: v.mass ?? 1, friction: v.friction ?? 1, restitution: v.restitution ?? 0, emissive: v.emissive ?? 0,
+      metalness: v.metalness ?? 0, shininess: v.shininess ?? 0, tint: v.tint || [255, 255, 255, 255],
+      damage: v.damage || null, particle: v.particle || null, sound: v.sound || null, defaultMotionId: v.defaultMotionId || "",
+    };
+  })
+
+// ---------- 按 block.json 的 CID 补齐包里没带的配置 ----------
+// 官方较新的导出（实测 0.3.31 的「异界之岛」）在 zip 里只放 environment / info /
+// physics / player / zones 五个 json，实体表、界面树、资源表、手柄布局全部只留一个
+// CID。于是"导入成功但 0 个实体"——不是我们解析不出来，是包里没有。
+// 这个函数把缺的那几块按地址取回来。**只在用户明确同意后才调用**：本项目默认不联网。
+const GATEWAY = "https://static.dao3.fun/block/";
+const BLOCK_KEYS = ["entitiesTree", "environment", "physics", "player", "zones", "info", "assets", "uiTree", "gamepad", "ambientSound"];
+
+export async function fetchBlockCid(hash) {
+  const r = await fetch(GATEWAY + encodeURIComponent(hash));
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return await r.json();
+}
+
+/** block.json 里点名了、但本次导入没从包里读到的键。 */
+export function missingFromBlock(block, have = {}) {
+  if (!block || typeof block !== "object") return [];
+  return BLOCK_KEYS.filter((k) => typeof block[k] === "string" && /^Qm/.test(block[k]) && !have[k]);
+}
+
+export async function completeFromBlock(block, have = {}, onProgress) {
+  const out = {}, missed = [];
+  for (const k of missingFromBlock(block, have)) {
+    try {
+      out[k] = await fetchBlockCid(block[k]);
+      onProgress && onProgress(k);
+    } catch (e) { missed.push(`${k}（${(e && e.message) || e}）`); }
+  }
+  return { got: out, missed };
+}
+
+/**
+ * 把按 CID 取回来的东西接到导入结果上。哪些算"应用了"要分清楚：
+ * 实体表、环境、物理、玩家、区域、info、资源表我们有真实映射；
+ * uiTree / gamepad / ambientSound 只是先存下来，映射还没做——
+ * 与其假装导入完整，不如把没做的报出来。
+ */
+export function applyCompletion(res, got = {}) {
+  const applied = [], deferred = [];
+  if (got.entitiesTree && !res.entities.length) {
+    const j = got.entitiesTree;
+    res.entities = normalizeEntities(j).length ? normalizeEntities(j) : flattenTree(j);
+    applied.push("实体 " + res.entities.length + " 个");
+  }
+  for (const k of ["environment", "physics", "player", "zones"]) {
+    if (got[k] && !res.projectCfg[k]) { res.projectCfg[k] = got[k]; applied.push(k); }
+  }
+  if (got.info && !res.projectCfg.displayName) {
+    if (got.info.displayName) res.projectCfg.displayName = got.info.displayName;
+    if (got.info.description != null) res.projectCfg.description = got.info.description;
+    applied.push("info");
+  }
+  if (got.assets && typeof got.assets === "object" && !res.assets) {
+    res.assets = got.assets;
+    res.assetNames = { audio: [], lut: [], part: [] };
+    for (const key of Object.keys(got.assets)) {
+      const t = got.assets[key] && got.assets[key].type;
+      if (t === 6) res.assetNames.audio.push(key.split("/").pop());
+      else if (t === 3) res.assetNames.lut.push(key.split("/").pop());
+      else if (t === 4) res.assetNames.part.push(key.split("/").pop());
+    }
+    applied.push("资源表 " + Object.keys(got.assets).length + " 条");
+  }
+  for (const k of ["uiTree", "gamepad", "ambientSound"]) {
+    if (got[k]) { (res.remoteCfg = res.remoteCfg || {})[k] = got[k]; deferred.push(k); }
+  }
+  return { applied, deferred };
+}
+
 export async function exportProjectZip({ world, state, name, download = true }) {
   const meta = state.meta || {};
   const files = [];
@@ -456,39 +559,6 @@ export async function importProjectZip(file) {
   const treeEnt = entries.find((e) => /entitiesTree.*\.json$/i.test(e.name));
   if (flatEnt) consumed.add(flatEnt.name);
   if (treeEnt) consumed.add(treeEnt.name);
-  // 一张"实体表"有三种历史形状，都得吃下：
-  //   · 数组                          —— 我们的 entities/models.json
-  //   · {id: 记录}                    —— 官方 dao3 的 json/entities.json（id 只在键上，记录体里没有）
-  //   · {id: {type:1|2, value:{…}}}   —— 官方 entitiesTree（type 2 是分组，不是实体）
-  // 之前只认第一种和最后一种，于是官方包导进来是 0 个实体、画面里一个标记都没有。
-  const normalizeEntities = (j) => {
-    if (Array.isArray(j)) return j;
-    if (!j || typeof j !== "object") return [];
-    if (Array.isArray(j.entities)) return j.entities;
-    const out = [];
-    for (const [k, v] of Object.entries(j)) {
-      if (!v || typeof v !== "object" || v.type === 2) continue;
-      const rec = v.value && typeof v.value === "object" ? v.value : v;
-      const r = Object.assign({ id: k }, rec, v.name != null && rec.name == null ? { name: v.name } : {});
-      // 官方 mesh 是 "mesh/石王座.vb" 这种带目录带扩展的引用，而我们全链路（资产表键、
-      // ensure() 取模型、模型下拉）用的都是裸名。不归一就直接 404，34 个雕像全变占位盒。
-      if (typeof r.mesh === "string") r.mesh = r.mesh.replace(/^.*\/(?=[^/]*$)/, "").replace(/\.(vb|vox|glb|gltf)$/i, "");
-      out.push(r);
-    }
-    return out;
-  };
-  const flattenTree = (j) => Object.values(j || {}).filter((n) => n && n.type === 1).map((n) => {
-    const v = n.value || {};
-    return {
-      id: n.id, name: n.name, parentId: n.parentId, tags: v.tags || [],
-      mesh: String(v.mesh || "").replace(/^mesh\//, "").replace(/\.vb$/, ""), meshId: v.meshId ?? null,
-      position: v.position, orientation: v.orientation || [0, 0, 0, 1], scale: v.scale || [1, 1, 1],
-      bounds: v.bounds || [0, 0, 0], collision: !!v.collision, fixed: !!v.fixed, gravity: !!v.gravity,
-      mass: v.mass ?? 1, friction: v.friction ?? 1, restitution: v.restitution ?? 0, emissive: v.emissive ?? 0,
-      metalness: v.metalness ?? 0, shininess: v.shininess ?? 0, tint: v.tint || [255, 255, 255, 255],
-      damage: v.damage || null, particle: v.particle || null, sound: v.sound || null, defaultMotionId: v.defaultMotionId || "",
-    };
-  });
   const groups = treeEnt ? Object.values(await jsonOf(treeEnt)).filter((n) => n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds })) : [];
   if (flatEnt && !entities.length) {
     try { entities = normalizeEntities(await jsonOf(flatEnt)); } catch (err) { warnings.push("entities.json 解析失败: " + err.message); }

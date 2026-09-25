@@ -1071,6 +1071,30 @@ export async function importProject(file) {
   const e = E;
   const res = await io.importProjectZip(file);
   if (!res.world) { e.toast("导入失败：" + res.warnings.join("；")); return false; }
+  // block.json 点名了、但包里没带的配置：问一句再联网取。
+  // 官方较新的导出（实测 0.3.31 的异界之岛）把实体表、界面树、资源表、手柄布局
+  // 只留成 CID，zip 里一个字节都没有——不取的话就是"导入成功、0 个实体"，
+  // 而这看起来完全像是我们解析不出来。联网必须用户点头，本项目默认不联网。
+  const have = {
+    entitiesTree: res.entities.length, environment: !!res.projectCfg.environment,
+    physics: !!res.projectCfg.physics, player: !!res.projectCfg.player,
+    zones: !!res.projectCfg.zones, info: !!res.projectCfg.displayName, assets: !!res.assets,
+  };
+  const miss = io.missingFromBlock(res.block, have);
+  if (miss.length) {
+    const go = confirm(`这个包只带了部分配置。\n\nblock.json 里还点名了 ${miss.length} 项没在包里：\n${miss.join("、")}\n\n要按内容地址（CID）从 static.dao3.fun 取回吗？\n不取的话这张图大概率没有实体、没有界面。`);
+    if (go) {
+      e.toast("正在按 CID 补齐配置…");
+      const { got, missed } = await io.completeFromBlock(res.block, have);
+      const { applied, deferred } = io.applyCompletion(res, got);
+      if (applied.length) res.warnings.push("已补齐：" + applied.join("、"));
+      // 取回来但没映射的东西也要说：不然过两天谁都不记得 uiTree 其实还没生效
+      if (deferred.length) res.warnings.push(`已取回但暂未映射：${deferred.join("、")}`);
+      if (missed.length) res.warnings.push("取回失败：" + missed.join("、"));
+    } else {
+      res.warnings.push(`包里缺 ${miss.length} 项配置且未取回：${miss.join("、")}`);
+    }
+  }
   const prev = e.state.meta || {};
   const cfg = res.projectCfg || {};
   const meta = Object.assign(prev, {
@@ -1166,11 +1190,13 @@ export async function importProject(file) {
   // 才能把"名字下面那个内容地址"显示出来，并按地址把包里没带的文件取回来。
   meta.assetIndex = res.assets || prev.assetIndex || null;
   meta.assetsCid = (res.block && res.block.assets) || null;
+  // 按 CID 取回来但还没映射的部分先原样存着，别丢——重映射时不用再联网
+  meta.remoteCfg = res.remoteCfg || prev.remoteCfg || null;
   meta.lutNames = (res.assetNames && res.assetNames.lut) || [];
   meta.partNames = (res.assetNames && res.assetNames.part) || [];
   meta.pictureNames = (cfg.pictureNames && cfg.pictureNames.length) ? cfg.pictureNames : (res.pictureNames || []);
   // 派生状态必须跟着换。实体标记与场景模型是 state.entities / state.models 驱动的，
-  // 而 replaceWorld 里的 restoreEntityMarkers 读的是 state.entities（不是 meta.entities）——
+  // 而画面上那些标记读的是 state.entities（不是 meta.entities）——
   // 之前只换了 meta，于是导入后画面里没有这张图的实体，模型列表却还是上一张图的。
   e.state.entities = meta.entities;
   e.state.models = [];
@@ -1193,7 +1219,12 @@ export async function importProject(file) {
   // 一整张刚导入的图会被静默丢掉。
   e.markDirty();
   const warns = res.warnings.length ? "\n" + res.warnings.join("\n") : "";
-  e.toast(`已导入「${res.name}」· ${meta.entities.length} 实体 / ${res.scripts.length} 脚本 / ${meta.meshNames.length} 模型` + warns);
+  // "模型"要说清楚是**拿到几何的网格文件数**：433 个实体一个标记框都没有时，
+  // 报"0 模型"会被理解成"导入失败"，而实际是"实体在、网格不在包里"。
+  const needMesh = (meta.entities || []).filter((d) => d.mesh).length;
+  const gotMesh = Object.keys(res.meshes || {}).length;
+  e.toast(`已导入「${res.name}」· ${meta.entities.length} 实体 / ${res.scripts.length} 脚本 / ${gotMesh} 个网格文件`
+    + (needMesh > gotMesh ? `（${needMesh} 个实体引用的网格不在包里，已用标记框显示）` : "") + warns);
   // 只有包里真的带脚本才跳到脚本页：导入一张图之后用户想看的是世界，
   // 而官方 dao3 包经常是空 scripts/（这次就是），硬跳过去等于把成果盖住。
   if (res.scripts.length) {

@@ -280,8 +280,7 @@ async function applySceneModels(meta) {
   const ents = (meta && meta.entities) || [];
   const legacy = (meta && meta.models) || [];
   const withMesh = ents.filter((d) => d.mesh);
-  if (!withMesh.length && !legacy.length) return;
-  const { addPlacedModel, suspendModelList, refreshModelList } = await import("./features.js");
+  const { addPlacedModel, addEntityMarker, suspendModelList, refreshModelList } = await import("./features.js");
   suspendModelList(true);
   // 幂等：boot 与切世界都会调用，先清空上一批场景模型
   for (const m of state.models || []) { if (m.object && m.object.parent) m.object.parent.remove(m.object); }
@@ -326,6 +325,14 @@ async function applySceneModels(meta) {
   // 403/404 时那 194 个带 mesh 的实体既进不了场景模型、又被这条丢掉，
   // 编辑器下一次保存就把整张图的实体清零——读不到素材不该变成地图数据丢失。
   state.entities = ents.filter((d) => !d.mesh || !placedSrc.has(d));
+  // 没摆上模型的实体必须留下标记框。之前它们既进不了场景模型、又没人画，
+  // 于是"导入成功、433 个实体"在画面上一片空白——用户只能理解成"没解析出来"。
+  // 标记也从这里统一出：以前另有一个人在切世界时补一遍标记，但紧接着
+  // 下面那句 state.models = [] 就把它们抹掉了，等于白做还多一处真相。
+  for (const d of state.entities) {
+    addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || d.position || [4, 4, 4],
+      bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys });
+  }
   suspendModelList(false);
   refreshModelList();
   ui && ui.refreshTree && ui.refreshTree();
@@ -428,21 +435,7 @@ function replaceWorld(w) {
   ui && ui.setWorldName && ui.setWorldName(state.meta.name);
   window.__editor && (window.__editor.world = w);
   ui && ui.refreshTree && ui.refreshTree();
-  restoreEntityMarkers();
-  restoreSceneModels(state.meta);
-}
-// 从保存的实体数据重建可视化标记
-function restoreEntityMarkers() {
-  if (!state.entities || !state.entities.length) return;
-  import("./features.js").then(({ addEntityMarker }) => {
-    for (const d of state.entities) {
-      if ((state.models || []).some((m) => m.entId === d.id)) continue;
-      // 官方实体记录用 position / collision，我们自己的标记数据用 pos / collides。
-      // 只认后者的话，导入官方图之后所有标记都会掉进 [4,4,4] 那个兜底坐标里。
-      addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || d.position || [4, 4, 4],
-        bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys });
-    }
-  });
+  restoreSceneModels(state.meta);   // 标记框也由它一并负责，见 applySceneModels 末尾
 }
 window.__replaceWorld = replaceWorld;
 
@@ -605,8 +598,7 @@ async function boot() {
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
   window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles };
   initFeatures(window.__editor);
-  restoreEntityMarkers();
-  restoreSceneModels(state.meta); // boot 种子世界同样恢复场景模型
+  restoreSceneModels(state.meta); // boot 也一样：场景模型与实体标记都由它负责
   // 第一人称中心拾取预览（幽灵方块跟随屏幕中心）
   ui.setFPRenderer && ui.setFPRenderer(null);
   const uiRender = renderer.onRender;
