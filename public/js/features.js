@@ -7,6 +7,7 @@ import { wireScriptAi } from "./ai-script.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
+import { vbToVoxList } from "./vb.js";
 
 let E; // window.__editor 引用
 
@@ -1165,12 +1166,25 @@ export async function importProject(file) {
     catch (err) { res.warnings.push(`网格「${vm.name}」建模失败: ${(err && err.message) || err}`); }
   }
   if (voxOk) res.warnings.push(`已把 ${voxOk} 个 .vox 网格转成可渲染模型`);
+  // .vb 走同一条建模管线：先解成体素列表，颜色按**实际 hex 最近邻**映到图集方块，
+  // 而不是按序号硬取——图集顺序和 VOXA 调色板毫无关系，按序号会把白雕像染成荧光绿。
+  let vbOk = 0;
+  for (const vm of res.vbMeshes || []) {
+    try {
+      const list = vbToVoxList(vm.json, E.atlas.list());
+      if (!list || !list.voxels.length) { res.warnings.push(`网格「${vm.name}」解出来是空的`); continue; }
+      res.meshes[vm.name] = { object: voxListToModel(list.voxels, E.atlas), scale: 1 };
+      vbOk++;
+    } catch (err) { res.warnings.push(`网格「${vm.name}」建模失败: ${(err && err.message) || err}`); }
+  }
+  if (vbOk) res.warnings.push(`已把 ${vbOk} 个 .vb 网格解成体素并建模`);
   // **网格必须落盘。** 之前只把名字写进 meta.meshNames，几何体留在内存里：
   // 于是"导入成功、这次会话里看得见"，一存盘重开就什么都不剩，
   // 而且因为 assetRoot 还指着上一张图的目录，每次打开都要打上百个 404。
   const meshFiles = [
     ...(res.meshFiles || []).map((f) => ({ rel: "models/" + f.name + f.ext, bytes: f.bytes })),
     ...(res.voxMeshes || []).filter((v) => v.bytes).map((v) => ({ rel: "models/" + v.name + ".vox", bytes: v.bytes })),
+    ...(res.vbMeshes || []).filter((v) => v.bytes).map((v) => ({ rel: "models/" + v.name + ".vb", bytes: v.bytes })),
   ];
   const wid = e.worldId || window.__worldId;
   let stored = 0;

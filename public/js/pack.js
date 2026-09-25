@@ -67,6 +67,34 @@ function rows() {
   return q ? all.filter((f) => f.path.toLowerCase().includes(q)) : all;
 }
 
+/** 官方资源表的目录名 → 我们落盘用的目录名。 */
+function normKey(k) {
+  return String(k).replace(/^mesh\//i, "models/").replace(/^audios?\//i, "audio/")
+    .replace(/^(pictures?|images?|ui)\//i, "pictures/").replace(/^luts?\//i, "luts/")
+    .replace(/^(parts?|snow)\//i, "parts/");
+}
+
+/**
+ * 资源表里有、但本地没有的文件。
+ *
+ * 这一条是「按 CID 取回」能不能用起来的关窍：以前列表只列**磁盘上已有**的文件，
+ * 于是最需要取回的东西（就是缺的那些）根本没有行可以点，功能等于只给已存在的文件
+ * 又下了一遍。官方包恰恰是"只带名字不带本体"，缺的才是主体。
+ */
+function remoteRows() {
+  const t = E.state.meta.assetIndex;
+  if (!t || typeof t !== "object") return [];
+  const have = new Set(files.map((f) => base(f.path).toLowerCase()));
+  const out = [];
+  for (const [k, v] of Object.entries(t)) {
+    if (!v || typeof v !== "object" || !v.hash) continue;
+    const path = normKey(k);
+    if (have.has(base(path).toLowerCase())) continue;
+    out.push({ path, bytes: Number(v.size) || 0, remote: true, hash: String(v.hash) });
+  }
+  return out;
+}
+
 function thumb(f) {
   const name = base(f.path);
   const ext = name.split(".").pop().toLowerCase();
@@ -82,9 +110,14 @@ function render() {
   const host = document.getElementById("packBody");
   if (!host) return;
   const total = files.reduce((a, f) => a + f.bytes, 0);
+  // 缺的文件也算进数：不显示出来，用户不知道这一类到底该有多少东西
+  const remote = cat === "script" || cat === "trash" ? [] : remoteRows();
+  const c0 = CATS.find((x) => x.key === cat);
   const countOf = (c) => (c.key === "script" ? (E.state.scripts || []).length
-    : files.filter((f) => (c.key === "trash" ? f.path.startsWith("trash/") : c.match(f.path) && !f.path.startsWith("trash/"))).length);
-  const list = rows();
+    : c.key === "trash" ? files.filter((f) => f.path.startsWith("trash/")).length
+      : files.filter((f) => c.match(f.path)).length + remoteRows().filter((r) => c.match(r.path)).length);
+  const shown = rows().concat(remote.filter((r) => (c0 ? c0.match(r.path) : false)))
+    .filter((f) => (query ? f.path.toLowerCase().includes(query.trim().toLowerCase()) : true));
   host.innerHTML = `
     <aside class="pk-rail">
       ${CATS.map((c) => `<button class="pk-cat${c.key === cat ? " on" : ""}" data-c="${c.key}">${svg(c.icon)}<span>${c.name}</span><b>${countOf(c)}</b></button>`).join("")}
@@ -97,13 +130,13 @@ function render() {
       <div class="pk-search"><input type="search" placeholder="搜索" value="${esc(query)}"/></div>
       <div class="pk-thead"><span>名称</span><span>大小</span><span></span></div>
       <div class="pk-rows">
-        ${list.length ? list.map((f) => {
-    const ent = idxOf(f.path);
+        ${shown.length ? shown.map((f) => {
+    const ent = f.remote ? { hash: f.hash } : idxOf(f.path);
     const hash = (ent && ent.hash) || "";
-    return `<div class="pk-row" data-p="${esc(f.path)}">
+    return `<div class="pk-row${f.remote ? " pk-missing" : ""}" data-p="${esc(f.path)}" data-hash="${esc(hash)}" data-remote="${f.remote ? 1 : ""}">
             <span class="pk-thumb">${thumb(f)}</span>
             <span class="pk-name"><b>${esc(base(f.path))}</b>${hash ? `<i title="${esc(hash)}">${esc(hash)}</i>` : `<i class="pk-nohash">无内容地址</i>`}</span>
-            <span class="pk-size">${kb(f.bytes)}</span>
+            <span class="pk-size">${f.remote ? "未下载 · " + kb(f.bytes) : kb(f.bytes)}</span>
             <button class="pk-more" data-p="${esc(f.path)}" title="更多">⋮</button>
           </div>`;
   }).join("") : `<div class="pk-empty">${cat === "trash" ? "回收站是空的" : "这一类还没有文件"}</div>`}
@@ -114,20 +147,32 @@ function render() {
   host.querySelectorAll(".pk-cat").forEach((b) => { b.onclick = () => { cat = b.dataset.c; render(); }; });
   host.querySelector(".pk-search input").oninput = (ev) => { query = ev.target.value; render(); host.querySelector(".pk-search input").focus(); };
   host.querySelectorAll(".pk-more").forEach((b) => {
-    b.onclick = (ev) => { ev.stopPropagation(); openMenu(b.dataset.p, b.getBoundingClientRect()); };
+    b.onclick = (ev) => {
+      ev.stopPropagation();
+      const row = b.closest(".pk-row");
+      openMenu(b.dataset.p, b.getBoundingClientRect(), row && row.dataset.remote ? row.dataset.hash : null);
+    };
+  });
+  // 缺的行整行可点：一眼就能看出"点它会去下载"，比只藏在 ⋮ 里好找
+  host.querySelectorAll(".pk-missing").forEach((r) => {
+    r.onclick = () => { if (r.dataset.hash) fetchByCid(r.dataset.p, r.dataset.hash); };
   });
   host.querySelector("#packAdd").onclick = upload;
 }
 
-function openMenu(path, rect) {
+function openMenu(path, rect, remoteHash) {
   closeMenu();
   const ent = idxOf(path);
   const inTrash = path.startsWith("trash/");
+  const hash = remoteHash || (ent && ent.hash) || "";
+  // 缺的文件只给"取回"：它本地根本没有字节，"下载"和"删除"都是假的
   const items = inTrash
     ? [["还原", () => restore(path)], ["彻底删除", () => destroy(path)]]
-    : [["下载", () => download(path)],
-      ...(ent && ent.hash ? [["按 CID 取回内容", () => fetchByCid(path, ent.hash)]] : []),
-      ["删除", () => toTrash(path)]];
+    : remoteHash
+      ? (hash ? [["按 CID 取回内容", () => fetchByCid(path, hash)]] : [])
+      : [["下载", () => download(path)],
+        ...(hash ? [["按 CID 取回内容", () => fetchByCid(path, hash)]] : []),
+        ["删除", () => toTrash(path)]];
   menu = document.createElement("div");
   menu.className = "pk-menu";
   menu.style.cssText = `left:${Math.min(innerWidth - 190, rect.left - 150)}px;top:${rect.bottom + 4}px`;
@@ -209,7 +254,26 @@ async function fetchByCid(path, hash) {
     const to = path.replace(/^models?\//i, "models/");
     const w = await fetch(`/api/world/${encodeURIComponent(E.worldId)}/asset?path=${encodeURIComponent(to)}`, { method: "POST", body: buf });
     if (!w.ok) throw new Error("落盘失败 " + w.status);
-    E.toast(`已取回 ${base(to)}（${kb(buf.byteLength)}）`);
+    // .vb 光落盘还不够：不解成体素注册进 meshes，实体那边照旧只是个标记框，
+    // 用户点了"取回"却什么都没变，这条功能就等于假的。
+    let extra = "";
+    if (/\.vb$/i.test(to)) {
+      try {
+        const { vbToVoxList } = await import("./vb.js");
+        const { voxListToModel } = await import("./features.js");
+        const list = vbToVoxList(JSON.parse(new TextDecoder().decode(buf)), E.atlas.list());
+        if (!list || !list.voxels.length) extra = "，但解出来是空的";
+        else {
+          const key = base(to).replace(/\.vb$/i, "");
+          E.state.assets = E.state.assets || { meshes: {} };
+          E.state.assets.meshes[key] = { object: voxListToModel(list.voxels, E.atlas), scale: 1 };
+          // 重摆一次场景：引用这个网格的实体要从标记框换成真模型
+          if (E.replaceSceneModels) { await E.replaceSceneModels(); extra = `，已建模（${list.solid} 格）并重新摆放场景`; }
+          else extra = `，已建模（${list.solid} 格），重开这张图后生效`;
+        }
+      } catch (err) { extra = "，但建模失败：" + ((err && err.message) || err); }
+    }
+    E.toast(`已取回 ${base(to)}（${kb(buf.byteLength)}）${extra}`);
     await refresh();
     E.markDirty();
   } catch (e) {

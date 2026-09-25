@@ -550,6 +550,11 @@ body.playing.float-edit #peRotate{display:none}
 .pk-rows{flex:1;overflow:auto}
 .pk-row{border-bottom:1px solid #171b22;min-height:52px}
 .pk-row:hover{background:#161b23}
+/* 资源表里有、本地没有的行：整行可点去取回，所以要做成"可点"的样子，
+   并且和已存在的文件区分开——否则用户分不清哪一行是已有的、哪一行是缺的 */
+.pk-missing{cursor:pointer;opacity:.72}
+.pk-missing:hover{opacity:1;background:rgba(252,131,8,.08)}
+.pk-missing .pk-name b{font-style:italic}
 .pk-thumb{width:32px;height:32px;border-radius:6px;background:#0b0e13;display:grid;place-items:center;overflow:hidden}
 .pk-thumb img{width:100%;height:100%;object-fit:cover}
 .pk-vb,.pk-code,.pk-audio{font-size:10px;color:#9fb0c6;font-family:var(--mono,ui-monospace,monospace)}

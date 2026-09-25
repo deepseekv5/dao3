@@ -386,14 +386,26 @@ async function loadSeedAssets(meta) {
         return;
       } catch {}
     }
-    // .vox 是导入的官方包里最常见的网格格式：解体素再本地烘成网格，
+    // .vox / .vb 是导入的官方包里最常见的网格格式：解体素再本地烘成网格，
     // 用图集当材质，所以不必把整张图集烘进 glTF 一起存。
+    // .vb 是 JSON（体素流是 0 基游程的 LEB128），解法见 vb.js。
     try {
       const r = await fetch(root + encodeURIComponent(base) + ".vox");
+      if (r.ok) {
+        const { decodeVox } = await import("./world.js");
+        const mesh = voxListToModel(decodeVox(new Uint8Array(await r.arrayBuffer())), atlas);
+        state.assets.meshes[base] = { object: mesh, scale: 1 };
+        loaded++;
+        return;
+      }
+    } catch (err) { failed.push(base + " (" + ((err && err.message) || err) + ")"); return; }
+    try {
+      const r = await fetch(root + encodeURIComponent(base) + ".vb");
       if (!r.ok) { failed.push(base + " (无文件)"); return; }
-      const { decodeVox } = await import("./world.js");
-      const mesh = voxListToModel(decodeVox(new Uint8Array(await r.arrayBuffer())), atlas);
-      state.assets.meshes[base] = { object: mesh, scale: 1 };
+      const { vbToVoxList } = await import("./vb.js");
+      const list = vbToVoxList(JSON.parse(new TextDecoder().decode(await r.arrayBuffer())), atlas.list());
+      if (!list || !list.voxels.length) { failed.push(base + " (.vb 解出空体素)"); return; }
+      state.assets.meshes[base] = { object: voxListToModel(list.voxels, atlas), scale: 1 };
       loaded++;
     } catch (err) { failed.push(base + " (" + ((err && err.message) || err) + ")"); }
   }));
@@ -600,6 +612,9 @@ async function boot() {
   }
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
   window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles };
+  // 代码包面板按 CID 取回并建模一个网格后要重摆场景：引用它的实体得从标记框换成真模型。
+  // 没有这个钩子，"取回"就只改了磁盘上的字节，画面上什么都不会变。
+  window.__editor.replaceSceneModels = () => applySceneModels(state.meta);
   initFeatures(window.__editor);
   restoreSceneModels(state.meta); // boot 也一样：场景模型与实体标记都由它负责
   // 第一人称中心拾取预览（幽灵方块跟随屏幕中心）

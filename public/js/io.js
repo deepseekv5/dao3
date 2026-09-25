@@ -2,6 +2,7 @@
 // .gz 格式与 box3lab Unity 导出一致：gzip(JSON(VoxelPayload))，用浏览器原生 CompressionStream。
 import * as THREE from "../vendor/three/three.module.js";
 import { VoxelWorld, encodeVox, decodeVox } from "./world.js";
+import { decodeVb } from "./vb.js";
 import { readZipEntries, writeZip } from "./zip.js";
 
 export async function apiLoadWorld(id) {
@@ -633,9 +634,10 @@ export async function importProjectZip(file) {
   }
   if (!scripts.length) warnings.push("包内没有 /code/*.js 脚本");
 
-  // 5) 音效 audio/ + 网格资产名 mesh/（.vb 专有格式仅登记名字，实体换 mesh 时给出占位提示）
+  // 5) 音效 audio/ + 网格资产名 mesh/（.vb 现在能解，见 vb.js）
   const audio = {}, meshNames = [], pictureNames = [];
-  const voxMeshes = [];  // .vox 解码结果（{name, voxels}）；.vb 是专有的，解不动只登记名字
+  const voxMeshes = [];  // .vox 解码结果（{name, voxels, bytes}）
+  const vbMeshes = [];   // .vb 原始 JSON（{name, json}），建网格留给 features.js（要 atlas）
   await Promise.all(entries.map(async (e) => {
     if (/(^|\/)(audio|sound)\/.*\.(mp3|wav|ogg|m4a|aac)$/i.test(e.name)) {
       try { audio[e.name.split("/").pop()] = await extract(e); } catch {}
@@ -654,14 +656,23 @@ export async function importProjectZip(file) {
           if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs, bytes });
           else rawMeshes++;
         } catch { rawMeshes++; }
-      } else if (/\.vb$/i.test(fn)) rawMeshes++;
+      } else if (/\.vb$/i.test(fn)) {
+        // .vb 是 JSON，不是二进制；体素流是「0 基游程 + 色号」的 LEB128 对。
+        // 这里只负责把 JSON 交出去，解不出（返回 null）才计入 rawMeshes。
+        try {
+          const bytes = await extract(e);
+          const json = JSON.parse(new TextDecoder().decode(bytes));
+          if (decodeVb(json)) vbMeshes.push({ name: base, json, bytes });
+          else rawMeshes++;
+        } catch { rawMeshes++; }
+      }
     } else if (/(^|\/)(pictures?|images?|ui)\/.*\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(e.name)) {
       pictureNames.push(e.name.replace(/^.*?(?=picture\/|pictures\/|image\/|images\/|ui\/)/, ""));
     }
   }));
   // 报出来而不是默默变成占位盒：这条决定"导入后画面是空的"到底该怪包还是怪我们。
   // 必须排在上面这次扫描之后——它曾排在前面，于是永远读到 0，警告一次都没出现过。
-  if (rawMeshes) warnings.push(`${rawMeshes} 个 .vb/.vox 网格只登记了名字，未转成可渲染模型；引用它们的实体会以标记框显示`);
+  if (rawMeshes) warnings.push(`${rawMeshes} 个 .vb/.vox 网格解不出体素，只登记了名字；引用它们的实体会以标记框显示`);
 
   // 5b) 官方资源表 project/assets.json：路径 → {animated,bounds,contentId,hash,ownerId,previewImage,size,type}
   let assets = null;
@@ -709,7 +720,7 @@ export async function importProjectZip(file) {
   const oddJson = entries.filter((e) => /\.json$/i.test(e.name) && !consumed.has(e.name));
   if (oddJson.length) warnings.push(`未识别 ${oddJson.length} 个配置文件（${oddJson.slice(0, 3).map((x) => x.name.split("/").slice(-2).join("/")).join("、")}${oddJson.length > 3 ? " 等" : ""}），已跳过`);
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, meshFiles, assets, assetNames, block, voxMeshes, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, meshFiles, assets, assetNames, block, voxMeshes, vbMeshes, warnings };
 }
 
 // 从导入脚本里识别出引用的实体选择器（#id / .tag），用于自动生成实体标记。
