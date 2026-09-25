@@ -2174,7 +2174,10 @@ const ZERO = new GameVector3();
       // 太阳该落下去就让它落下去，夜晚度改用下面显式传进去的同一个 night。
       sunDir: [this.sunDirection.x, this.sunDirection.y, this.sunDirection.z],
       night,
-      sunIntensity: luma(this.sunLight) * (1 - night * 0.9) * 2.6,
+      // 亮度必须夹到 0..1：官方 blob 的 sky.sunColor 实测是**千分制**（赤碧城存 1000），
+      // 六面天光走 rgbHex 时已被 clamp01 救回，只有这一条是直接把颜色当亮度乘出去的，
+      // 于是老存档即使不重新导入也不会把画面糊成一片白。
+      sunIntensity: Math.min(1, luma(this.sunLight)) * (1 - night * 0.9) * 2.6,
       ambient: Number.isFinite(+this.globalLight) ? Math.max(0, Math.min(1, +this.globalLight)) : 0.1 + (1 - night) * 0.18,
       skyTop: rgbHex(this.skyTopLight, night),
       skyBottom: rgbHex(this.skyBottomLight, night),

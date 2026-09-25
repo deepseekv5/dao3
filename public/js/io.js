@@ -117,25 +117,45 @@ export function toOfficialEnvironment(s = {}) {
 }
 
 // 官方嵌套 → 我运行时的扁平键（同时喂给 worldSettings 与 sky 两组键名，保持两边都能读到）
+/**
+ * 官方颜色分量一律收敛到 0..1。这里必须做归一而不是直接抄：
+ * 官方 sky.sunColor 用的是**千分制**（实测赤碧城存的是 {r:1000,g:1000,b:1000}），
+ * 而 fogColor / skyTop 这些又是 0..1 浮点——同一个 blob 里两套单位。
+ * 1000 原样进 GameRGBColor 之后，运行模式的 sunIntensity 会按亮度算到 2600 倍，
+ * 画面直接过曝成白片，这就是"运行后光影有问题"的第一处。
+ */
+function color01(c) {
+  if (!c || typeof c !== "object") return null;
+  const raw = [+c.r, +c.g, +c.b].map((v) => (Number.isFinite(v) ? v : 0));
+  const over = raw.some((v) => v > 1);
+  const k = over && raw.every((v) => v >= 0 && v <= 1000) ? 1000 : 1;
+  return raw.map((v) => Math.max(0, Math.min(1, v / k)));
+}
+/** 官方颜色 → GameRGBColor（0..1）。拿不到合法结构时返回 null，让调用方保留自己的默认值。 */
+function rgb01(c) {
+  const v = color01(c);
+  return v ? { red: v[0], green: v[1], blue: v[2] } : null;
+}
+
 export function fromOfficialEnvironment(env = {}) {
   const o = {};
   if (env.drawDistance != null) o.drawDistance = +env.drawDistance;
   const f = env.fog || {};
-  if (f.fogColor) o.fogColor = { red: +f.fogColor.r || 0, green: +f.fogColor.g || 0, blue: +f.fogColor.b || 0 };
+  if (rgb01(f.fogColor)) o.fogColor = rgb01(f.fogColor);
   if (f.fogDensity != null) o.fogUniformDensity = +f.fogDensity;
   if (f.fogHeightFalloff != null) o.fogHeightFalloff = +f.fogHeightFalloff;
   if (f.fogHeightOffset != null) o.fogHeightOffset = +f.fogHeightOffset;
   if (f.fogStartDistance != null) o.fogStartDistance = +f.fogStartDistance;
   if (f.maxFog != null) o.maxFog = +f.maxFog;
   const r = env.rain || {};
-  if (r.color) o.rainColor = { red: +r.color.r || 0, green: +r.color.g || 0, blue: +r.color.b || 0, alpha: r.color.a == null ? 1 : +r.color.a };
+  if (rgb01(r.color)) o.rainColor = Object.assign(rgb01(r.color), { alpha: r.color.a == null ? 1 : +r.color.a });
   if (r.density != null) o.rainDensity = +r.density;
   if (r.direction) o.rainDirection = [r.direction.x || 0, r.direction.y || 0, r.direction.z || 0];
   if (r.interference != null) o.rainInterference = +r.interference;
   if (r.size) { o.rainSizeLo = +r.size.w || 0; o.rainSizeHi = +r.size.h || 0; }
   if (r.speed != null) o.rainSpeed = +r.speed;
   const k = env.snow || {};
-  if (k.color) o.snowColor = { red: +k.color.r || 0, green: +k.color.g || 0, blue: +k.color.b || 0, alpha: k.color.a == null ? 1 : +k.color.a };
+  if (rgb01(k.color)) o.snowColor = Object.assign(rgb01(k.color), { alpha: k.color.a == null ? 1 : +k.color.a });
   if (k.density != null) o.snowDensity = +k.density;
   if (k.fallSpeed != null) o.snowFallSpeed = +k.fallSpeed;
   if (k.size) { o.snowSizeLo = +k.size.w || 0; o.snowSizeHi = +k.size.h || 0; }
@@ -149,9 +169,9 @@ export function fromOfficialEnvironment(env = {}) {
   if (s.sunFrequency != null) o.sunFrequency = +s.sunFrequency;
   if (s.sunPhase != null) o.sunPhase = +s.sunPhase;
   if (s.sunDirection) o.sunDirection = [s.sunDirection.x || 0, s.sunDirection.y || 1, s.sunDirection.z || 0];
-  if (s.sunColor) o.sunLight = { red: +s.sunColor.r || 0, green: +s.sunColor.g || 0, blue: +s.sunColor.b || 0 };
+  if (rgb01(s.sunColor)) o.sunLight = rgb01(s.sunColor);   // 千分制在这里被收回来，见 color01 的注释
   for (const [key, mine] of [["skyLeft", "skyLeftLight"], ["skyRight", "skyRightLight"], ["skyBottom", "skyBottomLight"], ["skyTop", "skyTopLight"], ["skyFront", "skyFrontLight"], ["skyBack", "skyBackLight"]]) {
-    if (s[key]) o[mine] = { red: +s[key].r || 0, green: +s[key].g || 0, blue: +s[key].b || 0 };
+    if (rgb01(s[key])) o[mine] = rgb01(s[key]);
   }
   return o;
 }

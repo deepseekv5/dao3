@@ -917,9 +917,12 @@ vec2 fxTileRect(float t){
     if (t.fogHeightOffset != null && this.skyMat.uniforms.fogY0) this.skyMat.uniforms.fogY0.value = +t.fogHeightOffset;
     if (t.fogHeightFalloff != null && this.skyMat.uniforms.fogFall) this.skyMat.uniforms.fogFall.value = +t.fogHeightFalloff;
     if (!this._underwater && (t.fogDensity != null || t.fogStartDistance != null || t.maxFog != null || t.fogColor != null)) {
-      const near = this._fogNear == null ? span * 1.2 : Math.max(0, this._fogNear);
       const d = Math.max(0, Math.min(1, (this._fogDensity || 0) * 120));
       const cap = Math.max(0, Math.min(1, this._fogMax || 0));
+      // 密度与上限都是 0 时，官方语义是「雾根本没开」。这时 fogStartDistance 只是
+      // 编辑器留下的残留值（赤碧城存的是 12.596），拿它当生效起点会把整张图糊成
+      // 一片亮青——这就是"运行之后光影不对"的第二处。
+      const near = d || cap ? (this._fogNear == null ? span * 1.2 : Math.max(0, this._fogNear)) : span * 1.2;
       const far = near + Math.max(4, span * 4 * (1 - d) * (1 - cap * 0.85));
       this.scene.fog.near = Math.max(0.5, Math.min(near, far - 1));
       this.scene.fog.far = far;
