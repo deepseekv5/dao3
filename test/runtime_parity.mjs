@@ -226,14 +226,19 @@ const phys = await page.evaluate(async (s) => {
   home();
 
   // 5) 自动踏步：1 格高的墙走路爬不上去（官方要跳），起跳才过得去
+  //    只摆 Y 那一层，别摆 Y+1——2 格墙超出 STEP_UP(0.55)，官方也跳不过去。
+  for (let z = Z; z < Z + N; z++) w.set(WX, Y, z, sid, 0);
+  g._voxelDirty && g._voxelDirty.clear();
   g._setKey("keyw", true); await pump(14); g._setKey("keyw", false);
   out.stepWalk = { x: +e.position.x.toFixed(2), rose: +(e.position.y - Y).toFixed(2), passed: e.position.x > WX + 0.4 };
   home();
-  g._setKey("keyw", true); g._jumpBuf = 0.2;
+  // 跑跳：官方 walkSpeed(0.22)*jumpSpeedFactor(0.85)=0.187，40 tick 只有 7.5 格，
+  // 从出生点跑到墙对面需要 ≈8 格——差半格刚好过不去。用 runSpeed(0.4) 才合理。
+  g._setKey("keyw", true); g._setKey("shiftleft", true); g._jumpBuf = 0.2;
   for (let i = 0; i < 40 && e.position.x < WX + 0.5; i++) { g._last -= 320; g._frame(); await sleep(6); }
-  g._setKey("keyw", false);
+  g._setKey("keyw", false); g._setKey("shiftleft", false);
   out.stepJump = { passed: e.position.x > WX + 0.4, x: +e.position.x.toFixed(2) };
-  for (let z = Z; z < Z + N; z++) { w.set(WX, Y, z, 0, 0); w.set(WX, Y + 1, z, 0, 0); }
+  for (let z = Z; z < Z + N; z++) w.set(WX, Y, z, 0, 0);
   home();
 
   // 6) 实体碰撞盒按盒心算：从空中落到平台上应当停在顶面 + 半高

@@ -1526,8 +1526,9 @@ const ZERO = new GameVector3();
       if (this._keys.space) vy += p.swimAcceleration * 0.9;
       vy = clamp(vy, -p.swimSpeed, p.swimSpeed * 1.4);
     } else {
-      const rising = vy > 0 && this._jumpPhase;
-      vy += this.gravity * (rising ? p.jumpAccelerationFactor : 1);
+      // 官方 gravity=-0.1 全程恒定；jumpAccelerationFactor(0.55) 是跳跃**初速**的系数，不是重力乘数。
+      // 之前误用为上升段重力减半，实测跳高 8 格（应为 4.6），且下落突然恢复全重力→飘升砸落。
+      vy += this.gravity;
       vy *= 1 - this.airFriction;
     }
     if (vy < -3) vy = -3; // 终端速度
@@ -1547,6 +1548,10 @@ const ZERO = new GameVector3();
     this._jumpBuf = Math.max(0, this._jumpBuf - TICK_MS / 1000);
     if (this._jumpBuf > 0 && !flying && p.enableJump) {
       if ((this._grounded || this._coyote > 0) && p.jumpPower > 0) {
+        // 官方 jumpPower(0.96) 是起跳瞬时的 vy（格/tick），gravity(-0.1) 全程恒定。
+        // jumpAccelerationFactor 这个字段在官方 d.ts 里标的"跳跃加速度率"其实没人读，
+        // 我们曾误用为上升段减重力（实测跳高翻倍到 8 格）和加到初速（过不了 2 格墙），
+        // 现在删掉这条路径，照官方 blob 原样只用 jumpPower 与 gravity。
         vy = p.jumpPower;
         this._jumpPhase = true;
         this._jumpBuf = 0;
