@@ -275,6 +275,9 @@ function captureCover() {
 let _restoreChain = Promise.resolve();
 function restoreSceneModels(meta) {
   _restoreChain = _restoreChain.then(() => applySceneModels(meta)).catch((err) => console.warn("[models] 恢复失败", err));
+  // 导入方要在摆完之后才报得出"几个实体没拿到网格"——网格是异步 ensure 的，
+  // 不等这一步，toast 只能拿实体数瞎猜（赤碧城 19 个文件撑 34 个实体，就被说成全部缺失）。
+  window.__editor && (window.__editor.modelsReady = _restoreChain);
 }
 async function applySceneModels(meta) {
   const ents = (meta && meta.entities) || [];

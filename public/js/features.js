@@ -1224,12 +1224,15 @@ export async function importProject(file) {
   // 一整张刚导入的图会被静默丢掉。
   e.markDirty();
   const warns = res.warnings.length ? "\n" + res.warnings.join("\n") : "";
-  // "模型"要说清楚是**拿到几何的网格文件数**：433 个实体一个标记框都没有时，
-  // 报"0 模型"会被理解成"导入失败"，而实际是"实体在、网格不在包里"。
-  const needMesh = (meta.entities || []).filter((d) => d.mesh).length;
+  // 报数只能用"最后真的落到标记框上的实体数"，不能拿实体数去比网格文件数：
+  // 一个网格文件常被多个实体复用（赤碧城 19 个 .vox 撑起 34 个实体），
+  // 按文件数一比就得出"34 个实体的网格不在包里"，而实际全摆出来了。
   const gotMesh = Object.keys(res.meshes || {}).length;
+  // 网格是异步 ensure 的，等摆完再报——否则这个数只能是还没摆之前的错觉
+  await (e.modelsReady || Promise.resolve());
+  const unplaced = (e.state.entities || []).filter((d) => d.mesh).length;
   e.toast(`已导入「${res.name}」· ${meta.entities.length} 实体 / ${res.scripts.length} 脚本 / ${gotMesh} 个网格文件`
-    + (needMesh > gotMesh ? `（${needMesh} 个实体引用的网格不在包里，已用标记框显示）` : "") + warns);
+    + (unplaced ? `（${unplaced} 个实体引用的网格不在包里，已用标记框显示）` : "") + warns);
   // 只有包里真的带脚本才跳到脚本页：导入一张图之后用户想看的是世界，
   // 而官方 dao3 包经常是空 scripts/（这次就是），硬跳过去等于把成果盖住。
   if (res.scripts.length) {
