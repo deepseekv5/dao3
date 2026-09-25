@@ -604,9 +604,11 @@ function wireModels() {
   renderModelList();
 }
 // 把选区体素转换为带图集纹理的 Mesh（侧面同样渲染）
-/** 把 world 在 [min,max] 范围内的体素烘成一张网格（面剔除 + 图集 UV）。 */
-function meshVoxelRange(e, w, min, max) {
-  const atlas = e.atlas;
+/** 把 world 在 [min,max] 范围内的体素烘成一张网格（面剔除 + 图集 UV）。
+ *  atlas 必须由调用方传进来：features.js 的模块级 E 要等 initFeatures 才有值，
+ *  而 main.js 的 boot 在更早就会走到这里（加载世界资产里的 .vox）。
+ *  当时写成 meshVoxelRange(E, ...) 就是 "Cannot read properties of undefined (reading 'atlas')"。 */
+function meshVoxelRange(atlas, w, min, max) {
   const mat = new THREE.MeshStandardMaterial({ map: atlas.texture, roughness: 0.92, metalness: 0, transparent: true, opacity: 1 });
   const FACES = [
     // 与 renderer.js 保持一致：外侧逆时针绕序，v=0 在底部
@@ -650,14 +652,14 @@ function meshVoxelRange(e, w, min, max) {
 }
 function voxelSelectionToMesh() {
   const e = E, { min, max } = e.state.selection;
-  return meshVoxelRange(e, e.world, min, max);
+  return meshVoxelRange(e.atlas, e.world, min, max);
 }
 /**
  * 把 .vox 解出来的 [x, z, yDown, palette] 列表变成一个可摆放的模型。
  * 官方 dao3 包里的雕像/奖杯全是这个格式，不吃进来就等于"导入成功但画面是空的"。
  * 颜色按调色板顺序映射到图集方块——和整图 .vox 导入走的是同一条映射，不再另立一套。
  */
-function voxListToModel(voxels, atlas) {
+export function voxListToModel(voxels, atlas) {
   let mx = 0, my = 0, mz = 0;
   for (const v of voxels) { if (v[0] > mx) mx = v[0]; if (v[1] > mz) mz = v[1]; if (v[2] > my) my = v[2]; }
   const world = new VoxelWorld([mx + 1, my + 1, mz + 1]);
@@ -667,7 +669,7 @@ function voxListToModel(voxels, atlas) {
     const id = palette[Math.max(0, Math.min(254, (pal || 1) - 1))] || fallback;
     world.set(x, my - yDown, z, id);
   }
-  const mesh = meshVoxelRange(E, world, { x: 0, y: 0, z: 0 }, { x: mx, y: my, z: mz });
+  const mesh = meshVoxelRange(atlas, world, { x: 0, y: 0, z: 0 }, { x: mx, y: my, z: mz });
   // 实体记录给的是**中心**坐标，体素网格的几何原点在一个角上，不居中就会整体偏出半座雕像
   mesh.geometry.translate(-mx / 2, 0, -mz / 2);
   return mesh;
@@ -1082,6 +1084,31 @@ export async function importProject(file) {
     catch (err) { res.warnings.push(`网格「${vm.name}」建模失败: ${(err && err.message) || err}`); }
   }
   if (voxOk) res.warnings.push(`已把 ${voxOk} 个 .vox 网格转成可渲染模型`);
+  // **网格必须落盘。** 之前只把名字写进 meta.meshNames，几何体留在内存里：
+  // 于是"导入成功、这次会话里看得见"，一存盘重开就什么都不剩，
+  // 而且因为 assetRoot 还指着上一张图的目录，每次打开都要打上百个 404。
+  const meshFiles = [
+    ...(res.meshFiles || []).map((f) => ({ rel: "models/" + f.name + f.ext, bytes: f.bytes })),
+    ...(res.voxMeshes || []).filter((v) => v.bytes).map((v) => ({ rel: "models/" + v.name + ".vox", bytes: v.bytes })),
+  ];
+  const wid = e.worldId || window.__worldId;
+  let stored = 0;
+  if (wid) {
+    for (const f of meshFiles) {
+      try {
+        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(f.rel)}`, { method: "POST", body: f.bytes });
+        if (r.ok) stored++;
+      } catch { /* 单个存不上不该让整次导入失败，下面统一报数 */ }
+    }
+  }
+  if (stored) meta.assetRoot = `/assets/worlds/${wid}/models/`;
+  else if ((meta.meshNames || []).length) {
+    // 包里有网格名但没有网格文件（官方 map-master-full 一类导出不含网格本体，
+    // 那些在官方那边是按 CID 从 IPFS 取的）。这时**不要**再猜一个目录去 fetch：
+    // 猜赛车目录就会像刚才那样一次打开刷出 161 个 404，还全都报"加载失败"。
+    delete meta.assetRoot;
+    res.warnings.push(`${meta.meshNames.length} 个网格只有名字、包里没有网格文件（官方部分导出不含网格本体）；这些实体以标记框显示`);
+  }
   e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames };
   meta.lutNames = (res.assetNames && res.assetNames.lut) || [];
   meta.partNames = (res.assetNames && res.assetNames.part) || [];

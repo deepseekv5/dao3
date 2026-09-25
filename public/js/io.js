@@ -541,8 +541,10 @@ export async function importProjectZip(file) {
       // 解码要 atlas，所以只交原始体素列表，建网格留给 features.js 那侧做。
       if (/\.vox$/i.test(fn)) {
         try {
-          const vs = decodeVox(await extract(e));
-          if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs });
+          const bytes = await extract(e);
+          const vs = decodeVox(bytes);
+          // bytes 也要带上：只解不存的话，这次会话里看得到，一存盘重开就又只剩名字了
+          if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs, bytes });
           else rawMeshes++;
         } catch { rawMeshes++; }
       } else if (/\.vb$/i.test(fn)) rawMeshes++;
@@ -577,11 +579,13 @@ export async function importProjectZip(file) {
   }
 
   // 6) 模型 models/*.gltf|glb —— 解析为可播放 mesh 资产（赛车模板的汽车模型即在其中）
-  const meshes = {};
+  const meshes = {}, meshFiles = [];
   await Promise.all(entries.map(async (e) => {
-    if (!/(^|\/)(models?|mesh)\/.*\.(glb|gltf)$/i.test(e.name)) return;
+    if (!/(^|\/)(models?|meshes?|mesh)\/.*\.(glb|gltf)$/i.test(e.name)) return;
     try {
       const buf = await extract(e);
+      meshFiles.push({ name: e.name.split("/").pop().replace(/\.(glb|gltf)$/i, ""),
+        ext: /\.glb$/i.test(e.name) ? ".glb" : ".gltf", bytes: buf });
       const { GLTFLoader } = await import("../vendor/three/GLTFLoader.js");
       await new Promise((res, rej) => new GLTFLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), "", (g) => {
         const base = e.name.split("/").pop().replace(/\.(glb|gltf)$/i, "");
@@ -591,7 +595,7 @@ export async function importProjectZip(file) {
     } catch {}
   }));
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, assets, assetNames, block, voxMeshes, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, meshFiles, assets, assetNames, block, voxMeshes, warnings };
 }
 
 // 从导入脚本里识别出引用的实体选择器（#id / .tag），用于自动生成实体标记。

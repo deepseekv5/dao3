@@ -287,16 +287,20 @@ async function applySceneModels(meta) {
   for (const m of state.models || []) { if (m.object && m.object.parent) m.object.parent.remove(m.object); }
   state.models = [];
   state.selectedModel = null;
+  const missed = new Set();   // 取不到就记住：不然 17 个实体各发一次请求，全 404
   const ensure = async (base) => {
     let a = state.assets.meshes[base];
     if (a && a.object) return a;
-    const root = (state.meta && state.meta.assetRoot) || "/assets/racing/models/";
+    if (missed.has(base)) return null;
+    const root = state.meta && state.meta.assetRoot;
+    if (!root) { missed.add(base); return null; }
     try {
       const { GLTFLoader: L } = await import("../vendor/three/GLTFLoader.js");
       const buf = await (await fetch(root + encodeURIComponent(base) + ".gltf")).arrayBuffer();
       a = await new Promise((res) => new L().parse(buf, "", (g) => res({ object: g.scene, scale: 1 }), () => res(null)));
       if (a) state.assets.meshes[base] = a;
     } catch { a = null; }
+    if (!a) missed.add(base);
     return a;
   };
   const placedSrc = new Set();
@@ -331,11 +335,19 @@ let _seedAssetsLoaded = false;
 async function loadSeedAssets(meta) {
   const names = meta && meta.meshNames;
   if (!names || !names.length) return;
-  const root = meta && meta.assetRoot || "/assets/racing/models/"; // 兜底：默认赛车模板资产路径
   const { GLTFLoader } = await import("../vendor/three/GLTFLoader.js");
   state.assets = state.assets || { audio: {}, meshes: {}, meshNames: [] };
   state.assets.meshNames = names;
+  // 没有 assetRoot 就**不去猜**。之前兜底到 /assets/racing/models/，于是导入的
+  // 武器试验场每次打开都拿"一把剑.gltf"去赛车目录里找，实测刷出 161 个 404，
+  // 一个也加载不出来，还把控制台埋了。猜错目录不如明说"不知道在哪"。
+  const root = meta && meta.assetRoot;
+  if (!root) {
+    console.warn("[assets] 这张图声明了 " + names.length + " 个网格，但没记录资产目录（包里没有网格文件），跳过拉取");
+    return;
+  }
   let loaded = 0;
+  const failed = [];
   const loadOne = async (base, ext) => {
     const r = await fetch(root + encodeURIComponent(base) + ext);
     if (!r.ok) throw new Error("missing " + ext);
@@ -354,6 +366,7 @@ async function loadSeedAssets(meta) {
     }
     return scene;
   };
+  const { voxListToModel } = await import("./features.js");
   await Promise.all(names.map(async (base) => {
     for (const ext of [".gltf", ".glb"]) {
       try {
@@ -363,8 +376,21 @@ async function loadSeedAssets(meta) {
         return;
       } catch {}
     }
+    // .vox 是导入的官方包里最常见的网格格式：解体素再本地烘成网格，
+    // 用图集当材质，所以不必把整张图集烘进 glTF 一起存。
+    try {
+      const r = await fetch(root + encodeURIComponent(base) + ".vox");
+      if (!r.ok) { failed.push(base + " (无文件)"); return; }
+      const { decodeVox } = await import("./world.js");
+      const mesh = voxListToModel(decodeVox(new Uint8Array(await r.arrayBuffer())), atlas);
+      state.assets.meshes[base] = { object: mesh, scale: 1 };
+      loaded++;
+    } catch (err) { failed.push(base + " (" + ((err && err.message) || err) + ")"); }
   }));
-  if (loaded > 0) console.log("[assets] 已加载 " + loaded + " 个模型");
+  // 部分失败必须说出来。这条链上曾经有三个各自静默的 catch {}，
+  // 表现就是"导入的图重开之后模型全没了，但控制台一句都没有"。
+  if (failed.length) console.warn("[assets] " + loaded + "/" + names.length + " 个网格加载成功，缺：" + failed.slice(0, 6).join("、"));
+  else if (loaded > 0) console.log("[assets] 已加载 " + loaded + " 个模型");
   if (!state.assets.audioNames) {
     try {
       const r = await fetch("/data/assets/audio/index.json");

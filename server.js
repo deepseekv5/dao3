@@ -503,7 +503,11 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
-    if (parts[1] === "world" && safeId(parts[2])) {
+    // 必须限定段数：这一支管的是 /api/world/:id 本身。少了 parts.length === 3，
+    // 它会把 /api/world/:id/asset 的 POST 一起吞进来，然后拿二进制去 JSON.parse——
+    // 于是下面那个资产接口从来没被命中过（返回的是 400 "not valid JSON"），
+    // 导入与上传的网格全都只留在内存里，一存盘重开就没了。
+    if (parts[1] === "world" && parts.length === 3 && safeId(parts[2])) {
       const id = parts[2];
       if (req.method === "GET") {
         const p = worldPath(id);
