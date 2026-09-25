@@ -446,6 +446,10 @@ async function checkAllScripts(E, spec) {
     // 会让 Agent 以为自己做错了什么，去改一个本来没问题的文件。
     if (!code.trim()) { rows.push(`${s.name}: （空文件，跳过）`); continue; }
     const syn = checkSyntax(code);
+    // 严格度面板勾了什么就真的查什么。这些结果同时喂回模型，
+    // 所以面板不是装饰：关掉一条，模型就少收到一类反馈。
+    const findings = lintScript(code, scriptChecks(E));
+    const lint = findings.length ? " · 检查器 " + findings.map((f) => `${f.line}行 ${f.rule}`).slice(0, 6).join("、") : "";
     const bad = [];
     if (syn.ok && spec) {
       // 只抓 `X.member` 形式的成员访问，够用且不会误报成"缺东西"：
@@ -457,7 +461,8 @@ async function checkAllScripts(E, spec) {
         }
       }
     }
-    rows.push(`${s.name}: ${syn.ok ? "语法通过" : "语法错误 " + syn.error}${bad.length ? " · 用到未实现成员 " + bad.join(",") : ""}`);
+    rows.push(`${s.name}: ${syn.ok ? "语法通过" : "语法错误 " + syn.error}${lint}${bad.length ? " · 用到未实现成员 " + bad.join(",") : ""}`);
+    for (const f of findings) rows.push(`  ${f.line} 行 · ${f.rule}：${f.msg}`);
   }
   return rows.length ? rows.join("\n") : "（这张地图没有脚本）";
 }

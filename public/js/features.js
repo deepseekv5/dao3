@@ -6,6 +6,7 @@ import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
+import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
 
 let E; // window.__editor 引用
 
@@ -253,8 +254,47 @@ if (typeof sb !== "undefined") {
   world.onTick(() => {});
 }`;
 
+/** 检查严格度：面板 + 存到 meta.scriptChecks，供 build.check 与 AI 规范注入读取。 */
+export function scriptChecks(E) {
+  const m = E.state.meta;
+  return (m.scriptChecks = m.scriptChecks || { enabled: true, strictNullChecks: true, noUnusedLocals: false, readonlyApi: true });
+}
+function wireScriptChecks() {
+  const e = E, host = document.querySelector("#scriptScreen .ss-files");
+  if (!host || document.getElementById("scPanel")) return;
+  const cfg = scriptChecks(e);
+  const box = document.createElement("div");
+  box.id = "scPanel"; box.className = "sc-panel";
+  const head = document.createElement("button");
+  head.className = "sc-head";
+  head.innerHTML = "<span>检查严格度(BETA)</span><i>▾</i>";
+  head.onclick = () => box.classList.toggle("is-closed");
+  box.appendChild(head);
+  for (const g of CHECK_GROUPS) {
+    const t = document.createElement("div"); t.className = "sc-sub"; t.textContent = g.title;
+    box.appendChild(t);
+    for (const it of g.items) {
+      const row = document.createElement("label");
+      row.className = "sc-row" + (it.tsOnly ? " off" : "");
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = it.tsOnly ? false : !!cfg[it.key];
+      cb.disabled = !!it.tsOnly;
+      const txt = document.createElement("span");
+      txt.innerHTML = `<b></b>${it.hint || it.tsOnly ? "<i></i>" : ""}`;
+      txt.querySelector("b").textContent = it.label;
+      const sub = txt.querySelector("i");
+      if (sub) sub.textContent = it.tsOnly ? TS_ONLY_NOTE : it.hint;
+      row.append(cb, txt);
+      cb.onchange = () => { cfg[it.key] = cb.checked; e.markDirty(); e.toast(it.label + "：" + (cb.checked ? "开" : "关")); };
+      box.appendChild(row);
+    }
+  }
+  host.appendChild(box);
+}
+
 function wireScript() {
   const e = E;
+  wireScriptChecks();
   e.state.scripts = e.state.scripts && e.state.scripts.length ? e.state.scripts : [
     { name: "index.js", code: DEFAULT_SCRIPT },
     { name: "clientIndex.js", code: "" },

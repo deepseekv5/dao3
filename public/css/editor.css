@@ -589,3 +589,18 @@ body.playing.float-edit #peRotate{display:none}
   padding:0 7px;color:#fff;height:auto;box-sizing:border-box}
 .uiw-ed.uiw-input{display:flex;align-items:center;font-size:12px;color:#9fb0c6;
   border:1px dashed rgba(255,255,255,.34);border-radius:5px;padding:0 6px;background:rgba(8,11,16,.5)}
+
+/* ---------- 脚本页「检查严格度(BETA)」：官方是文件列表下方一组折叠勾选 ---------- */
+.sc-panel{margin-top:auto;border-top:1px solid var(--grey2);padding:8px 10px 10px}
+.sc-panel.is-closed .sc-sub,.sc-panel.is-closed .sc-row{display:none}
+.sc-panel.is-closed .sc-head i{transform:rotate(-90deg)}
+.sc-head{width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:0;
+  color:#fff;font-size:12px;font-weight:600;padding:4px 2px;cursor:pointer}
+.sc-head i{font-style:normal;font-size:10px;color:var(--font-black-minor);transition:transform .15s}
+.sc-sub{font-size:11px;color:var(--font-black-minor);margin:9px 2px 4px}
+.sc-row{display:flex;gap:8px;align-items:flex-start;padding:5px 4px;border-radius:6px;cursor:pointer}
+.sc-row:hover{background:#1a1f28}
+.sc-row input{margin-top:2px;accent-color:var(--primary)}
+.sc-row span{display:flex;flex-direction:column;gap:1px;font-size:12px;color:var(--font-black-major)}
+.sc-row span i{font-style:normal;font-size:10.5px;color:var(--font-black-minor);line-height:1.45}
+.sc-row.off{opacity:.45;cursor:not-allowed}
