@@ -3021,6 +3021,7 @@ void main() {
       getGameRule: (n) => (n in rt.gameRules ? rt.gameRules[n] : null),
       setGameRule: (n, v) => { rt.gameRules[n] = v; },
       onUIPress: (id, h) => { rt._uiPress = rt._uiPress || new Map(); rt._uiPress.set(id, h); return { cancel: () => rt._uiPress.delete(id), resume: () => {}, active: () => true }; },
+      onUIInput: (id, h) => { rt._uiInput = rt._uiInput || new Map(); rt._uiInput.set(id, h); return { cancel: () => rt._uiInput.delete(id), resume: () => {}, active: () => true }; },
       setWidgetText: (id, text) => {
         const el = document.querySelector(`#gameUIWidgets [data-wid="${id}"]`);
         if (el) el.textContent = text;
@@ -3716,11 +3717,26 @@ void main() {
         host.appendChild(im);
         continue;
       }
+      if (w.type === "input") {
+        const ip = document.createElement("input");
+        ip.dataset.wid = w.id;
+        ip.className = "uiw uiw-input";
+        ip.placeholder = w.placeholder || "";
+        ip.value = w.text || "";
+        ip.style.cssText = `left:${w.x}%;top:${w.y}%;width:${w.w}%;font-size:${w.size || 14}px;color:${w.color || "#fff"}`;
+        ip.onchange = () => {
+          const h = this._uiInput && this._uiInput.get(w.id);
+          if (h) { try { h({ id: w.id, value: ip.value, player: this.playerEntity && this.playerEntity.player }); } catch (err) { consoleDiv(this.hud.console, "onUIInput: " + err.message, "err"); } }
+        };
+        host.appendChild(ip);
+        continue;
+      }
       const el = document.createElement(w.type === "button" ? "button" : "div");
       el.dataset.wid = w.id;
       el.className = "uiw uiw-" + (w.type || "text");
       el.textContent = w.text || (w.type === "button" ? "按钮" : "");
       el.style.cssText = `left:${w.x}%;top:${w.y}%;width:${w.w}%;height:${w.h}%;font-size:${w.size || 14}px;color:${w.color || "#fff"};${w.bg ? "background:" + w.bg + ";" : ""}`;
+      if (w.type === "scroll") el.style.overflow = "auto";
       if (w.type === "button") {
         el.onclick = () => {
           const h = this._uiPress && this._uiPress.get(w.id);

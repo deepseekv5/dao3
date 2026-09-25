@@ -383,9 +383,6 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <b>界面编辑器</b>
     <span class="ss-dim">拖动摆放控件 · 保存到世界 · 运行游戏时显示 · 脚本用 world.onUIPress('id', cb) 响应按钮</span>
     <span class="ss-spacer"></span>
-    <button id="uiAddButton">＋ 按钮</button>
-    <button id="uiAddText">＋ 文本</button>
-    <button id="uiAddImage">＋ 图片</button>
     <button id="uiDel" title="删除选中控件">删除选中</button>
   </div>
   <div class="ss-body">
@@ -393,7 +390,20 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
       <div class="ss-files-head"><span>控件</span></div>
       <div id="uiList"></div>
     </div>
-    <div class="ui-stage-wrap"><div id="uiStage" class="ui-stage"></div></div>
+    <div class="ui-stage-wrap">
+      <!-- 官方是视口上方一条浮动节点条，不是塞在标题栏里的按钮 -->
+      <div class="ui-palette show" id="uiPalette">
+        <button data-t="box" title="放一个框架"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg><span>框架</span></button>
+        <button data-t="scroll" title="放一个滚动框"><svg viewBox="0 0 24 24"><path d="M6 3h12v18H6zM15 8v8M9 8v8"/></svg><span>滚动框</span></button>
+        <button data-t="text" title="放一段文本"><svg viewBox="0 0 24 24"><path d="M5 6h14M9 6v13M5 6V4h14v2"/></svg><span>文本</span></button>
+        <button data-t="input" title="放一个输入框"><svg viewBox="0 0 24 24"><path d="M3 8h18v8H3zM6 11v2"/></svg><span>输入框</span></button>
+        <button data-t="image" title="放一张图片"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 13l3 3 2-2 4 4"/></svg><span>图片</span></button>
+        <button data-t="button" title="放一个按钮（本地扩展，官方按钮是带点击的框架）"><svg viewBox="0 0 24 24"><path d="M4 9h16v6a2 2 0 01-2 2H6a2 2 0 01-2-2zM8 9V7a4 4 0 018 0v2"/></svg><span>按钮</span></button>
+        <i class="up-div"></i>
+        <button class="up-close" id="uiPaletteClose" title="收起">✕</button>
+      </div>
+      <div id="uiStage" class="ui-stage"></div>
+    </div>
     <div class="ss-console" id="uiPropsPane">
       <div class="ss-console-head">属性</div>
       <div id="uiProps" class="ui-props"></div>

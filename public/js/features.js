@@ -46,7 +46,7 @@ function wireTopMenu() {
       E.ctx.mode = "build";
       if (m === "model") { libCard.style.display = "none"; modelPanel.classList.add("show"); E.ctx.mode = "model"; }
       else if (m === "script") { libCard.style.display = "none"; scriptScreen.classList.add("show"); E.ctx.mode = "script"; if (E.showScriptScreen) E.showScriptScreen(true); }
-      else if (m === "ui") { document.getElementById("uiScreen").classList.add("show"); E.ctx.mode = "ui"; if (E.renderUiEditor) E.renderUiEditor(); }
+      else if (m === "ui") { document.getElementById("uiScreen").classList.add("show"); E.ctx.mode = "ui"; document.getElementById("uiPalette")?.classList.add("show"); if (E.renderUiEditor) E.renderUiEditor(); }
       else if (m === "player") { document.getElementById("playerPanel").classList.add("show"); }
       else if (m === "store") { document.getElementById("storeScreen").classList.add("show"); document.getElementById("libCard").style.display = "none"; E.ctx.mode = "store"; if (E.renderStore) E.renderStore(); }
       // 代码包是纯文件视图，不抢 3D 视口的 mode：开着它也能看见世界
@@ -1483,14 +1483,24 @@ function wireUiEditor() {
     window.removeEventListener("mousemove", onDrag);
     window.removeEventListener("mouseup", endDrag);
   }
+  // 官方节点条里的五种：框架 / 滚动框 / 文本 / 输入框 / 图片。
+  // 之前编辑器只能放按钮、文本、图片——运行时的 UiBox / UiScrollBox / UiInput
+  // 都实现了，却在编辑器里摆不出来，等于这三类节点对作者是不存在的。
+  const KIND = {
+    box: { w: 26, h: 18 }, scroll: { w: 22, h: 26 }, text: { text: "文本", w: 24, h: 8 },
+    input: { w: 24, h: 7, placeholder: "请输入" }, image: { w: 20, h: 16, image: "" },
+    button: { text: "按钮", w: 16, h: 8, bg: "#fc8308" },
+  };
   const addWidget = (type) => {
-    const w = { id: type + (widgets().length + 1), type, text: type === "button" ? "按钮" : type === "image" ? "" : "文本", x: 40, y: 44, w: type === "button" ? 16 : 24, h: 8, size: type === "button" ? 14 : 16, color: "#ffffff", bg: "#fc8308" };
-    if (type === "image") { w.w = 20; w.h = 16; w.image = ""; }
+    const k = KIND[type] || KIND.text;
+    // 逐个错开落点：全都放在同一个坐标时，连点四个节点看着就像只放了一个
+    const n = widgets().length;
+    const w = Object.assign({ id: type + (n + 1), type, text: "", x: 40 + (n % 5) * 4, y: 44 + (n % 5) * 5, w: 24, h: 8, size: 16, color: "#ffffff" }, k);
     widgets().push(w); sel = w.id; persist(); render();
   };
-  $("uiAddButton").onclick = () => addWidget("button");
-  $("uiAddText").onclick = () => addWidget("text");
-  if ($("uiAddImage")) $("uiAddImage").onclick = () => addWidget("image");
+  document.querySelectorAll("#uiPalette [data-t]").forEach((b) => { b.onclick = () => addWidget(b.dataset.t); });
+  const paletteClose = $("uiPaletteClose");
+  if (paletteClose) paletteClose.onclick = () => document.getElementById("uiPalette").classList.remove("show");
   $("uiDel").onclick = () => {
     if (!sel) { e.toast("先选中一个控件"); return; }
     e.state.meta.ui = widgets().filter((x) => x.id !== sel); sel = null; persist(); render();

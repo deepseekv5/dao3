@@ -568,3 +568,24 @@ body.playing.float-edit #peRotate{display:none}
 .pk-menu button{background:none;border:0;color:var(--font-black-major);font-size:12.5px;text-align:left;
   padding:7px 10px;border-radius:5px;cursor:pointer}
 .pk-menu button:hover{background:#232c3a}
+
+/* ---------- 界面 tab：视口上方那条浮动节点条（仿官方） ---------- */
+.ui-stage-wrap{position:relative}
+.ui-palette{position:absolute;left:50%;transform:translateX(-50%);top:14px;z-index:5;display:none;
+  align-items:center;gap:2px;background:rgba(22,26,34,.94);border:1px solid #2b3340;border-radius:12px;
+  padding:8px 8px 6px;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+.ui-palette.show{display:flex}
+.ui-palette button{width:62px;padding:7px 2px 5px;background:none;border:0;border-radius:8px;cursor:pointer;
+  color:#c9d4e2;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px}
+.ui-palette button:hover{background:#242c39;color:#fff}
+.ui-palette svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ui-palette .up-div{width:1px;height:26px;background:#2b3340;margin:0 4px}
+.ui-palette .up-close{width:28px;color:#7d8b9f}
+.ui-palette .up-close:hover{color:#fff;background:none}
+/* 新增的三类节点在编辑舞台与运行 HUD 里都得看得出形状，否则摆上去是隐形的 */
+.uiw-ed.uiw-box,.uiw.uiw-box{border:1px solid rgba(255,255,255,.34);background:rgba(18,24,34,.5)}
+.uiw-ed.uiw-scroll,.uiw.uiw-scroll{border:1px solid rgba(255,255,255,.28);background:rgba(12,16,23,.55);padding:4px}
+.uiw.uiw-input{background:rgba(8,11,16,.72);border:1px solid rgba(255,255,255,.3);border-radius:5px;
+  padding:0 7px;color:#fff;height:auto;box-sizing:border-box}
+.uiw-ed.uiw-input{display:flex;align-items:center;font-size:12px;color:#9fb0c6;
+  border:1px dashed rgba(255,255,255,.34);border-radius:5px;padding:0 6px;background:rgba(8,11,16,.5)}
