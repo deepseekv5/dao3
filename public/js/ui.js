@@ -171,13 +171,13 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   api.syncFP = () => $("fpEdit")?.classList.toggle("active", !!renderer.fpMode);
 
   // ---------- 方块库缩放（真的改变缩略图尺寸，并被记住） ----------
+  // 缩略图不能按 1x 就小成一粒：官方方块库里立方体是要占满格子的，
+  // 名字读得出来。原来 1x 只有 44px 格 / 26px 图，看着像一墙马赛克。
   function applyZoom() {
     const z = state.blockZoom || 1;
-    lib.style.gridTemplateColumns = `repeat(auto-fill, minmax(${Math.round(30 * z + 14)}px, 1fr))`;
-    lib.querySelectorAll(".block img").forEach((i) => {
-      i.style.width = Math.round(16 * z * 1.6) + "px";
-      i.style.height = Math.round(16 * z * 1.6) + "px";
-    });
+    lib.style.gridTemplateColumns = `repeat(auto-fill, minmax(${66 + 14 * z}px, 1fr))`;
+    const side = 40 + 10 * z;
+    lib.querySelectorAll(".block img").forEach((i) => { i.style.width = side + "px"; i.style.height = side + "px"; });
   }
   $("zoomSlider").oninput = (e) => {
     const z = Number(e.target.value) || 1;
