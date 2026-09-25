@@ -391,7 +391,15 @@ export async function importProjectZip(file) {
   const name = String(file.name || "导入项目").replace(/\.zip$/i, "") || "导入项目";
   let world = null, entities = [];
   // 顶层常套一层项目名文件夹（赤碧城/json/player.json），所以前缀放宽成 (^|/)
-  const findCfg = (key) => entries.find((e) => new RegExp(`(^|/)(project|json)/${key}\\.json$`, "i").test(e.name));
+  // 官方不同版本的导出里，同一个配置既可能是 json/player.json（单文件），
+  // 也可能是 json/player/ 目录下的分片。两种都要认，否则整块配置直接消失。
+  const consumed = new Set();
+  const findCfg = (key) => {
+    const hit = entries.find((e) => new RegExp(`(^|/)(project|json)/${key}\\.json$`, "i").test(e.name))
+      || entries.find((e) => new RegExp(`(^|/)json/${key}/[^/]+\\.json$`, "i").test(e.name));
+    if (hit) consumed.add(hit.name);
+    return hit;
+  };
   const jsonOf = async (e) => (e ? JSON.parse(new TextDecoder().decode(await extract(e))) : null);
 
   // 1) 地图。terrain/raw/*.bin 是官方烘焙好的渲染网格、不是体素（八叉树解码已证伪），
@@ -421,14 +429,20 @@ export async function importProjectZip(file) {
     world = null;
   }
   if (rawBins) warnings.push(`跳过 ${rawBins} 个 terrain/raw/*.bin：那是官方烘焙网格，不是体素数据`);
+  // 认不出的配置也要报数：静默丢掉一半配置比导入失败更难查——用户只会觉得
+  // "导入成功了但有些东西不对"，却说不上哪里不对。判据用"有没有真的被消费掉"，
+  // 而不是路径白名单：按白名单的话 json/ 整目录放行，json/seeds/ 就永远报不出来。
 
   // 1b) block.json：官方项目根清单。值大多是 IPFS CID（本地没有内容），
   //     但 scriptIndex / version / features 是明文可用信息。
   let block = null;
-  try { block = await jsonOf(entries.find((e) => /(^|\/)block\.json$/i.test(e.name))); } catch { block = null; }
+  const blockEnt = entries.find((e) => /(^|\/)block\.json$/i.test(e.name));
+  if (blockEnt) consumed.add(blockEnt.name);
+  try { block = await jsonOf(blockEnt); } catch { block = null; }
 
   // 2) 项目名（project/map.json 优先）
   const mapJson = entries.find((e) => /project\/map\.json$/i.test(e.name));
+  if (mapJson) consumed.add(mapJson.name);
   if (mapJson) {
     try {
       const j = await jsonOf(mapJson);
@@ -440,6 +454,8 @@ export async function importProjectZip(file) {
   const flatEnt = entries.find((e) => /entities\/models\.json$/i.test(e.name))
     || entries.find((e) => /(^|\/)entities\.json$/i.test(e.name));
   const treeEnt = entries.find((e) => /entitiesTree.*\.json$/i.test(e.name));
+  if (flatEnt) consumed.add(flatEnt.name);
+  if (treeEnt) consumed.add(treeEnt.name);
   // 一张"实体表"有三种历史形状，都得吃下：
   //   · 数组                          —— 我们的 entities/models.json
   //   · {id: 记录}                    —— 官方 dao3 的 json/entities.json（id 只在键上，记录体里没有）
@@ -482,6 +498,7 @@ export async function importProjectZip(file) {
   }
   // 3a2) project/compat.json：官方清单里没有的本地扩展（隐藏网格 / 物理盒偏移 / gameRules / 商品表 / 界面部件）
   const compatEnt = entries.find((e) => /project\/compat\.json$/i.test(e.name));
+  if (compatEnt) consumed.add(compatEnt.name);
   let compat = null;
   if (compatEnt) {
     try { compat = JSON.parse(new TextDecoder().decode(await extract(compatEnt))); } catch {}
@@ -579,6 +596,7 @@ export async function importProjectZip(file) {
   // 5b) 官方资源表 project/assets.json：路径 → {animated,bounds,contentId,hash,ownerId,previewImage,size,type}
   let assets = null;
   const assetsEnt = entries.find((e) => /project\/assets\.json$/i.test(e.name));
+  if (assetsEnt) consumed.add(assetsEnt.name);
   if (assetsEnt) {
     try {
       const j = JSON.parse(new TextDecoder().decode(await extract(assetsEnt)));
@@ -614,6 +632,12 @@ export async function importProjectZip(file) {
       }, rej));
     } catch {}
   }));
+
+  // 必须排在所有 findCfg 之后：早一步算就会把 player.json / environment.json
+  // 当成"未识别"报出来——判据是"有没有真的被消费掉"，而消费发生在下面这些行里。
+  if (gzEnt) consumed.add(gzEnt.name);
+  const oddJson = entries.filter((e) => /\.json$/i.test(e.name) && !consumed.has(e.name));
+  if (oddJson.length) warnings.push(`未识别 ${oddJson.length} 个配置文件（${oddJson.slice(0, 3).map((x) => x.name.split("/").slice(-2).join("/")).join("、")}${oddJson.length > 3 ? " 等" : ""}），已跳过`);
 
   return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, meshFiles, assets, assetNames, block, voxMeshes, warnings };
 }
