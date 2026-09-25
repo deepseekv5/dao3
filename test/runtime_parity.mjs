@@ -475,6 +475,54 @@ ok(`player.spectator＝官方「幽灵可穿墙」：关掉被墙挡住、打开
 ok(`player.showName 控制名牌文本（开=名字，关=空）`,
   pl.showName.withName > 0 && pl.showName.without > 0, JSON.stringify(pl.showName));
 
+/* ---- 默认角色外观：为什么单独测 ----
+   用户连着两次说"玩家模型还是不好看"。"好看"没法直接断言，但造成它的具体
+   技术原因可以：直角盒剪影像纸箱、有髋无膝像滑冰、部件之间露接缝。
+   所以这里量三件客观事实——顶点密度（倒角盒才会有的分段数）、关节是否在动、
+   轮廓高度是否还落在物理盒的 1.8 格里。 */
+const av = await page.evaluate(() => {
+  const g = window.__game, e = g.playerEntity, P = g.player;
+  const parts = e._avatar.userData.parts, rig = e._avatar.userData.rig || {};
+  const out = { verts: {}, joints: Object.keys(rig).filter((k) => /knee|elbow/.test(k)) };
+  for (const k of ["head", "body", "armL", "legL"]) {
+    let m = null;
+    parts[k].traverse((x) => { if (!m && x.isMesh) m = x; });
+    m.geometry.computeBoundingBox();
+    out.verts[k] = m.geometry.attributes.position.count;
+  }
+  const B = Object.getPrototypeOf(parts.head.children[0].geometry.boundingBox).constructor;
+  e._avatar.updateWorldMatrix(true, true);
+  const bb = new B().setFromObject(e._avatar);
+  out.foot = +(bb.min.y - e._obj.position.y).toFixed(3);
+  out.height = +(bb.max.y - e._obj.position.y).toFixed(3);
+  P.walkState = "run";
+  const seen = { knee: 0, elbow: 0, lean: 0, bob: 0, swing: 0 };
+  for (let k = 0; k < 14; k++) {
+    g._updateAvatar(e, 0.09);
+    seen.knee = Math.max(seen.knee, rig.kneeL.rotation.x, rig.kneeR.rotation.x);
+    seen.elbow = Math.min(seen.elbow, rig.elbowL.rotation.x, rig.elbowR.rotation.x);
+    seen.lean = Math.max(seen.lean, parts.body.rotation.x);
+    seen.bob = Math.max(seen.bob, parts.head.position.y - rig.base.head);
+    seen.swing = Math.max(seen.swing, Math.abs(parts.legL.rotation.x));
+  }
+  out.run = Object.fromEntries(Object.entries(seen).map(([k, v]) => [k, +v.toFixed(3)]));
+  P.walkState = "";
+  g._updateAvatar(e, 0.09);
+  out.idle = { leg: +parts.legL.rotation.x.toFixed(3), knee: +rig.kneeL.rotation.x.toFixed(3), lean: +parts.body.rotation.x.toFixed(3) };
+  return out;
+});
+ok(`人偶主体件用倒角盒（直角 BoxGeometry 恒为 24 顶点）`,
+  av.verts.head > 150 && av.verts.body > 150 && av.verts.armL > 150 && av.verts.legL > 150,
+  JSON.stringify(av.verts));
+ok(`轮廓高度仍落在物理盒那一格里（脚不陷地、头顶不过 1.9）`,
+  av.foot > -0.02 && av.foot < 0.06 && av.height > 1.6 && av.height <= 1.9,
+  JSON.stringify({ foot: av.foot, h: av.height }));
+ok(`跑动时膝/肘/躯干/起伏都在动（有髋无膝＝滑冰感）`,
+  av.joints.length === 4 && av.run.knee > 0.4 && av.run.elbow < -0.3 && av.run.lean > 0.03 && av.run.bob > 0.005
+  && av.run.swing > 0.4, JSON.stringify(av));
+ok(`停下后关节归零，不会冻在半个步态上`,
+  av.idle.leg === 0 && av.idle.knee === 0 && av.idle.lean === 0, JSON.stringify(av.idle));
+
 /* ---- 图片资产：resources.ls("picture") 与 UiImage 的项目内路径解析 ---- */
 const pic = await page.evaluate(() => {
   const g = window.__game, api = g._cliApi;

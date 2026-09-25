@@ -103,24 +103,62 @@ class TagLayer {
 //
 // 每个部件是一个 Group，原点放在**关节**上（肩、髋），网格往下偏——
 // 这样 rotation.x 是绕肩/髋转，而不是绕一块居中盒子的中心转（旧版腿像钟摆就是这么来的）。
+// 肘与膝是部件**内部**的二级 Group（rig 里带着），不新增对外挂点：
+// 官方那 18 个槽位里没有本地网格可用的关节，多挂只会让换装对不上位。
 // 子网格用 userData.tint 标自己该被哪种染色影响：
 //   "cloth" 上衣/裤子类，受 skin[part] 与 player.color 驱动
 //   "skin"  露出的皮肤（脸、手），受 skin[part] 驱动
 //   不设   头发、眼睛、腰带、鞋、纽扣——永远是自己的颜色，染色不会把五官涂没
+
+// 倒角盒：把 BoxGeometry 的每个顶点沿"到内核盒最近点"的方向推到半径 r 处，
+// 法线用同一个式子解析求出。平面上它正好退化成面法线，所以相邻面在接缝处
+// 拿到同一个法线——不必 mergeVertices 也能全表面平滑着色。
+// 为什么要换掉直角盒：整套人偶由三十个 90° 硬边盒子拼成时，剪影读起来是
+// "一摞纸箱"而不是"一个人"。这是"不好看"的第一来源，比配色严重。
+const _rboxCache = new Map();
+function rbox(w, h, d, r, seg = 5) {
+  const key = `${w}|${h}|${d}|${r}|${seg}`;
+  const hit = _rboxCache.get(key);
+  if (hit) return hit;
+  const rad = Math.max(0.002, Math.min(r, w / 2, h / 2, d / 2));
+  const geo = new THREE.BoxGeometry(w, h, d, seg, seg, seg);
+  const pos = geo.attributes.position, nor = geo.attributes.normal;
+  const ix = w / 2 - rad, iy = h / 2 - rad, iz = d / 2 - rad;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const cx = clamp(x, -ix, ix), cy = clamp(y, -iy, iy), cz = clamp(z, -iz, iz);
+    const dx = x - cx, dy = y - cy, dz = z - cz;
+    const len = Math.hypot(dx, dy, dz);
+    if (len > 1e-9) {
+      const k = rad / len;
+      pos.setXYZ(i, cx + dx * k, cy + dy * k, cz + dz * k);
+      nor.setXYZ(i, dx / len, dy / len, dz / len);
+    }
+  }
+  geo.computeBoundingSphere();
+  _rboxCache.set(key, geo);
+  return geo;
+}
+
 function makeAvatar() {
   const g = new THREE.Group();
   // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
   // 所以人偶统一用 Standard（roughness 1 / metalness 0 时观感接近原来的 Lambert）
-  const std = (hex, rough = 0.86) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 });
+  const std = (hex, rough = 0.78) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 });
+  // 配色按"低饱和场景里要跳得出来"来选：游戏光照偏暗（globalLight 0.29 起），
+  // 上一版的中蓝+深蓝裤子在这个光照下直接糊成一块黑柱子。
   const C = {
-    skin: 0xf0c9a0, skinDark: 0xd3a878, hair: 0x40301f, eye: 0x2b2b33, eyeWhite: 0xf7f9fc,
-    shirt: 0x4a86c4, shirtShade: 0x35648f, collar: 0xdfe6ef, pants: 0x3d4560, pantsShade: 0x2c3348,
-    belt: 0x2a2d38, buckle: 0xd9b25a, boot: 0x2b241d, bootSole: 0x1a1614, cuff: 0x2f5f8f,
+    skin: 0xffd7b0, skinShade: 0xeab88e, blush: 0xe9ac96, hair: 0x6b4630, hairDeep: 0x54372a,
+    eye: 0x3a3644, shine: 0xffffff, lip: 0xc0705f,
+    shirt: 0x5aa8e8, shirtDeep: 0x3d7cba, collar: 0xf2f6fb, button: 0xe6eef8,
+    pants: 0x5b6c8e, pantsDeep: 0x48566f, belt: 0x5b4636, buckle: 0xd9b45e,
+    shoe: 0x7b5441, sole: 0x332a2b,
   };
   const part = (name, x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); p.name = name; g.add(p); return p; };
-  // box 的 y 是相对**关节**的偏移，不是世界高度
-  const box = (parent, w, h, d, hex, x, y, z, tint, rough) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), std(hex, rough));
+  // box 的 y 是相对**所属关节**的偏移，不是世界高度。r 缺省取最短边的 32%，
+  // 所以厚 0.02 的贴片几乎仍是直角（细节要利落），而头/躯干这种体量会明显圆起来。
+  const box = (parent, w, h, d, hex, x, y, z, tint, rough, r) => {
+    const m = new THREE.Mesh(rbox(w, h, d, r == null ? Math.min(w, h, d) * 0.32 : r), std(hex, rough));
     m.position.set(x, y, z);
     m.castShadow = true; m.receiveShadow = true;
     m.userData.baseColor = hex;
@@ -129,49 +167,68 @@ function makeAvatar() {
     return m;
   };
 
-  const head = part("head", 0, 1.40, 0);
-  box(head, 0.40, 0.40, 0.36, C.skin, 0, 0.20, 0, "skin");           // 脸（侧面收一点，避免整颗头都是后脑）
-  box(head, 0.42, 0.12, 0.38, C.hair, 0, 0.375, -0.005);             // 头发帽：只比头宽 0.02，多了就像顶着一块板
-  box(head, 0.38, 0.20, 0.08, C.hair, 0, 0.255, -0.165);             // 后脑头发（贴着头皮，不外凸）
-  box(head, 0.09, 0.05, 0.03, C.hair, -0.14, 0.295, 0.175);          // 左眉
-  box(head, 0.09, 0.05, 0.03, C.hair, 0.14, 0.295, 0.175);           // 右眉
-  box(head, 0.09, 0.08, 0.03, C.eyeWhite, -0.10, 0.205, 0.18);       // 左眼白
-  box(head, 0.09, 0.08, 0.03, C.eyeWhite, 0.10, 0.205, 0.18);        // 右眼白
-  box(head, 0.05, 0.05, 0.03, C.eye, -0.09, 0.195, 0.196, null, 0.4); // 左瞳（低 roughness＝有点湿亮）
-  box(head, 0.05, 0.05, 0.03, C.eye, 0.09, 0.195, 0.196, null, 0.4);  // 右瞳
-  box(head, 0.06, 0.04, 0.05, C.skinDark, 0, 0.135, 0.19, "skin");   // 鼻尖
-  box(head, 0.14, 0.025, 0.03, C.skinDark, 0, 0.075, 0.18, "skin");  // 嘴
-  box(head, 0.10, 0.10, 0.10, C.skin, 0, 0.14, -0.21, "skin");       // 颈后
+  // 头：占满 1.30..1.80，圆角收到"玩具人偶"而不是"鸡蛋"的程度
+  const head = part("head", 0, 1.30, 0);
+  box(head, 0.46, 0.50, 0.42, C.skin, 0, 0.25, 0, "skin", 0.74, 0.12);   // 头
+  box(head, 0.045, 0.085, 0.062, C.skinShade, -0.222, 0.225, -0.02, "skin"); // 左耳（贴着颅侧，突出量只留一点）
+  box(head, 0.045, 0.085, 0.062, C.skinShade, 0.222, 0.225, -0.02, "skin");  // 右耳
+  box(head, 0.485, 0.22, 0.45, C.hair, 0, 0.41, -0.015, null, 0.62, 0.10);   // 头发帽（盖住头顶，露出额头下半）
+  box(head, 0.44, 0.36, 0.13, C.hair, 0, 0.21, -0.20, null, 0.62, 0.055);    // 后脑头发（一直收到颈后，免得脑后露出一圈头皮）
+  box(head, 0.115, 0.028, 0.028, C.hairDeep, -0.105, 0.305, 0.203);        // 左眉
+  box(head, 0.115, 0.028, 0.028, C.hairDeep, 0.105, 0.305, 0.203);         // 右眉
+  // 眼睛是"深色眼球 + 一点高光"，不是"白眼白 + 黑瞳"：0.4 格见方的白色眼白
+  // 在这个尺寸下只会连成一片，看着像戴了副墨镜。
+  box(head, 0.095, 0.115, 0.05, C.eye, -0.105, 0.225, 0.198, null, 0.28, 0.022);
+  box(head, 0.095, 0.115, 0.05, C.eye, 0.105, 0.225, 0.198, null, 0.28, 0.022);
+  box(head, 0.034, 0.040, 0.02, C.shine, -0.085, 0.258, 0.226, null, 0.2);
+  box(head, 0.034, 0.040, 0.02, C.shine, 0.125, 0.258, 0.226, null, 0.2);
+  box(head, 0.068, 0.034, 0.02, C.blush, -0.163, 0.152, 0.196, "skin", 0.95);
+  box(head, 0.068, 0.034, 0.02, C.blush, 0.163, 0.152, 0.196, "skin", 0.95);
+  box(head, 0.085, 0.026, 0.022, C.lip, 0, 0.108, 0.203, null, 0.6, 0.011);  // 嘴
 
-  const body = part("body", 0, 0.82, 0);
-  box(body, 0.46, 0.50, 0.26, C.shirt, 0, 0.29, 0, "cloth");         // 躯干（比头宽，肩线才撑得住）
-  box(body, 0.50, 0.09, 0.29, C.collar, 0, 0.545, 0.01);             // 领口（比肩略宽，读得出是独立一件）
-  box(body, 0.48, 0.09, 0.27, C.pants, 0, 0.045, 0, "cloth");        // 胯
-  box(body, 0.49, 0.07, 0.28, C.belt, 0, 0.115, 0);                  // 腰带
-  box(body, 0.09, 0.06, 0.03, C.buckle, 0, 0.115, 0.15, null, 0.35); // 铜扣（metalness 感靠低 roughness）
-  box(body, 0.10, 0.16, 0.02, C.shirtShade, -0.14, 0.33, 0.14);      // 上衣左开襟阴影
-  box(body, 0.10, 0.16, 0.02, C.shirtShade, 0.14, 0.33, 0.14);       // 上衣右开襟阴影
+  const body = part("body", 0, 0.80, 0);
+  box(body, 0.42, 0.56, 0.26, C.shirt, 0, 0.27, 0, "cloth", 0.8, 0.085);   // 躯干
+  box(body, 0.30, 0.075, 0.29, C.collar, 0, 0.545, 0.005, null, 0.7, 0.03); // 领口（比肩窄，才读得出是领子不是垫肩）
+  box(body, 0.055, 0.30, 0.02, C.shirtDeep, 0, 0.30, 0.132);               // 门襟
+  box(body, 0.034, 0.034, 0.022, C.button, 0, 0.40, 0.14, null, 0.4);       // 上扣
+  box(body, 0.034, 0.034, 0.022, C.button, 0, 0.26, 0.14, null, 0.4);       // 下扣
+  box(body, 0.435, 0.075, 0.275, C.belt, 0, 0.045, 0, null, 0.66, 0.028);   // 腰带
+  box(body, 0.075, 0.058, 0.03, C.buckle, 0, 0.045, 0.145, null, 0.32);     // 铜扣
 
+  const rig = {};
   const arm = (name, side) => {
-    const a = part(name, side * 0.28, 1.32, 0);                      // 原点在肩
-    box(a, 0.15, 0.30, 0.16, C.shirt, 0, -0.16, 0, "cloth");         // 上臂（袖子）
-    box(a, 0.155, 0.055, 0.165, C.cuff, 0, -0.315, 0);               // 袖口
-    box(a, 0.13, 0.16, 0.14, C.skin, 0, -0.42, 0, "skin");           // 小臂+手
+    const a = part(name, side * 0.235, 1.315, 0);                           // 原点在肩
+    box(a, 0.145, 0.30, 0.155, C.shirt, 0, -0.15, 0, "cloth", 0.8, 0.05);   // 上臂（袖子）
+    box(a, 0.15, 0.05, 0.16, C.shirtDeep, 0, -0.315, 0, null, 0.75, 0.02);  // 袖口
+    const elbow = new THREE.Group(); elbow.position.set(0, -0.33, 0); a.add(elbow);
+    // 小臂和手都刻意"方"一点（倒角只给到 0.03 上下）：半径一大，手就变成
+    // 两颗球挂在腕上，看着像戴了拳击手套。
+    box(elbow, 0.125, 0.20, 0.135, C.skin, 0, -0.10, 0, "skin", 0.74, 0.034); // 小臂
+    box(elbow, 0.12, 0.15, 0.125, C.skin, 0, -0.285, 0, "skin", 0.74, 0.038); // 手
+    rig[name === "armL" ? "elbowL" : "elbowR"] = elbow;
     return a;
   };
   const armL = arm("armL", -1), armR = arm("armR", 1);
 
   const leg = (name, side) => {
-    const l = part(name, side * 0.115, 0.82, 0);                    // 原点在髋
-    box(l, 0.185, 0.44, 0.20, C.pants, 0, -0.22, 0, "cloth");       // 大腿
-    box(l, 0.175, 0.20, 0.19, C.pantsShade, 0, -0.54, 0, "cloth");  // 小腿（深一档，读得出是两条）
-    box(l, 0.19, 0.11, 0.28, C.boot, 0, -0.695, 0.035);             // 鞋（往前伸，有鞋头）
-    box(l, 0.195, 0.035, 0.29, C.bootSole, 0, -0.755, 0.04);        // 鞋底
+    const l = part(name, side * 0.108, 0.80, 0);                            // 原点在髋
+    box(l, 0.175, 0.40, 0.19, C.pants, 0, -0.20, 0, "cloth", 0.82, 0.058);  // 大腿
+    const knee = new THREE.Group(); knee.position.set(0, -0.40, 0); l.add(knee);
+    // 小腿往上多长 0.03 盖住膝盖：两块圆角盒正好在关节处各退让一个半径，
+    // 不重叠就会露出一圈"可动人偶"的接缝。
+    box(knee, 0.165, 0.38, 0.18, C.pantsDeep, 0, -0.16, 0, "cloth", 0.82, 0.05); // 小腿
+    box(knee, 0.185, 0.12, 0.30, C.shoe, 0, -0.33, 0.045, null, 0.6, 0.045);     // 鞋（往前伸，有鞋头）
+    box(knee, 0.19, 0.04, 0.315, C.sole, 0, -0.375, 0.05, null, 0.85, 0.016);    // 鞋底
+    rig[name === "legL" ? "kneeL" : "kneeR"] = knee;
     return l;
   };
   const legL = leg("legL", -1), legR = leg("legR", 1);
 
+  // 静息时手臂略微外张：贴着躯干会交叉进盒子里，看着像没有胳膊
+  armL.rotation.z = -0.05; armR.rotation.z = 0.05;
   g.userData.parts = { head, body, armL, armR, legL, legR };
+  // 上半身起伏要整体动，所以记下这三块各自的基准高度
+  g.userData.rig = Object.assign({ base: { head: 1.30, body: 0.80, armL: 1.315, armR: 1.315 } }, rig);
   return g;
 }
 
@@ -1907,17 +1964,39 @@ const ZERO = new GameVector3();
     const av = ent._avatar;
     if (!av) return;
     const parts = av.userData.parts;
+    const rig = av.userData.rig || {};
+    const base = rig.base || {};
     const p = ent.player;
     const st = p ? p.walkState : "";
     this._animT = (this._animT || 0) + dt * (st === GamePlayerWalkState.RUN ? 11 : 7);
-    const amp = st === GamePlayerWalkState.RUN ? 0.7 : st === GamePlayerWalkState.WALK ? 0.45 : 0;
-    const s = Math.sin(this._animT) * amp;
+    const amp = st === GamePlayerWalkState.RUN ? 0.78 : st === GamePlayerWalkState.WALK ? 0.52 : 0;
+    const t = this._animT;
+    const s = Math.sin(t) * amp;
     parts.legL.rotation.x = s;
     parts.legR.rotation.x = -s;
-    parts.armL.rotation.x = -s * 0.8;
-    parts.armR.rotation.x = s * 0.8;
-    if (p && p.moveState === GamePlayerMoveState.FLYING) { parts.armL.rotation.z = -1.4; parts.armR.rotation.z = 1.4; }
-    else { parts.armL.rotation.z = 0; parts.armR.rotation.z = 0; }
+    // 膝盖只在腿往后蹬的那半拍里弯，往前摆时基本伸直。
+    // 有髋无膝是"人偶在滑冰"这种廉价感的第二来源（第一是直角盒子）。
+    if (rig.kneeL) rig.kneeL.rotation.x = Math.max(0, s) * 0.95;
+    if (rig.kneeR) rig.kneeR.rotation.x = Math.max(0, -s) * 0.95;
+    parts.armL.rotation.x = -s * 0.85;
+    parts.armR.rotation.x = s * 0.85;
+    // 肘永远带一点弯（直挺挺垂着的手臂像两根棍），摆到身前时更弯。
+    // 绕 +x 是往后，所以手臂角度取负才是"往前"。
+    const elbowOf = (a) => -(0.2 + 0.5 * Math.max(0, -a));
+    if (rig.elbowL) rig.elbowL.rotation.x = elbowOf(parts.armL.rotation.x);
+    if (rig.elbowR) rig.elbowR.rotation.x = elbowOf(parts.armR.rotation.x);
+    const flying = p && p.moveState === GamePlayerMoveState.FLYING;
+    parts.armL.rotation.z = flying ? -1.35 : -0.05;
+    parts.armR.rotation.z = flying ? 1.35 : 0.05;
+    // 躯干前倾 + 上半身起伏（脚仍踏着地）：让重量落在动作里，
+    // 否则整个角色是一块在平移的积木。待机时起伏退化成呼吸。
+    const lean = amp * 0.1;
+    parts.body.rotation.x = lean;
+    parts.head.rotation.x = -lean * 0.5;
+    const bob = amp > 0 ? Math.abs(Math.sin(t)) * 0.026 * amp : Math.sin(t * 0.5) * 0.007;
+    for (const k of ["head", "body", "armL", "armR"]) {
+      if (base[k] != null) parts[k].position.y = base[k] + bob;
+    }
     // 官方把 color/metalness/emissive/shininess 归到「显示」类：脚本里赋值就要立刻看到
     if (p) {
       const cc = p.color ? colorTriple(p.color) : [1, 1, 1];
