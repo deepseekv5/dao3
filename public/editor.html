@@ -32,7 +32,8 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
       <button class="mtab" data-menu="script">脚本</button><i class="div"></i>
       <button class="mtab" data-menu="ui">界面</button><i class="div"></i>
       <button class="mtab" data-menu="store">商城</button><i class="div"></i>
-      <button class="mtab" data-menu="player">玩家</button>
+      <button class="mtab" data-menu="player">玩家</button><i class="div"></i>
+      <button class="mtab" data-menu="pack">代码包</button>
     </nav>
   </div>
   <div class="tb-center">
@@ -413,6 +414,18 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <div class="ss-files"><div class="ss-files-head"><span>商品</span></div><div id="storeList"></div></div>
     <div class="ss-console" style="flex:1"><div class="ss-console-head">商品属性</div><div id="storeProps" class="ui-props"></div></div>
   </div>
+</div>
+
+<!-- 代码包：一张图的素材文件管理（仿官方文件管理面板） -->
+<div id="packScreen" class="script-screen">
+  <div class="ss-head">
+    <button id="packBack" class="ss-back" title="返回搭建界面"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>返回编辑器</button>
+    <b>代码包</b>
+    <span class="ss-dim">本图全部素材文件 · 名字下面那行是内容地址（IPFS CID）· 官方包常只给地址不给文件，缺的可以在这里按地址取回</span>
+    <span class="ss-spacer"></span>
+    <button id="packIndex" hidden>读取官方资源表</button>
+  </div>
+  <div class="ss-body" id="packBody"></div>
 </div>
 
 <script type="module" src="/js/disclaimer.js"></script>

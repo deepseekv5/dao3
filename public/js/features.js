@@ -5,6 +5,7 @@ import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
 import { openAgent } from "./ai-agent.js";
+import { initPack } from "./pack.js";
 
 let E; // window.__editor 引用
 
@@ -19,6 +20,7 @@ export function initFeatures(editor) {
   wireModels();
   wirePlayer();
   wireUiEditor();
+  initPack(E);                      // 代码包 tab
   wireStore();
 }
 
@@ -34,9 +36,11 @@ function wireTopMenu() {
       const scriptScreen = document.getElementById("scriptScreen");
       const uiScreen = document.getElementById("uiScreen");
       const playerPanel = document.getElementById("playerPanel");
+      const packScreen = document.getElementById("packScreen");
       scriptScreen.classList.remove("show");
       uiScreen.classList.remove("show");
       playerPanel.classList.remove("show");
+      packScreen?.classList.remove("show");
       modelPanel.classList.remove("show");
       libCard.style.display = "block";
       E.ctx.mode = "build";
@@ -45,6 +49,14 @@ function wireTopMenu() {
       else if (m === "ui") { document.getElementById("uiScreen").classList.add("show"); E.ctx.mode = "ui"; if (E.renderUiEditor) E.renderUiEditor(); }
       else if (m === "player") { document.getElementById("playerPanel").classList.add("show"); }
       else if (m === "store") { document.getElementById("storeScreen").classList.add("show"); document.getElementById("libCard").style.display = "none"; E.ctx.mode = "store"; if (E.renderStore) E.renderStore(); }
+      // 代码包是纯文件视图，不抢 3D 视口的 mode：开着它也能看见世界
+      else if (m === "pack") {
+        packScreen?.classList.add("show");
+        libCard.style.display = "none";
+        if (E.renderPack) E.renderPack();
+        const bi = document.getElementById("packIndex");
+        if (bi) { bi.hidden = !(E.state.meta.assetsCid && !E.state.meta.assetIndex); bi.onclick = () => E.packLoadIndex && E.packLoadIndex(); }
+      }
     };
   });
 }
@@ -1110,6 +1122,10 @@ export async function importProject(file) {
     res.warnings.push(`${meta.meshNames.length} 个网格只有名字、包里没有网格文件（官方部分导出不含网格本体）；这些实体以标记框显示`);
   }
   e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames };
+  // 官方资源表（路径 → {hash,type,size}）与它的 CID：代码包面板要靠这两样
+  // 才能把"名字下面那个内容地址"显示出来，并按地址把包里没带的文件取回来。
+  meta.assetIndex = res.assets || prev.assetIndex || null;
+  meta.assetsCid = (res.block && res.block.assets) || null;
   meta.lutNames = (res.assetNames && res.assetNames.lut) || [];
   meta.partNames = (res.assetNames && res.assetNames.part) || [];
   meta.pictureNames = (cfg.pictureNames && cfg.pictureNames.length) ? cfg.pictureNames : (res.pictureNames || []);
@@ -1548,6 +1564,8 @@ export function wireStore() {
     props.appendChild(del);
   }
   $("storeAdd").onclick = () => { items().push(PRODUCT_DEFAULT()); sel = items().length - 1; persist(); e.toast("已新建商品"); };
+  const pb = $("packBack");
+  if (pb) pb.onclick = () => { document.getElementById("packScreen").classList.remove("show"); document.getElementById("libCard").style.display = "block"; document.querySelector('.mtab[data-menu="build"]')?.classList.add("active"); };
   $("storeBack").onclick = () => { screen.classList.remove("show"); document.getElementById("libCard").style.display = "block"; E.ctx.mode = "build"; document.querySelector('.mtab[data-menu="build"]')?.classList.add("active"); };
   e.renderStore = render;
   render();

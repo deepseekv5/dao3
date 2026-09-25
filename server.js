@@ -73,6 +73,18 @@ const json = (res, code, obj) => send(res, code, JSON.stringify(obj), {
 const safeId = (id) => typeof id === "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(id);
 const worldPath = (id) => path.join(WORLDS, `${id}.json.gz`);
 
+/** 递归列出一个目录下的文件（相对路径 + 字节数）。目录不存在就是空表。 */
+function listAssetFiles(root, rel = "", out = []) {
+  let items;
+  try { items = fs.readdirSync(path.join(root, rel), { withFileTypes: true }); } catch { return out; }
+  for (const it of items) {
+    const r = rel ? rel + "/" + it.name : it.name;
+    if (it.isDirectory()) listAssetFiles(root, r, out);
+    else { try { out.push({ path: r, bytes: fs.statSync(path.join(root, r)).size }); } catch {} }
+  }
+  return out;
+}
+
 // VOXA 模型文档（部件/骨骼/动画），按名字存 gzip JSON
 const MODELS = path.join(DATA_ROOT, "models");
 fs.mkdirSync(MODELS, { recursive: true });
@@ -544,7 +556,32 @@ const server = http.createServer((req, res) => {
         return json(res, 200, { ok: true });
       }
     }
-    // 保存世界资产（zip 导入时提取的 models/*.gltf 等）：POST /api/world/:id/asset?path=models/a.gltf
+    // 删一个世界资产（代码包面板的「删除」）。限定只能删该世界自己目录下的文件，
+    // 且解析结果必须仍在该目录内——路径穿越在这里是致命的。
+    if (parts[1] === "world" && safeId(parts[2]) && parts[3] === "asset" && req.method === "DELETE") {
+      const id = parts[2];
+      const rel = (url.searchParams.get("path") || "").replace(/^\/+/, "");
+      if (!rel || rel.includes("..") || rel.length > 200) return json(res, 400, { error: "bad path" });
+      let gone = false;
+      for (const base of [ASSETS, ASSETS_IN_TREE]) {
+        const dir = path.join(base, id), f = path.join(dir, rel);
+        if (f.startsWith(dir + path.sep) && fs.existsSync(f)) { fs.unlinkSync(f); gone = true; }
+      }
+      return json(res, gone ? 200 : 404, { ok: gone, path: rel });
+    }
+    // 世界资产清单与写入：GET / POST /api/world/:id/asset?path=models/a.gltf
+    if (parts[1] === "world" && safeId(parts[2]) && parts[3] === "asset" && req.method === "GET") {
+      // 「代码包」面板要列文件。没有这个接口就只能显示 meta 里的名字，
+      // 于是名字与真实落盘的文件是两回事——用户上传了却在看不到、也删不掉。
+      const id = parts[2];
+      const files = [];
+      for (const base of [ASSETS, ASSETS_IN_TREE]) {
+        for (const f of listAssetFiles(path.join(base, id))) {
+          if (!files.some((x) => x.path === f.path)) files.push(f);
+        }
+      }
+      return json(res, 200, { files });
+    }
     if (parts[1] === "world" && safeId(parts[2]) && parts[3] === "asset" && req.method === "POST") {
       const id = parts[2];
       const rel = (url.searchParams.get("path") || "").replace(/^\/+/, "");
