@@ -27,6 +27,12 @@ const SEED_BAK = path.join(OUT, "seed-world-backup.json.gz");
 const seedExisted = fs.existsSync(SEED_FILE);
 if (seedExisted) fs.copyFileSync(SEED_FILE, SEED_BAK);
 const seedBytesBefore = seedExisted ? fs.statSync(SEED_FILE).size : 0;
+// 还原必须挂在**进程退出**上，而不是只写在套件末尾：上一轮就是中途抛了
+// 一个 waitForFunction 超时，末尾那三行根本没执行，出厂地图就带着
+// map.save 的测试残留留在了磁盘上，下一轮开局断言全红。
+process.on("exit", () => {
+  try { if (seedExisted && fs.existsSync(SEED_BAK)) fs.copyFileSync(SEED_BAK, SEED_FILE); } catch { /* 退出路径上别抛 */ }
+});
 
 const home = process.env.HOME;
 const exe = resolveChromium();
@@ -102,11 +108,13 @@ const orphan = await page.evaluate(async () => {
   // 等实体真的重建出来，而不是死等固定时长：固定延长得靠猜，而服务冷启动
   // （刚重启、素材目录首次读取）时 2.5 秒不够，这条就会以一种和资产 404
   // 毫无关系的方式红掉。注意这里在 page.evaluate 内部，只有页面自己的 API 可用。
+  // 等的是"场景模型真的装回来了"，不是 entities 非空：entities 里先有一个玩家
+  // 标记就满足，等于没等。赛车模板是 199 个模型，等到 150 以上再留一点收敛时间。
   const t0 = Date.now();
-  while (Date.now() - t0 < 20000 && !(E.state.entities || []).length) {
-    await new Promise((r) => setTimeout(r, 120));
+  while (Date.now() - t0 < 25000 && (E.state.models || []).length < 150) {
+    await new Promise((r) => setTimeout(r, 150));
   }
-  await new Promise((r) => setTimeout(r, 400));
+  await new Promise((r) => setTimeout(r, 500));
   const n = E.collectEntities().length;
   const left = E.state.entities.length;
   E.state.meta.assetRoot = keepRoot; E.state.assets.meshes = keepMeshes;
@@ -678,7 +686,7 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
   // 所以这里不看样式，直接问"按钮中心那个点上，浏览器认为是谁"。
   const hit = await page.evaluate(() => {
     const bad = [];
-    for (const k of ["cfg", "run", "stop", "budget", "goal"]) {
+    for (const k of ["cfg", "run", "stop", "goal"]) {
       const el = document.querySelector(`#aiAgent [data-k="${k}"]`);
       if (!el) { bad.push(k + ":不存在"); continue; }
       const r = el.getBoundingClientRect();
@@ -716,7 +724,9 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
   ok("关掉设置后不残留遮罩", (await page.locator("#aiSettings").count()) === 0);
 
   await page.fill('#aiAgent [data-k="goal"]', "造一个石头台子，上面立一座红塔，加一个起点实体和两端脚本，跑一遍再存盘");
-  await page.fill('#aiAgent [data-k="budget"]', "24");
+  // 界面上不该再有"步数预算"这个输入框
+  ok("没有步数预算输入框（跑多少步由目标决定）",
+    (await page.locator('#aiAgent [data-k="budget"]').count()) === 0);
   await page.click('#aiAgent [data-k="run"]');
   await page.waitForFunction(() => /完成|预算用尽|中断/.test(document.querySelector('#aiAgent [data-k="stat"]').textContent),
     null, { timeout: 180000 });
@@ -753,6 +763,7 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     worldOnDisk: null,
   }));
   ok("Agent 跑到 finish", /完成/.test(rep.stat), rep.stat);
+  ok("没有步数上限：22 步的动作序列全部跑完", rep.tools >= 22, `${rep.tools} 行工具调用`);
   ok("每次工具调用都单独成行显示（不是糊成一坨日志）",
     rep.tools >= 15, `${rep.tools} 行工具调用`);
   // planShown 取的是 [data-k="plan"].hidden：跑起来以后应当是 false（即清单可见）
@@ -810,8 +821,45 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
 
   await page.click('#aiAgent .ai-x');
   await page.waitForSelector("#aiAgent", { state: "detached" });
-  await page.evaluate(() => localStorage.removeItem("dao3_ai_config"));
   mock.close();
+
+  /*
+   * 去掉步数上限之后，必须还留着"卡住就停"——否则一个反复撞同一面墙的循环
+   * 会无上限地烧用户自己的 API 额度，那不是"全自动"，那是失控。
+   * 这里让 mock 永远回同一个非法动作，断言它在有限步内自己停下。
+   */
+  let burn = 0;
+  const wall = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      Buffer.concat(chunks).toString("utf8");
+      burn++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ model: "e2e-wall", choices: [{ message: { role: "assistant", content: '{"action":"teleportToMoon"}' } }] }));
+    });
+  });
+  await new Promise((r) => wall.listen(0, "127.0.0.1", r));
+  const WALL = "http://127.0.0.1:" + wall.address().port + "/v1";
+  await page.evaluate((cfg) => localStorage.setItem("dao3_ai_config", JSON.stringify(cfg)),
+    { baseUrl: WALL, model: "e2e-wall", key: KEY, temperature: 0.4, maxTokens: 256 });
+  // runtime.start 会 enterPlay()，而 enterPlay 按规定收起脚本这种全屏子界面——
+  // 于是 #aiAgentBtn 所在的脚本面板已经关了，按钮存在但不可见。
+  // Agent 小窗本身是 fixed 浮层，不受影响（这正是它不用 .modal 类的原因）。
+  await page.click('.mtab[data-menu="script"]');
+  await page.waitForFunction(() => document.getElementById("scriptScreen").classList.contains("show"), { timeout: 10000 });
+  await page.click("#aiAgentBtn");
+  await page.waitForSelector('#aiAgent [data-k="run"]');
+  await page.fill('#aiAgent [data-k="goal"]', "把玩家传送到月亮上");
+  await page.click('#aiAgent [data-k="run"]');
+  await page.waitForFunction(() => /卡住|完成|中断/.test(document.querySelector('#aiAgent [data-k="stat"]').textContent),
+    null, { timeout: 60000 });
+  const wstat = await page.evaluate(() => document.querySelector('#aiAgent [data-k="stat"]').textContent);
+  ok("反复撞同一面墙时会自己停，不会无上限烧额度", /卡住/.test(wstat) && burn <= 8, `${wstat} · 实际调用 ${burn} 次`);
+  await page.click('#aiAgent .ai-x');
+  await page.waitForSelector("#aiAgent", { state: "detached" });
+  await page.evaluate(() => localStorage.removeItem("dao3_ai_config"));
+  wall.close();
 }
 
 console.log("== 程序化地形：走真实 UI 生成一张群岛 ==");

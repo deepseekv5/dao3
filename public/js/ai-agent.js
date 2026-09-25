@@ -1,5 +1,5 @@
 // ai-agent.js — 「AI Agent」全自动小窗：给一个目标，它自己写脚本、自己盖模型、
-// 自己跑一遍看报不报错，报错就改，直到收工或用完预算。
+// 自己跑一遍看报不报错，报错就改，直到收工。没有步数上限。
 //
 // 为什么是"小窗"而不是又一个全屏抽屉：Agent 一跑就是十几轮、几十秒到几分钟，
 // 用户要能同时看到世界在长什么样子，也要能随时打断。所以它是一个可拖动的浮层，
@@ -14,7 +14,9 @@
 // 它们必须能在没有浏览器、没有网络的情况下被测（test/ai.mjs 就是干这个的）。
 //
 // 三条底线：
-//  1. **预算**。步数、每次调用的 token、观察文本长度全部有上限，跑飞了会自己停。
+//  1. **不设步数上限**，但会认"卡住"：同一动作连续失败 4 次、或连续 12 步
+//     没有任何成功改动，就停下来等人。这不是保守，是因为那种情况下继续跑
+//     只会一直花用户的 API 额度而不会再产出任何东西。
 //  2. **不越权**。Agent 能写的只有地图脚本与体素；碰不到存档、网络、文件系统，
 //     也碰不到用户填的密钥（写脚本时故意不告诉它配置的存在）。
 //  3. **每步都可撤销**。盖体素走 history，写脚本前整份脚本表先 snapshot，
@@ -27,7 +29,15 @@ import { exportProjectZip } from "./io.js";
 import { dataStorageKey, dataStoragePrefix } from "./game.js";
 import { PRESETS } from "./terrain.js";
 
-const MAX_STEPS_DEFAULT = 14;
+/**
+ * 算"有进展"的动作：真的动了世界、脚本或存盘。
+ * 只读类（project.info / script.get / runtime.logs）不算——否则一个
+ * 反复 inspect 却什么都不改的循环会被当成有进展，永远停不下来。
+ */
+const PROGRESS_ACTIONS = new Set(["blocks.edit", "model.build", "entity.add", "ui.add",
+  "zone.add", "settings.set", "script.upload", "script.rename", "storage.set",
+  "storage.remove", "map.save", "project.export", "project.create"]);
+
 const MAX_CODE = 20000;         // 单个脚本的字符上限
 const MAX_OBS = 3600;           // 每条观察回喂给模型的字符上限
 const MAX_READ = 6000;          // readScript 回喂上限
@@ -530,8 +540,6 @@ export function openAgent(E) {
       <button data-k="run" class="primary">开始</button>
       <button data-k="stop" disabled>中止</button>
       <button data-k="cfg">接口设置</button>
-      <label style="display:flex;align-items:center;gap:4px;color:#8b98ab;font-size:11.5px">步数预算
-        <input data-k="budget" type="number" min="2" max="30" value="${MAX_STEPS_DEFAULT}" style="width:46px;background:#0d1117;border:1px solid #2a3444;border-radius:5px;color:#e6edf6;padding:3px 5px;font-size:12px"></label>
       <span class="ag-budget" data-k="stat"></span>
     </div>`;
   document.body.appendChild(d);
@@ -691,7 +699,9 @@ export function openAgent(E) {
     goal.disabled = true; q("run").disabled = true; q("stop").disabled = false;
     const ctrl = new AbortController();
     busy = ctrl;
-    const budget = Math.max(2, Math.min(30, Number(q("budget").value) || MAX_STEPS_DEFAULT));
+    // 没有步数上限：跑多少步由目标决定，不由我们猜。
+    // 唯一保留的停止条件是"卡住"——见下面 stuck 的注释。
+    let stuckKey = "", stuckCount = 0, sinceProgress = 0;
     const t0 = Date.now();
     let used = 0, calls = 0;
     // 终态要分得清"完成 / 预算用尽 / 中断"。原先 finally 里无条件把 stat 覆盖成
@@ -713,9 +723,9 @@ export function openAgent(E) {
       const spec = digest.spec || null;
       const sys = await specPrompt("server", digest) + "\n\n" + AGENT_RULES + "\n\n【可用动作】\n" + toolBrief();
       const msgs = [{ role: "system", content: sys }, { role: "user", content: "目标：" + want }];
-      for (let step = 1; step <= budget; step++) {
+      for (let step = 1; ; step++) {
         if (ctrl.signal.aborted) throw new Error("已中止");
-        stat(`第 ${step}/${budget} 步`);
+        stat(`第 ${step} 步`);
         const r = await chat(msgs, { signal: ctrl.signal, json: true, timeout: 150000, maxTokens: 4096 });
         calls++; used += (r.usage && r.usage.total_tokens) || 0;
         let parsed;
@@ -735,6 +745,9 @@ export function openAgent(E) {
           bad.finish(checked.error, false);
           msgs.push({ role: "assistant", content: JSON.stringify({ thought: parsed.thought, action: parsed.action, args: parsed.args }).slice(0, 4000) });
           msgs.push({ role: "user", content: "这一步没有执行。原因：" + checked.error });
+          const k1 = "invalid:" + checked.error;
+          stuckCount = k1 === stuckKey ? stuckCount + 1 : 1; stuckKey = k1; sinceProgress++;
+          if (stuckCount >= 4) { outcome = "卡住"; plain(`同一个非法动作连续 ${stuckCount} 次，停下等你。它没能理解可用动作清单，继续跑只会白烧你的 token。`, "err"); break; }
           continue;
         }
         const { action, args } = checked;
@@ -772,13 +785,23 @@ export function openAgent(E) {
         }
         obs = res.ok ? res.obs : "失败：" + res.obs;
         row.finish(obs, res.ok, ((Date.now() - ts) / 1000).toFixed(1) + "s");
+        // 「卡住」不等于「步数多」：只认两种客观情况——
+        //   a) 同一个动作带同样的参数连续失败 4 次（模型在撞墙）
+        //   b) 连续 12 步没有任何一步成功改动世界/脚本（没有进展）
+        // 这是唯一保留的自动停止条件，因为这两种情况下继续跑只会一直花你的
+        // API 额度而不会再产出。步数本身不设限。
+        if (res.ok && PROGRESS_ACTIONS.has(action)) { stuckCount = 0; stuckKey = ""; sinceProgress = 0; }
+        else {
+          sinceProgress++;
+          const k2 = action + "|" + JSON.stringify(args).slice(0, 400);
+          if (!res.ok) { stuckCount = k2 === stuckKey ? stuckCount + 1 : 1; stuckKey = k2; }
+          if (stuckCount >= 4) { outcome = "卡住"; plain(`同一个动作连续失败 ${stuckCount} 次，停下等你。界面里能看到它每次收到的原始报错。`, "err"); break; }
+          if (sinceProgress >= 12) { outcome = "无进展"; plain(`连续 12 步没有任何成功改动，停下等你。它在原地打转。`, "err"); break; }
+        }
         if (action === "script.upload" && res.ok) row.diff(codeDiff(before, args.code));
         msgs.push({ role: "user", content: "观察：" + clip(obs) });
       }
-      if (obs !== null) {
-        plain(`用完 ${budget} 步预算，自动停止。目标可能没做完：提高步数预算继续，或者让它先 finish 汇报现状。`, "err");
-        outcome = `预算用尽 · ${budget} 步`;
-      }
+
     } catch (e) {
       if (e && e.name === "AbortError") outcome = "已中止";
       else { plain("中断：" + String((e && (e.message || e)) || ""), "err"); outcome = "中断"; }
@@ -1061,7 +1084,8 @@ const AGENT_RULES = `
 7. 做了能交付的一批改动就 map.save 一次；别攒到最后，中间断了用户什么也拿不到。
 8. 同一个动作连续失败两次就换思路（换位置、换更小尺寸、换更简单写法），不要重复撞墙。
 9. 做完就 finish，小结里写清「做了什么 / 用什么触发 / 还有什么没做」。
-   做不完也 finish——宁可交一个带说明的半成品，也不要默默耗光步数预算。
+   做不完也要 finish，小结里写清卡在哪一步、需要什么信息才能继续。
+   没有步数上限：跑够为止。但连续撞同一个墙我们会停下来等你，不会闷烧你的额度。
 
 硬约束：
 - 世界坐标必须是整数格；sb 沙箱只有 sb / Math / console 三个全局，官方 API 一个都没有。
