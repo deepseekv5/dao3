@@ -605,6 +605,7 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
   const KEY = "e2e-agent-fake-key-7b2d";
   const STEPS = [
     '{"action":"project.info","thought":"先看世界多大"}',
+    '{"action":"plan.set","args":{"items":[{"text":"看清世界","status":"done"},{"text":"砌石头台子","status":"doing"},{"text":"写两端脚本","status":"todo"},{"text":"跑一遍验证","status":"todo"}]}}',
     '{"action":"deleteWholeWorld"}',                                   // 故意越权，必须被拒且不打断循环
     '{"action":"blocks.edit","args":{"code":"sb.box([2,2,2],[4,4,4],\'stone\'); console.log(sb.count());"}}',
     '{"action":"script.upload","args":{"entry":"agentMade.js","side":"server","code":"world.onTick(() => {});"}}',
@@ -613,6 +614,7 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     '{"action":"entity.add","args":{"name":"起点-0","label":"检查点","at":[3,5,3]}}',
     '{"action":"storage.set","args":{"name":"scores","key":"best","value":42}}',
     '{"action":"storage.get","args":{"name":"scores","key":"best"}}',
+    '{"action":"plan.set","args":{"items":[{"text":"看清世界","status":"done"},{"text":"砌石头台子","status":"done"},{"text":"写两端脚本","status":"done"},{"text":"跑一遍验证","status":"doing"}]}}',
     '{"action":"build.check"}',
     '{"action":"runtime.start","args":{"ticks":30}}',
     '{"action":"runtime.logs","args":{"level":"error"}}',
@@ -675,6 +677,14 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     return bad;
   });
   ok("小窗每个按钮都能被真的点到（没有被脚本界面盖住）", hit.length === 0, hit.join(", ") || "");
+  // Claude Code 那种"看得见在调什么工具"是这一版的目标：不是把日志糊成一坨，
+  // 而是每个动作两行（⏺ 调用 + ⎿ 结果）、能展开看原始参数、带耗时。
+  const shape = await page.evaluate(() => ({
+    tools: document.querySelectorAll("#aiAgent .ag-tool .nm").length,
+    running: document.querySelectorAll("#aiAgent .ag-run").length,
+    planHidden: document.querySelector('#aiAgent [data-k="plan"]').hidden,
+  }));
+  ok("打开小窗就有目标框，计划清单在未开跑前是隐藏的", shape.tools === 0 && shape.planHidden === true);
 
   // 自动保存的真实验收：只往输入框里打字，一个"保存"按钮都不点
   await page.click('#aiAgent [data-k="cfg"]');
@@ -707,6 +717,14 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     models: (window.__editor.state.models || []).length,
     canUndo: (window.__editor.history.stack || []).length,
     errs: (window.__errLog || []).slice(),
+    tools: document.querySelectorAll("#aiAgent .ag-tool .nm").length,
+    planShown: document.querySelector('#aiAgent [data-k="plan"]').hidden,
+    planDone: document.querySelectorAll("#aiAgent .ag-plan li.done").length,
+    planDoing: document.querySelectorAll("#aiAgent .ag-plan li.doing").length,
+    firstMeta: (document.querySelector("#aiAgent .ag-meta") || {}).textContent || "",
+    argsJson: [...document.querySelectorAll("#aiAgent details pre.ag-code")].map((n) => n.textContent).join("\n"),
+    diffAdds: document.querySelectorAll("#aiAgent .dl.add").length,
+    stuck: document.querySelectorAll("#aiAgent .ag-run").length,
     saved: (() => {
       // 按 key 的形状找，而不是写死整串：官方 getDataStorage 是【单地图】作用域，
       // 修好之后 key 里带 worldId，写死 "dao3_storage:map:scores:best" 反而会变成
@@ -721,6 +739,21 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     worldOnDisk: null,
   }));
   ok("Agent 跑到 finish", /完成/.test(rep.stat), rep.stat);
+  ok("每次工具调用都单独成行显示（不是糊成一坨日志）",
+    rep.tools >= 15, `${rep.tools} 行工具调用`);
+  // planShown 取的是 [data-k="plan"].hidden：跑起来以后应当是 false（即清单可见）
+  ok("计划清单显示在顶部且随步骤推进打勾",
+    rep.planShown === false && rep.planDone >= 3 && rep.planDoing === 1,
+    `hidden=${rep.planShown} ☑${rep.planDone} ▶${rep.planDoing}`);
+  // tokens 只有服务商回了 usage 才有，mock 不回——不能写进必选条件，
+  // 否则换一家不回 usage 的兼容网关就会把这条测成红。耗时与调用次数是必定有的。
+  ok("结果行带耗时，收工行有终态与调用次数汇总",
+    /^\d+(\.\d+)?s$/.test(rep.firstMeta) && /完成 · \d+ 步 · \d+ 次调用 · [\d.]+s/.test(rep.stat), rep.stat);
+  // stringify(args, null, 1) 在冒号后会带一个空格， needle 要按实际输出写
+  ok("参数可展开，展开里能看到模型真实发出的 args", rep.argsJson.includes('"entry": "agentMade.js"'),
+    rep.argsJson.slice(0, 60));
+  ok("写脚本那一行能展开看行级 diff（有 + 行）", rep.diffAdds >= 1, `+${rep.diffAdds} 行`);
+  ok("跑的过程中没有遗留「运行中」状态", rep.stuck === 0, `${rep.stuck} 行卡在运行中`);
   ok("它真的用 sb 盖出了方块", rep.blocks > before.blocks, `${before.blocks} → ${rep.blocks}`);
   ok("服务端脚本落地了", rep.scripts.includes("agentMade.js"), rep.scripts.join(", "));
   ok("客户端脚本被按端规范改了名（side=client → 文件名含 client）",

@@ -82,6 +82,8 @@ export const TOOLS = [
   { name: "scene.capture", desc: "截一张当前视口，显示在小窗里给人看，同时回一段文字概要给模型。" },
   { name: "package.export", desc: "把整个工程导出成官方同构的项目包 .zip。做完整项目时这是交付物。" },
 
+  { name: "plan.set", desc: "登记或更新你的计划清单（会显示在小窗顶部）。开工前先发一次；每完成一项就再发一次把状态改成 done。",
+    args: { items: `[{text, status}]，status 只能是 todo / doing / done / skip，最多 12 项` } },
   { name: "finish", desc: "收工。summary 里说清做了什么、怎么触发、还剩什么没做。", args: { summary: "给用户看的中文小结" } },
 ];
 
@@ -290,6 +292,20 @@ export function sanitizeAction(parsed) {
     args.ticks = Number.isFinite(n) ? Math.max(1, Math.min(200, n)) : 60;
   } else if (action === "runtime.logs") {
     args.level = String(raw.level || "error").trim().toLowerCase() === "all" ? "all" : "error";
+  } else if (action === "plan.set") {
+    const rawItems = Array.isArray(raw.items) ? raw.items : [];
+    if (!rawItems.length) return { ok: false, error: 'plan.set 需要 args.items，形如 [{"text":"造地基","status":"todo"}]（status：todo/doing/done/skip）' };
+    const allowed = new Set(["todo", "doing", "done", "skip"]);
+    const items = [];
+    for (const it of rawItems.slice(0, 12)) {
+      const text = String((it && it.text) || "").trim().slice(0, 90);
+      if (!text) continue;
+      let st = String((it && it.status) || "todo").trim().toLowerCase();
+      if (!allowed.has(st)) st = "todo";
+      items.push({ text, status: st });
+    }
+    if (!items.length) return { ok: false, error: "plan.set 的 items 里没有一项带 text" };
+    args.items = items;
   } else if (action === "finish") {
     args.summary = String(raw.summary || raw.result || "").trim() || "（模型没有写小结）";
   }
@@ -393,29 +409,58 @@ async function checkAllScripts(E, spec) {
 // 每条声明必须以 ; 或 } 结尾。上一版这里少了 z-index 后面的分号，CSS 解析器
 // 会把 "9100 background:#12161d" 当成一个非法值整条丢掉——小窗于是 z-index:auto，
 // 被 z-index:90 的脚本界面盖住：界面看着正常，但底部按钮全部点不到。
+//
+// 版式照 Claude Code：一条动作两行，⏺ 工具(参数) 在上、⎿ 结果在下，
+// 参数与长结果折叠可展开，右侧挂耗时与状态。为什么要做成"看得见在调什么工具"：
+// 全自动循环最怕的就是黑箱——十几步跑完，用户不知道它到底写没写过文件、
+// 有没有真的跑过测试，只能选择信或不信。每一行都能展开看到原始参数和原始输出，
+// 才是可以被检查的自动化。
 const CSS = `
-#aiAgent{position:fixed;right:18px;top:88px;width:392px;max-width:94vw;height:min(600px,80vh);z-index:9100;
+#aiAgent{position:fixed;right:18px;top:88px;width:430px;max-width:94vw;height:min(660px,82vh);z-index:9100;
   background:#12161d;border:1px solid #2a3444;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.55);
   display:flex;flex-direction:column;color:#dfe6f0;font-size:12.5px}
 #aiAgent header{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid #232c3a;cursor:move;user-select:none}
-#aiAgent header b{font-size:13.5px;flex:1}
+#aiAgent header b{font-size:13.5px}
+#aiAgent .ag-hd{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:11px;color:#8b98ab;font-variant-numeric:tabular-nums}
 #aiAgent .ai-x{background:none;border:none;color:#8b98ab;font-size:17px;cursor:pointer;padding:0 4px}
-#aiAgent .ag-body{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+#aiAgent .ag-body{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:9px}
 #aiAgent .ag-goal{display:flex;flex-direction:column;gap:5px}
 #aiAgent textarea{background:#0d1117;border:1px solid #2a3444;border-radius:6px;color:#e6edf6;padding:7px 9px;
-  font-size:12.5px;font-family:inherit;min-height:56px;resize:vertical;line-height:1.6}
-#aiAgent .ag-step{border-left:2px solid #2f3c50;padding-left:9px}
-#aiAgent .ag-step.act{border-left-color:#fc8308}
-#aiAgent .ag-step.err{border-left-color:#e0596a}
-#aiAgent .ag-step.done{border-left-color:#6fd08c}
-#aiAgent .ag-h{color:#ffc46b;font-weight:600}
-#aiAgent .ag-o{color:#9fb0c6;white-space:pre-wrap;word-break:break-word;line-height:1.55;margin-top:2px}
+  font-size:12.5px;font-family:inherit;min-height:52px;resize:vertical;line-height:1.6}
+#aiAgent .ag-plan{border:1px solid #232c3a;border-radius:8px;padding:8px 10px;background:#0f141b}
+#aiAgent .ag-plan h4{margin:0 0 6px;font-size:11px;color:#8b98ab;font-weight:600;letter-spacing:.4px}
+#aiAgent .ag-plan ol{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
+#aiAgent .ag-plan li{display:flex;gap:6px;align-items:baseline;color:#a9b6c8;font-size:12px;line-height:1.45}
+#aiAgent .ag-plan li.done{color:#6fd08c}#aiAgent .ag-plan li.doing{color:#ffc46b}#aiAgent .ag-plan li.skip{color:#5d6b7f;text-decoration:line-through}
+#aiAgent .ag-row{display:grid;grid-template-columns:14px 1fr;column-gap:6px}
+#aiAgent .ag-bul{color:#fc8308;line-height:1.5;font-weight:700}
+#aiAgent .ag-run .ag-bul::after{content:"◐";animation:agSpin 1s linear infinite;display:inline-block}
+@keyframes agSpin{to{transform:rotate(360deg)}}
+#aiAgent .ag-tool{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#e6edf6;line-height:1.5;word-break:break-word}
+#aiAgent .ag-tool .nm{color:#ffc46b;font-weight:600}
+#aiAgent .ag-tool .ar{color:#8fa3bd}
+#aiAgent .ag-meta{margin-left:6px;font-size:10.5px;color:#5d6b7f;font-variant-numeric:tabular-nums}
+#aiAgent .ag-meta.bad{color:#ff8f8f}#aiAgent .ag-meta.ok{color:#6fd08c}
+#aiAgent .ag-res{color:#9fb0c6;white-space:pre-wrap;word-break:break-word;line-height:1.55;font-size:12px}
+#aiAgent .ag-res::before{content:"⎿ ";color:#4a5c78}
+#aiAgent .ag-res.bad{color:#f0a5ad}
+#aiAgent .ag-think{color:#7f8ea3;font-style:italic;font-size:12px;line-height:1.5}
+#aiAgent details{margin:0}
+#aiAgent summary{cursor:pointer;color:#5d6b7f;font-size:11px;list-style:none;user-select:none}
+#aiAgent summary::-webkit-details-marker{display:none}
+#aiAgent summary::before{content:"▸ "}
+#aiAgent details[open] summary::before{content:"▾ "}
+#aiAgent details summary:hover{color:#9fb0c6}
+#aiAgent pre.ag-code{margin:3px 0 0;background:#0b0f15;border:1px solid #1e2733;border-radius:6px;padding:6px 8px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.5;max-height:230px;overflow:auto;
+  white-space:pre;color:#c8d4e4}
+#aiAgent .dl{display:block}#aiAgent .dl.add{color:#6fd08c}#aiAgent .dl.del{color:#e0596a}#aiAgent .dl.ctx{color:#5d6b7f}
 #aiAgent .ag-acts{display:flex;gap:7px;padding:9px 12px;border-top:1px solid #232c3a;flex-wrap:wrap;align-items:center}
 #aiAgent .ag-acts button{background:#222c3a;border:1px solid #33415a;color:#dfe6f0;border-radius:6px;padding:6px 11px;cursor:pointer;font-size:12.5px}
 #aiAgent .ag-acts button.primary{background:#fc8308;border-color:#fc8308;color:#14100a;font-weight:600}
 #aiAgent .ag-acts button:disabled{opacity:.45;cursor:default}
-#aiAgent .ag-budget{margin-left:auto;color:#8b98ab;font-size:11.5px}
-#aiAgent .ag-log{color:#8b98ab;font-size:11.5px}
+#aiAgent .ag-budget{margin-left:auto;color:#8b98ab;font-size:11.5px;font-variant-numeric:tabular-nums}
+#aiAgent .ag-budget.ok{color:#6fd08c}#aiAgent .ag-budget.err{color:#ff8f8f}
 `;
 
 let _node = null;
@@ -432,7 +477,7 @@ export function openAgent(E) {
   const d = document.createElement("div");
   d.id = "aiAgent";
   d.innerHTML = `
-    <header><b>AI Agent 全自动</b><span class="ag-log" data-k="log"></span><button class="ai-x" title="收起">×</button></header>
+    <header><b>AI Agent</b><span class="ag-hd"><span data-k="tok"></span><span data-k="clock"></span></span><button class="ai-x" title="收起">×</button></header>
     <div class="ag-body" data-k="body"></div>
     <div class="ag-acts">
       <button data-k="run" class="primary">开始</button>
@@ -451,10 +496,14 @@ export function openAgent(E) {
     <div class="ag-goal">
       <label style="color:#a9b6c8">目标（说人话，越具体越好）</label>
       <textarea data-k="goal" spellcheck="false" placeholder="例：在世界中心用石头盖一座 12×12 的三层城堡，带四角塔楼和一面城墙；再写一个 index.js，玩家靠近城门时播报城堡名字"></textarea>
-    </div>`;
+    </div>
+    <div class="ag-plan" data-k="plan" hidden><h4>计划</h4><ol></ol></div>`;
   const goal = body.querySelector('[data-k="goal"]');
   const stepsHost = document.createElement("div");
+  stepsHost.style.cssText = "display:flex;flex-direction:column;gap:9px";
   body.appendChild(stepsHost);
+  const planBox = body.querySelector('[data-k="plan"]');
+  const planList = planBox.querySelector("ol");
 
   dragHeader(d);
   d.querySelector(".ai-x").onclick = closeAgent;
@@ -462,27 +511,145 @@ export function openAgent(E) {
 
   let busy = null;
   const stat = (m, cls) => { const n = q("stat"); n.textContent = m; n.className = "ag-budget" + (cls ? " " + cls : ""); };
-  const line = (html, cls) => {
-    const n = document.createElement("div");
-    n.className = "ag-step" + (cls ? " " + cls : "");
-    n.innerHTML = html;      // 只喂我们自己拼好的片段，见 esc()
-    stepsHost.appendChild(n);
-    body.scrollTop = body.scrollHeight;
+  const el2 = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = String(text);
     return n;
   };
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  /**
+   * 一行工具调用：⏺ name(k="v", …) [+ 耗时/状态]，下面 ⎿ 结果，再下面可展开原始参数。
+   * 全部用 createElement + textContent 拼：模型返回的文本里出现 <b> 或 " 都不该变成标记。
+   */
+  const toolRow = (name, argSummary, thought) => {
+    const row = el2("div", "ag-row ag-run");
+    row.appendChild(el2("div", "ag-bul"));
+    const main = el2("div");
+    const head = el2("div", "ag-tool");
+    head.appendChild(el2("span", "nm", name));
+    if (argSummary) head.appendChild(el2("span", "ar", "(" + argSummary + ")"));
+    const meta = el2("span", "ag-meta", "运行中");
+    head.appendChild(meta);
+    main.appendChild(head);
+    if (thought) main.appendChild(el2("div", "ag-think", thought));
+    row.appendChild(main);
+    stepsHost.appendChild(row);
+    scroll();
+    return {
+      row,
+      finish: (text, ok, extra) => {
+        row.classList.remove("ag-run");
+        meta.textContent = extra || "";
+        meta.className = "ag-meta " + (ok ? "ok" : "bad");
+        if (text) {
+          const res = el2("div", "ag-res" + (ok ? "" : " bad"));
+          const oneLine = String(text).replace(/\s*\n\s*/g, " ⏎ ");
+          if (oneLine.length > 220) {
+            res.textContent = oneLine.slice(0, 220) + " …";
+            const det = document.createElement("details");
+            det.appendChild(el2("summary", null, "展开完整输出（" + String(text).split("\n").length + " 行 / " + String(text).length + " 字）"));
+            det.appendChild(el2("pre", "ag-code", text));
+            main.appendChild(det);
+          } else {
+            res.textContent = oneLine;
+            main.appendChild(res);
+          }
+        }
+        scroll();
+      },
+      args: (obj) => {
+        const det = document.createElement("details");
+        det.appendChild(el2("summary", null, "参数"));
+        det.appendChild(el2("pre", "ag-code", JSON.stringify(obj, null, 1)));
+        main.appendChild(det);
+      },
+      diff: (htmlRows) => {
+        const det = document.createElement("details");
+        det.appendChild(el2("summary", null, "代码改动"));
+        const pre = el2("pre", "ag-code");
+        for (const [cls, txt] of htmlRows) pre.appendChild(el2("span", "dl " + cls, txt));
+        det.appendChild(pre);
+        main.appendChild(det);
+      },
+    };
+  };
+  const plain = (text, cls) => {
+    const row = el2("div", "ag-row");
+    row.appendChild(el2("div", "ag-bul", cls === "err" ? "✗" : "•"));
+    row.appendChild(el2("div", "ag-res" + (cls === "err" ? " bad" : ""), text));
+    stepsHost.appendChild(row);
+    scroll();
+  };
+  const scroll = () => { body.scrollTop = body.scrollHeight; };
+  const setPlan = (items) => {
+    planBox.hidden = false;
+    planList.replaceChildren();
+    for (const it of items) {
+      const st = it.status === "done" ? "done" : it.status === "skip" ? "skip" : it.status === "doing" ? "doing" : "";
+      const li = el2("li", st, it.text);
+      li.prepend(el2("span", null, it.status === "done" ? "☑" : it.status === "doing" ? "▶" : it.status === "skip" ? "✕" : "☐"));
+      planList.appendChild(li);
+    }
+    scroll();
+  };
+
+  /** 一行参数摘要：k="v" 逗号拼接，长的截断。真实参数在可展开的「参数」里。 */
+  const summarize = (action, args) => {
+    if (action === "script.upload") return `${args.entry}, side="${args.side}", ${args.code.split("\n").length} 行`;
+    if (action === "model.build") return `at=[${args.at}], ${args.program && args.program.name || "未命名"}`;
+    if (action === "blocks.edit") return JSON.stringify((args.code || "").replace(/\s+/g, " ").slice(0, 60)) + (((args.code || "").length > 60) ? "…" : "");
+    if (action === "runtime.start") return `ticks=${args.ticks}`;
+    if (action === "project.create") return `name=${JSON.stringify(args.name)}, size=[${args.size}]${args.terrain ? ", terrain=" + args.terrain : ""}`;
+    if (action === "storage.set") return `name=${JSON.stringify(args.name)}, key=${JSON.stringify(args.key)}, scope=${args.scope}`;
+    if (action === "storage.get" || action === "storage.remove") return `name=${JSON.stringify(args.name)}, key=${JSON.stringify(args.key)}`;
+    if (action === "script.get") return `entry=${JSON.stringify(args.entry)}`;
+    const kv = Object.entries(args).filter(([k]) => k !== "code" && k !== "program")
+      .map(([k, v]) => `${k}=${typeof v === "string" ? JSON.stringify(v.slice(0, 40)) : JSON.stringify(v)}`);
+    return kv.join(", ").slice(0, 120);
+  };
+
+  /** 脚本改动的行级 diff。不引库：脚本都是几十到几百行，集合式 LCS 够用。 */
+  const codeDiff = (before, after) => {
+    const a = String(before || "").split("\n"), b = String(after || "").split("\n");
+    const m = a.length, n = b.length;
+    if (m * n > 400000) {
+      return [["ctx", `（改动较大：${m} 行 → ${n} 行，未逐行比对）`]];
+    }
+    const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const out = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (a[i] === b[j]) { out.push(["ctx", "  " + a[i]]); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push(["del", "- " + a[i]]); i++; }
+      else { out.push(["add", "+ " + b[j]]); j++; }
+    }
+    while (i < m) out.push(["del", "- " + a[i++]]);
+    while (j < n) out.push(["add", "+ " + b[j++]]);
+    return out;
+  };
 
   q("run").onclick = async () => {
     const want = goal.value.trim();
     if (!want) return stat("先写目标", "err");
     if (!aiReady()) { openSettings(); return; }
     stepsHost.replaceChildren();
+    planBox.hidden = true;
     goal.disabled = true; q("run").disabled = true; q("stop").disabled = false;
     const ctrl = new AbortController();
     busy = ctrl;
     const budget = Math.max(2, Math.min(30, Number(q("budget").value) || MAX_STEPS_DEFAULT));
     const t0 = Date.now();
-    let used = 0;
+    let used = 0, calls = 0;
+    // 终态要分得清"完成 / 预算用尽 / 中断"。原先 finally 里无条件把 stat 覆盖成
+    // "N tokens · M 次调用"，于是"完成 · 16 步"刚写出来就被冲掉：
+    // 明明跑成功了，界面却看不出来，人也分不清、测试也只能等到超时。
+    let outcome = "";
+    const tick = setInterval(() => {
+      q("clock").textContent = ((Date.now() - t0) / 1000).toFixed(1) + "s";
+      q("tok").textContent = used ? used.toLocaleString() + " tok" + (calls ? " · " + calls + " 次调用" : "") : "";
+    }, 200);
     // 声明在 for 外面：循环结束后靠"obs 是不是 null"区分正常 finish 与预算用尽。
     // 它曾待在 for 里面，于是 finish 分支跑完、跳出循环去读它时直接
     // ReferenceError——前 16 步的活全干完了，小窗却报"中断"。
@@ -494,16 +661,14 @@ export function openAgent(E) {
       const msgs = [{ role: "system", content: sys }, { role: "user", content: "目标：" + want }];
       for (let step = 1; step <= budget; step++) {
         if (ctrl.signal.aborted) throw new Error("已中止");
-        stat(`第 ${step}/${budget} 步 · ${(Date.now() - t0) / 1000 | 0}s`);
-        q("log").textContent = "思考中…";
+        stat(`第 ${step}/${budget} 步`);
         const r = await chat(msgs, { signal: ctrl.signal, json: true, timeout: 150000, maxTokens: 4096 });
-        q("log").textContent = "";
-        used += (r.usage && r.usage.total_tokens) || 0;
+        calls++; used += (r.usage && r.usage.total_tokens) || 0;
         let parsed;
         try {
           parsed = parseAction(r.text);
         } catch (e) {
-          line(`<span class="ag-h">${step}. 没能按格式回答</span><div class="ag-o">${esc(e.message)}</div>`, "err");
+          plain(`第 ${step} 步 · 没能按格式回答：${e.message}。已要求它按 {"thought","action","args"} 重发。`, "err");
           obs = "你的上一次回答没能解析成一个动作 JSON。严格按这个格式重发，整段回答里只放一个 JSON 对象：" +
             `{"thought":"一句想法","action":"${TOOL_NAMES[0]}","args":{}}`;
           msgs.push({ role: "assistant", content: clip(r.text, 2000) });
@@ -512,52 +677,56 @@ export function openAgent(E) {
         }
         const checked = sanitizeAction(parsed);
         if (!checked.ok) {
-          line(`<span class="ag-h">${step}. ${esc(parsed.action)} — 动作不合法</span><div class="ag-o">${esc(checked.error)}</div>`, "err");
+          const bad = toolRow(String(parsed.action || "?") + " — 动作不合法", "", parsed.thought);
+          bad.finish(checked.error, false);
           msgs.push({ role: "assistant", content: JSON.stringify({ thought: parsed.thought, action: parsed.action, args: parsed.args }).slice(0, 4000) });
           msgs.push({ role: "user", content: "这一步没有执行。原因：" + checked.error });
           continue;
         }
         const { action, args } = checked;
-        const shown = action === "script.upload" ? `${args.entry}［${args.side}］${(args.code || "").split("\n").length} 行`
-          : action === "script.get" || action === "script.rename" || action === "storage.list" ? esc(args.entry || args.name || "")
-          : action === "model.build" ? `at [${args.at}] · ${esc(args.program && args.program.name || "未命名")}`
-          : action === "blocks.edit" ? clip((args.code || "").replace(/\s+/g, " "), 90)
-          : action === "runtime.start" ? `${args.ticks} ticks`
-          : action === "project.create" ? `${args.name} ${args.size.join("×")}${args.terrain ? " · " + args.terrain : ""}`
-          : args.name ? esc(args.name) : "";
-        line(`<span class="ag-h">${step}. ${esc(action)}${shown ? " " + shown : ""}</span>`);
+        const ts = Date.now();
+        // 写脚本之前先把旧内容取出来：跑完才能给出 diff，而不是只说"已写入"。
+        const before = action === "script.upload"
+          ? ((E.state.scripts || []).find((s) => s.name === args.entry) || {}).code : null;
+        const row = toolRow(action, summarize(action, args), parsed.thought);
+        row.args(args);
         msgs.push({ role: "assistant", content: JSON.stringify({ thought: parsed.thought, action, args }).slice(0, 6000) });
-        if (parsed.thought) line(`<div class="ag-o">${esc(parsed.thought)}</div>`);
         if (action === "finish") {
-          line(`<div class="ag-o">${esc(args.summary)}</div>`, "done");
-          stat(`完成 · ${step} 步 · ${((Date.now() - t0) / 1000).toFixed(1)}s`, "done");
+          row.finish(args.summary, true, `${((Date.now() - ts) / 1000).toFixed(1)}s`);
+          outcome = `完成 · ${step} 步`;
           obs = null;
           break;
         }
-        const res = await execTool(E, action, args, spec, (dataUrl) => {
-          const img = document.createElement("img");
-          img.src = dataUrl; img.alt = "当前视口";
-          img.style.cssText = "max-width:100%;border-radius:6px;border:1px solid #2a3444;margin-top:4px";
-          stepsHost.lastChild && stepsHost.lastChild.appendChild(img);
-        });
+        let res;
+        try {
+          res = await execTool(E, action, args, spec, (dataUrl) => {
+            const img = document.createElement("img");
+            img.src = dataUrl; img.alt = "当前视口";
+            img.style.cssText = "max-width:100%;border-radius:6px;border:1px solid #2a3444;margin-top:4px";
+            row.row.lastChild.appendChild(img);
+          }, setPlan);
+        } catch (e) {
+          if (e && e.name === "AbortError") throw e;
+          res = { ok: false, obs: "执行时本地抛错：" + String(e && e.message || e) };
+        }
         obs = res.ok ? res.obs : "失败：" + res.obs;
-        line(`<div class="ag-o">${esc(obs)}</div>`, res.ok ? "act" : "err");
+        row.finish(obs, res.ok, ((Date.now() - ts) / 1000).toFixed(1) + "s");
+        if (action === "script.upload" && res.ok) row.diff(codeDiff(before, args.code));
         msgs.push({ role: "user", content: "观察：" + clip(obs) });
       }
       if (obs !== null) {
-        line(`<span class="ag-h">用完 ${budget} 步预算，自动停止</span><div class="ag-o">目标可能没做完。提高步数预算继续，或者让它先 finish 汇报现状。</div>`, "err");
-        stat(`预算用尽 · ${budget} 步`, "err");
+        plain(`用完 ${budget} 步预算，自动停止。目标可能没做完：提高步数预算继续，或者让它先 finish 汇报现状。`, "err");
+        outcome = `预算用尽 · ${budget} 步`;
       }
     } catch (e) {
-      if (e && e.name === "AbortError") { stat("已中止"); q("log").textContent = ""; }
-      else {
-        const m = String((e && (e.message || e)) || "");
-        line(`<span class="ag-h">中断</span><div class="ag-o">${esc(m)}</div>`, "err");
-        stat("中断", "err");
-      }
+      if (e && e.name === "AbortError") outcome = "已中止";
+      else { plain("中断：" + String((e && (e.message || e)) || ""), "err"); outcome = "中断"; }
     } finally {
+      clearInterval(tick);
       goal.disabled = false; q("run").disabled = false; q("stop").disabled = true; busy = null;
-      if (used) q("log").textContent = `token ${used.toLocaleString()}`;
+      stat(`${outcome || "已停止"} · ${calls} 次调用 · ${((Date.now() - t0) / 1000).toFixed(1)}s`
+        + (used ? ` · ${used.toLocaleString()} tokens` : ""),
+        outcome.startsWith("完成") ? "ok" : "err");
     }
   };
   q("stop").onclick = () => { busy?.abort(); stat("正在中止…"); };
@@ -574,11 +743,16 @@ function storageScope(v) {
 }
 
 /** 执行一个已校验的动作，返回 {ok, obs}。obs 永远是一句能直接喂回模型的话。 */
-async function execTool(E, action, args, spec, onShot) {
+async function execTool(E, action, args, spec, onShot, setPlan) {
   const scripts = () => E.state.scripts || (E.state.scripts = []);
   const findScript = (name) => scripts().find((s) => s.name === name);
   try {
     switch (action) {
+      case "plan.set": {
+        setPlan && setPlan(args.items);
+        const left = args.items.filter((i) => i.status !== "done" && i.status !== "skip").length;
+        return { ok: true, obs: `计划已更新：${args.items.length} 项，还剩 ${left} 项未完成` };
+      }
       case "project.info": {
         const g = worldDigest(E);
         return { ok: true, obs: `世界「${g.worldName}」 尺寸 ${g.size.join("×")} · ${g.blocks.toLocaleString()} 格方块 · ${g.models} 个模型/实体 · 脚本 ${g.scripts.join("、") || "无"}` +
@@ -746,18 +920,20 @@ const AGENT_RULES = `
 1. 第一步永远是 project.info，看清尺寸和现有内容。不知道世界有多大就盖东西，一定会越界。
 2. 一次只推进一小步，然后**读观察结果**。观察结果是这一轮唯一的事实来源，
    不要假设某一步成功了——它可能返回"失败：…"。
-3. 造形状有两条路，选对省事的那条：
+3. 动手前用 plan.set 发一份 3~8 项的计划清单，之后每完成一项就再发一次把该项改成 done、
+   正在做的改成 doing。用户在界面顶部会看到这份清单实时打勾——这是"全自动"能不能被监督的关键。
+4. 造形状有两条路，选对省事的那条：
    - 地形、墙体、大体积用 blocks.edit（sb.box / sb.sphere，直接写进体素世界，坐标是世界格）。
    - 需要精细上色的独立物件用 model.build（图元程序，坐标是部件内相对坐标）。
-4. 写地图脚本一律 script.upload，并且**必须显式给 side**（server 或 client）。
+5. 写地图脚本一律 script.upload，并且**必须显式给 side**（server 或 client）。
    本实现按文件名判端，工具会自动把 client 端的名字改成带 Client 的写法；
    不要指望"先写进去再说"。
-5. 写完脚本必须 build.check（发布前那道静态闸门：语法 + 有没有用到本实现没提供的成员）；
+6. 写完脚本必须 build.check（发布前那道静态闸门：语法 + 有没有用到本实现没提供的成员）；
    要行为证据就 runtime.start，然后 runtime.logs 看有没有异常，最后 runtime.stop 收干净。
    抓到异常时把它当本轮观察去改脚本，而不是当本轮失败就 finish。
-6. 做了能交付的一批改动就 map.save 一次；别攒到最后，中间断了用户什么也拿不到。
-7. 同一个动作连续失败两次就换思路（换位置、换更小尺寸、换更简单写法），不要重复撞墙。
-8. 做完就 finish，小结里写清「做了什么 / 用什么触发 / 还有什么没做」。
+7. 做了能交付的一批改动就 map.save 一次；别攒到最后，中间断了用户什么也拿不到。
+8. 同一个动作连续失败两次就换思路（换位置、换更小尺寸、换更简单写法），不要重复撞墙。
+9. 做完就 finish，小结里写清「做了什么 / 用什么触发 / 还有什么没做」。
    做不完也 finish——宁可交一个带说明的半成品，也不要默默耗光步数预算。
 
 硬约束：

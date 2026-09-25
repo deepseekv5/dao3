@@ -86,10 +86,13 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h3 id="端必须显式声明">端必须显式声明</h3>
 <p><code>script.upload</code> 一定要给 <code>side: server | client</code>，这是官方契约。本实现按文件名判端， 所以工具会把 <code>side=client</code> 自动落到带 <code>Client</code> 的文件名上；而 <code>side=server</code> 配一个 含 <code>client</code> 的文件名会<b>直接被拒</b>——那种组合会静默按客户端跑，两边都觉得自己没错。</p>
 <h3 id="循环怎么跑">循环怎么跑</h3>
-<div class="code"><pre><code>project.info → 动手（blocks.edit / model.build / script.upload / entity.add）
+<div class="code"><pre><code>project.info → plan.set → 动手（blocks.edit / model.build / script.upload / entity.add）
             → build.check → runtime.start → runtime.logs → runtime.stop
             → scene.capture → map.save → finish</code></pre></div>
-<p>每一步只准出一个动作，工具执行完把<b>观察结果</b>回喂。预算与底线：</p>
+<p><b>界面照 Claude Code 的版式</b>：一个动作两行，<code>⏺ 动作名(参数摘要)</code> 在上、<code>⎿ 结果</code> 在下， 右边挂<b>这一步的耗时</b>；参数与长输出折叠在 <code>▸ 参数</code> / <code>展开完整输出</code> 里，点开就是 模型真实发出的原始 args（不是我们改写过的摘要）。<code>script.upload</code> 那一行还挂一个 <b>行级 diff</b>，<code>+</code> / <code>-</code> 直接看见它改了什么。顶部有实时计时、调用次数与 token 累计， <code>plan.set</code> 发来的计划清单打在标题下方，随步骤推进逐项 ☑ 打勾。</p>
+<p>为什么值得做成这样：全自动循环最怕黑箱。十几步跑完，如果界面只糊一坨日志， 用户无法判断它到底写没写过文件、有没有真的跑过测试，只能选择全信或全不信。 每一行都能展开看到原始参数与原始输出，&quot;全自动&quot;才是可以被监督的。</p>
+<p>（一处诚实的限制：输出<b>不是流式</b>的。代理按整轮转发，所以 <code>⏺</code> 行要等这一轮 模型答完才出现，运行中的 spinner 也是这一轮的等待指示器。要做真流式得让 <code>/api/ai/chat</code> 支持 SSE，目前没做。）</p>
+<p>预算与底线：</p>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>约束</th><th>值</th><th>超了怎么处理</th></tr></thead><tbody><tr><td>步数</td><td>界面可调，默认 14，上限 30</td><td>到数自动停并说明&quot;可能没做完&quot;</td></tr><tr><td>单脚本长度</td><td>20,000 字</td><td>拒收，让模型拆文件或写短</td></tr><tr><td>观察回喂长度</td><td>3,600 字</td><td>头 70% + 尾保留，中间标省略</td></tr><tr><td>runtime.start 时长</td><td>1..200 tick</td><td>夹到区间内</td></tr><tr><td>体素规模</td><td>见下表</td><td>越界图元丢弃</td></tr></tbody></table></div>
 <p>非法动作<b>不打断循环</b>：回一句带完整可用动作清单的拒绝，让模型下一步自己纠正。 <code>storage.*</code> 写的键与脚本里 <code>storage.getDataStorage(name)</code> 读到的是同一套 key （<code>game.js</code> 的 <code>dataStorageKey</code> 是唯一来源，两处共用，避免&quot;写进去读不出来&quot;）。</p>
 <p>所有改动都进撤销栈：盖体素走 <code>history.commit</code>，脚本表写入前留快照。 <b>Cmd-Z 是&quot;Agent 把世界搞坏了&quot;的正确答案。</b></p>

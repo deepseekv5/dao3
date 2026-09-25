@@ -159,12 +159,26 @@ openai 兼容端点。填完点「测试连接」，它发一句"只回复两个
 ### 循环怎么跑
 
 ```
-project.info → 动手（blocks.edit / model.build / script.upload / entity.add）
+project.info → plan.set → 动手（blocks.edit / model.build / script.upload / entity.add）
             → build.check → runtime.start → runtime.logs → runtime.stop
             → scene.capture → map.save → finish
 ```
 
-每一步只准出一个动作，工具执行完把**观察结果**回喂。预算与底线：
+**界面照 Claude Code 的版式**：一个动作两行，`⏺ 动作名(参数摘要)` 在上、`⎿ 结果` 在下，
+右边挂**这一步的耗时**；参数与长输出折叠在 `▸ 参数` / `展开完整输出` 里，点开就是
+模型真实发出的原始 args（不是我们改写过的摘要）。`script.upload` 那一行还挂一个
+**行级 diff**，`+` / `-` 直接看见它改了什么。顶部有实时计时、调用次数与 token 累计，
+`plan.set` 发来的计划清单打在标题下方，随步骤推进逐项 ☑ 打勾。
+
+为什么值得做成这样：全自动循环最怕黑箱。十几步跑完，如果界面只糊一坨日志，
+用户无法判断它到底写没写过文件、有没有真的跑过测试，只能选择全信或全不信。
+每一行都能展开看到原始参数与原始输出，"全自动"才是可以被监督的。
+
+（一处诚实的限制：输出**不是流式**的。代理按整轮转发，所以 `⏺` 行要等这一轮
+模型答完才出现，运行中的 spinner 也是这一轮的等待指示器。要做真流式得让
+`/api/ai/chat` 支持 SSE，目前没做。）
+
+预算与底线：
 
 | 约束 | 值 | 超了怎么处理 |
 |---|---|---|
