@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a class="on" href="ai.html">AI 能力</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#三个入口">三个入口</a><a class="t2" href="#配置">配置</a><a class="t3" href="#改动即时保存没有「保存」按钮">改动即时保存，没有「保存」按钮</a><a class="t3" href="#拉取模型列表">拉取模型列表</a><a class="t2" href="#密钥的行程">密钥的行程</a><a class="t2" href="#ai-写脚本">AI 写脚本</a><a class="t3" href="#「看规范」按钮">「看规范」按钮</a><a class="t3" href="#多轮报错回喂语法预检">多轮、报错回喂、语法预检</a><a class="t2" href="#ai-agent-全自动小窗">AI Agent 全自动小窗</a><a class="t3" href="#动作面照官方-apc-的命名">动作面照官方 apc 的命名</a><a class="t3" href="#端必须显式声明">端必须显式声明</a><a class="t3" href="#循环怎么跑">循环怎么跑</a><a class="t2" href="#ai-建模">AI 建模</a><a class="t2" href="#网页体验版没有-ai">网页体验版没有 AI</a><a class="t2" href="#自己验一遍">自己验一遍</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#三个入口">三个入口</a><a class="t2" href="#配置">配置</a><a class="t3" href="#改动即时保存没有「保存」按钮">改动即时保存，没有「保存」按钮</a><a class="t3" href="#拉取模型列表">拉取模型列表</a><a class="t2" href="#密钥的行程">密钥的行程</a><a class="t2" href="#ai-写脚本">AI 写脚本</a><a class="t3" href="#「看规范」按钮">「看规范」按钮</a><a class="t3" href="#多轮报错回喂语法预检">多轮、报错回喂、语法预检</a><a class="t2" href="#ai-agent-全自动小窗">AI Agent 全自动小窗</a><a class="t3" href="#动作面照官方-apc-的命名">动作面照官方 apc 的命名</a><a class="t3" href="#交付核对">交付核对</a><a class="t3" href="#端必须显式声明">端必须显式声明</a><a class="t3" href="#循环怎么跑">循环怎么跑</a><a class="t2" href="#ai-建模">AI 建模</a><a class="t2" href="#网页体验版没有-ai">网页体验版没有 AI</a><a class="t2" href="#自己验一遍">自己验一遍</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/ai.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -82,6 +82,15 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h3 id="动作面照官方-apc-的命名">动作面照官方 <code>apc</code> 的命名</h3>
 <p>动作名一律是 <code>&lt;组&gt;.&lt;动词&gt;</code>：<code>project.info</code> / <code>project.create</code> / <code>map.save</code> / <code>map.resource</code> / <code>script.list|get|upload|rename</code> / <code>storage.set|get|list|remove</code> / <code>blocks.edit</code> / <code>model.build</code> / <code>entity.add</code> / <code>build.check</code> / <code>runtime.start|status|logs|stop</code> / <code>scene.capture</code> / <code>package.export</code> / <code>finish</code>。</p>
 <p>依据是官方 CLI 的 <code>apc script upload &lt;project&gt; &lt;side&gt; &lt;entry&gt;</code>、<code>apc storage</code>、 <code>apc runtime start|logs</code>、<code>apc scene capture</code>、<code>apc project info</code>， 以及官方 <code>engine-openapi-mcp</code> 的 <code>script.saveOrUpdate</code> / <code>storage.*</code> 那套工具名。 <b>只对齐命名与参数形状，不搬它们的代码</b>（engine-openapi-mcp 仓库没有 LICENSE）。</p>
+<h3 id="交付核对">交付核对</h3>
+<p><code>finish</code> 那一行下面会自动附一段<b>程序自己量出来的</b>清单，不是模型的小结：</p>
+<div class="code"><pre><code>— 交付核对 —
+方块 1,523,683 · 模型/实体 200 · 区域 1 · HUD 部件 1
+脚本 index.js(235行/server)、clientIndex.js(1行/client)、agentMade.js(1行/server)
+已导出项目包 .zip（可转交的交付物）
+⚠ 缺口：没有 runtime.start，脚本没真跑过、行为未验证</code></pre></div>
+<p>为什么要单独核一遍：全自动最容易骗人的地方就是&quot;它说自己完成了&quot;。 小结里写&quot;已实现赛道与计分板&quot;，实际可能一个方块没盖、一次都没存盘。 所以核对只看能量到的东西——方块数、区域数、HUD 数、脚本清单、有没有存盘导出—— 并把缺口明写在最后。它不评价&quot;像不像个好玩的游戏&quot;，那个只有你玩过才知道。</p>
+<p>创作动作面因此扩到：<code>project.create</code> / <code>map.save</code> / <code>blocks.edit</code> / <code>model.build</code> / <code>entity.add</code>（触发盒）/ <code>ui.add</code>（HUD）/ <code>zone.add</code>（区域触发器）/ <code>settings.set</code>（游戏规则与世界物理）/ <code>project.export</code>（.zip 交付物）。</p>
 <p>为什么值得对齐：模型在文档与训练数据里见过的就是这套名字。自己另起一套 （<code>inspectWorld</code> / <code>writeScript</code> / <code>playtest</code>）等于凭空加一次映射失败——它会输出 <code>script.upload</code>，然后收到一句&quot;不认识的动作&quot;，白烧一轮。旧的驼峰写法仍通过别名表 归一化，两种都能用。</p>
 <h3 id="端必须显式声明">端必须显式声明</h3>
 <p><code>script.upload</code> 一定要给 <code>side: server | client</code>，这是官方契约。本实现按文件名判端， 所以工具会把 <code>side=client</code> 自动落到带 <code>Client</code> 的文件名上；而 <code>side=server</code> 配一个 含 <code>client</code> 的文件名会<b>直接被拒</b>——那种组合会静默按客户端跑，两边都觉得自己没错。</p>

@@ -145,6 +145,28 @@ openai 兼容端点。填完点「测试连接」，它发一句"只回复两个
 以及官方 `engine-openapi-mcp` 的 `script.saveOrUpdate` / `storage.*` 那套工具名。
 **只对齐命名与参数形状，不搬它们的代码**（engine-openapi-mcp 仓库没有 LICENSE）。
 
+
+### 交付核对
+
+`finish` 那一行下面会自动附一段**程序自己量出来的**清单，不是模型的小结：
+
+```
+— 交付核对 —
+方块 1,523,683 · 模型/实体 200 · 区域 1 · HUD 部件 1
+脚本 index.js(235行/server)、clientIndex.js(1行/client)、agentMade.js(1行/server)
+已导出项目包 .zip（可转交的交付物）
+⚠ 缺口：没有 runtime.start，脚本没真跑过、行为未验证
+```
+
+为什么要单独核一遍：全自动最容易骗人的地方就是"它说自己完成了"。
+小结里写"已实现赛道与计分板"，实际可能一个方块没盖、一次都没存盘。
+所以核对只看能量到的东西——方块数、区域数、HUD 数、脚本清单、有没有存盘导出——
+并把缺口明写在最后。它不评价"像不像个好玩的游戏"，那个只有你玩过才知道。
+
+创作动作面因此扩到：`project.create` / `map.save` / `blocks.edit` / `model.build` /
+`entity.add`（触发盒）/ `ui.add`（HUD）/ `zone.add`（区域触发器）/
+`settings.set`（游戏规则与世界物理）/ `project.export`（.zip 交付物）。
+
 为什么值得对齐：模型在文档与训练数据里见过的就是这套名字。自己另起一套
 （`inspectWorld` / `writeScript` / `playtest`）等于凭空加一次映射失败——它会输出
 `script.upload`，然后收到一句"不认识的动作"，白烧一轮。旧的驼峰写法仍通过别名表

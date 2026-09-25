@@ -80,8 +80,19 @@ export const TOOLS = [
   { name: "runtime.logs", desc: "取运行期日志尾部（配合 runtime.start 用）。", args: { level: "all 或 error" } },
   { name: "runtime.stop", desc: "退出运行模式，回到编辑。" },
   { name: "scene.capture", desc: "截一张当前视口，显示在小窗里给人看，同时回一段文字概要给模型。" },
-  { name: "package.export", desc: "把整个工程导出成官方同构的项目包 .zip。做完整项目时这是交付物。" },
 
+  { name: "ui.add", desc: "往屏幕上加一个 HUD 部件（计分板、提示条、按钮）。坐标是视口百分比。",
+    args: { type: "text | button | image", text: "显示文字（button 时是按钮标题）",
+      x: "左边 % 0..100", y: "上边 % 0..100", w: "宽 %", h: "高 %",
+      size: "可选字号 px，默认 14", color: "可选 CSS 颜色，默认 #fff", bg: "可选背景 CSS 颜色",
+      id: "可选部件 id；不填自动生成，填了脚本才能稳定找到它" } },
+  { name: "zone.add", desc: "加一个区域触发器（脚本用 world.onZoneEnter / onZoneLeave 响应）。",
+    args: { name: "区域名，如 森林", min: "[x,y,z] 角点", max: "[x,y,z] 对角点",
+      selector: "可选实体选择器，默认 player", label: "可选标签" } },
+  { name: "settings.set", desc: "改地图级设置：游戏规则（重生、PVP、计时）或世界物理（重力、速度阻尼、雾…）。",
+    args: { gameRules: "可选对象，写进 meta.gameRules", worldSettings: "可选对象，写进 meta.worldSettings" } },
+  { name: "project.export", desc: "把整个工程导出成官方同构的项目包 .zip —— 这就是交付物。",
+    args: { name: "可选导出名" } },
   { name: "plan.set", desc: "登记或更新你的计划清单（会显示在小窗顶部）。开工前先发一次；每完成一项就再发一次把状态改成 done。",
     args: { items: `[{text, status}]，status 只能是 todo / doing / done / skip，最多 12 项` } },
   { name: "finish", desc: "收工。summary 里说清做了什么、怎么触发、还剩什么没做。", args: { summary: "给用户看的中文小结" } },
@@ -96,7 +107,7 @@ const ALIAS = {
   listScripts: "script.list", readScript: "script.get", writeScript: "script.upload",
   saveScript: "script.upload", "script.saveOrUpdate": "script.upload", "script.save": "script.upload",
   runSandbox: "blocks.edit", sandbox: "blocks.edit", buildModel: "model.build", model: "model.build",
-  checkScripts: "build.check", validate: "build.check", playtest: "runtime.start",
+  checkScripts: "build.check", validate: "build.check", playtest: "runtime.start", "package.export": "project.export",
   "storage.page": "storage.list", "storage.delete": "storage.remove", "storage.del": "storage.remove",
   save: "map.save", "map.saveWorld": "map.save", finishTask: "finish", done: "finish",
 };
@@ -292,6 +303,42 @@ export function sanitizeAction(parsed) {
     args.ticks = Number.isFinite(n) ? Math.max(1, Math.min(200, n)) : 60;
   } else if (action === "runtime.logs") {
     args.level = String(raw.level || "error").trim().toLowerCase() === "all" ? "all" : "error";
+  } else if (action === "ui.add") {
+    const type = String(raw.type || "text").trim().toLowerCase();
+    if (!["text", "button", "image"].includes(type)) {
+      return { ok: false, error: `ui.add 的 type 只能是 text / button / image，收到 "${raw.type}"` };
+    }
+    const pct = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : d; };
+    args.type = type;
+    args.text = String(raw.text ?? raw.value ?? "").slice(0, 200);
+    if (type === "image") args.image = String(raw.image || raw.src || "").trim().slice(0, 200);
+    args.x = pct(raw.x, 2); args.y = pct(raw.y, 2);
+    args.w = Math.max(1, pct(raw.w, 24)); args.h = Math.max(1, pct(raw.h, 8));
+    args.size = Math.max(6, Math.min(96, Math.round(Number(raw.size) || 14)));
+    args.color = String(raw.color || "#fff").trim().slice(0, 24);
+    args.bg = String(raw.bg || "").trim().slice(0, 24);
+    args.id = String(raw.id || "").trim().slice(0, 48);
+  } else if (action === "zone.add") {
+    const min = Array.isArray(raw.min) ? raw.min.map((v) => Math.round(Number(v) || 0)) : null;
+    const max = Array.isArray(raw.max) ? raw.max.map((v) => Math.round(Number(v) || 0)) : null;
+    if (!min || !max || min.length !== 3 || max.length !== 3) {
+      return { ok: false, error: "zone.add 需要 args.min 与 args.max，各是 [x,y,z] 三个整数" };
+    }
+    if (min.some((v, i) => v > max[i])) return { ok: false, error: `zone.add 的 min [${min}] 每一维都该 ≤ max [${max}]` };
+    args.name = String(raw.name || "").trim().slice(0, 64) || `区域-${(E0zones() + 1)}`;
+    args.min = min; args.max = max;
+    args.selector = String(raw.selector || "player").trim().slice(0, 64);
+    args.label = String(raw.label || "").trim().slice(0, 64);
+  } else if (action === "settings.set") {
+    const gr = raw.gameRules, ws = raw.worldSettings;
+    const plainObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    if (!plainObj(gr) && !plainObj(ws)) {
+      return { ok: false, error: "settings.set 至少要给 args.gameRules 或 args.worldSettings 其中一个对象" };
+    }
+    if (plainObj(gr)) args.gameRules = JSON.parse(JSON.stringify(gr));
+    if (plainObj(ws)) args.worldSettings = JSON.parse(JSON.stringify(ws));
+  } else if (action === "project.export") {
+    args.name = String(raw.name || "").trim().slice(0, 64);
   } else if (action === "plan.set") {
     const rawItems = Array.isArray(raw.items) ? raw.items : [];
     if (!rawItems.length) return { ok: false, error: 'plan.set 需要 args.items，形如 [{"text":"造地基","status":"todo"}]（status：todo/doing/done/skip）' };
@@ -599,6 +646,11 @@ export function openAgent(E) {
     if (action === "model.build") return `at=[${args.at}], ${args.program && args.program.name || "未命名"}`;
     if (action === "blocks.edit") return JSON.stringify((args.code || "").replace(/\s+/g, " ").slice(0, 60)) + (((args.code || "").length > 60) ? "…" : "");
     if (action === "runtime.start") return `ticks=${args.ticks}`;
+    if (action === "ui.add") return `type="${args.type}", ${args.x}%,${args.y}% ${args.w}%x${args.h}%`;
+    if (action === "zone.add") return `name=${JSON.stringify(args.name)}, [${args.min}]→[${args.max}]`;
+    if (action === "settings.set") return [args.gameRules && "gameRules{" + Object.keys(args.gameRules) + "}",
+      args.worldSettings && "worldSettings{" + Object.keys(args.worldSettings) + "}"].filter(Boolean).join(", ");
+    if (action === "project.export") return args.name ? `name=${JSON.stringify(args.name)}` : "";
     if (action === "project.create") return `name=${JSON.stringify(args.name)}, size=[${args.size}]${args.terrain ? ", terrain=" + args.terrain : ""}`;
     if (action === "storage.set") return `name=${JSON.stringify(args.name)}, key=${JSON.stringify(args.key)}, scope=${args.scope}`;
     if (action === "storage.get" || action === "storage.remove") return `name=${JSON.stringify(args.name)}, key=${JSON.stringify(args.key)}`;
@@ -646,6 +698,8 @@ export function openAgent(E) {
     // "N tokens · M 次调用"，于是"完成 · 16 步"刚写出来就被冲掉：
     // 明明跑成功了，界面却看不出来，人也分不清、测试也只能等到超时。
     let outcome = "";
+    // 每个动作计数：收工时的交付清单要用它判断"到底动过没有"
+    const touched = {};
     const tick = setInterval(() => {
       q("clock").textContent = ((Date.now() - t0) / 1000).toFixed(1) + "s";
       q("tok").textContent = used ? used.toLocaleString() + " tok" + (calls ? " · " + calls + " 次调用" : "") : "";
@@ -684,6 +738,7 @@ export function openAgent(E) {
           continue;
         }
         const { action, args } = checked;
+        touched[action] = (touched[action] || 0) + 1;
         const ts = Date.now();
         // 写脚本之前先把旧内容取出来：跑完才能给出 diff，而不是只说"已写入"。
         const before = action === "script.upload"
@@ -692,8 +747,14 @@ export function openAgent(E) {
         row.args(args);
         msgs.push({ role: "assistant", content: JSON.stringify({ thought: parsed.thought, action, args }).slice(0, 6000) });
         if (action === "finish") {
-          row.finish(args.summary, true, `${((Date.now() - ts) / 1000).toFixed(1)}s`);
+          // 交付清单由**程序自己核对**，不是照抄模型写的小结。
+          // 全自动最容易骗人的就在这：模型说"已完成赛道与计分板"，
+          // 实际可能一个方块没盖、一次都没存盘。所以这里独立量一遍再附在小结后面。
+          const report = deliveryReport(E, touched);
           outcome = `完成 · ${step} 步`;
+          row.finish(args.summary + "\n— 交付核对 —\n" + report.lines.join("\n"), report.ok,
+            `${((Date.now() - ts) / 1000).toFixed(1)}s`);
+          stat(report.ok ? "完成，交付物齐" : "完成，但有缺口", report.ok ? "ok" : "err");
           obs = null;
           break;
         }
@@ -734,6 +795,9 @@ export function openAgent(E) {
   setTimeout(() => goal.focus(), 60);
 }
 
+/** sanitizeAction 是纯函数（离线可测），拿不到编辑器实例，所以区域默认名只报序号兜底。 */
+function E0zones() { return 0; }
+
 /** 官方 storage 有 --scope project|group 两档；映射到我们的 map / group 作用域。 */
 function storageScope(v) {
   const s = String(v || "project").trim().toLowerCase();
@@ -748,6 +812,45 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
   const findScript = (name) => scripts().find((s) => s.name === name);
   try {
     switch (action) {
+      case "ui.add": {
+        const ui = E.state.meta.ui || (E.state.meta.ui = []);
+        const id = args.id || "w" + Date.now().toString(36);
+        const hit = ui.find((w) => w.id === id);
+        const rec = { id, type: args.type, text: args.text, x: args.x, y: args.y,
+          w: args.w, h: args.h, size: args.size, color: args.color, bg: args.bg };
+        if (args.type === "image") rec.image = args.image;
+        if (hit) Object.assign(hit, rec); else ui.push(rec);
+        E.markDirty?.();
+        return { ok: true, obs: `已${hit ? "更新" : "加上"} HUD 部件 ${id}（${args.type} "${args.text || ""}" 在 ${args.x}%,${args.y}% · ${args.w}%×${args.h}%），共 ${ui.length} 个部件。进运行模式才看得见。` };
+      }
+      case "zone.add": {
+        const w = E.world;
+        if (args.min.some((v, i) => v < 0 || v >= w.shape[i]) || args.max.some((v, i) => v < 0 || v >= w.shape[i]))
+          return { ok: false, obs: `区域角点出了世界范围（尺寸 ${w.shape.join("×")}）` };
+        const zones = E.state.meta.zones || (E.state.meta.zones = []);
+        const z = { id: "z" + Date.now().toString(36), name: args.name, selector: args.selector,
+          bounds: { min: args.min, max: args.max }, force: [0, 0, 0], massScale: 1, enabled: true };
+        if (args.label) z.labels = [args.label];
+        zones.push(z);
+        E.markDirty?.();
+        return { ok: true, obs: `已加区域「${args.name}」[${args.min}]→[${args.max}]（选择器 ${args.selector}），共 ${zones.length} 个；脚本用 world.onZoneEnter / onZoneLeave 响应` };
+      }
+      case "settings.set": {
+        const meta = E.state.meta;
+        const keys = [];
+        if (args.gameRules) { meta.gameRules = Object.assign({}, meta.gameRules, args.gameRules); keys.push("gameRules: " + Object.keys(args.gameRules).join("/")); }
+        if (args.worldSettings) {
+          meta.worldSettings = Object.assign({}, meta.worldSettings, args.worldSettings);
+          keys.push("worldSettings: " + Object.keys(args.worldSettings).join("/"));
+        }
+        E.markDirty?.();
+        return { ok: true, obs: `已改设置 ${keys.join(" · ")}；下一次进入运行模式时生效` };
+      }
+      case "project.export": {
+        const r = await exportProjectZip({ world: E.world, state: E.state,
+          name: args.name || E.state.meta?.name || "AI 作品", download: true });
+        return { ok: true, obs: `已导出项目包：${r.entries || "?"} 个文件 · ${((r.bytes || 0) / 1048576).toFixed(2)} MB` };
+      }
       case "plan.set": {
         setPlan && setPlan(args.items);
         const left = args.items.filter((i) => i.status !== "done" && i.status !== "skip").length;
@@ -887,10 +990,6 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
         return { ok: true, obs: `视口${shot ? "已截图显示在小窗里" : "截图失败（WebGL 上下文没开 preserveDrawingBuffer）"}` +
           ` · 现在世界里 ${g.blocks.toLocaleString()} 格方块、${g.models} 个模型/实体` };
       }
-      case "package.export": {
-        const r = await exportProjectZip({ world: E.world, state: E.state, name: E.state.meta?.name || "AI 作品", download: true });
-        return { ok: true, obs: `已导出项目包 ${r.entries || "?"} 个文件 · ${((r.bytes || 0) / 1048576).toFixed(1)} MB` };
-      }
       default:
         return { ok: false, obs: `没有实现的动作：${action}` };
     }
@@ -898,6 +997,34 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
     if (e && e.name === "AbortError") throw e;
     return { ok: false, obs: "执行这个动作时本地报错了：" + String(e && e.message || e) };
   }
+}
+
+/**
+ * 收工时的独立核对。ok 表示"客观上像个完整交付"，lines 逐条摆事实。
+ * 判据只用能量到的东西：方块数、区域数、HUD 数、脚本数、有没有存盘/导出。
+ * 不评价"像不像个游戏"——那只有你玩过才知道。
+ */
+function deliveryReport(E, touched) {
+  const meta = E.state.meta || {};
+  const scripts = E.state.scripts || [];
+  const blocks = E.world.size();
+  const zones = (meta.zones || []).length;
+  const hud = (meta.ui || []).length;
+  const models = (E.state.models || []).length;
+  const lines = [`方块 ${blocks.toLocaleString()} · 模型/实体 ${models} · 区域 ${zones} · HUD 部件 ${hud}`];
+  lines.push(scripts.length
+    ? "脚本 " + scripts.map((x) => `${x.name}(${(x.code || "").split("\n").length}行/${/client/i.test(x.name) ? "client" : "server"})`).join("、")
+    : "脚本：无");
+  lines.push(touched["project.export"] ? "已导出项目包 .zip（可转交的交付物）"
+    : "未导出项目包 —— 还差 project.export 才有可转交的 .zip");
+  const gaps = [];
+  if (blocks === 0) gaps.push("世界是空的");
+  if (!scripts.length) gaps.push("没有任何脚本，地图不会响应玩家");
+  if (!touched["map.save"]) gaps.push("没有 map.save，关掉页面就全没了");
+  if (!touched["build.check"]) gaps.push("没有 build.check，脚本没做过静态核对");
+  if (!touched["runtime.start"]) gaps.push("没有 runtime.start，脚本没真跑过、行为未验证");
+  if (gaps.length) lines.push("⚠ 缺口：" + gaps.join("；"));
+  return { ok: gaps.length === 0, lines };
 }
 
 /** 抓一张当前视口。失败就返回 null——截不到图不该让整轮动作失败。 */

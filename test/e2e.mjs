@@ -99,7 +99,14 @@ const orphan = await page.evaluate(async () => {
   E.state.assets.meshes = {};
   E.state.models = [];
   window.__replaceWorld(E.world);
-  await new Promise((r) => setTimeout(r, 2500));
+  // 等实体真的重建出来，而不是死等固定时长：固定延长得靠猜，而服务冷启动
+  // （刚重启、素材目录首次读取）时 2.5 秒不够，这条就会以一种和资产 404
+  // 毫无关系的方式红掉。注意这里在 page.evaluate 内部，只有页面自己的 API 可用。
+  const t0 = Date.now();
+  while (Date.now() - t0 < 20000 && !(E.state.entities || []).length) {
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  await new Promise((r) => setTimeout(r, 400));
   const n = E.collectEntities().length;
   const left = E.state.entities.length;
   E.state.meta.assetRoot = keepRoot; E.state.assets.meshes = keepMeshes;
@@ -612,6 +619,9 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     '{"action":"script.upload","args":{"entry":"agentHud.js","side":"client","code":"ui.text(\'ok\');"}}',
     '{"action":"model.build","args":{"at":[8,8,8],"program":{"name":"塔","parts":[{"name":"p","size":[6,6,6],"prims":[{"shape":"box","from":[0,0,0],"to":[3,3,3],"color":"#ff2d2d"}]}]}}}',
     '{"action":"entity.add","args":{"name":"起点-0","label":"检查点","at":[3,5,3]}}',
+    '{"action":"ui.add","args":{"type":"text","text":"得分 0","x":2,"y":6,"w":22,"h":7,"size":18,"color":"#ffd166","bg":"#1b2431"}}',
+    '{"action":"zone.add","args":{"name":"森林","min":[10,10,10],"max":[40,40,40],"selector":"player"}}',
+    '{"action":"settings.set","args":{"gameRules":{"respawnDelay":3},"worldSettings":{"fogUniformDensity":0.002}}}',
     '{"action":"storage.set","args":{"name":"scores","key":"best","value":42}}',
     '{"action":"storage.get","args":{"name":"scores","key":"best"}}',
     '{"action":"plan.set","args":{"items":[{"text":"看清世界","status":"done"},{"text":"砌石头台子","status":"done"},{"text":"写两端脚本","status":"done"},{"text":"跑一遍验证","status":"doing"}]}}',
@@ -621,6 +631,7 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     '{"action":"runtime.stop"}',
     '{"action":"scene.capture"}',
     '{"action":"map.save"}',
+    '{"action":"project.export","args":{"name":"e2e-agent-export"}}',
     '{"action":"finish","args":{"summary":"石头台子 + 红塔 + 起点实体 + 服务端与客户端脚本，已存盘"}}',
   ];
   const seen = [];
@@ -715,6 +726,9 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     blocks: window.__editor.world.size(),
     scripts: (window.__editor.state.scripts || []).map((s) => s.name),
     models: (window.__editor.state.models || []).length,
+    zones: (window.__editor.state.meta.zones || []).length,
+    hud: (window.__editor.state.meta.ui || []).length,
+    body: document.querySelector("#aiAgent .ag-body").textContent,
     canUndo: (window.__editor.history.stack || []).length,
     errs: (window.__errLog || []).slice(),
     tools: document.querySelectorAll("#aiAgent .ag-tool .nm").length,
@@ -754,6 +768,11 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     rep.argsJson.slice(0, 60));
   ok("写脚本那一行能展开看行级 diff（有 + 行）", rep.diffAdds >= 1, `+${rep.diffAdds} 行`);
   ok("跑的过程中没有遗留「运行中」状态", rep.stuck === 0, `${rep.stuck} 行卡在运行中`);
+  ok("ui.add 真的往 meta.ui 里写了 HUD 部件", rep.hud >= 1, `${rep.hud} 个部件`);
+  ok("zone.add 真的往 meta.zones 里写了区域触发器", rep.zones >= 1, `${rep.zones} 个区域`);
+  ok("收工时的交付核对是程序自己量的，不是照抄模型小结",
+    /— 交付核对 —/.test(rep.body) && /方块 [\d,]+ · 模型\/实体 \d+ · 区域 \d+ · HUD 部件 \d+/.test(rep.body)
+    && /已导出项目包/.test(rep.body), rep.body.slice(-260));
   ok("它真的用 sb 盖出了方块", rep.blocks > before.blocks, `${before.blocks} → ${rep.blocks}`);
   ok("服务端脚本落地了", rep.scripts.includes("agentMade.js"), rep.scripts.join(", "));
   ok("客户端脚本被按端规范改了名（side=client → 文件名含 client）",

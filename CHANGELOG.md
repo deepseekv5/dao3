@@ -12,6 +12,16 @@
 
 ### 新增
 
+- **Agent 现在能交付完整项目。** 补上四个创作动作：`ui.add`（屏幕 HUD 部件：计分板、
+  提示条、按钮）、`zone.add`（区域触发器，脚本用 `world.onZoneEnter/onZoneLeave` 响应）、
+  `settings.set`（`meta.gameRules` 与 `meta.worldSettings`）、`project.export`
+  （导出官方同构的项目包 .zip —— 真正的交付物；原来的 `package.export` 是起错的名字，
+  官方 `apc package` 那组是查 `@dao3fun` npm 包，已改成别名）。
+- **收工时的「交付核对」由程序自己量，不照抄模型小结。** 全自动最容易骗人的就在这：
+  模型说"已完成赛道与计分板"，实际可能一个方块没盖、一次都没存盘。现在 finish 那一行
+  会附一段独立核对——方块数、模型/实体数、区域数、HUD 数、有哪些脚本和各自端、
+  有没有导出——并列出缺口（世界是空的 / 没脚本 / 没 map.save 关掉就没了 /
+  没 build.check / 没 runtime.start 行为未验证）。
 - **Agent 小窗改成 Claude Code 那种工具调用视图。** 之前是糊在一起的步骤日志，
   现在一个动作两行：`⏺ 动作名(参数摘要)` + `⎿ 结果`，右边挂**这一步的耗时**；
   参数与长输出折叠在 `▸ 参数` / `展开完整输出` 里，点开就是模型真实发出的原始 args，
