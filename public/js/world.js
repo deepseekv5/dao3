@@ -75,34 +75,46 @@ export function encodeVox(world, palette) {
     if (x < minx || y < miny || z < minz) continue;
     xyz.push(x - minx, z - minz, sy - 1 - (y - miny), Math.max(1, pal + 1));
   }
-  const bodySize = 12 + xyz.length * 4;
-  const main = [str("MAIN"), u32(0), u32(bodySize)];
-  main.push(str("XYZI"), u32(xyz.length / 4));
+  // 按 MagicaVoxel 规范写：XYZI 的长度字段是**字节数**，MAIN 的两个长度写 0
+  // （意思是"内容一直到文件尾"）。旧写法把体素数当长度、又把 bodySize 塞进
+  // MAIN 的 contentContentSize，于是我们导出的 .vox 连 MagicaVoxel 自己都打不开。
+  const main = [str("MAIN"), u32(0), u32(0), str("XYZI"), u32(xyz.length), u32(0)];
   for (const v of xyz) main.push(u8(v & 0xff));
   const mainBuf = concatBytes(main);
   chunks.push(mainBuf);
   return concatBytes(chunks);
 }
 export function decodeVox(buf) {
-  const dv = new DataView(buf.buffer || buf);
+  // back/off/len 三件套都要带：从 zip 里解出来的是一条**子视图**，
+  // 只写 buf.buffer 等于从整个 zip 的第 0 字节开始读。
+  const back = buf.buffer || buf;
+  const off = buf.byteOffset || 0, len = buf.byteLength ?? buf.length;
+  const view = new Uint8Array(back, off, len);
+  const dv = new DataView(back, off, len);
   let o = 0;
-  const rd = (n) => { const s = new Uint8Array(buf.buffer || buf, (buf.byteOffset || 0) + o, n); o += n; return s; };
+  const rd = (n) => { const s = view.subarray(o, o + n); o += n; return s; };
   const u32 = () => { const v = dv.getUint32(o, true); o += 4; return v; };
   if (String.fromCharCode(...rd(4)) !== "VOX ") throw new Error("bad vox");
   u32();
   const voxels = [];
   function walk(end) {
-    while (o < end) {
+    while (o + 12 <= end) {
       const id = String.fromCharCode(...rd(4));
-      const clen = u32(), cdata = u32(), next = o + clen + cdata;
-      if (id === "XYZI") {
-        const n = clen;
-        for (let i = 0; i < n; i++) { voxels.push([rd(1)[0], rd(1)[0], rd(1)[0], rd(1)[0]]); }
-      } else if (id === "MAIN") { walk(next); }
-      o = next;
+      const clen = u32(), cdata = u32();
+      const bodyStart = o;
+      // MAIN 按规范两个长度都是 0，含义是"一直到（外层）结尾"
+      let bodyEnd = clen + cdata === 0 && id === "MAIN" ? end : Math.min(end, bodyStart + clen + cdata);
+      if (id === "MAIN") walk(bodyEnd);
+      else if (id === "XYZI") {
+        // 只按规范读：clen 是字节数，所以体素数 = 内容字节 / 4。
+        // 曾经还留了一条"自家旧口径"的分支，但旧 encodeVox 连 contentContentSize
+        // 都没写，那种文件本来就解不出正确的体素，留着只是假装兼容。
+        for (let i = bodyStart; i + 3 < bodyEnd; i += 4) voxels.push([view[i], view[i + 1], view[i + 2], view[i + 3]]);
+      }
+      o = bodyEnd;
     }
   }
-  walk(buf.byteLength || buf.length);
+  walk(len);
   return voxels; // [x, z, y(down), palIndex]
 }
 function concatBytes(arrs) {

@@ -48,3 +48,4 @@ start.out
 *令牌*
 *.pem
 *.key
+start.err

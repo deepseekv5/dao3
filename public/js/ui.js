@@ -71,6 +71,12 @@ const CAT_ZH = { nature: "自然", structure: "结构", light: "光源", color: 
 
 export function buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject }) {
   const api = {};
+  // 面板重建注册表。每个右侧面板都是初始化时**一次性**把 state.meta 读进 DOM 的，
+  // 而导入项目包会整块换掉 meta。不重建的后果不只是"看到的数字是上一张图的"：
+  // 世界参数滑杆闭包里握着的是那个已经被丢弃的旧 ws 对象，用户拖它等于改空气。
+  const reloaders = [];
+  api.onReload = (fn) => { reloaders.push(fn); return fn; };
+  api.reloadPanels = () => { for (const f of reloaders) { try { f(); } catch (err) { console.error(err); } } };
   const $ = (id) => document.getElementById(id);
   const recent = [];
 
@@ -463,6 +469,8 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     const wrow2 = (label) => { const r = document.createElement("div"); r.className = "trow"; r.innerHTML = `<span>${label}</span>`; worldTab.appendChild(r); return r; };
     const wbtn = (label, title, fn) => { const b = document.createElement("button"); b.textContent = label; b.title = title; b.className = "wrowbtn"; b.onclick = fn; return b; };
 
+    // 整个 tab 从 state.meta 现读现建，所以它必须能被重新调用一次。
+    const buildWorldTab = () => {
     worldTab.innerHTML = "";
     const meta = state.meta || {};
     // 基本信息
@@ -711,6 +719,9 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     grNote.style.cssText = "padding:6px 10px 10px;font-size:11px;line-height:1.7;color:var(--font-black-minor)";
     grNote.textContent = "keepInventory / doMobSpawning 本地没有背包与生物系统，仅作为脚本可读的开关保留；脚本可用 world.setGameRule(name, value) 运行时修改。";
     worldTab.appendChild(grNote);
+    };
+    buildWorldTab();
+    api.onReload(buildWorldTab);
   }
 
   // ---------- logo 文件菜单 ----------
@@ -824,6 +835,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     });
   };
   api.refreshTree = renderTree;
+  api.onReload(() => renderTree());
   return api;
 }
 

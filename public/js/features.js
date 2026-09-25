@@ -604,9 +604,9 @@ function wireModels() {
   renderModelList();
 }
 // 把选区体素转换为带图集纹理的 Mesh（侧面同样渲染）
-function voxelSelectionToMesh() {
-  const e = E, w = e.world, atlas = e.atlas;
-  const sel = e.state.selection;
+/** 把 world 在 [min,max] 范围内的体素烘成一张网格（面剔除 + 图集 UV）。 */
+function meshVoxelRange(e, w, min, max) {
+  const atlas = e.atlas;
   const mat = new THREE.MeshStandardMaterial({ map: atlas.texture, roughness: 0.92, metalness: 0, transparent: true, opacity: 1 });
   const FACES = [
     // 与 renderer.js 保持一致：外侧逆时针绕序，v=0 在底部
@@ -619,7 +619,6 @@ function voxelSelectionToMesh() {
   ];
   const pos = [], nor = [], uv = [], idx = [];
   let vc = 0;
-  const { min, max } = sel;
   for (let x = min.x; x <= max.x; x++) for (let y = min.y; y <= max.y; y++) for (let z = min.z; z <= max.z; z++) {
     const id = w.get(x, y, z); if (!id) continue;
     const block = atlas.byId(id); if (!block) continue;
@@ -647,6 +646,30 @@ function voxelSelectionToMesh() {
   g.setIndex(idx);
   const mesh = new THREE.Mesh(g, mat);
   mesh.castShadow = true; mesh.receiveShadow = true;
+  return mesh;
+}
+function voxelSelectionToMesh() {
+  const e = E, { min, max } = e.state.selection;
+  return meshVoxelRange(e, e.world, min, max);
+}
+/**
+ * 把 .vox 解出来的 [x, z, yDown, palette] 列表变成一个可摆放的模型。
+ * 官方 dao3 包里的雕像/奖杯全是这个格式，不吃进来就等于"导入成功但画面是空的"。
+ * 颜色按调色板顺序映射到图集方块——和整图 .vox 导入走的是同一条映射，不再另立一套。
+ */
+function voxListToModel(voxels, atlas) {
+  let mx = 0, my = 0, mz = 0;
+  for (const v of voxels) { if (v[0] > mx) mx = v[0]; if (v[1] > mz) mz = v[1]; if (v[2] > my) my = v[2]; }
+  const world = new VoxelWorld([mx + 1, my + 1, mz + 1]);
+  const palette = atlas.list().slice(0, 255).map((b) => b.id);
+  const fallback = palette[0] || 1;
+  for (const [x, z, yDown, pal] of voxels) {
+    const id = palette[Math.max(0, Math.min(254, (pal || 1) - 1))] || fallback;
+    world.set(x, my - yDown, z, id);
+  }
+  const mesh = meshVoxelRange(E, world, { x: 0, y: 0, z: 0 }, { x: mx, y: my, z: mz });
+  // 实体记录给的是**中心**坐标，体素网格的几何原点在一个角上，不居中就会整体偏出半座雕像
+  mesh.geometry.translate(-mx / 2, 0, -mz / 2);
   return mesh;
 }
 function addModel(obj, name, assetRef) {
@@ -1002,7 +1025,15 @@ export async function importProject(file) {
     entities: res.entities || [], groups: res.groups || [], models: [],
     meshNames: (res.meshNames && res.meshNames.length) ? res.meshNames : (prev.meshNames || []),
   });
-  if (cfg.player) meta.player = Object.assign({}, cfg.player, { _units: (cfg.player.walkSpeed || 0) > 1 ? "legacy" : "official" });
+  if (cfg.player) {
+    // 认**形状**而不是认数值大小：官方 blob 一定带 allowJump / noClip / cameraType 这类
+    // 只有官方才有的键。旧写法是 "walkSpeed > 1 就当旧单位"，可官方中跑速本来就是 0.4，
+    // 一旦某张图把它填成 2，整份玩家属性会被再按 15.625 除一遍，速度全废。
+    const OFFICIAL_ONLY = ["allowJump", "allowDoubleJump", "allowFlight", "allowMove", "allowCrouch",
+      "noClip", "cameraType", "playerSounds", "movementBounds", "initialPosition"];
+    const official = OFFICIAL_ONLY.some((k) => k in cfg.player);
+    meta.player = Object.assign({}, cfg.player, { _units: official ? "official" : "legacy" });
+  }
   if (cfg.physics) {
     meta.worldSettings = Object.assign({}, prev.worldSettings, cfg.physics, {
       airFriction: cfg.physics.airFriction ?? cfg.physics.velocityDamping ?? 0.01,
@@ -1016,7 +1047,10 @@ export async function importProject(file) {
     const cl = (v, a, b) => Math.max(a, Math.min(b, +v || 0));
     const flat = io.fromOfficialEnvironment(cfg.environment);
     meta.worldSettings = Object.assign({}, meta.worldSettings, flat);
-    const tn = state.terrain || {};
+    // 这里必须是 e.state：features.js 没有模块级的 state，这一句是从 main.js 抄过来的。
+    // 于是只要包里带 environment.json，整段就抛 ReferenceError、导入半途而废——
+    // 而官方 dao3 包一定带这个文件，所以这条分支从来没跑通过。
+    const tn = e.state.terrain || {};
     if (flat.fogUniformDensity != null) tn.fogDensity = flat.fogUniformDensity;
     if (flat.skyTopLight) tn.skyTop = hexOf(flat.skyTopLight);
     if (flat.skyBottomLight) tn.skyBottom = hexOf(flat.skyBottomLight);
@@ -1036,7 +1070,28 @@ export async function importProject(file) {
   if (cfg.description != null) meta.description = cfg.description;
   e.state.meta = meta;
   e.state.scripts = meta.scripts;
-  e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames };
+  // 官方资源表（project/assets.json）里的 audio/lut/part 名字要落到面板真正读的那两处：
+  // 音效下拉读 state.assets.audioNames，导出时再写回 assets.json。
+  // 只把"zip 里带了音频字节"的键当音效表是不够的——官方包常常只登记不携带文件。
+  const audioNames = [...new Set([...Object.keys(res.audio || {}), ...((res.assetNames && res.assetNames.audio) || [])])];
+  // .vox 转成可渲染模型，并按实体引用的裸名注册进 meshes：注册名和 d.mesh 必须同一口径，
+  // 否则 applySceneModels 取不到东西，整张图就只剩标记框。单个失败不该拖垮整次导入。
+  let voxOk = 0;
+  for (const vm of res.voxMeshes || []) {
+    try { res.meshes[vm.name] = { object: voxListToModel(vm.voxels, E.atlas), scale: 1 }; voxOk++; }
+    catch (err) { res.warnings.push(`网格「${vm.name}」建模失败: ${(err && err.message) || err}`); }
+  }
+  if (voxOk) res.warnings.push(`已把 ${voxOk} 个 .vox 网格转成可渲染模型`);
+  e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames };
+  meta.lutNames = (res.assetNames && res.assetNames.lut) || [];
+  meta.partNames = (res.assetNames && res.assetNames.part) || [];
+  meta.pictureNames = (cfg.pictureNames && cfg.pictureNames.length) ? cfg.pictureNames : (res.pictureNames || []);
+  // 派生状态必须跟着换。实体标记与场景模型是 state.entities / state.models 驱动的，
+  // 而 replaceWorld 里的 restoreEntityMarkers 读的是 state.entities（不是 meta.entities）——
+  // 之前只换了 meta，于是导入后画面里没有这张图的实体，模型列表却还是上一张图的。
+  e.state.entities = meta.entities;
+  e.state.models = [];
+  e.state.selectedModel = null;
   e.__scriptIdx = 0;
   renderScriptFiles();
   if (window.__replaceWorld) window.__replaceWorld(res.world); // 内部按 meta.entities 重建场景模型
@@ -1047,10 +1102,21 @@ export async function importProject(file) {
   if (missing.length || missingTags.length) genEntitiesFromScript();
   if (E.ui && E.ui.refreshTree) E.ui.refreshTree();
   renderModelList();
+  // 每个面板都是初始化时一次性把 meta 灌进 DOM 的，换整块 meta 之后必须重建。
+  // 不重建不只是"数字是旧的"：世界参数滑杆握着的是被丢弃的旧 ws 对象，
+  // 用户拖它改的是空气——看着生效了，一存盘全没有。
+  if (E.ui && E.ui.reloadPanels) E.ui.reloadPanels();
+  // 导入即改动。不标脏的话「返回主界面」那句 if (state.dirty) 不成立，
+  // 一整张刚导入的图会被静默丢掉。
+  e.markDirty();
   const warns = res.warnings.length ? "\n" + res.warnings.join("\n") : "";
   e.toast(`已导入「${res.name}」· ${meta.entities.length} 实体 / ${res.scripts.length} 脚本 / ${meta.meshNames.length} 模型` + warns);
-  document.getElementById("scriptScreen").classList.add("show");
-  E.ctx.mode = "script";
+  // 只有包里真的带脚本才跳到脚本页：导入一张图之后用户想看的是世界，
+  // 而官方 dao3 包经常是空 scripts/（这次就是），硬跳过去等于把成果盖住。
+  if (res.scripts.length) {
+    document.getElementById("scriptScreen").classList.add("show");
+    E.ctx.mode = "script";
+  }
   return true;
 }
 /* ------------------------------ 玩家设置（顶部「玩家」tab） ------------------------------ */
@@ -1172,6 +1238,8 @@ function wirePlayer() {
   $("plOk").onclick = () => { panel.classList.remove("show"); e.toast("玩家设置已保存"); };
   const extras = buildPlayerExtras(e, $);
   load();
+  // 换图（导入项目包）之后必须能被重新灌一次值，否则面板仍是上一张图的玩家属性
+  E.ui && E.ui.onReload && E.ui.onReload(load);
   e.syncPlayerPanel = load;
 }
 
@@ -1387,6 +1455,7 @@ function wireUiEditor() {
   $("uiBack").onclick = () => { screen.classList.remove("show"); document.getElementById("libCard").style.display = "block"; E.ctx.mode = "build"; document.querySelector('.mtab[data-menu="build"]')?.classList.add("active"); };
   e.renderUiEditor = render;
   render();
+  E.ui && E.ui.onReload && E.ui.onReload(render);   // 界面部件列表面板
 }
 
 /* ------------------------------ 商城（本地商品表） ------------------------------ */
@@ -1455,6 +1524,7 @@ export function wireStore() {
   $("storeBack").onclick = () => { screen.classList.remove("show"); document.getElementById("libCard").style.display = "block"; E.ctx.mode = "build"; document.querySelector('.mtab[data-menu="build"]')?.classList.add("active"); };
   e.renderStore = render;
   render();
+  E.ui && E.ui.onReload && E.ui.onReload(render);   // 商品表面板
 }
 
 /* 点击模型列表 → 相机缓动飞到该模型位置 */

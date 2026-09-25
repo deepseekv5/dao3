@@ -4,7 +4,7 @@
 // 为什么值得单独一套：地形是"统计上正确"和"看起来对"最容易脱节的部分。
 // 之前 plains 的 82% 地表被刷成沙子、islands 一滴水都没有，用肉眼看截图才发现，
 // 而 cells 计数一直是"正常"的。所以这里断言的是**地表构成与水面比例**，不是格数。
-import { VoxelWorld } from "../public/js/world.js";
+import { VoxelWorld, encodeVox, decodeVox } from "../public/js/world.js";
 import { generate, PRESETS, resolveBlocks } from "../public/js/terrain.js";
 
 const B = resolveBlocks(null);
@@ -162,3 +162,30 @@ for (const shape of [[16, 16, 16], [8, 8, 8], [128, 24, 64], [32, 96, 32]]) {
 
 console.log(fails ? `\n${fails} 项未通过` : "\n全部通过");
 process.exitCode = fails ? 1 : 0;
+
+/* ---------------- .vox 编解码（MagicaVoxel / 官方 dao3 口径） ----------------
+   为什么盯这里：我们自己的 encodeVox 历史上把"体素数"写进了本该是**字节数**的
+   长度字段，MAIN 的两个长度也写错。后果有两头——官方 dao3 项目包里的 .vox 雕像
+   一个都解不出来（导入后画面是空的），而自家导出的 .vox 连 MagicaVoxel 都打不开。
+   所以规范形状要断言，旧文件的兼容读取也要断言。 */
+{
+  const w = new VoxelWorld([8, 6, 8]);
+  for (let x = 0; x < 5; x++) for (let y = 0; y < 4; y++) for (let z = 0; z < 3; z++) w.set(x, y, z, 127);
+  const N = 5 * 4 * 3;
+  const bytes = encodeVox(w, [127]);
+  const back = decodeVox(bytes);
+  ok(".vox 编得出去也解得回来", back.length === N, `${back.length} / ${N}`);
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = -1;
+  for (let k = 0; k + 4 <= bytes.length; k++) {
+    if (bytes[k] === 0x58 && bytes[k + 1] === 0x59 && bytes[k + 2] === 0x5a && bytes[k + 3] === 0x49) { at = k; break; }
+  }
+  ok("XYZI 长度字段按规范写字节数", at >= 0 && dv.getUint32(at + 4, true) === N * 4, `clen=${at >= 0 ? dv.getUint32(at + 4, true) : "无 XYZI 块"}`);
+  ok("MAIN 按规范把两个长度都写 0（表示内容到文件尾）",
+    dv.getUint32(12, true) === 0 && dv.getUint32(16, true) === 0,
+    `${dv.getUint32(12, true)} / ${dv.getUint32(16, true)}`);
+  // 子视图：从 zip 里解出来的是带 byteOffset 的 Uint8Array，DataView 不认 offset 就会读飞
+  const wrapped = new Uint8Array(bytes.length + 7);
+  wrapped.set(bytes, 7);
+  ok("带 byteOffset 的子视图也解得对（zip 里取出的就是这种）", decodeVox(wrapped.subarray(7)).length === N);
+}

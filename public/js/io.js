@@ -355,16 +355,31 @@ export async function exportProjectZip({ world, state, name, download = true }) 
 }
 
 // -------- Box3/dao3 项目包 (.zip) 导入：code/ + project/ + build/ + audio/ + mesh/ + models/ --------
+//
+// 官方 dao3 导出的包和我们自己导出的包是**两套目录名**：
+//   我们：build/voxel-sparse.gz + project/{player,physics,environment,zones,info}.json + code/*.js
+//   官方：terrain/voxel-sparse.gz + json/{player,physics,environment,zones,info}.json + scripts/*.js
+//        外加 block.json（根清单）、meshes/*.vox、images/（LUT 与粒子贴图）、terrain/raw/*.bin
+// 只认前一套的后果不是"少读一个文件"，而是 projectCfg 整个为空：玩家属性、物理、
+// 环境、区域一个都没进来，界面自然什么都没变。所以下面统一走 findCfg() 两套都认。
 export async function importProjectZip(file) {
   const u8 = new Uint8Array(await file.arrayBuffer());
   const { entries, extract } = await readZipEntries(u8);
   const warnings = [];
+  let rawMeshes = 0;   // 只登记了名字、没转成可渲染模型的 .vb/.vox 个数。
+                      // 声明放最前面：它曾在第 4 步就被读一次，let 的 TDZ 让整次导入抛错。
   const name = String(file.name || "导入项目").replace(/\.zip$/i, "") || "导入项目";
   let world = null, entities = [];
+  // 顶层常套一层项目名文件夹（赤碧城/json/player.json），所以前缀放宽成 (^|/)
+  const findCfg = (key) => entries.find((e) => new RegExp(`(^|/)(project|json)/${key}\\.json$`, "i").test(e.name));
+  const jsonOf = async (e) => (e ? JSON.parse(new TextDecoder().decode(await extract(e))) : null);
 
-  // 1) 地图：build/*.gz（VoxelPayload json，可能 gzip 压缩）或任意 .gz / 大 .json
-  const gzEnt = entries.find((e) => /(^|\/)(build|map|world|voxels?)\/.*\.(gz|json)$/i.test(e.name))
-    || entries.find((e) => e.name.endsWith(".gz"))
+  // 1) 地图。terrain/raw/*.bin 是官方烘焙好的渲染网格、不是体素（八叉树解码已证伪），
+  //    这里刻意不碰它，但必须报出来——静默丢掉一半数据比报错难查得多。
+  const rawBins = entries.filter((e) => /(^|\/)terrain\/raw\/.*\.bin$/i.test(e.name)).length;
+  const gzEnt = entries.find((e) => /(^|\/)(build|terrain)\/voxel-sparse\.gz$/i.test(e.name))
+    || entries.find((e) => /(^|\/)(build|map|world|voxels?)\/.*\.(gz|json)$/i.test(e.name))
+    || entries.find((e) => e.name.endsWith(".gz") && !/(^|\/)raw\//.test(e.name))
     || entries.find((e) => /(voxel|map|world).*\.json$/i.test(e.name) && !e.name.startsWith("project/"));
   if (gzEnt) {
     try {
@@ -382,22 +397,50 @@ export async function importProjectZip(file) {
       } else throw new Error("不是 VoxelPayload 结构");
     } catch (err) { warnings.push("地图解析失败: " + err.message); }
   } else {
-    warnings.push("包内未找到地图数据 (build/*.gz)");
+    warnings.push("包内未找到地图数据 (build|terrain/voxel-sparse.gz)");
     world = null;
   }
+  if (rawBins) warnings.push(`跳过 ${rawBins} 个 terrain/raw/*.bin：那是官方烘焙网格，不是体素数据`);
+
+  // 1b) block.json：官方项目根清单。值大多是 IPFS CID（本地没有内容），
+  //     但 scriptIndex / version / features 是明文可用信息。
+  let block = null;
+  try { block = await jsonOf(entries.find((e) => /(^|\/)block\.json$/i.test(e.name))); } catch { block = null; }
 
   // 2) 项目名（project/map.json 优先）
   const mapJson = entries.find((e) => /project\/map\.json$/i.test(e.name));
   if (mapJson) {
     try {
-      const j = JSON.parse(new TextDecoder().decode(await extract(mapJson)));
+      const j = await jsonOf(mapJson);
       if (j.name) name = j.name;
     } catch {}
   }
 
   // 3) 实体：优先扁平 entities/models.json，其次官方 nodes 形态 entitiesTree
-  const flatEnt = entries.find((e) => /entities\/models\.json$/i.test(e.name)) || entries.find((e) => /(^|\/)entities\.json$/i.test(e.name));
+  const flatEnt = entries.find((e) => /entities\/models\.json$/i.test(e.name))
+    || entries.find((e) => /(^|\/)entities\.json$/i.test(e.name));
   const treeEnt = entries.find((e) => /entitiesTree.*\.json$/i.test(e.name));
+  // 一张"实体表"有三种历史形状，都得吃下：
+  //   · 数组                          —— 我们的 entities/models.json
+  //   · {id: 记录}                    —— 官方 dao3 的 json/entities.json（id 只在键上，记录体里没有）
+  //   · {id: {type:1|2, value:{…}}}   —— 官方 entitiesTree（type 2 是分组，不是实体）
+  // 之前只认第一种和最后一种，于是官方包导进来是 0 个实体、画面里一个标记都没有。
+  const normalizeEntities = (j) => {
+    if (Array.isArray(j)) return j;
+    if (!j || typeof j !== "object") return [];
+    if (Array.isArray(j.entities)) return j.entities;
+    const out = [];
+    for (const [k, v] of Object.entries(j)) {
+      if (!v || typeof v !== "object" || v.type === 2) continue;
+      const rec = v.value && typeof v.value === "object" ? v.value : v;
+      const r = Object.assign({ id: k }, rec, v.name != null && rec.name == null ? { name: v.name } : {});
+      // 官方 mesh 是 "mesh/石王座.vb" 这种带目录带扩展的引用，而我们全链路（资产表键、
+      // ensure() 取模型、模型下拉）用的都是裸名。不归一就直接 404，34 个雕像全变占位盒。
+      if (typeof r.mesh === "string") r.mesh = r.mesh.replace(/^.*\/(?=[^/]*$)/, "").replace(/\.(vb|vox|glb|gltf)$/i, "");
+      out.push(r);
+    }
+    return out;
+  };
   const flattenTree = (j) => Object.values(j || {}).filter((n) => n && n.type === 1).map((n) => {
     const v = n.value || {};
     return {
@@ -410,15 +453,12 @@ export async function importProjectZip(file) {
       damage: v.damage || null, particle: v.particle || null, sound: v.sound || null, defaultMotionId: v.defaultMotionId || "",
     };
   });
-  const groups = treeEnt ? Object.values(JSON.parse(new TextDecoder().decode(await extract(treeEnt)))).filter((n) => n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds })) : [];
+  const groups = treeEnt ? Object.values(await jsonOf(treeEnt)).filter((n) => n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds })) : [];
   if (flatEnt && !entities.length) {
-    try {
-      const j = JSON.parse(new TextDecoder().decode(await extract(flatEnt)));
-      entities = Array.isArray(j) ? j : (Array.isArray(j.entities) ? j.entities : []);
-    } catch {}
+    try { entities = normalizeEntities(await jsonOf(flatEnt)); } catch (err) { warnings.push("entities.json 解析失败: " + err.message); }
   }
   if (treeEnt && !entities.length) {
-    try { entities = flattenTree(JSON.parse(new TextDecoder().decode(await extract(treeEnt)))); } catch (err) { warnings.push("entitiesTree 解析失败: " + err.message); }
+    try { entities = flattenTree(await jsonOf(treeEnt)); } catch (err) { warnings.push("entitiesTree 解析失败: " + err.message); }
   }
   // 3a2) project/compat.json：官方清单里没有的本地扩展（隐藏网格 / 物理盒偏移 / gameRules / 商品表 / 界面部件）
   const compatEnt = entries.find((e) => /project\/compat\.json$/i.test(e.name));
@@ -446,9 +486,9 @@ export async function importProjectZip(file) {
   // 3b) 项目配置块（官方 blob：player / physics / environment / ambientSound / zones / uiTree）
   const projectCfg = {};
   await Promise.all(["player", "physics", "environment", "ambientSound", "zones", "uiTree"].map(async (k) => {
-    const en = entries.find((e) => new RegExp("project/" + k + "\\.json$", "i").test(e.name));
+    const en = findCfg(k);
     if (!en) return;
-    try { projectCfg[k] = JSON.parse(new TextDecoder().decode(await extract(en))); } catch {}
+    try { projectCfg[k] = await jsonOf(en); } catch (err) { warnings.push(k + ".json 解析失败: " + err.message); }
   }));
   if (compat) {
     if (compat.gameRules) projectCfg.gameRules = compat.gameRules;
@@ -459,7 +499,7 @@ export async function importProjectZip(file) {
     // compat 里的本地扩展键（皮肤 / 虚拟按键 / 单位标记）并回去
     if (compat.playerExtras) projectCfg.player = Object.assign({}, projectCfg.player || {}, compat.playerExtras);
   }
-  const infoEnt = entries.find((e) => /project\/info\.json$/i.test(e.name));
+  const infoEnt = findCfg("info");
   if (infoEnt) {
     try {
       const info = JSON.parse(new TextDecoder().decode(await extract(infoEnt)));
@@ -469,7 +509,7 @@ export async function importProjectZip(file) {
   }
 
   // 4) 脚本：code/*.js（index.js / clientIndex.js / 任意文件）
-  const scriptEntries = entries.filter((e) => /(^|\/)(code|scripts)\/.*\.js$/i.test(e.name))
+  const scriptEntries = entries.filter((e) => /(^|\/)(code|scripts?)\/.*\.js$/i.test(e.name))
     .sort((a, b) => score(a.name) - score(b.name));
   function score(nm) {
     const b = nm.toLowerCase();
@@ -488,15 +528,31 @@ export async function importProjectZip(file) {
 
   // 5) 音效 audio/ + 网格资产名 mesh/（.vb 专有格式仅登记名字，实体换 mesh 时给出占位提示）
   const audio = {}, meshNames = [], pictureNames = [];
+  const voxMeshes = [];  // .vox 解码结果（{name, voxels}）；.vb 是专有的，解不动只登记名字
   await Promise.all(entries.map(async (e) => {
     if (/(^|\/)(audio|sound)\/.*\.(mp3|wav|ogg|m4a|aac)$/i.test(e.name)) {
       try { audio[e.name.split("/").pop()] = await extract(e); } catch {}
-    } else if (/(^|\/)(mesh|models?)\/.*\.(vb|vox|glb|gltf)$/i.test(e.name)) {
-      meshNames.push(e.name.split("/").pop().replace(/\.(vb|vox|glb|gltf)$/i, ""));
-    } else if (/(^|\/)(picture|image|ui)\/.*\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(e.name)) {
-      pictureNames.push(e.name.replace(/^.*?(?=picture\/|image\/|ui\/)/, ""));
+    } else if (/(^|\/)(meshes?|models?)\/.*\.(vb|vox|glb|gltf)$/i.test(e.name)) {
+      const fn = e.name.split("/").pop();
+      const base = fn.replace(/\.(vb|vox|glb|gltf)$/i, "");
+      meshNames.push(base);
+      // .vox（MagicaVoxel 那套带调色板的开放格式）在这里就解成体素：
+      // 只登记名字的话，官方包里那 20 座雕像在场景里就是 20 团空气。
+      // 解码要 atlas，所以只交原始体素列表，建网格留给 features.js 那侧做。
+      if (/\.vox$/i.test(fn)) {
+        try {
+          const vs = decodeVox(await extract(e));
+          if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs });
+          else rawMeshes++;
+        } catch { rawMeshes++; }
+      } else if (/\.vb$/i.test(fn)) rawMeshes++;
+    } else if (/(^|\/)(pictures?|images?|ui)\/.*\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(e.name)) {
+      pictureNames.push(e.name.replace(/^.*?(?=picture\/|pictures\/|image\/|images\/|ui\/)/, ""));
     }
   }));
+  // 报出来而不是默默变成占位盒：这条决定"导入后画面是空的"到底该怪包还是怪我们。
+  // 必须排在上面这次扫描之后——它曾排在前面，于是永远读到 0，警告一次都没出现过。
+  if (rawMeshes) warnings.push(`${rawMeshes} 个 .vb/.vox 网格只登记了名字，未转成可渲染模型；引用它们的实体会以标记框显示`);
 
   // 5b) 官方资源表 project/assets.json：路径 → {animated,bounds,contentId,hash,ownerId,previewImage,size,type}
   let assets = null;
@@ -535,7 +591,7 @@ export async function importProjectZip(file) {
     } catch {}
   }));
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, assets, assetNames, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, assets, assetNames, block, voxMeshes, warnings };
 }
 
 // 从导入脚本里识别出引用的实体选择器（#id / .tag），用于自动生成实体标记。

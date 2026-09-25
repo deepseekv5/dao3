@@ -411,7 +411,10 @@ function restoreEntityMarkers() {
   import("./features.js").then(({ addEntityMarker }) => {
     for (const d of state.entities) {
       if ((state.models || []).some((m) => m.entId === d.id)) continue;
-      addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || [4, 4, 4], bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides, phys: d.phys });
+      // 官方实体记录用 position / collision，我们自己的标记数据用 pos / collides。
+      // 只认后者的话，导入官方图之后所有标记都会掉进 [4,4,4] 那个兜底坐标里。
+      addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || d.position || [4, 4, 4],
+        bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys });
     }
   });
 }
