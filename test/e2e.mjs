@@ -619,7 +619,7 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
   const http = await import("http");
   const KEY = "e2e-agent-fake-key-7b2d";
   const STEPS = [
-    '{"action":"project.info","thought":"先看世界多大"}',
+    '{"action":"project.info","thought":"先看世界**多大**（`project.info`）"}',
     '{"action":"plan.set","args":{"items":[{"text":"看清世界","status":"done"},{"text":"砌石头台子","status":"doing"},{"text":"写两端脚本","status":"todo"},{"text":"跑一遍验证","status":"todo"}]}}',
     '{"action":"deleteWholeWorld"}',                                   // 故意越权，必须被拒且不打断循环
     '{"action":"blocks.edit","args":{"code":"sb.box([2,2,2],[4,4,4],\'stone\'); console.log(sb.count());"}}',
@@ -640,7 +640,10 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     '{"action":"scene.capture"}',
     '{"action":"map.save"}',
     '{"action":"project.export","args":{"name":"e2e-agent-export"}}',
-    '{"action":"finish","args":{"summary":"石头台子 + 红塔 + 起点实体 + 服务端与客户端脚本，已存盘"}}',
+    // 小结故意写成 markdown，并且塞一段 <img onerror>：
+    // 既验证**真的解析了**（星号不该以星号形式出现在界面上），
+    // 也验证**没有变成 HTML**（渲染器只产 DOM 节点，不碰 innerHTML）。
+    '{"action":"finish","args":{"summary":"## 建成\\n\\n- 石头**台子** 2×2×4\\n- 红塔 `tower`\\n- 两端脚本已存盘\\n\\n<img src=x onerror=alert(1)>"}}',
   ];
   const seen = [];
   let n = 0;
@@ -749,6 +752,21 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
     argsJson: [...document.querySelectorAll("#aiAgent details pre.ag-code")].map((n) => n.textContent).join("\n"),
     diffAdds: document.querySelectorAll("#aiAgent .dl.add").length,
     stuck: document.querySelectorAll("#aiAgent .ag-run").length,
+    // markdown 到底有没有被**解析**：看的是节点结构，不是文本里有没有星号
+    md: (() => {
+      const box = document.querySelector("#aiAgent .ag-md");
+      const all = (sel) => [...document.querySelectorAll(sel)].map((n) => n.textContent);
+      return {
+        heads: all("#aiAgent .ag-md .md-h"),
+        strong: all("#aiAgent .ag-md strong"),
+        codes: all("#aiAgent .ag-md code"),
+        li: document.querySelectorAll("#aiAgent .ag-md .md-list li").length,
+        thinkStrong: all("#aiAgent .ag-think strong"),
+        thinkCode: document.querySelectorAll("#aiAgent .ag-think code").length,
+        tags: box ? [...box.querySelectorAll("img,script,iframe,svg,object")].map((n) => n.tagName) : null,
+        text: box ? box.textContent : "",
+      };
+    })(),
     saved: (() => {
       // 按 key 的形状找，而不是写死整串：官方 getDataStorage 是【单地图】作用域，
       // 修好之后 key 里带 worldId，写死 "dao3_storage:map:scores:best" 反而会变成
@@ -782,8 +800,24 @@ console.log("== AI Agent 小窗：按脚本喂动作，看它真把世界改出�
   ok("ui.add 真的往 meta.ui 里写了 HUD 部件", rep.hud >= 1, `${rep.hud} 个部件`);
   ok("zone.add 真的往 meta.zones 里写了区域触发器", rep.zones >= 1, `${rep.zones} 个区域`);
   ok("收工时的交付核对是程序自己量的，不是照抄模型小结",
-    /— 交付核对 —/.test(rep.body) && /方块 [\d,]+ · 模型\/实体 \d+ · 区域 \d+ · HUD 部件 \d+/.test(rep.body)
+    /方块 [\d,]+ · 模型\/实体 \d+ · 区域 \d+ · HUD 部件 \d+/.test(rep.body)
     && /已导出项目包/.test(rep.body), rep.body.slice(-260));
+  // 「md 要解析」这条的判据：模型写的是 markdown，界面要给出**结构**。
+  // 只看"文本里还有没有星号"是不够的——把 markdown 整段转成纯文本也能满足它。
+  ok("小结的 ## 标题渲染成了标题（含程序自己附上的交付核对）",
+    rep.md.heads.includes("建成") && rep.md.heads.includes("交付核对"), rep.md.heads.join(" / "));
+  ok("小结的 - 列表渲染成了列表项", rep.md.li >= 6, `${rep.md.li} 项`);
+  ok("**粗体** 与 `行内代码` 都变成了真节点",
+    rep.md.strong.includes("台子") && rep.md.codes.includes("tower"),
+    rep.md.strong.join(",") + " | " + rep.md.codes.join(","));
+  ok("界面上不再出现字面星号或 ## 前缀", !/\*\*|^##\s/m.test(rep.md.text), rep.md.text.slice(0, 60));
+  ok("想法(thought)同样按 markdown 排", rep.md.thinkStrong.includes("多大") && rep.md.thinkCode === 1,
+    rep.md.thinkStrong.join(",") + " code=" + rep.md.thinkCode);
+  // 这一条是"只产 DOM 节点、绝不 innerHTML"这个设计的唯一硬证据：
+  // 模型塞进来的 <img onerror> 必须**作为字面文本显示**，而不是变成标签。
+  ok("模型文本里的 HTML 标签没有被变成节点（注入面是关的）",
+    rep.md.tags.length === 0 && rep.md.text.includes("<img src=x onerror=alert(1)>"),
+    (rep.md.tags || []).join(","));
   ok("它真的用 sb 盖出了方块", rep.blocks > before.blocks, `${before.blocks} → ${rep.blocks}`);
   ok("服务端脚本落地了", rep.scripts.includes("agentMade.js"), rep.scripts.join(", "));
   ok("客户端脚本被按端规范改了名（side=client → 文件名含 client）",

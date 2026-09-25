@@ -28,6 +28,7 @@ import { runSandboxCode, createWorld, addEntityMarker } from "./features.js";
 import { exportProjectZip } from "./io.js";
 import { dataStorageKey, dataStoragePrefix } from "./game.js";
 import { PRESETS } from "./terrain.js";
+import { renderMd, mdEl, MD_CSS } from "./md.js";
 
 /**
  * 算"有进展"的动作：真的动了世界、脚本或存盘。
@@ -528,7 +529,8 @@ export function agentOpen() { return !!_node; }
 export function openAgent(E) {
   closeAgent();
   if (!document.getElementById("aiAgentStyle")) {
-    const s = document.createElement("style"); s.id = "aiAgentStyle"; s.textContent = CSS;
+    const s = document.createElement("style"); s.id = "aiAgentStyle";
+    s.textContent = CSS + "\n" + MD_CSS + "\n#aiAgent .ag-md{color:#c3cfdf}\n#aiAgent .md-p:first-child{margin-top:0}";
     document.head.appendChild(s);
   }
   const d = document.createElement("div");
@@ -586,28 +588,43 @@ export function openAgent(E) {
     const meta = el2("span", "ag-meta", "运行中");
     head.appendChild(meta);
     main.appendChild(head);
-    if (thought) main.appendChild(el2("div", "ag-think", thought));
+    if (thought) {
+      // 想法按 markdown 渲染：模型在这里最爱写 **强调** 和 `标识符`，
+      // 原样显示出来就是一排星号，读起来像日志而不像解释。
+      const t = el2("div", "ag-think md");
+      t.appendChild(renderMd(thought));
+      main.appendChild(t);
+    }
     row.appendChild(main);
     stepsHost.appendChild(row);
     scroll();
     return {
       row,
-      finish: (text, ok, extra) => {
+      finish: (text, ok, extra, opt) => {
         row.classList.remove("ag-run");
         meta.textContent = extra || "";
         meta.className = "ag-meta " + (ok ? "ok" : "bad");
         if (text) {
-          const res = el2("div", "ag-res" + (ok ? "" : " bad"));
-          const oneLine = String(text).replace(/\s*\n\s*/g, " ⏎ ");
-          if (oneLine.length > 220) {
-            res.textContent = oneLine.slice(0, 220) + " …";
-            const det = document.createElement("details");
-            det.appendChild(el2("summary", null, "展开完整输出（" + String(text).split("\n").length + " 行 / " + String(text).length + " 字）"));
-            det.appendChild(el2("pre", "ag-code", text));
-            main.appendChild(det);
+          if (opt && opt.md) {
+            // 收工小结是给人读的一段话，不是一行工具返回值：整段按 markdown 排，
+            // 交付核对的 "- " 也才会真的变成条目而不是两个字符。
+            main.appendChild(el2("div", "ag-md md"));
+            main.lastChild.appendChild(renderMd(text));
+          } else if (opt && opt.block) {
+            main.appendChild(el2("pre", "ag-code", text));
           } else {
-            res.textContent = oneLine;
-            main.appendChild(res);
+            const res = el2("div", "ag-res" + (ok ? "" : " bad"));
+            const oneLine = String(text).replace(/\s*\n\s*/g, " ⏎ ");
+            if (oneLine.length > 220) {
+              res.textContent = oneLine.slice(0, 220) + " …";
+              const det = document.createElement("details");
+              det.appendChild(el2("summary", null, "展开完整输出（" + String(text).split("\n").length + " 行 / " + String(text).length + " 字）"));
+              det.appendChild(el2("pre", "ag-code", text));
+              main.appendChild(det);
+            } else {
+              res.textContent = oneLine;
+              main.appendChild(res);
+            }
           }
         }
         scroll();
@@ -765,8 +782,8 @@ export function openAgent(E) {
           // 实际可能一个方块没盖、一次都没存盘。所以这里独立量一遍再附在小结后面。
           const report = deliveryReport(E, touched);
           outcome = `完成 · ${step} 步`;
-          row.finish(args.summary + "\n— 交付核对 —\n" + report.lines.join("\n"), report.ok,
-            `${((Date.now() - ts) / 1000).toFixed(1)}s`);
+          row.finish(`${args.summary || ""}\n\n## 交付核对\n\n${report.lines.map((l) => "- " + l).join("\n")}`,
+            report.ok, `${((Date.now() - ts) / 1000).toFixed(1)}s`, { md: true });
           stat(report.ok ? "完成，交付物齐" : "完成，但有缺口", report.ok ? "ok" : "err");
           obs = null;
           break;
@@ -1085,6 +1102,7 @@ const AGENT_RULES = `
 8. 同一个动作连续失败两次就换思路（换位置、换更小尺寸、换更简单写法），不要重复撞墙。
 9. 做完就 finish，小结里写清「做了什么 / 用什么触发 / 还有什么没做」。
    做不完也要 finish，小结里写清卡在哪一步、需要什么信息才能继续。
+   summary 会按 markdown 渲染（## 标题、- 列表、**粗体**、\`代码\`），所以请分点写，别堆成一段。
    没有步数上限：跑够为止。但连续撞同一个墙我们会停下来等你，不会闷烧你的额度。
 
 硬约束：
