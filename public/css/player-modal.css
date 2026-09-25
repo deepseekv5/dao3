@@ -1,0 +1,165 @@
+/* player-modal.css — 「玩家 → 项目皮肤库 / 虚拟按键」弹窗。
+   尺寸按官方截图：居中约 1180×760、深色 #1b1f27、左栏 240 导航 + 右栏内容。
+   颜色尽量走 editor.css 的变量，取不到就退回官方橙 #fc8308 —— 这个文件要能脱离
+   接线顺序独立生效（面板模块自己注入样式）。 */
+
+.pm-mask{position:fixed;inset:0;z-index:320;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.62);backdrop-filter:blur(2px)}
+.pm-mask.show{display:flex}
+.pm-box{position:relative;display:flex;width:min(1180px,94vw);height:min(760px,92vh);
+  background:#1b1f27;border:1px solid rgba(255,255,255,.07);border-radius:16px;overflow:hidden;
+  box-shadow:0 26px 70px rgba(0,0,0,.66);color:#fff;font-size:13px}
+
+/* 关闭按钮：官方是右上角一个细线 ✕，hover 才提亮 */
+.pm-close{position:absolute;top:14px;right:16px;width:28px;height:28px;border-radius:8px;
+  color:rgba(255,255,255,.55);font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;
+  background:none;border:none;z-index:3}
+.pm-close:hover{background:rgba(255,255,255,.08);color:#fff}
+
+/* ---------------- 左栏导航 ---------------- */
+.pm-nav{flex:0 0 240px;padding:24px 0 18px;border-right:1px solid rgba(255,255,255,.07);background:#181c23}
+.pm-nav-title{padding:0 24px 16px;font-size:17px;font-weight:600;letter-spacing:.5px}
+.pm-nav-item{display:flex;align-items:center;gap:10px;width:100%;padding:12px 24px;
+  font-size:13.5px;color:rgba(255,255,255,.62);background:none;border:none;text-align:left;position:relative;
+  border-left:2px solid transparent}
+.pm-nav-item:hover{color:#fff;background:rgba(255,255,255,.03)}
+.pm-nav-item.active{color:#fff;font-weight:600;background:rgba(252,131,8,.08);border-left-color:var(--primary,#fc8308)}
+.pm-nav-item svg{flex:0 0 auto;opacity:.85}
+
+/* ---------------- 右栏 ---------------- */
+.pm-main{flex:1;min-width:0;display:flex;flex-direction:column;padding:22px 26px;overflow:auto;overscroll-behavior:contain}
+.pm-content{flex:1;min-height:0;display:flex;flex-direction:column;gap:14px}
+.pm-h{font-size:17px;font-weight:600;flex:0 0 auto}
+.pm-h.small{font-size:15px}
+.pm-h.with-info{display:flex;align-items:center;gap:8px}
+.pm-info{width:17px;height:17px;border-radius:50%;border:1px solid rgba(255,255,255,.4);
+  color:rgba(255,255,255,.6);font-size:11px;font-style:normal;line-height:1;display:inline-flex;
+  align-items:center;justify-content:center;background:none;padding:0}
+.pm-info:hover{border-color:var(--primary,#fc8308);color:var(--primary,#fc8308)}
+.pm-hint{font-size:11.5px;color:rgba(255,255,255,.42)}
+.pm-empty{padding:40px 10px;text-align:center;color:rgba(255,255,255,.4);font-size:12.5px}
+
+/* 工具条：橙色描边按钮 + 图标按钮 + 下拉 + 搜索（搜索吃掉剩余宽度，和官方一致） */
+.pm-toolbar{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.pm-btn{padding:6px 14px;border-radius:6px;font-size:12.5px;color:#fff;
+  background:transparent;border:1px solid var(--primary,#fc8308);line-height:1.4}
+.pm-btn:hover{background:rgba(252,131,8,.14)}
+.pm-btn.primary{background:var(--primary,#fc8308);border-color:var(--primary,#fc8308)}
+.pm-btn.primary:hover{background:var(--primary-hover,#fd9c39)}
+.pm-iconbtn{width:30px;height:28px;border-radius:6px;border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.04);color:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center}
+.pm-iconbtn:hover{border-color:var(--primary,#fc8308);color:#fff}
+.pm-select,.pm-search{height:28px;background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);
+  border-radius:6px;color:#fff;font-size:12px;padding:0 8px;outline:none}
+.pm-select{flex:0 0 auto}
+.pm-search{flex:1;min-width:80px}
+.pm-search:focus,.pm-select:focus{border-color:var(--primary,#fc8308)}
+
+/* ---------------- 皮肤卡片 ---------------- */
+.pm-grid{flex:1;min-height:0;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+  gap:14px;align-content:start;padding:2px 2px 8px}
+.pm-card{position:relative;width:100%;min-height:230px;border-radius:12px;background:#05070c;
+  border:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.pm-card:hover{border-color:rgba(252,131,8,.55)}
+.pm-card-preview{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;user-select:none}
+.pm-card-badge{position:absolute;left:8px;top:8px;padding:2px 7px;border-radius:5px;font-size:10.5px;
+  background:rgba(0,0,0,.66);border:1px solid rgba(252,131,8,.6);color:var(--primary,#fc8308)}
+.pm-card-more{position:absolute;right:6px;top:6px;width:24px;height:24px;border-radius:6px;font-size:15px;
+  color:rgba(255,255,255,.7);background:rgba(0,0,0,.4);border:none;line-height:1}
+.pm-card-more:hover{background:rgba(252,131,8,.85);color:#fff}
+.pm-card-name{position:absolute;left:10px;bottom:9px;right:34px;font-size:13px;color:#fff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+
+/* ---------------- 虚拟按键 ---------------- */
+/* 胶囊两段切换：官方是当前段下方一条橙色短下划线，而不是整块反白 */
+.pm-seg{align-self:center;display:flex;gap:26px;padding:5px 18px;border-radius:22px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);flex:0 0 auto}
+.pm-seg-item{position:relative;padding:5px 4px;font-size:12.5px;color:rgba(255,255,255,.6);background:none;border:none}
+.pm-seg-item.active{color:#fff;font-weight:600}
+.pm-seg-item.active::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:-7px;
+  width:26px;height:2px;border-radius:2px;background:var(--primary,#fc8308)}
+
+/* 16:9 预览区：底图是抓下来的一帧真实画面 */
+.pm-stage{position:relative;align-self:center;width:min(100%,880px);aspect-ratio:16/9;border-radius:12px;
+  overflow:hidden;background:#0d1016 center/cover no-repeat;border:1px solid rgba(255,255,255,.08);flex:0 0 auto;
+  container-type:inline-size}
+.pm-stage.no-frame{background:
+  linear-gradient(#1a2740 0,#2a3b57 52%,#3c4f42 52%,#4e6146 100%)}
+.pm-stage.no-frame::after{content:"未取到画面快照";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-size:12px;color:rgba(255,255,255,.3)}
+.pm-pad{position:absolute;inset:0}
+.pm-pad-btn{position:absolute;aspect-ratio:1/1;border-radius:50%;background:rgba(255,255,255,.1);
+  border:2px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;
+  color:#fff;cursor:grab;touch-action:none;transform:translateZ(0);backdrop-filter:blur(1px)}
+.pm-pad-btn:hover{border-color:rgba(252,131,8,.7)}
+.pm-pad-btn.dragging{cursor:grabbing;border-color:var(--primary,#fc8308);background:rgba(252,131,8,.22)}
+.pm-pad-text{font-size:clamp(11px,2.1cqw,20px);font-weight:600}
+.pm-pad-btn.is-joy{background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14),rgba(255,255,255,.06));
+  border-style:solid}
+.pm-knob{position:absolute;left:50%;top:50%;width:22%;height:22%;border-radius:50%;background:#fff;
+  transform:translate(-50%,-50%);box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.pm-arrow{position:absolute;width:0;height:0;opacity:.8}
+.pm-arrow.up{left:50%;top:7%;transform:translateX(-50%);border:5px solid transparent;border-bottom-color:#fff}
+.pm-arrow.down{left:50%;bottom:7%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#fff}
+.pm-arrow.left{top:50%;left:7%;transform:translateY(-50%);border:5px solid transparent;border-right-color:#fff}
+.pm-arrow.right{top:50%;right:7%;transform:translateY(-50%);border:5px solid transparent;border-left-color:#fff}
+.pm-pad-cap{position:absolute;left:50%;bottom:14%;transform:translateX(-50%);font-size:10px;
+  color:rgba(255,255,255,.8);white-space:nowrap}
+.pm-pad-icon{position:absolute;inset:8%;width:84%;height:84%;object-fit:contain;pointer-events:none}
+.pm-pad-btn.has-icon svg,.pm-pad-btn.has-icon .pm-pad-text{opacity:.18}
+
+/* ---------------- 提示条 / 二级弹窗 / 菜单 ---------------- */
+.pm-notice{position:absolute;left:50%;bottom:20px;transform:translate(-50%,14px);opacity:0;pointer-events:none;
+  padding:8px 16px;border-radius:8px;background:rgba(20,23,29,.96);border:1px solid var(--primary,#fc8308);
+  color:#fff;font-size:12.5px;transition:.22s;max-width:70%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:5}
+.pm-notice.show{opacity:1;transform:translate(-50%,0)}
+
+.pm-sub-mask{position:fixed;inset:0;z-index:360;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.5)}
+.pm-dialog{width:min(400px,92vw);max-height:82vh;overflow:auto;background:#22262f;
+  border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+.pm-form{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:14px 0}
+.pm-field{display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.62)}
+.pm-field>span{flex:0 0 58px;white-space:nowrap}
+.pm-field:first-child{grid-column:1/-1}
+.pm-input{flex:1;min-width:0;height:28px;background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);
+  border-radius:6px;color:#fff;font-size:12px;padding:0 7px;outline:none}
+.pm-input:focus{border-color:var(--primary,#fc8308)}
+.pm-input[type=color]{width:38px;flex:0 0 38px;padding:1px;height:28px;background:rgba(0,0,0,.34)}
+.pm-form-live{display:flex;justify-content:center;margin-bottom:14px}
+.pm-form-live:empty{display:none}
+.pm-form-preview{width:150px;height:140px;object-fit:contain;background:#05070c;border-radius:10px}
+.pm-dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+.pm-list{display:flex;flex-direction:column;gap:6px;margin-top:14px;max-height:52vh;overflow:auto}
+.pm-list-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;
+  border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#fff;font-size:12.5px;text-align:left}
+.pm-list-item:hover{border-color:var(--primary,#fc8308);background:rgba(252,131,8,.12)}
+.pm-list-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pm-list-hint{flex:0 0 auto;font-size:11px;color:rgba(255,255,255,.42)}
+
+.pm-pop{position:fixed;z-index:400;min-width:148px;padding:5px;border-radius:9px;
+  background:#2a2f39;border:1px solid rgba(255,255,255,.12);box-shadow:0 12px 30px rgba(0,0,0,.55)}
+.pm-pop.wide{min-width:280px;max-width:320px;line-height:1.7}
+.pm-pop.wide p{margin:0;padding:4px 8px;font-size:12px;color:rgba(255,255,255,.72)}
+.pm-pop-item{display:block;width:100%;text-align:left;padding:7px 12px;border-radius:6px;font-size:12.5px;
+  color:#fff;background:none;border:none}
+.pm-pop-item:hover{background:var(--primary,#fc8308)}
+.pm-pop-item.danger:hover{background:#c8452f}
+
+/* ---- 玩家属性：原 #playerPanel .modal-box 整体搬进弹窗右栏 ---- */
+/* 原来它是居中浮层（定宽 + max-height + 自己的圆角边框），搬进右栏后这些必须全部让位，
+   否则会在面板里再套出一个"窗口中的窗口"，还会带一圈重复描边。 */
+.pm-attrs{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center}
+.pm-attrs .modal-box{width:min(560px,100%);max-height:none;padding:0;background:none;
+  border:none;border-radius:0;box-shadow:none;overflow:visible}
+/* 表单行原本按 360px 遮罩设计：space-between 一放到 1100px 弹窗里，
+   标签和输入框就被拉到两端，中间空出一片，最后一行还会顶到右上角的 ✕。 */
+.pm-attrs .frow{gap:14px}
+.pm-attrs .frow label{flex:1 1 auto;min-width:0}
+.pm-attrs .frow .finput,.pm-attrs .frow input[type=number],.pm-attrs .frow input[type=color]{flex:0 0 auto;width:150px}
+/* select 里装的是「第三人称跟随 FOLLOW」这种长文案，150px 会把 FOLLO 切掉 */
+.pm-attrs .frow select{flex:0 0 auto;width:auto;min-width:186px;max-width:230px}
+.pm-attrs .frow input[type=checkbox]{flex:0 0 auto;margin-left:auto}
+.pm-attrs .modal-title{display:none}
+.pm-attrs .modal-actions{position:sticky;bottom:0;width:100%;margin-top:16px;padding-top:12px;
+  background:linear-gradient(180deg,rgba(24,28,35,0) 0,#181c23 42%)}

@@ -241,6 +241,12 @@ const PART_SLOT = {
   rightUpperLeg: "legR", rightLowerLeg: "legR", rightFoot: "legR",
 };
 const BODY_PARTS = Object.values(GameBodyPart);
+// meta.gamepadLayout 的按钮 id → 运行模式触屏按钮的 DOM id。
+// 这份对应关系由 panels/gamepad.js 定义，运行时照着它摆，两边不能各写一套。
+const GAMEPAD_DOM_ID = {
+  joystick: "joyBase", jump: "tJump", crouch: "tCrouch", run: "tRun",
+  actionA: "tActionA", actionB: "tActionB", flyButton: "tFly",
+};
 // 皮肤值官方是任意字符串（皮肤资源名）；本地只认颜色字面量，其余按名字记录不改动外观
 function skinColorOf(v) {
   const s = typeof v === "string" ? v.trim() : "";
@@ -1042,6 +1048,9 @@ export class GameRuntime {
     const rt = this;
     this._isTouch = (window.matchMedia && matchMedia("(pointer: coarse)").matches) || "ontouchstart" in window;
     this._floatOn = this._floatPref();
+    // 顺序有讲究：先按作者在这张图上摆的布局铺一遍，再让设备自己的拖动盖上去。
+    // 反过来的话 _restoreFloatLayout 设的 left/top 会被布局冲掉，玩家调好的位置白丢。
+    this._applyGamepadLayout();
     this._restoreFloatLayout();
     this._applyFloatClass();
     if (!this._floatOn) return;
@@ -1154,6 +1163,66 @@ export class GameRuntime {
     this._floatDrag = null;
     this._saveFloatLayout();
   }
+  /**
+   * 作者在这张图上摆的虚拟按键布局（meta.gamepadLayout，编辑器「玩家 → 虚拟按键」写的那份）
+   * 落到真实画面上。没有这一步，编辑器里拖来拖去改的是一个**没有任何读者**的字段——
+   * 面板做得再像官方，运行时也还是老三颗按钮，等于假开关。
+   *
+   * 布局里的 x/y 是「预览区左上角百分比」、size 是「预览宽百分比」；预览区按 16:9 算，
+   * 所以这里也套一个视口内最大的 16:9 参考框，两边同一套坐标，作者看到的即玩家得到的。
+   */
+  _applyGamepadLayout() {
+    const layout = (this.e && this.e.state && this.e.state.meta || {}).gamepadLayout;
+    const list = layout && layout[this.player && this.player.flying ? "fly" : "walk"];
+    // 先清一遍：不点布局就退回 CSS 里的默认排布。
+    // 退出运行模式再进另一张图时若不清，上一张图的坐标会留在行内样式里。
+    this._clearGamepadLayout();
+    if (!Array.isArray(list) || !list.length) return;
+    const stage = Math.min(innerWidth, innerHeight * 16 / 9);
+    const stageH = stage * 9 / 16, ox = (innerWidth - stage) / 2, oy = (innerHeight - stageH) / 2;
+    // 位置按整个参考框算，直径却按 760px 封顶的参考框算。
+    // 760 是编辑器预览区的典型宽度——布局里的 size% 就是照它标的，
+    // 用同一个基准才能让"作者看到的按钮多大"和"玩家拿到的多大"对上；
+    // 直接按整个视口算，1280 的桌面会把摇杆放大到 300 多 px，手指跨不过去。
+    const sizeRef = Math.min(stage, 760);
+    const host = document.getElementById("tbtns");
+    if (host) host.classList.add("gp-placed");
+    for (const item of list) {
+      if (!item || !item.id) continue;
+      const el = document.getElementById(GAMEPAD_DOM_ID[item.id]);
+      if (!el) continue;
+      const d = Math.round(Math.min(sizeRef, Math.max(52, sizeRef * (Number(item.size) || 9) / 100)));
+      el.style.display = "";
+      el.style.position = "fixed";
+      el.style.width = el.style.height = d + "px";
+      el.style.left = Math.round(ox + stage * (Number(item.x) || 0) / 100) + "px";
+      el.style.top = Math.round(oy + stageH * (Number(item.y) || 0) / 100) + "px";
+      el.style.right = el.style.bottom = "auto";
+      el.style.fontSize = Math.max(12, Math.round(d * 0.3)) + "px";
+      delete el.dataset.gpHiddenByLayout;
+    }
+    // 布局没点名的按钮要藏起来：#tbtns 已经退化成零尺寸的定位层，
+    // 留在流里的按钮会全部叠在左上角，等于凭空多出一坨挡视线的东西
+    const named = new Set(list.map((i) => i && GAMEPAD_DOM_ID[i.id]).filter(Boolean));
+    for (const id of ["tJump", "tCrouch", "tRun", "tFly", "tActionA", "tActionB", "tInteract"]) {
+      if (named.has(id)) continue;
+      const el = document.getElementById(id);
+      if (el && !el.dataset.gpHiddenByLayout) { el.style.display = "none"; el.dataset.gpHiddenByLayout = "1"; }
+    }
+  }
+  /** 撤掉本图布局留下的行内样式，让触屏按钮回到 CSS 默认排布 */
+  _clearGamepadLayout() {
+    const host = document.getElementById("tbtns");
+    if (host) host.classList.remove("gp-placed");
+    for (const id of ["joyBase", "tJump", "tCrouch", "tRun", "tFly", "tActionA", "tActionB", "tInteract"]) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.style.removeProperty("position"); el.style.removeProperty("left"); el.style.removeProperty("top");
+      el.style.removeProperty("width"); el.style.removeProperty("height"); el.style.removeProperty("font-size");
+      el.style.removeProperty("display");
+      delete el.dataset.gpHiddenByLayout;
+    }
+  }
   _floatLayout() {
     const out = {};
     for (const id of ["joyBase", "tbtns"]) {
@@ -1231,11 +1300,17 @@ export class GameRuntime {
     this._touchBtns = [];
     this._floatDrag = null;
     document.body.classList.remove("float-ui", "float-edit");
+    // 布局样式是写在 DOM 上的，DOM 又是跨运行模式复用的同一批节点：
+    // 不清的话退出再进另一张图，上一张图的坐标会先闪一下
+    this._clearGamepadLayout();
   }
   _toggleFly() {
     const p = this.player;
     if (!p.canFly || !p.flyButton) return;
     p.flying = !p.flying;
+    // 步行/飞行是两套布局，切换时必须重铺一次，否则飞行键还停在步行的位置上
+    this._applyGamepadLayout();
+    this._restoreFloatLayout();
     this._doubleJumpUsed = false;
     this._playAt(p.flying ? p.startFlySound : p.stopFlySound, this.playerEntity.position);
   }

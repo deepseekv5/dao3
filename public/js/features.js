@@ -48,7 +48,12 @@ function wireTopMenu() {
       if (m === "model") { libCard.style.display = "none"; modelPanel.classList.add("show"); E.ctx.mode = "model"; }
       else if (m === "script") { libCard.style.display = "none"; scriptScreen.classList.add("show"); E.ctx.mode = "script"; if (E.showScriptScreen) E.showScriptScreen(true); }
       else if (m === "ui") { document.getElementById("uiScreen").classList.add("show"); E.ctx.mode = "ui"; document.getElementById("uiPalette")?.classList.add("show"); if (E.renderUiEditor) E.renderUiEditor(); }
-      else if (m === "player") { document.getElementById("playerPanel").classList.add("show"); }
+      else if (m === "player") {
+        // 官方是「一个弹窗 + 左栏三节」，不是一个孤立属性遮罩。
+        // 弹窗没接上时（模块加载失败）退回老遮罩，至少玩家改不了属性这种事不会发生。
+        if (E.openPlayerModal) E.openPlayerModal().catch(() => playerPanel.classList.add("show"));
+        else playerPanel.classList.add("show");
+      }
       else if (m === "store") { document.getElementById("storeScreen").classList.add("show"); document.getElementById("libCard").style.display = "none"; E.ctx.mode = "store"; if (E.renderStore) E.renderStore(); }
       // 代码包是纯文件视图，不抢 3D 视口的 mode：开着它也能看见世界
       else if (m === "pack") {
@@ -1355,11 +1360,62 @@ function wirePlayer() {
   // 换图（导入项目包）之后必须能被重新灌一次值，否则面板仍是上一张图的玩家属性
   E.ui && E.ui.onReload && E.ui.onReload(load);
   e.syncPlayerPanel = load;
+  mountPlayerAsAttrsPanel(e, panel, $, load);
 }
 
-// 官方颜色既可能是 GameRGBColor({red,green,blue})，也可能是 project.json 里的 [r,g,b]（0..1）
+/**
+ * 把现成的「玩家属性」表单搬进官方那个左栏弹窗，而不是再复制一份表单。
+ *
+ * 官方截图里 玩家 是**一个**弹窗 + 左侧导航（属性 / 皮肤库 / 虚拟按键），
+ * 而我们原来只有一个孤立的 #playerPanel 遮罩。与其把这套表单（含 14 槽音效、
+ * 18 槽皮肤、9 槽按键图标）重写一遍——重写必然漂移——不如整体挪 DOM：
+ * 事件都绑在元素自身上，换爹不掉监听，字段口径因此和旧面板逐字节一致。
+ * 关掉时再挪回 #playerPanel，任何还按老路径找它的人都不会拿到空节点。
+ */
+function mountPlayerAsAttrsPanel(e, panel, $, reload) {
+  const box = panel.querySelector(".modal-box");
+  if (!box) return;
+  // 注册是异步的，而用户可能在 boot 后立刻点「玩家」。把 promise 存下来，
+  // openPlayerModal 先 await 它——否则 PANELS 里还没有 "attrs"，
+  // openPlayerModal 会静默返回 null，表现为"点了 tab 什么也没发生"。
+  const ready = import("./panels/player-modal-shell.js").then((shell) => {
+    shell.registerPanel("attrs", {
+      title: "玩家属性",
+      render: (ctx) => {
+        const keep = document.createComment("playerPanel-slot");
+        box.parentNode && box.parentNode.insertBefore(keep, box);
+        const wrap = document.createElement("div");
+        wrap.className = "pm-attrs";
+        ctx.el.appendChild(wrap);
+        wrap.appendChild(box);
+        const ok = $("plOk");
+        const prevOk = ok && ok.onclick;
+        if (ok) ok.onclick = () => { shell.closePlayerModal(); e.toast("玩家设置已保存"); };
+        return () => {
+          if (keep.parentNode) { keep.parentNode.insertBefore(box, keep); keep.remove(); }
+          wrap.remove();
+          if (ok) ok.onclick = prevOk;
+        };
+      },
+    });
+    return shell;
+  });
+  e.openPlayerModal = async () => {
+    const shell = await ready;
+    const s = await shell.openPlayerModal(e, "attrs");
+    // null = 弹窗没起来。老遮罩是最后的兜底：玩家属性不能改不了。
+    if (!s) { panel.classList.add("show"); reload(); }
+    return s;
+  };
+}
+
+// 官方颜色既可能是 GameRGBColor({red,green,blue})，也可能是 project.json 里的 [r,g,b]（0..1），
+// 还可能是皮肤库写的 "#rrggbb" 字符串（运行时 skinColorOf 只认这一种）。
+// 少了字符串分支，套完皮肤再开玩家面板，那 18 个取色器会整片显示成黑色——
+// 看上去像皮肤把角色涂黑了，其实是面板读不出来。
 function rgbToHex(c) {
   if (!c) return "#f2c27d";
+  if (typeof c === "string") return /^#[0-9a-f]{6}$/i.test(c) ? c : "#f2c27d";
   const v = Array.isArray(c) ? c : [c.red ?? c.r, c.green ?? c.g, c.blue ?? c.b];
   const hx = (x) => Math.max(0, Math.min(255, Math.round((Number(x) || 0) * 255))).toString(16).padStart(2, "0");
   return "#" + hx(v[0]) + hx(v[1]) + hx(v[2]);

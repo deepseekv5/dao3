@@ -417,6 +417,9 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
    否则一整块覆盖层会把画面中央的点击（ACTION0 / 指针锁）全挡掉 */
 #touchUI{display:none;pointer-events:none}
 #touchUI #joyBase,#touchUI #tbtns{pointer-events:auto}
+/* 地图自带布局（meta.gamepadLayout）时逐个按钮绝对定位，flex 队列必须让位 */
+#tbtns.gp-placed{display:block;position:fixed;left:0;top:0;width:0;height:0}
+#tbtns.gp-placed button{position:fixed}
 @media (pointer:coarse){ body.playing #touchUI{display:block} }
 /* 桌面也能开：body.float-ui 由设置面板里的开关控制，与设备类型无关 */
 body.playing.float-ui #touchUI{display:block}
