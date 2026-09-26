@@ -3,7 +3,8 @@
 **这一层已经不在本仓库里了。**
 
 `dao3-editor` Skill 与 ArenaPro 兼容的 MCP 服务现在住在独立仓库
-**[deepseekv5/dao3-editor-skill](https://github.com/deepseekv5/dao3-editor-skill)**。
+**[deepseekv5/dao3-editor-skill](https://github.com/deepseekv5/dao3-editor-skill)**，
+介绍页 **[deepseekv5.github.io/dao3-editor-skill](https://deepseekv5.github.io/dao3-editor-skill/)**。
 
 ## 为什么拆出去
 
