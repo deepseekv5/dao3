@@ -2,9 +2,12 @@
 
 **这一层已经不在本仓库里了。**
 
-`dao3-editor` Skill 与 ArenaPro 兼容的 MCP 服务现在住在独立仓库
-**[deepseekv5/dao3-editor-skill](https://github.com/deepseekv5/dao3-editor-skill)**，
-介绍页 **[deepseekv5.github.io/dao3-editor-skill](https://deepseekv5.github.io/dao3-editor-skill/)**。
+接入层现在是独立仓库 **[deepseekv5/arenapro-kit](https://github.com/deepseekv5/arenapro-kit)**，
+介绍页 **[deepseekv5.github.io/arenapro-kit](https://deepseekv5.github.io/arenapro-kit/)**。
+
+**它对准的是官方 ArenaPro，不是本仓库。** 也就是说：AI 接的是
+[官方创作端](https://docs.dao3.fun/arenapro/) 的工程结构与 MCP 契约，
+本仓库的 HTTP 接口不再是它的目标。下面这些内容请以此为前提阅读。
 
 ## 为什么拆出去
 
@@ -38,7 +41,7 @@
 # 1. 起编辑器
 node start.mjs --no-open --port=5180 --host=127.0.0.1
 # 2. 另一个终端，起接入层（默认端口 25315，与官方 ArenaPro 插件一致）
-node <dao3-editor-skill>/mcp/server.mjs
+node <arenapro-kit>/mcp/server.mjs --project <你的 ArenaPro 工程>
 ```
 
 IDE 侧配 `.vscode/mcp.json`：
