@@ -3,7 +3,7 @@
 ## 官方口径：位移是「格 / tick」，不是「格 / 秒」
 
 ```
-TICK_MS = 64        // 20 TPS
+TICK_MS = 64        // 1000/64 = 15.625 tick/秒。不是 20 TPS
 walkSpeed           0.22  格/tick   ≈ 3.4 格/秒
 runSpeed            0.4
 crouchSpeed         0.1

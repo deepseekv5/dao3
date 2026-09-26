@@ -44,7 +44,7 @@ node:os            node:net            node:crypto
 
 | API | 用在哪 | 不支持时的表现 |
 |---|---|---|
-| `requestAnimationFrame` | 渲染与 20 TPS tick 循环 | 现代浏览器都有 |
+| `requestAnimationFrame` | 渲染与 15.625 tick/秒（64ms）的 tick 循环 | 现代浏览器都有 |
 | `CompressionStream("deflate-raw")` | 项目包 `.zip` 导出时压缩条目 | 走 store（不压缩）分支，包能出但更大 |
 | `navigator.mediaDevices` | 录音回放 | 录音按钮不可用，其余功能不受影响 |
 
