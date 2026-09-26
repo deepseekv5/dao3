@@ -12,6 +12,12 @@
 
 ### 新增
 
+- **AI 接入层拆到独立仓库** [`dao3-editor-skill`](https://github.com/deepseekv5/dao3-editor-skill)。
+  上面那条"ArenaPro MCP + Skill"原先长在本仓库里（`server.js` 的一个路由 + `.qoder/skills/`），
+  结果是：想把接入层给别人用，得先把整个编辑器——含官方素材、地图存档、Three.js——一起给出去。
+  拆开后依赖方向变单向：**接入层依赖编辑器的 HTTP 接口，编辑器不知道接入层存在。**
+  本仓库随之移除 `mcp-arenapro.mjs`、它的路由挂载、`test/mcp-arenapro.mjs` 与 `.qoder/skills/`；
+  `docs/skill.md` 改成指路页，只说明"我们提供了哪几个接口给它"，不复制一份会漂移的副本。
 - **AI 接入：`dao3-editor` Skill + ArenaPro 兼容的 MCP 端点。** 两条路径底下是同一份数据：
   终端里干活走 `.qoder/skills/dao3-editor/scripts/dao3.mjs`（零依赖、只打 HTTP）；
   IDE 里已经按官方 ArenaPro 文档配好 MCP 的 Agent，**只改端口**就能接上

@@ -21,7 +21,6 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
-import { createArenaProMcp } from "./mcp-arenapro.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = (() => {
@@ -418,23 +417,9 @@ const scrub = (text, key) => {
   return s.replace(/sk-[A-Za-z0-9_\-]{12,}/g, "sk-••••").slice(0, 600);
 };
 
-// ArenaPro 兼容的 MCP 端点。工具名与路径照官方契约（/ap-mcp，SSE），实现走本地。
-// 账号类工具（userCenterTool_*）本地没有账号体系，模块里显式返回"不支持"而不是假装成功。
-const mcpRoute = createArenaProMcp({
-  root: __dirname,
-  version: PKG_VERSION,
-  assetsRoot: ASSETS,
-  baseUrl: `http://${HOST === "0.0.0.0" || !HOST ? "127.0.0.1" : HOST}:${PORT}`,
-  listWorlds, readWorld, writeWorld, safeId,
-});
-
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = decodeURIComponent(url.pathname);
-
-  // ---- MCP（ArenaPro 契约）----
-  // 必须排在 API 块之前：/api/mcp/tools 落在 API 块里会被 "no such api" 兜掉。
-  if (mcpRoute(req, res)) return;
 
   // ---- API ----
   if (pathname.startsWith("/api/")) {
