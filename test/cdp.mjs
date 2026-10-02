@@ -42,8 +42,8 @@ export async function launchChrome({ port = 9333 } = {}) {
 
 /** 一个可隔离的浏览器会话：navigate / evaluate / click / 截图 / 读 cookie。 */
 export class Session {
-  constructor(ws, targetId, contextId) {
-    this.ws = ws; this.targetId = targetId; this.contextId = contextId; this._id = 0;
+  constructor(ws, targetId, contextId, port) {
+    this.ws = ws; this.targetId = targetId; this.contextId = contextId; this.port = port; this._id = 0;
     this._pending = new Map();
     this._events = [];
     ws.addEventListener("message", (ev) => {
@@ -53,11 +53,21 @@ export class Session {
         this._pending.delete(msg.id);
         msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
       } else if (msg.method) {
+        // 无头浏览器里没有可点的原生弹窗，alert/confirm/prompt 会直接冻住页面。
+        // 默认全部接住放行，测试里改 s.dialog 就能指定 prompt 填什么。
+        if (msg.method === "Page.javascriptDialogOpening" && this.dialog) {
+          const d = msg.params || {};
+          this.send("Page.handleJavaScriptDialog", {
+            accept: this.dialog.accept !== false,
+            promptText: d.type === "prompt" ? this.dialog.promptText || "" : undefined,
+          }).catch(() => { /* 已经处理过了 */ });
+        }
         this._events.push(msg);
         for (const fn of this._on) fn(msg);
       }
     });
     this._on = new Set();
+    this.dialog = { accept: true, promptText: "" };
   }
 
   // dsf 默认 1：软件渲染（swiftshader）下每个像素都要 CPU 算，2× 的画布等于 4 倍开销，
@@ -71,7 +81,7 @@ export class Session {
     if (!info) throw new Error("拿不到新建 target 的 websocket");
     const ws = new WebSocket(info.webSocketDebuggerUrl);
     await new Promise((res, rej) => { ws.addEventListener("open", res, { once: true }); ws.addEventListener("error", rej, { once: true }); });
-    const s = new Session(ws, target.targetId, contextId);
+    const s = new Session(ws, target.targetId, contextId, port);
     await s.send("Page.enable");
     await s.send("Runtime.enable");
     // 每个会话各自设视口：设备指标是 per-target 的，所以同屏两个尺寸互不干扰。
@@ -112,8 +122,12 @@ export class Session {
   async click(selector) {
     const box = await this.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return null; const r = el.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+      const x = r.x + r.width / 2, y = r.y + r.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      return { x, y, covered: !!hit && !hit.closest(${JSON.stringify(selector)}), by: hit ? hit.tagName + "." + hit.className : "null" }; })()`);
     if (!box) throw new Error(`找不到元素 ${selector}`);
+    // 遮罩层吃掉点击时，"点不到"本身就是结论；不报出来的话后面每一步都在错状态上跑。
+    if (box.covered) throw new Error(`${selector} 被 ${box.by} 盖住了，点不到`);
     for (const type of ["mousePressed", "mouseReleased"]) {
       await this.send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
     }
@@ -139,7 +153,10 @@ export class Session {
   }
 
   async shot(file) {
-    const { data } = await this.send("Page.captureScreenshot", { format: "png" });
+    // 软件渲染下合成器可能几秒才出一帧，默认截图会一直等；等不到就退回非 surface 抓取。
+    let data;
+    try { ({ data } = await this.send("Page.captureScreenshot", { format: "png" })); }
+    catch { ({ data } = await this.send("Page.captureScreenshot", { format: "png", fromSurface: false })); }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, Buffer.from(data, "base64"));
     return file;
@@ -147,10 +164,13 @@ export class Session {
 
   async text() { return this.evaluate("document.body.innerText"); }
 
-  async cookies() { const r = await this.send("Network.getCookies", { urls: ["http://127.0.0.1:5173/"] }); return r.cookies; }
+  /** 读 cookie：不传 urls 就是"当前会话能看到的全部"，隔离上下文之间互不可见。 */
+  async cookies() { const r = await this.send("Network.getCookies"); return r.cookies; }
+
+  async header() { return (await this.cookies()).map((c) => `${c.name}=${c.value}`).join("; "); }
 
   async close() {
-    try { await callBrowser(9333, "Target.closeTarget", { targetId: this.targetId }); } catch { /* 已经关了 */ }
+    try { await callBrowser(this.port || 9333, "Target.closeTarget", { targetId: this.targetId }); } catch { /* 已经关了 */ }
     try { this.ws.close(); } catch { /* 同上 */ }
   }
 }

@@ -12,6 +12,7 @@ import { buildUI } from "./ui.js";
 import { initFeatures, moveSelectedModel, importProject, migratePlayerMeta, placeHeldModel, moveHeldModelTo, rotateHeldModel, dropHeldModel, ensureHeldFromSelection, refreshModelList, refreshScriptFiles, createWorld } from "./features.js";
 import { GameRuntime, logGameError } from "./game.js";
 import * as bootUi from "./boot-ui.js";
+import * as auth from "./auth.js";
 
 const worldId = (location.pathname.match(/\/edit\/([a-zA-Z0-9_-]+)/) || [])[1] || "216d665d3ca92bd1b9a2";
 
@@ -476,6 +477,8 @@ ctx.notify = toast;
 async function boot() {
   try { localStorage.setItem("dao3_last_world", worldId); } catch {}
   bootUi.adoptOld();
+  // 运行时的角色外观与昵称取自社区账号；没登录就是默认人偶 + "玩家"。
+  const meReady = auth.mountAuth().then((u) => { window.__me = u || null; return window.__me; }).catch(() => { window.__me = null; return null; });
   bootUi.stage(6, "正在装载方块图集…");
   await atlas.load("/data");
   for (const m of [renderer.opaqueMat, renderer.transparentMat, renderer.waterMat, renderer.glowMat, renderer.barrierMat]) { m.map = atlas.texture; m.needsUpdate = true; }
@@ -662,7 +665,12 @@ async function boot() {
       .then(() => toast("已导出项目包"))
       .catch((err) => toast("导出失败: " + (err && err.message || err)));
   }
-  if (q.get("play") === "1") setTimeout(() => { if (!game || !game.running) enterPlay(); }, 60);
+  if (q.get("play") === "1") {
+    // 昵称和皮肤是账号数据，身份接口没回来就起运行时，人会永远顶着"玩家"和默认配色。
+    // 但也不能被一个卡住的请求挡住进门，所以最多等 2.5 秒，超时照样进。
+    Promise.race([meReady, new Promise((r) => setTimeout(r, 2500))])
+      .then(() => setTimeout(() => { if (!game || !game.running) enterPlay(); }, 60));
+  }
   // 自动保存（禁用标记供测试/演示标签页使用，避免覆盖磁盘上的种子世界）。
   // 只看 window 不够：测试中途 page.goto/reload 会把全局变量冲掉，而 30 秒的存档周期
   // 不会——于是"跑一次 e2e 就把出厂默认地图换成测试地形"。sessionStorage 活过刷新、

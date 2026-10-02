@@ -143,13 +143,19 @@ function rbox(w, h, d, r, seg = 5) {
 /** 第三人称出生俯角（弧度）。0 度会让地平线卡在画面正中、人物像浮在半空。 */
 const DEFAULT_PITCH = -0.2;
 
-function makeAvatar() {
-  const g = new THREE.Group();
-  // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
-  // 所以人偶统一用 Standard（roughness 1 / metalness 0 时观感接近原来的 Lambert）
-  const std = (hex, rough = 0.78) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 });
-  // 配色按"低饱和场景里要跳得出来"来选：游戏光照偏暗（globalLight 0.29 起），
-  // 上一版的中蓝+深蓝裤子在这个光照下直接糊成一块黑柱子。
+/** #rrggbb 或 0x 整数 → 乘一个系数得到暗部，避免每个部位都要手配两色。 */
+function shade(color, k) {
+  const n = typeof color === "string" ? parseInt(color.replace("#", ""), 16) : (color | 0);
+  const r = Math.min(255, Math.round(((n >> 16) & 255) * k));
+  const g = Math.min(255, Math.round(((n >> 8) & 255) * k));
+  const b = Math.min(255, Math.round((n & 255) * k));
+  return (r << 16) | (g << 8) | b;
+}
+
+/** 账号皮肤（社区里那份）覆盖基础色；只认 #rrggbb，其余保持默认。 */
+function avatarPalette(override) {
+  const src = override && typeof override === "object" ? override : {};
+  const hex = (v) => (/^#[0-9a-fA-F]{6}$/.test(String(v)) ? parseInt(String(v).slice(1), 16) : null);
   const C = {
     skin: 0xffd7b0, skinShade: 0xeab88e, blush: 0xe9ac96, hair: 0x6b4630, hairDeep: 0x54372a,
     eye: 0x3a3644, shine: 0xffffff, lip: 0xc0705f,
@@ -157,6 +163,27 @@ function makeAvatar() {
     pants: 0x5b6c8e, pantsDeep: 0x48566f, belt: 0x5b4636, buckle: 0xd9b45e,
     shoe: 0x7b5441, sole: 0x332a2b,
   };
+  for (const [key, base] of [["skin", "skin"], ["shirt", "shirt"], ["pants", "pants"], ["hair", "hair"], ["shoe", "shoe"]]) {
+    const v = hex(src[key]);
+    if (v == null) continue;
+    C[key] = v;
+    if (key === "skin") { C.skinShade = shade(v, 0.9); C.blush = shade(v, 0.82); }
+    if (key === "shirt") C.shirtDeep = shade(v, 0.72);
+    if (key === "pants") C.pantsDeep = shade(v, 0.78);
+    if (key === "hair") C.hairDeep = shade(v, 0.75);
+    if (key === "shoe") C.sole = shade(v, 0.45);
+  }
+  return C;
+}
+
+function makeAvatar(skinOverride) {
+  const g = new THREE.Group();
+  // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
+  // 所以人偶统一用 Standard（roughness 1 / metalness 0 时观感接近原来的 Lambert）
+  const std = (hex, rough = 0.78) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 });
+  // 默认配色按"低饱和场景里要跳得出来"来选：游戏光照偏暗（globalLight 0.29 起），
+  // 中蓝+深蓝裤子在这个光照下会糊成一块黑柱子。账号皮肤传进来时覆盖对应几项。
+  const C = avatarPalette(skinOverride);
   const part = (name, x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); p.name = name; g.add(p); return p; };
   // box 的 y 是相对**所属关节**的偏移，不是世界高度。r 缺省取最短边的 32%，
   // 所以厚 0.02 的贴片几乎仍是直角（细节要利落），而头/躯干这种体量会明显圆起来。
@@ -670,7 +697,12 @@ export class GameRuntime {
     ent.fixed = true;
     const saved = (e.state.meta && e.state.meta.player) || {};
     const p = {
-      name: saved.name || "玩家", userId: "local-player", userKey: "local-player", boxId: "0", avatar: "",
+      // 昵称优先用社区账号的名字：玩家在广场、评论、头顶看到的必须是同一个称呼。
+      name: (window.__me && window.__me.name) || saved.name || "玩家",
+      nameFromAccount: !!(window.__me && window.__me.name),
+      userId: (window.__me && window.__me.id) || "local-player",
+      userKey: (window.__me && window.__me.id) || "local-player", boxId: "0",
+      avatar: (window.__me && window.__me.avatar) || "",
       url: new URL(location.href),
       spawnPoint: new GameVector3(spawn[0] + 0.5, spawn[1], spawn[2] + 0.5),
       movementBounds: new GameBounds3(new GameVector3(-50, -50, -50),
@@ -807,7 +839,7 @@ export class GameRuntime {
     this.player = p;
     this.playerEntity = ent;
     // 默认角色外观（官方第三人称下玩家以可见角色呈现）
-    const avatar = makeAvatar();
+    const avatar = makeAvatar(window.__me && window.__me.skin);
     // 模型的正脸建在 +Z 上，而旋转 0 度的前向是 -Z：不转这一下的话
     // 第三人称永远看到角色的正面。整组转 180°，让"背对镜头"成为默认。
     avatar.rotation.y = Math.PI;
@@ -832,7 +864,13 @@ export class GameRuntime {
       "cameraDistance", "cameraFovY", "canFly", "invisible", "spectator", "enableJump", "enableDoubleJump",
       "allowFlight", "allowJump", "allowDoubleJump", "allowCrouch", "allowMove", "allowAction0", "allowAction1",
       "mass", "friction", "restitution", "initialYaw"];
-    for (const k of keys) if (raw[k] !== undefined && raw[k] !== null) this.player[k] = raw[k];
+    for (const k of keys) {
+      if (raw[k] === undefined || raw[k] === null) continue;
+      // 「玩家」面板出厂就带 name:"玩家"，无条件套回去会把刚出生的社区昵称冲掉。
+      // 登录状态下称呼属于账号，不属于某张图；没登录时作者设的名字照旧生效。
+      if (k === "name" && this.player.nameFromAccount) continue;
+      this.player[k] = raw[k];
+    }
     if (Object.values(GameCameraMode).includes(raw.cameraMode)) this.player.cameraMode = raw.cameraMode;
     // 官方 project.json 把音效存成 { jump: {sample, gain, gainRange, pitch, pitchRange, radius}, ... }，
     // 运行时用扁平字段名挂载；整份对象要保留，否则 40 个官方音效既听不见也没有衰减
