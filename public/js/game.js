@@ -436,15 +436,95 @@ export class GameRuntime {
     this._channels.PlayerJoin.fire({ tick: 0, entity: this.playerEntity });
     if (this.playerJoinSound) this._playAt(this.playerJoinSound, this.playerEntity.position);
     if (this.ambientSound) this._startAmbient();
+    this._initNet();
     this._channels.Tick.fire(this._tickEvent(0, false));
     this._oldOnRender = r.onRender;
     r.onRender = () => this._frame();
+  }
+
+  /* ---------------- 联机：同一张图里的其他人 ---------------- */
+  // 只有从社区详情页进来的那一路才联机。编辑器里的「运行」是作者自己的预览，
+  // 开一条房间通道只会让人误以为别人看得见自己。
+  _initNet() {
+    const meta = window.__playMeta;
+    this._netPeers = new Map();
+    if (!meta || !meta.pubId || !window.__me) return;
+    import("./net.js").then(({ connect }) => {
+      if (!this.running) return;
+      const count = () => {
+        this._netN = this._netPeers.size + 1;
+        window.__online = this._netN;
+        const el = document.getElementById("hudOnline");
+        if (el) el.textContent = this._netN > 1 ? this._netN + " 人在线" : "";
+      };
+      this._net = connect({
+        pubId: meta.pubId,
+        on: {
+          welcome: (m) => { for (const p of m.peers || []) this._netSpawn(p); count(); },
+          join: (m) => { this._netSpawn(m.peer); count(); this._chatLine(`${m.peer.name} 进来了`, "#9fd6a0"); },
+          leave: (m) => { this._netDespawn(m.id); count(); },
+          state: (m) => {
+            const p = this._netPeers.get(m.id);
+            if (p) { p.tx = m.p; p.ry = m.r; }
+          },
+          chat: (m) => this._chatLine(`${m.name}: ${m.m}`, "#bfe0ff"),
+          throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#ffd9a8"),
+          rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3"),
+          status: (s) => { if (s.connected) count(); else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#ffd9a8"); },
+        },
+      });
+      count();
+    }).catch(() => { this._net = null; });
+  }
+
+  _netSpawn(p) {
+    if (!p || !p.id || this._netPeers.has(p.id) || !this.playerEntity) return;
+    const here = this.playerEntity.position;
+    const pos = Array.isArray(p.p) && p.p.length === 3 ? p.p : [here.x, here.y, here.z];
+    // 标签用 netplayer 而不是 player：地图脚本普遍拿 "player" 查玩家，
+    // 把别人的分身也标成 player 会让每个脚本都以为场上全是玩家，玩法直接错掉。
+    const ent = this._makeEntity({ id: "net:" + p.id, tags: ["netplayer"], position: pos, bounds: [0.3, 0.9, 0.3], collides: false });
+    ent.fixed = true; ent.gravity = false;
+    ent.showEntityName = true; ent.customName = String(p.name || "玩家").slice(0, 20);
+    const avatar = makeAvatar(p.skin);
+    avatar.rotation.y = Math.PI;
+    avatar.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    ent._obj.add(avatar);
+    ent._obj.rotation.y = Number(p.r) || 0;
+    this._netPeers.set(p.id, { ent, tx: pos.slice(), ry: 0 });
+  }
+
+  _netDespawn(id) {
+    const p = this._netPeers && this._netPeers.get(id);
+    if (!p) return;
+    this._netPeers.delete(id);
+    p.ent.destroy();
+  }
+
+  _netStep(dt) {
+    if (!this._net || !this._netPeers.size) return;
+    const k = Math.min(1, dt * 12);
+    for (const peer of this._netPeers.values()) {
+      if (!peer.tx) continue;
+      const e = peer.ent;
+      e.position.x += (peer.tx[0] - e.position.x) * k;
+      e.position.y += (peer.tx[1] - e.position.y) * k;
+      e.position.z += (peer.tx[2] - e.position.z) * k;
+      let d = peer.ry - e._obj.rotation.y;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      e._obj.rotation.y += d * k;
+    }
+    const me = this.playerEntity;
+    if (me) this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
   }
 
   stop() {
     if (!this.running) return;
     this.running = false;
     const e = this.e, r = e.renderer;
+    if (this._net) { this._net.close(); this._net = null; }
+    for (const id of [...this._netPeers.keys()]) this._netDespawn(id);
     this._channels.PlayerLeave.fire({ tick: this.currentTick, entity: this.playerEntity });
     r.onRender = this._oldOnRender || null;
     if (this._camSaved) {
@@ -1420,6 +1500,7 @@ export class GameRuntime {
     const dt = clamp(real / 1000, 0, 0.05);
     this._updateCamera(dt);
     this._updateEntitiesVisual(dt);
+    this._netStep(dt);
     this._updateZonesVisual();
     if (this._oldOnRender) this._oldOnRender(dt);
     this._applyEnvironment();
@@ -3423,13 +3504,15 @@ void main() {
     if (box) { box.value = ""; box.blur(); }
     this._chatOpen = false;
   }
-  // 官方聊天链路：本地发送 → player.onChat + world.onChat → 屏幕回显
+  // 官方聊天链路：本地发送 → player.onChat + world.onChat → 屏幕回显 → 房间里广播
   sendChat(text) {
     const msg = String(text).slice(0, 200);
     const ev = { tick: this.currentTick, entity: this.playerEntity, message: msg };
     if (this.player) this.player._channels.Chat.fire(ev);
     this._channels.Chat.fire(ev);
     this._chatLine(`${this.player ? this.player.name : "玩家"}: ${msg}`, "#ffffff");
+    // 本地回显先出来，房间那条由服务端审查后再发回给别人；自己不该看到两条。
+    if (this._net && this._net.live) this._net.chat(msg);
   }
   _chatLine(text, color) {
     const el = this.hud && this.hud.chat;

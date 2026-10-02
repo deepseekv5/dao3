@@ -997,5 +997,22 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
   return {
     handle, docs,
     summary: () => ({ users: Object.keys(docs.users.byId).length, pubs: livePubs().length }),
+    /** 给联机层用：同一套会话规则，绝不在 WebSocket 那一侧再抄一遍鉴权。 */
+    sessionUser(req) {
+      const cookies = parseCookies(req);
+      const tok = cookies[SESSION_COOKIE];
+      if (!tok) return null;
+      const sess = docs.sessions[hashOf(tok)];
+      if (!sess) return null;
+      if (now() - sess.createdAt >= SESSION_TTL * 1000) {
+        delete docs.sessions[hashOf(tok)]; store.touch("sessions"); return null;
+      }
+      const u = docs.users.byId[sess.userId];
+      if (!u || u.banned) return null;
+      return { id: u.id, name: u.name, skin: u.skin || null, avatar: u.avatar || "", role: u.role || "user" };
+    },
+    /** 房间必须对应一件还在架上的作品，否则任何人都能凭空开一个频道。 */
+    livePub(id) { const p = docs.pubs.byId && docs.pubs.byId[id]; return p && !p.removed ? p : null; },
+    screenText: (text, opts) => screen(text, opts),
   };
 }

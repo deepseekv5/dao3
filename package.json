@@ -41,6 +41,7 @@
     "test:pkg": "node test/packaging.mjs",
     "test:community": "node test/community.test.mjs",
     "test:platform": "node test/platform.test.mjs",
+    "test:realtime": "node test/realtime.test.mjs",
     "test:vox": "node test/vox.test.mjs"
   },
   "files": [

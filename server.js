@@ -23,6 +23,7 @@ import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { createCommunity } from "./server/community.mjs";
 import { createModeration } from "./server/moderate.mjs";
+import { createRealtime } from "./server/realtime.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = (() => {
@@ -391,7 +392,7 @@ function ensureSeed() {
   const payload = {
     formatVersion: "unity", shape: [X, Y, Z], dir: [1, 1, 1],
     indices, data, rot,
-    meta: { name: "神岛示例世界", terrain: {}, sky: {}, created: Date.now(), seedKind: "procedural" },
+    meta: { name: "老攸示例世界", terrain: {}, sky: {}, created: Date.now(), seedKind: "procedural" },
   };
   writeWorld(seedId, payload);
   console.log(`seeded demo world '${seedId}' with ${indices.length} blocks`);
@@ -430,6 +431,9 @@ const scrub = (text, key) => {
 // 和世界存档同一个可写策略（安装目录只读时退到用户目录）。
 const moderation = createModeration({ file: path.join(DATA_ROOT, "community", "mute-words.json") });
 const community = createCommunity({ dataRoot: DATA_ROOT, worldsDir: WORLDS, assetRoots: [ASSETS, ASSETS_IN_TREE], moderation });
+
+// 联机通道：升级请求由它自己判会话 cookie，路径不是 /ws/play/<pub> 的原样放回去。
+const realtime = createRealtime({ community });
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -870,6 +874,8 @@ server.on("error", (e) => {
   console.error("服务启动失败：" + (e && e.message ? e.message : e));
   process.exit(1);
 });
+
+server.on("upgrade", (req, socket, head) => realtime.handleUpgrade(req, socket, head));
 
 server.listen(PORT, HOST, () => {
   console.log(`老攸元宇宙 本地服务已启动:`);

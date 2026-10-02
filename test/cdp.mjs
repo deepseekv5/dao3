@@ -86,6 +86,10 @@ export class Session {
     await s.send("Runtime.enable");
     // 每个会话各自设视口：设备指标是 per-target 的，所以同屏两个尺寸互不干扰。
     await s.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: dsf, mobile: false });
+    // 两个会话同时开着时，非前台那个会被 Chrome 判定为"看不见"，于是 rAF 停摆、
+    // 定时器降到每分钟一次、连 WebSocket 的消息都被排队——上一秒还在断言的页面
+    // 下一秒就成了假死。开焦点模拟让两边都以为自己在前台，测的才是产品而不是节流。
+    try { await s.send("Emulation.setFocusEmulationEnabled", { enabled: true }); } catch { /* 老版本没有这个域 */ }
     // about:blank 是隔离源，写不进站点 localStorage。初始化脚本在文档脚本之前跑，
     // 用来预置"已确认免责声明"这类开关——不然截到的每张图都是那张遮罩。
     if (initScripts.length) await s.send("Page.addScriptToEvaluateOnNewDocument", { source: initScripts.join("\n;\n") });
@@ -162,7 +166,9 @@ export class Session {
     return file;
   }
 
-  async text() { return this.evaluate("document.body.innerText"); }
+  // textContent 而不是 innerText：后者依赖排版，后台标签页不重新布局时会读到旧内容，
+  // 于是"页面明明更新了，断言却说没有"。
+  async text() { return this.evaluate("document.body.textContent"); }
 
   /** 读 cookie：不传 urls 就是"当前会话能看到的全部"，隔离上下文之间互不可见。 */
   async cookies() { const r = await this.send("Network.getCookies"); return r.cookies; }

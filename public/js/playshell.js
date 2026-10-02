@@ -60,8 +60,7 @@ export function open(_rt) {
   const who = window.__me && window.__me.name;
   host.querySelector("#pmWho").textContent = who ? "玩家 " + who + (m.author ? " · 作者 " + m.author : "") : (m.author ? "作者 " + m.author : "本地玩家");
   host.querySelector("#pmLeave").textContent = isCommunity() ? "离开游戏" : "返回编辑器";
-  const n = document.querySelectorAll(".pm-online-dot").length;
-  host.querySelector("#pmOnline").textContent = n > 1 ? n + " 人在线" : "";
+  host.querySelector("#pmOnline").textContent = (window.__online || 1) > 1 ? window.__online + " 人在线" : "";
 }
 
 export function close() {

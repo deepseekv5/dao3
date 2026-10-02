@@ -174,22 +174,22 @@ ok("详情页显示版本 2 与可回滚的历史", await until(A, `!!document.q
 await A.goto(BASE + "/admin"); await sleep(1600);
 const adm = await A.evaluate(`(() => ({ cards: document.querySelectorAll(".ad-cards > div").length, tabs: [...document.querySelectorAll("[data-t]")].map((b)=>b.dataset.t) }))()`);
 ok("后台总览有数据卡", adm.cards >= 6, JSON.stringify(adm));
-ok("举报队列里躺着 B 的那条举报", await until(A, `document.body.innerText.includes("纯色小图")`), await A.text());
+ok("举报队列里躺着 B 的那条举报", await until(A, `document.body.textContent.includes("纯色小图")`), await A.text());
 await A.evaluate(`(() => { const b=document.querySelector('[data-t="users"]'); if(!b) throw new Error("没有用户 tab"); b.click(); })()`);
-ok("后台列出两个账号", await until(A, `document.querySelectorAll(".ad-table tbody tr").length === 2 && document.body.innerText.includes(${JSON.stringify(nameB)})`), await A.text());
+ok("后台列出两个账号", await until(A, `document.querySelectorAll(".ad-table tbody tr").length === 2 && document.body.textContent.includes(${JSON.stringify(nameB)})`), await A.text());
 await A.shot(path.join(ROOT, "tmp/ui-admin.png"));
 
 /* B 不该进得来：前端藏按钮，服务端也要真的挡 */
 await B.goto(BASE + "/admin"); await sleep(1400);
-ok("普通用户打开后台看到的是拒绝", await until(B, `document.body.innerText.includes("不是管理员") && !document.querySelector(".ad-cards")`), await B.text());
+ok("普通用户打开后台看到的是拒绝", await until(B, `document.body.textContent.includes("不是管理员") && !document.querySelector(".ad-cards")`), await B.text());
 
 /* ---------------- 运行时：昵称 / 皮肤 / 内嵌菜单 ---------------- */
 await A.goto(BASE + `/edit/216d665d3ca92bd1b9a2?play=1&pub=${pubId}&title=${encodeURIComponent("老攸赛道")}&author=${encodeURIComponent(nameA)}`);
 const booted = await until(A, `(() => { const E=window.__editor, g=window.__game;
   if (!E || !E.renderer || !g || !g.player) return false;
-  const m = document.body.innerText.match(/X (-?[\\d.]+)/);
+  const m = document.body.textContent.match(/X (-?[\\d.]+)/);
   return !!m && Math.abs(E.renderer.camera.position.x - Number(m[1])) < 20; })()`, { tries: 70, ms: 1000 });
-ok("社区地图走内嵌运行时启动（不是编辑器视图）", booted, await A.evaluate(`document.body.innerText.slice(0,160)`));
+ok("社区地图走内嵌运行时启动（不是编辑器视图）", booted, await A.evaluate(`document.body.textContent.slice(0,160)`));
 ok("运行时用的是社区昵称", await A.evaluate(`(window.__game && window.__game.player && window.__game.player.name) || "(空)"`) === nameA,
   await A.evaluate(`JSON.stringify({ player: window.__game && window.__game.player && window.__game.player.name, me: window.__me && window.__me.name })`));
 const shirt = await A.evaluate(`(() => {
@@ -222,19 +222,68 @@ await realKey("KeyV", "v", 86);
 const camAfter = await A.evaluate(`window.__game.player.cameraMode`);
 ok("运行时的真键盘通路是活的（V 切视角）", camAfter !== camBefore, `before=${camBefore} after=${camAfter}`);
 if (!escReal) console.log("      注：真 Esc 没落到页面（浏览器保留键），下面直接派发 keydown 验菜单本身");
-await A.evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape", bubbles: true }))`);
-const menu = await until(A, `${menuShown} ? {
+// 先预热 playshell：Esc 处理里那句 import() 第一次要走网络解析，
+// 慢的时候"按下去没反应"其实是模块还没到，而不是菜单逻辑坏了。
+await A.evaluate(`import("/js/playshell.js").then(() => true)`);
+// 真 Esc 有时会"迟到"：先派发的那下晚到会把菜单又关掉。所以反复派发直到菜单出现，
+// 验的是"Esc 这条处理路径能把菜单开出来"，而不是某一次按键的到达时刻。
+const menuOf = `(() => { const m = document.getElementById("playMenu"); return m && m.classList.contains("show") ? {
   leave: (document.querySelector("#pmLeave") || {}).textContent,
   running: !!(window.__game && window.__game.running),
-  back: location.href,
-} : false`, { tries: 12, ms: 400 });
+} : false; })()`;
+let menu = await A.evaluate(menuOf);
+for (let i = 0; i < 8 && !menu; i++) {
+  await A.evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape", bubbles: true }))`);
+  menu = await until(A, menuOf, { tries: 4, ms: 400 });
+}
+if (!menu) console.log("      菜单诊断: " + await A.evaluate(`JSON.stringify({ el: !!document.getElementById("playMenu"), cls: (document.getElementById("playMenu")||{}).className, running: !!(window.__game && window.__game.running), errs: (window.__errs||[]).slice(0,2) })`));
 ok("Esc 打开内嵌菜单，世界还在跑", !!menu && menu.running, JSON.stringify({ escReal, menu }));
 ok("社区图的出口是作品页，不是编辑器", !!menu && menu.leave === "离开游戏", menu && menu.leave);
 await A.shot(path.join(ROOT, "tmp/ui-menu.png"));
 
+/* ---------------- 联机：两个人真的在同一个房间里 ---------------- */
+const playUrl = BASE + `/edit/216d665d3ca92bd1b9a2?play=1&pub=${pubId}&title=${encodeURIComponent("老攸赛道")}&author=${encodeURIComponent(nameA)}`;
+await A.evaluate(`(() => { const m = document.getElementById("playMenu"); if (m) m.classList.remove("show"); })()`);
+await B.goto(playUrl);
+// 软件光栅化下第二张图要跑几十秒才起得来。不先等 B 就位就断言"A 看到了 B"，
+// 测到的是启动速度而不是联机功能。
+const bUp = await until(B, `(() => { const g = window.__game; return !!g && g.running && !!g.player; })()`, { tries: 90, ms: 1000 });
+ok("B 也进了同一张图的运行时", bUp, await B.evaluate(`document.body.textContent.slice(0,120)`));
+// 这一条等的是"两个进程各自的事件循环把消息送到对方屏幕上"，两个软件渲染的
+// WebGL 页面同屏跑时这一步可能十几秒才轮到，所以给足耐心；判据本身不放宽。
+const sawEachOther = await until(A, `(() => { const g = window.__game; return g && g._netPeers && g._netPeers.size === 1; })()`, { tries: 60, ms: 500 });
+ok("B 进图后 A 的运行时里多出一个同伴", sawEachOther, await A.evaluate(`JSON.stringify({ peers: window.__game && window.__game._netPeers && window.__game._netPeers.size, online: window.__online })`));
+ok("B 那边也看到 A", await until(B, `(() => { const g = window.__game; return g && g._netPeers && g._netPeers.size === 1; })()`), await B.evaluate(`String(window.__online)`));
+const ghost = await A.evaluate(`(() => { const p = [...(window.__game._netPeers || new Map()).values()][0];
+  return p ? { name: p.ent.customName, shown: p.ent.showEntityName, tags: [...p.ent._tags], solid: p.ent.collides, inScene: !!p.ent._obj.parent } : null; })()`);
+ok("同伴是以账号昵称出现的角色，且不带碰撞", !!ghost && ghost.name === nameB && ghost.shown && !ghost.solid && ghost.inScene, JSON.stringify(ghost));
+ok("联机分身不会冒充脚本眼里的 player", !!ghost && ghost.tags.indexOf("player") === -1, JSON.stringify(ghost));
+const moved = await until(A, `(() => { const p = [...(window.__game._netPeers || new Map()).values()][0];
+  return !!p && Number.isFinite(p.ent.position.x); })()`, { tries: 10, ms: 500 });
+ok("同伴的位置在插值跟进（不是停在原点）", moved);
+const badge = await A.evaluate(`(document.getElementById("hudOnline") || {}).textContent`);
+ok("HUD 显示 2 人在线", badge === "2 人在线", String(badge));
+
+const sent = await B.evaluate(`(() => { const g = window.__game; const okSend = !!(g._net && g._net.live); g.sendChat("我进来了，看得见我吗"); return okSend; })()`);
+ok("发送时 B 的房间通道是连着的", sent === true);
+const heard = await until(A, `document.getElementById("gameChat").textContent.includes("看得见我吗")`, { tries: 40, ms: 500 });
+if (!heard) {
+  console.log("      A: " + await A.evaluate(`JSON.stringify({ chat: document.getElementById("gameChat").textContent.slice(0, 120), peers: window.__game._netPeers.size })`));
+  console.log("      B: " + await B.evaluate(`JSON.stringify({ chat: document.getElementById("gameChat").textContent.slice(0, 120), live: !!(window.__game._net && window.__game._net.live) })`));
+  console.log("      server: " + boot.join("").slice(-600));
+}
+ok("B 说的话出现在 A 的聊天条上", heard);
+await A.shot(path.join(ROOT, "tmp/ui-multiplayer.png"));
+
+// 真人离开是关标签页，不是去调 stop()。走 target 关闭才碰到服务端那条 end 分支。
+const errsB = await B.evaluate(`JSON.stringify((window.__errs || []).slice(0, 5))`);
+await B.close();
+const left = await until(A, `window.__game._netPeers.size === 0`, { tries: 24, ms: 500 });
+ok("对方关标签页后房间里的分身被收掉", left, await A.evaluate(`JSON.stringify({ n: window.__game._netPeers.size, online: window.__online })`));
+ok("人走了 HUD 上的在线数跟着回落", await until(A, `(document.getElementById("hudOnline")||{}).textContent === ""`), await A.evaluate(`String((document.getElementById("hudOnline")||{}).textContent)`));
+
 /* 全程不许有未捕获异常：上面每一条都可能"看着过了"其实页面早就报错在跑降级路径 */
 const errsA = await A.evaluate(`JSON.stringify((window.__errs || []).slice(0, 5))`);
-const errsB = await B.evaluate(`JSON.stringify((window.__errs || []).slice(0, 5))`);
 ok("两个会话全程没有未捕获错误", errsA === "[]" && errsB === "[]", "A=" + errsA + " B=" + errsB);
 
 console.log(`\nplatform: ${pass} passed, ${fail} failed`);

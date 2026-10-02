@@ -500,6 +500,8 @@ body.playing .game-coords{display:block}
 body.playing .pe-readout{display:flex}
 .pe-readout .game-coords{position:static}
 .game-state{padding:5px 10px;border-radius:8px;background:rgba(10,12,16,.65);color:#ffd9a8;font-family:Menlo,Consolas,monospace;font-size:12px;backdrop-filter:blur(4px)}
+.hud-online{padding:5px 10px;border-radius:8px;background:rgba(10,12,16,.65);color:#9fe3b5;font-family:Menlo,Consolas,monospace;font-size:12px;backdrop-filter:blur(4px)}
+.hud-online:empty{display:none}
 
 /* 头顶名牌 / 血条 / 浮动喊话（官方 showEntityName、showHealthBar、entity.say） */
 .name-tags{position:fixed;inset:0;z-index:61;pointer-events:none;display:none;overflow:hidden}
