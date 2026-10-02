@@ -13,6 +13,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+// 与 server.js 里的 /api/whoami 保持一致；改了这边不改那边，回收端口就会静默失效
+const OUR_APP = "laoyou-metaverse";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const args = Object.fromEntries(process.argv.slice(2)
@@ -60,20 +62,20 @@ async function freePort(preferred) {
   });
   for (const p of [...new Set([preferred, 5173, 5174, 8080, 3000])]) {
     // 先看是不是我们自己的旧实例：是就拿回来。这一步必须在 tryPort 之前——
-    // 旧逻辑只对 preferred 做回收，于是 5174 上留着一个没退干净的 DAO3 时，
+    // 旧逻辑只对 preferred 做回收，于是 5174 上留着一个没退干净的本项目实例时，
     // 它会跳过回收往下找，最后把 5173 这个其实被占的号返回出去，
     // server.js 起手就是一个未处理的 EADDRINUSE 崩在用户脸上。
     const who = await whoami(p);
-    if (who && who.app === "dao3-editor-clone") {
+    if (who && who.app === OUR_APP) {
       if (await reclaimOurs(p)) {
-        console.log(`▸ 已停掉上一个 DAO3 实例${p === preferred ? "，" : `（端口 ${p} 上的），`}重新使用端口 ${p}`);
+        console.log(`▸ 已停掉上一个老攸元宇宙实例${p === preferred ? "，" : `（端口 ${p} 上的），`}重新使用端口 ${p}`);
         return p;
       }
       continue;
     }
     if (await tryPort(p)) return p;
     // 不认识的一律不动：端口上可能是用户另一个项目的 dev server，静默 kill 不可接受。
-    console.log(`▸ 端口 ${p} 被占用（不是 DAO3，不会去杀它），改用其他端口`);
+    console.log(`▸ 端口 ${p} 被占用（不是本项目，不会去杀它），改用其他端口`);
     console.log(`  想查是谁：lsof -nP -iTCP:${p} -sTCP:LISTEN   （Windows：netstat -ano | findstr :${p}）`);
   }
   const p = await ephemeralPort();
@@ -89,7 +91,7 @@ async function freePort(preferred) {
  */
 async function verifyOurs(port) {
   const who = await whoami(port);
-  if (!who || who.app === "dao3-editor-clone") return true;
+  if (!who || who.app === OUR_APP) return true;
   console.error(`✗ 127.0.0.1:${port} 上答话的不是本服务，而是另一个程序（本服务绑在 ${HOST}:${port}）。`);
   console.error(`  换个端口就能回到本机地址：node start.mjs --port=5200`);
   return false;
@@ -103,13 +105,13 @@ function ephemeralPort() {
   });
 }
 
-/** 端口上跑的是不是「我们自己的」DAO3 服务？是就把它停掉，把端口要回来。 */
+/** 端口上跑的是不是「我们自己的」服务？是就把它停掉，把端口要回来。 */
 async function reclaimOurs(port) {
   const who = await whoami(port);
-  if (!who || who.app !== "dao3-editor-clone") {
+  if (!who || who.app !== OUR_APP) {
     // 不认识的一律不动：端口上可能是用户另一个项目的 dev server，
     // 静默 kill 掉是不可接受的。这里只告诉他被谁占了、我们让开。
-    console.log(`▸ 端口 ${port} 被另一个程序占用（不是 DAO3，不会去杀它），改用其他端口`);
+    console.log(`▸ 端口 ${port} 被另一个程序占用（不是本项目，不会去杀它），改用其他端口`);
     console.log(`  想查是谁：lsof -nP -iTCP:${port} -sTCP:LISTEN   （Windows：netstat -ano | findstr :${port}）`);
     return false;
   }

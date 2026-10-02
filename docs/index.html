@@ -1,17 +1,17 @@
-<!-- Generated from index.src.html by scripts/build-docs.mjs (v2.1.0) — do not edit. -->
+<!-- Generated from index.src.html by scripts/build-docs.mjs (v3.0.0) — do not edit. -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DAO3 编辑器复刻 · 本地独立兼容实现</title>
+<title>老攸元宇宙 · 本地体素元宇宙</title>
 <meta name="description" content="dao3.fun（神奇代码岛）编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、20 TPS 定步长物理、383 种方块、VOXA 体素建模、项目包导入导出。零第三方依赖，112 条真实浏览器断言。"/>
 <meta name="theme-color" content="#0c0c0d"/>
-<meta property="og:title" content="DAO3 编辑器复刻"/>
+<meta property="og:title" content="老攸元宇宙"/>
 <meta property="og:description" content="官方导出的地图能打开，官方写法的脚本能跑。零依赖本地运行，112 条真实浏览器断言把守。"/>
 <meta property="og:image" content="img/editor-run.png"/>
 <meta property="og:type" content="website"/>
-<link rel="icon" type="image/svg+xml" href="img/arena.svg"/>
+<link rel="icon" type="image/svg+xml" href="img/laoyou.svg"/>
 <link rel="stylesheet" href="site.css"/>
 </head>
 <body>
@@ -19,7 +19,7 @@
 <header class="nav">
   <a class="brand" href="./">
     <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M16 2 3 9v14l13 7 13-7V9L16 2z" fill="none" stroke="#fc8308" stroke-width="2.4"/><path d="M16 9l5 12h-3l-1-2.4h-2L14 21h-3l5-12zm0 4.2-1 2.6h2l-1-2.6z" fill="#fc8308"/></svg>
-    <span><b>DAO3 编辑器复刻</b><i>本地独立兼容实现</i></span>
+    <span><b>老攸元宇宙</b><i>本地体素元宇宙</i></span>
   </a>
   <nav class="links">
     <a href="https://deepseekv5.github.io/dao3play/" class="play-link">在线体验</a>
@@ -48,10 +48,11 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <!-- ── 概览 ─────────────────────────────────────────────── -->
 <section class="hero">
   <div class="hero-l">
-    <p class="kicker">独立兼容实现 · 非官方 · 零第三方依赖</p>
-    <h1>官方导出的地图能打开<br/>官方写法的脚本<span>能跑</span></h1>
+    <p class="kicker">老攸元宇宙 · 创作 + 社区 + 本地运行 · 零第三方依赖</p>
+    <h1>自己造的地图能发布<br/>别人发的地图<span>能跑</span></h1>
     <p class="lede">
-      dao3.fun（神奇代码岛）编辑器与运行时的本地实现。全部代码在本仓库自行编写，
+      编辑器、运行时、VOXA 建模与一套真实社区（账号 / 好友 / 关注 / 评论）跑在同一台机器上。
+      引擎接口层是对 dao3.fun（神奇代码岛）编辑器与运行时的独立兼容实现：代码全部在本仓库自行编写，
       依据官方<b>公开</b>的文档与类型声明做到<b>接口兼容</b>——不是复刻源码，也没有源码。
       地图与 Unity 侧 <code>.gz</code> 格式互通，官方导出的 <code>.zip</code> 项目包可直接打开继续做。
     </p>
@@ -226,12 +227,12 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
       <b>网页体验版</b><span>零安装 · 手机也行 · 官方赛车模板 + 真实脚本执行，只能游玩不能编辑</span><em>直接开玩 →</em>
     </a>
     <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest">
-      <b>便携包 zip</b><span>免安装 · 三端通用 · 解压即用 <code>DAO3-portable-v2.1.0.zip</code></span><em>≈7 MB · Releases →</em>
+      <b>便携包 zip</b><span>免安装 · 三端通用 · 解压即用 <code>DAO3-portable-v3.0.0.zip</code></span><em>≈7 MB · Releases →</em>
     </a>
-    <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest/download/DAO3-2.1.0.dmg">
+    <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest/download/DAO3-3.0.0.dmg">
       <b>macOS 磁盘镜像</b><span>挂载后把文件夹拖到任意位置，双击 <code>启动-macOS.command</code></span><em>≈7 MB · .dmg →</em>
     </a>
-    <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest/download/DAO3-Setup-2.1.0.exe">
+    <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest/download/DAO3-Setup-3.0.0.exe">
       <b>Windows 安装程序</b><span>Inno Setup 6 在 windows-latest 上编译，含开始菜单与卸载项</span><em>.exe →</em>
     </a>
     <a class="dlc" href="https://github.com/deepseekv5/dao3/pkgs/npm/dao3-editor-clone">
@@ -294,7 +295,7 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
 
 <footer class="foot">
   <div>
-    <b>DAO3 编辑器复刻</b>
+    <b>老攸元宇宙</b>
     <span>独立兼容实现 · 代码 Apache-2.0 · 素材版权归 box3lab 及其权利人所有</span>
   </div>
   <div class="fl">

@@ -39,7 +39,7 @@ html.touch-capable .pe-hint-touch{display:inline;color:var(--font-white-minor);f
 #boot{position:fixed;inset:0;z-index:1000;background:radial-gradient(120% 90% at 50% 0%,#151a22 0%,#07080a 62%);
   display:flex;align-items:center;justify-content:center;padding:20px}
 .boot-card{width:min(520px,100%);display:flex;flex-direction:column;align-items:center;text-align:center;color:var(--font-white)}
-.boot-logo{width:84px;height:84px;background:url('../img/arena.svg') center/contain no-repeat}
+.boot-logo{width:84px;height:84px;background:url('../img/laoyou.svg') center/contain no-repeat}
 .boot-title{font-size:26px;font-weight:700;letter-spacing:.02em;margin-top:10px}
 .boot-sub{font-size:12.5px;color:#9aa4ae;margin-top:6px;line-height:1.6}
 .boot-bar{width:260px;max-width:80%;height:8px;border:1px solid var(--primary);border-radius:20px;

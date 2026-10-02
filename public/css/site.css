@@ -1,6 +1,7 @@
-/* site.css — 项目说明页。文档式排版：左对齐、无渐变、无卡片阵列、少装饰 */
+/* site.css — 项目简介页。文档式排版：左对齐、无渐变、无卡片阵列、少装饰。
+   强调色用老攸元宇宙的品牌蓝；编辑器内部 UI 的官方橙 #fc8308 是另一套东西，两边不共用。 */
 :root {
-  --p: #fc8308;
+  --p: #2f6fe0; --p-deep: #1f57bd;
   --bg: #fbfaf8;
   --ink: #1b1b1b;
   --mut: #5c5a56;
@@ -33,13 +34,17 @@ body.sp { margin: 0; background: var(--bg); color: var(--ink); font-family: var(
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 20px;
   padding: 12px 26px; background: rgba(251, 250, 248, .93); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
 }
-.sp-brand { font-family: var(--sans); font-weight: 700; font-size: 15px; text-decoration: none; }
+.sp-brand { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 700; font-size: 15px; text-decoration: none; }
+.sp-brand img { display: block; }
+.sp-brand b { font-weight: 700; }
+.sp-brand b::before { content: " · "; color: var(--dim); }
+.sp-brand span { display: flex; align-items: baseline; }
 .sp-nav { display: flex; gap: 3px; }
 .sp-nav a { font-family: var(--sans); font-size: 13.5px; text-decoration: none; color: var(--mut); padding: 6px 10px; border-radius: 6px; }
 .sp-nav a:hover { color: var(--ink); background: rgba(0, 0, 0, .05); }
 .sp-nav a.on { color: var(--ink); background: rgba(0, 0, 0, .07); }
 .sp-open { margin-left: auto; font-family: var(--sans); font-size: 13.5px; font-weight: 600; text-decoration: none; color: #fff; background: var(--p); padding: 8px 14px; border-radius: 7px; }
-.sp-open:hover { background: #e8770a; }
+.sp-open:hover { background: var(--p-deep); }
 
 /* 事实条 */
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 1px; margin: 30px 0 0; background: var(--line); border: 1px solid var(--line); }

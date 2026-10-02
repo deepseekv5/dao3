@@ -363,7 +363,7 @@ async function boot_() {
   const mapName = state.meta.name || "赛车模板";
   $("bbMap").textContent = mapName + " · 在线体验";
   $("gameTitle").textContent = mapName;
-  document.title = mapName + " · 在线体验版 · 神奇代码岛";
+  document.title = mapName + " · 在线体验版 · 老攸元宇宙";
   const startBtn = $("bootStart");
   startBtn.hidden = false;
   startBtn.focus();

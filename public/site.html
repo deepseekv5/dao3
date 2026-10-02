@@ -3,38 +3,85 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>DAO3 编辑器复刻</title>
-<meta name="description" content="dao3.fun 编辑器与运行时的本地独立实现。全部代码自己写，依据官方公开文档与类型声明做到接口兼容。"/>
+<title>老攸元宇宙 · LAOYOU METAVERSE</title>
+<meta name="description" content="老攸元宇宙：一套跑在自己机器上的体素元宇宙。编辑器、运行时、VOXA 建模负责创作，社区负责发布、好友、关注与评论——在这里，你就是世界的创造者。"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
-<link rel="icon" type="image/svg+xml" href="/img/arena.svg"/>
+<link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
 <link rel="stylesheet" href="/css/site.css"/>
 </head>
 <body class="sp">
 
 <header class="sp-top">
-  <a class="sp-brand" href="/">DAO3 编辑器复刻</a>
+  <a class="sp-brand" href="/"><img src="/img/laoyou.svg" width="22" height="22" alt=""/><span>老攸元宇宙<b>LAOYOU METAVERSE</b></span></a>
   <nav class="sp-nav">
-    <a href="#what">是什么</a><a href="#compat">兼容</a><a href="#how">怎么做的</a><a href="#run">跑起来</a><a href="#limits">边界</a>
+    <a href="#what">是什么</a><a href="#pillars">五根支柱</a><a href="#social">社区</a><a href="#tools">创作工具</a><a href="#compat">兼容</a><a href="#run">跑起来</a><a href="#limits">边界</a>
   </nav>
-  <a class="sp-open" href="/edit/216d665d3ca92bd1b9a2">打开示例地图 →</a>
+  <a class="sp-open" href="/community">进社区广场 →</a>
 </header>
 
 <main>
 
 <section id="what">
-  <h1>在本地跑一套 dao3.fun 的编辑器、运行时和建模器</h1>
-  <p class="say">全部代码是这个仓库自己写的。参照的是官方公开的东西：<code>box3-product-document</code> 文档、<code>GameAPI.d.ts</code> 类型声明、<code>docs.dao3.fun</code>，以及官方开源的方块图集仓库。目标是<b>读得懂官方导出的地图、跑得动官方写法的脚本</b>，不是复刻源码，也拿不到源码。</p>
-  <p class="say">用途很具体：拆开学引擎的分层怎么做、把玩法脚本丢进去看它到底怎么跑、离线搭图不依赖网络。数据全在你这台机器上。</p>
+  <h1>在这里，你就是世界的创造者</h1>
+  <p class="say"><b>老攸元宇宙</b>把三件平时分属不同公司的事接到一起：<b>造</b>（体素编辑器 + VOXA 建模 + 玩法脚本）、<b>发</b>（一键发布成不可变快照，别人点开就能跑）、<b>处</b>（账号、好友、关注、评论、点赞、通知）。参考的是 Roblox 那套"内容全部由玩家产出"的闭环，以及 dao3.fun 把 AI 接进创作流程的思路。</p>
+  <p class="say">区别在于它<b>跑在你自己的机器上</b>：一条 <code>./run.sh</code> 起服务，账号、地图、评论全落在本机磁盘，没有远端服务器，也没有把你的作品上传到谁的平台上。</p>
   <dl class="facts">
-    <div><dt>方块</dt><dd>383 种，含 11 种流体和 15 种序列帧动画方块</dd></div>
-    <div><dt>tick</dt><dd>64 ms 定步长，官方 <code>on*/next*</code> 通道与取消语义</dd></div>
-    <div><dt>API 面</dt><dd>World 111 个成员，运行时逐个探测到 329/329</dd></div>
-    <div><dt>示例图</dt><dd>256×128×256，152 万体素，199 个官方实体</dd></div>
+    <div><dt>创作</dt><dd>383 种方块、256³ 级世界、定步长 64 ms 运行时</dd></div>
+    <div><dt>发布</dt><dd>体素 + 脚本 + 实体 + 素材整体快照，作者之后改图不影响已发布那份</dd></div>
+    <div><dt>社交</dt><dd>关注 / 好友请求 / 评论 / 点赞 / 通知，全部是真实账号之间的数据</dd></div>
+    <div><dt>数据</dt><dd>口令只存 scrypt 派生值，会话是 HttpOnly cookie，写操作要过 CSRF</dd></div>
   </dl>
 </section>
 
-<section id="compat" class="alt">
-  <h2>兼容到什么程度</h2>
+<section id="pillars" class="alt">
+  <h2>五根支柱</h2>
+  <p class="note">宣传图上写着"AI 时代赋能元宇宙"。这里把每一根支柱实际做到哪一步摊开写，做没做的都标出来。</p>
+  <table>
+    <thead><tr><th>支柱</th><th>现在能用的部分</th><th>还没做</th></tr></thead>
+    <tbody>
+      <tr><td>AI 智能创作</td><td class="ok">编辑器里接了 OpenAI 兼容接口：AI 写玩法脚本、AI 生成体素模型、报错回喂、语法预检；模型与密钥你自己填</td><td>一键生成整张地图</td></tr>
+      <tr><td>开放世界</td><td class="ok">体素地形 + 模型实体 + 区域触发 + 昼夜与天气 + 第三人称/驾驶相机，脚本能改世界状态</td><td>跨图连成同一个大世界</td></tr>
+      <tr><td>社交互动</td><td class="ok">账号、关注、好友、评论、点赞、通知、广场排序与搜索，全部走本机服务端持久化</td><td>多人同图实时联机</td></tr>
+      <tr><td>虚拟经济</td><td class="ok">商城面板与商品表、创作者署名与发布统计</td><td>交易、货币、分成——一行都没写，不拿概念当功能</td></tr>
+      <tr><td>多端互通</td><td class="ok">浏览器同源，桌面键鼠与触屏虚拟按键两套操作都可用，窄屏排版已适配</td><td>原生客户端、VR</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="social">
+  <h2>社区不是装饰</h2>
+  <p>发布这件事最容易做成假的：存个标题、写死几个"别人"的名字、评论框只往 localStorage 里塞。这里的做法是<b>服务端真的有一组账号和一组关系边</b>，浏览器里两个隔离会话能互相看见对方做的事。</p>
+  <h3>发布 = 不可变快照</h3>
+  <p>点发布时，服务端把这张图的体素、脚本、实体、引用的模型与贴图<b>整体复制一份</b>，连同封面和元数据登记在你名下。之后你再怎么改自己那张图，别人点开玩的仍然是你发布那一刻的版本——这才谈得上"作品"。</p>
+  <h3>游玩 = 把快照取回本地</h3>
+  <p>详情页的「开始游玩」会取回快照、把素材落到本地资产目录、然后进运行时。跑起来的是完整引擎，不是一段视频或截图。</p>
+  <h3>关系是有向的</h3>
+  <p>关注是单向边，好友是双向确认：请求 → 对方接受才成边；对方先发了请求而你回一个请求，直接算接受。通知里区分"关注了你 / 想加你为好友 / 赞了你的地图 / 评论了你的地图 / 发布了新地图"。广场有<b>最新 / 最热 / 关注</b>三种流，"关注"流只看你关注的人和你自己。</p>
+  <h3>权限是真的判过</h3>
+  <p>非作者改不了、也下架不了别人的发布；路人删不掉别人的评论（地图作者可以）；未登录能读广场和评论，但写不进去；所有写操作都要带与 cookie 一致的 CSRF 头。这些不是文档承诺，<code>test/community.test.mjs</code> 里有 68 条断言逐条打。</p>
+</section>
+
+<section id="tools" class="alt">
+  <h2>创作工具</h2>
+  <div class="cols">
+    <div>
+      <h3>编辑器与运行时</h3>
+      <p>区块按 16³ 合批，分成不透明、透明、自发光、空气墙四个网格桶；方块接缝与序列帧动画由注入的 shader 驱动，播放和切换不触发重编译。运行时是固定步长累加器，物理、区域、环境、定时器、脚本回调分段跑，每段各自捕获异常——一个子系统炸了不会把整个循环带走。</p>
+      <h3>玩法脚本</h3>
+      <p>按官方 <code>GameAPI.d.ts</code> 的成员与语义实现：World / Player / Entity / Voxels / storage，<code>on*/next*</code> 通道与取消语义对齐，单位是「格 / tick」而不是秒。</p>
+    </div>
+    <div>
+      <h3>VOXA 建模</h3>
+      <p>部件、骨骼、动画、物理盒、换肤一整套，模型能导成 <code>.vox</code> 与 <code>.glb</code>，也能被编辑器与运行时当实体资产引用。</p>
+      <h3>怎么算验证过</h3>
+      <p>不看编译过不过。用浏览器驱动真实页面，读像素和状态数值：按住 W 一秒走了多远、关掉模型层之后画面像素差多少、两个隔离会话互相能不能看见对方的评论。编译通过但面板宽度是 0，不算做完。</p>
+    </div>
+  </div>
+</section>
+
+<section id="compat">
+  <h2>与官方的关系</h2>
+  <p>引擎接口这一层是<b>照着 dao3.fun（神奇代码岛）的公开资料做的兼容实现</b>：参照 <code>box3-product-document</code>、<code>GameAPI.d.ts</code> 与 <code>docs.dao3.fun</code>，代码全部自己写，没有复制、反编译或分发任何官方源代码。目的是读得懂官方导出的地图、跑得动官方写法的脚本。</p>
   <table>
     <thead><tr><th>对象</th><th>格式或接口</th><th>情况</th></tr></thead>
     <tbody>
@@ -44,61 +91,44 @@
       <tr><td>模型资产</td><td><code>.glb</code> / <code>.gltf</code>，官方 <code>mesh/*.vb</code> 按文件名解析</td><td class="ok">支持</td></tr>
       <tr><td>玩法脚本</td><td>GameAPI.d.ts 的 World / Player / Entity / Voxels</td><td class="ok">对齐</td></tr>
       <tr><td>方块行为</td><td>block-spec 的 velocity / fluid / mass / friction / anim</td><td class="ok">构建期合成</td></tr>
-      <tr><td>联机、商城、云存档</td><td>官方平台服务</td><td class="no">没有，也不打算做</td></tr>
+      <tr><td>官方平台联机、商城、云存档</td><td>官方服务</td><td class="no">不接，也不打算接</td></tr>
     </tbody>
   </table>
   <p class="note">示例地图里那份赛道能完整跑通：按 <code>E</code> 在报名点报名，人物换成汽车模型，依次过 5 个官方检查点，跑满 3 圈出成绩结算。</p>
 </section>
 
-<section id="how">
-  <h2>怎么做的</h2>
-  <div class="cols">
-    <div>
-      <h3>渲染</h3>
-      <p>three.js r160。区块按 16³ 合批，分成不透明、透明、自发光、空气墙四个网格桶。方块接缝和序列帧动画都由 <code>onBeforeCompile</code> 注进去的 shader 驱动，播放和切换都不会触发重编译。</p>
-      <h3>数据</h3>
-      <p>构建期脚本把官方方块 ID 表、渲染规则和 16×16 贴图合成一张图集，顺带算出每个方块的碰撞、质量、摩擦、速度、流体和动画帧。地图以 gzip JSON 存在 <code>server/data/worlds/</code>。</p>
-    </div>
-    <div>
-      <h3>运行时</h3>
-      <p>固定步长累加器驱动 tick，物理、区域、环境、定时器、脚本回调分段跑，每段各自捕获异常——一个子系统炸了不会把整个循环带走。实体接触检测用 AABB 扫描剪枝，官方那张图 199 个实体同时在里面也不卡。</p>
-      <h3>怎么算验证过</h3>
-      <p>不看编译过不过。用浏览器驱动真实页面，读像素和状态数值：按住 W 一秒走了多远、抽屉在启动时是不是 <code>display:none</code>、关掉模型层之后画面像素和差多少。编译通过但面板宽度是 0，不算做完。</p>
-    </div>
-  </div>
-</section>
-
 <section id="run" class="alt">
   <h2>跑起来</h2>
-  <p>要 Node 18 以上。一条命令：首次会自动构建方块图集，然后清掉本项目遗留的旧实例、挑一个空闲端口起服务。</p>
+  <p>要 Node 18 以上，零第三方依赖。一条命令：首次会自动构建方块图集，然后清掉本项目遗留的旧实例、挑一个空闲端口起服务。</p>
   <pre>./run.sh</pre>
-  <p>首页可以直接创建地图，也能把示例的「赛车模板」复制一份出来改，原件不动。别的项目占了默认端口就顺延，不会去杀别人的进程。</p>
+  <p>起起来之后：工作台建图或复制示例模板，编辑完点世界卡片上的 ◎ 发布，社区广场就有了第一张图。换一台机器登录同名账号是没有的——账号在本机磁盘上。</p>
   <pre>PORT=8080 ./run.sh                          # 指定端口
+node test/community.test.mjs                # 社区层 68 条断言
 node scripts/build-block-atlas.mjs          # 改了贴图或 spec 之后重建图集
-node scripts/import-official-project.mjs    # 从仓库内的官方数据重建示例地图
-node scripts/fetch-official-audio.mjs       # 补齐 40 个官方音效</pre>
+node scripts/import-official-project.mjs    # 从仓库内的官方数据重建示例地图</pre>
 </section>
 
 <section id="limits">
   <h2>边界</h2>
   <ul class="plain">
-    <li>不是官方产品，和 box3lab 没有任何隶属、授权或背书关系。页面上提到官方名称，只是为了说清楚兼容对象是谁。</li>
-    <li>方块贴图、方块 ID 表、地图数据、模型和音频素材的著作权在 box3lab 和相应权利人手里。这个项目把它们放在本机，用途限于学习、技术研究和兼容性验证。</li>
+    <li>不是官方产品，和 box3lab 没有任何隶属、授权或背书关系。页面上提到官方名称，只是为了说清楚接口兼容的对象是谁。</li>
+    <li>方块贴图、方块 ID 表、示例地图数据、模型和音频素材的著作权在 box3lab 和相应权利人手里。这个项目把它们放在本机，用途限于学习、技术研究和兼容性验证；确认授权前服务端不会把官方模型与音效发给前端。</li>
     <li>代码部分你可以按自己的判断用。但要把带官方素材或官方地图数据的任何东西分发出去、公开镜像、或者长得像官方产品，请先取得权利人许可。</li>
-    <li>还没有做完的：VOXA 的拖拽 gizmo 和蒙皮权重、下水后的屏幕染色、官方体素分块的逐格比对（分块是私有二进制编码，没逆向出来）。</li>
+    <li>社区是<b>本机社区</b>：账号、发布与评论都存在这台机器上，不做公网注册、不做跨机同步，也不接任何官方平台接口。</li>
+    <li>还没有做完的：多人同图实时联机、虚拟经济与交易、VOXA 的拖拽 gizmo 与蒙皮权重、下水后的屏幕染色、官方体素分块的逐格比对（分块是私有二进制编码，没逆向出来）。</li>
   </ul>
 </section>
 
 <section class="sp-disc">
   <h2>免责声明</h2>
-  <p>本项目是对 dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的独立兼容实现。全部代码由本仓库自行编写，未复制、未反编译、未分发任何官方源代码；实现依据为官方公开发布的文档、类型声明与开源图集仓库，属于接口与数据格式层面的兼容，而非代码同源。方块贴图、方块 ID 表、地图数据、模型与音频素材的著作权归 box3lab 及其权利人所有，仅在本机用于学习、技术研究与兼容性验证，未经权利人许可不得用于商业分发、公开镜像或冒充官方产品。本项目与 box3lab / 神奇代码岛官方无任何隶属、授权或背书关系。</p>
+  <p>老攸元宇宙的引擎接口层是对 dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的独立兼容实现。全部代码由本仓库自行编写，未复制、未反编译、未分发任何官方源代码；实现依据为官方公开发布的文档、类型声明与开源图集仓库，属于接口与数据格式层面的兼容，而非代码同源。方块贴图、方块 ID 表、地图数据、模型与音频素材的著作权归 box3lab 及其权利人所有，仅在本机用于学习、技术研究与兼容性验证，未经权利人许可不得用于商业分发、公开镜像或冒充官方产品。本项目与 box3lab / 神奇代码岛官方无任何隶属、授权或背书关系。</p>
 </section>
 
 </main>
 
 <footer class="sp-foot">
-  <span>DAO3 编辑器复刻 · 本地运行 · 数据不出机器</span>
-  <div><a href="/">创作台</a><a href="/voxa">VOXA</a><a href="/edit/216d665d3ca92bd1b9a2">示例地图</a><a href="#" data-disclaimer>免责声明</a></div>
+  <span>老攸元宇宙 · 本地运行 · 数据不出机器</span>
+  <div><a href="/">创作台</a><a href="/community">社区</a><a href="/voxa">VOXA</a><a href="/edit/216d665d3ca92bd1b9a2">示例地图</a><a href="#" data-disclaimer>免责声明</a></div>
 </footer>
 
 <script type="module" src="/js/disclaimer.js"></script>

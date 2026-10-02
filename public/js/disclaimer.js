@@ -3,12 +3,12 @@
 const ACK_KEY = "dao3_disclaimer_ack";
 // 声明实质变了（官方素材从"不分发"改成"随包分发但需应用内确认"）就要升版本，
 // 让已经点过"进入"的人重新看到与现状一致的那一版，而不是继续拿旧同意用新素材。
-const ACK_VER = "2";
+const ACK_VER = "3";
 const shouldPrompt = () => { try { return localStorage.getItem(ACK_KEY) !== ACK_VER; } catch { return true; } };
 const remember = () => { try { localStorage.setItem(ACK_KEY, ACK_VER); } catch {} };
 const TEXT = {
   title: "免责声明 / Disclaimer",
-  sub: "DAO3 编辑器复刻 · 本地研究与兼容性实现",
+  sub: "老攸元宇宙 · 本地运行；引擎接口层与 dao3.fun 做兼容",
   blocks: [
     ["关于本项目", [
       "本项目是对 <b>dao3.fun（神奇代码岛 / DAO3 Arena）</b>编辑器与运行时的<b>独立兼容实现</b>：全部代码由本仓库自行编写，<b>未复制、未反编译、未分发任何官方源代码</b>。",

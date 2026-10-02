@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>社区 · 老攸元宇宙</title>
+<meta name="description" content="老攸元宇宙社区：别人发布的世界、好友与关注、地图评论。地图快照存在本机，游玩前会先取回本地。"/>
+<link rel="stylesheet" href="/css/disclaimer.css"/>
+<link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
+<link rel="stylesheet" href="/css/home.css"/>
+<link rel="stylesheet" href="/css/community.css"/>
+</head>
+<body class="wb cm-body">
+
+<div class="wb-app">
+  <aside class="wb-rail">
+    <a class="wb-mark" href="/" title="老攸元宇宙">
+      <img src="/img/laoyou.svg" width="24" height="24" alt=""/>
+    </a>
+    <nav class="wb-railnav">
+      <a href="/" title="工作台"><span>▦</span><i>工作台</i></a>
+      <a href="/community" class="on" title="社区广场"><span>◎</span><i>社区</i></a>
+      <a href="/edit/216d665d3ca92bd1b9a2" title="打开赛车模板编辑器"><span>⌗</span><i>编辑器</i></a>
+      <a href="/voxa" title="VOXA 体素建模"><span>◈</span><i>建模</i></a>
+      <a href="/site" title="项目简介"><span>◍</span><i>简介</i></a>
+      <a href="/manual" title="游玩手册"><span>?</span><i>手册</i></a>
+      <a href="/docs/api-reference.html" title="API 参考"><span>{ }</span><i>API</i></a>
+    </nav>
+    <div class="wb-railfoot">
+      <button id="wbTpl" title="官方素材授权" aria-label="官方素材授权">T</button>
+      <button id="wbAbout" title="关于与免责" aria-label="关于">i</button>
+    </div>
+  </aside>
+
+  <div class="wb-body">
+    <header class="wb-top">
+      <div class="wb-crumb">
+        <h1 id="cmTitle">社区广场</h1>
+        <span id="cmSub">别人发布的世界，可以直接进来跑一圈</span>
+      </div>
+      <div class="wb-tools">
+        <label class="wb-search" id="cmSearchWrap">
+          <span aria-hidden="true">⌕</span>
+          <input id="cmQ" type="search" placeholder="搜索地图 / 作者 / 标签" autocomplete="off" spellcheck="false"/>
+        </label>
+        <div class="wb-sep"></div>
+        <div id="wbAuth" class="wb-auth"></div>
+      </div>
+    </header>
+    <div class="wb-scroll"><main id="cmRoot" class="cm-root"></main></div>
+  </div>
+</div>
+
+<div id="cmModal" class="cm-modal"></div>
+<div id="cmToast" class="cm-toast" hidden></div>
+<div id="auMenu"></div>
+
+<script type="module" src="/js/disclaimer.js"></script>
+<script type="module" src="/js/community.js"></script>
+</body>
+</html>

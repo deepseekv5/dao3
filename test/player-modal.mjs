@@ -245,7 +245,7 @@ ok("拖拽范围被夹在预览区内", await evalIn(() => {
 // 与现有实现打通：meta.player.gamepad 是「玩家」面板已经在写的图标图槽（图片路径）
 await evalIn(() => {
   const p = window.__editor.state.meta.player;
-  p.gamepad = Object.assign({}, p.gamepad, { actionA: "/img/arena.svg", actionB: "picture/根本不存在的图.png" });
+  p.gamepad = Object.assign({}, p.gamepad, { actionA: "/img/laoyou.svg", actionB: "picture/根本不存在的图.png" });
 });
 await page.locator('.pm-nav-item[data-key="skins"]').click();
 await page.locator('.pm-nav-item[data-key="gamepad"]').click();

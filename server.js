@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * server.js — DAO3 编辑器复刻本地服务（零第三方依赖，仅 Node 内置模块）
+ * server.js — 老攸元宇宙本地服务（零第三方依赖，仅 Node 内置模块）
  *
  * 提供：
  *   1. 静态资源服务（public/，含构建期合成的 block 图集与缩略图）
@@ -21,12 +21,16 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
+import { createCommunity } from "./server/community.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version || "0"; }
   catch { return "0"; }
 })();
+// 启动器靠这个标识判断"端口上跑的是不是我们自己的上一个实例"。
+// 换品牌时一起改了：旧实例带的是老标识，会被当成别人的进程而不去杀——这是 fail-closed，宁可换个端口也不误杀。
+const OUR_APP = "laoyou-metaverse";
 const PORT = Number(process.env.PORT || 5173);
 const HOST = process.env.HOST || "127.0.0.1";
 const PUBLIC = path.join(__dirname, "public");
@@ -417,19 +421,32 @@ const scrub = (text, key) => {
   return s.replace(/sk-[A-Za-z0-9_\-]{12,}/g, "sk-••••").slice(0, 600);
 };
 
+// ── 社区层 ────────────────────────────────────────────────────────────────
+// 账号、关注、好友、地图发布与评论。数据落在 DATA_ROOT/community/ 下，
+// 和世界存档同一个可写策略（安装目录只读时退到用户目录）。
+const community = createCommunity({ dataRoot: DATA_ROOT, worldsDir: WORLDS, assetRoots: [ASSETS, ASSETS_IN_TREE] });
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = decodeURIComponent(url.pathname);
 
   // ---- API ----
   if (pathname.startsWith("/api/")) {
+    // 社区层自己收尾（它是异步的：读 body 要等），所以先于其它 api 分支拦下来
+    if (pathname.startsWith("/api/community/")) {
+      community.handle(req, res, url).catch((e) => {
+        console.error("community:", (e && e.stack) || e);
+        if (!res.writableEnded) json(res, 500, { error: "社区接口出错：" + String((e && e.message) || e) });
+      });
+      return;
+    }
     const parts = pathname.split("/").filter(Boolean); // ['api', ...]
     if (req.method === "GET" && parts[1] === "worlds") return json(res, 200, { worlds: listWorlds() });
     if (req.method === "GET" && parts[1] === "stats") return json(res, 200, apiStats());
     // 身份指纹：启动器靠它判断端口上跑的是不是「我们自己的」上一个实例，
     // 是才可以杀；不认识的一律不动，避免误杀用户别的开发服务。
     if (req.method === "GET" && parts[1] === "whoami") {
-      return json(res, 200, { app: "dao3-editor-clone", version: PKG_VERSION, root: __dirname });
+      return json(res, 200, { app: OUR_APP, version: PKG_VERSION, root: __dirname });
     }
     // 官方素材的授权确认状态。地图、模型、音效都随包分发，但只有用户在应用内
     // 明确同意后才落地/放行。两项分开记：新素材需要重新表态，不能沿用旧决定。
@@ -757,6 +774,13 @@ const server = http.createServer((req, res) => {
   if (pathname === "/manual" || pathname === "/manual/") {
     pathname = "/manual.html";
   }
+  // 社区四个区共用一个壳：/community 广场、/p/<id> 详情、/u/<name> 主页、/friends 关系
+  if (pathname === "/community" || pathname === "/community/"
+    || pathname === "/friends" || pathname === "/friends/"
+    || /^\/p\/[a-f0-9]{12,24}$/.test(pathname)
+    || (pathname.startsWith("/u/") && pathname.length > 3 && !pathname.slice(3).includes("/"))) {
+    pathname = "/community.html";
+  }
 
   // ---- static ----
   // 官方素材包：未确认授权前一律 403，并说明为什么（404 会让人以为包坏了）
@@ -839,7 +863,7 @@ server.on("error", (e) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`DAO3 编辑器复刻 本地服务已启动:`);
+  console.log(`老攸元宇宙 本地服务已启动:`);
   console.log(`  编辑器:  http://127.0.0.1:${PORT}/edit/216d665d3ca92bd1b9a2`);
   console.log(`  世界列表: http://127.0.0.1:${PORT}/api/worlds`);
   console.log(`  静态目录: ${PUBLIC}`);

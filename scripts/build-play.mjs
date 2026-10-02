@@ -44,7 +44,7 @@ function shellEntries() {
 const STATIC_FILES = [
   ["public/data/block-atlas.json", "data/block-atlas.json"],
   ["public/data/block-atlas.png", "data/block-atlas.png"],
-  ["public/img/arena.svg", "img/arena.svg"],
+  ["public/img/laoyou.svg", "img/laoyou.svg"],
   ["public/css/editor.css", "css/editor.css"], // 运行 HUD 的全部样式都在这里，整份取用
   ["official-project/racing-template.json.gz", "world.json.gz"],
 ];
@@ -98,7 +98,7 @@ function closure(entryRelList) {
 }
 
 /* ---------------- 拷贝与自检 ---------------- */
-// 唯一的路径改写：editor.css 里 .load-logo 的 /img/arena.svg 是根绝对路径，
+// 唯一的路径改写：editor.css 里 .load-logo 的 /img/laoyou.svg 是根绝对路径，
 // 在 Pages 子路径下会 404。只改 play/ 里的这份拷贝，public/ 原件一个字都不动。
 const CSS_URL_RE = /url\(\s*(['"]?)\/(img|data|css|js|vendor|assets)\//g;
 

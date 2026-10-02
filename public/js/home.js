@@ -1,4 +1,5 @@
-// home.js — 工作台：本地世界总览（指标 / 起点 / 可排序筛选的项目表 / 导入导出）
+// home.js — 工作台：本地世界总览（指标 / 起点 / 可排序筛选的项目表 / 导入导出 / 发布）
+import { mountAuth } from "/js/auth.js";
 const $ = (id) => document.getElementById(id);
 const TEMPLATE_ID = "216d665d3ca92bd1b9a2";
 
@@ -43,6 +44,11 @@ async function loadStats() {
     { v: (s.apiMembers || 0), k: "API 成员", note: "契约覆盖" },
     { v: dur(s.uptime), k: "服务运行", note: "node " + String(s.node || "").split(".")[0] },
   ];
+  // 社区那一格单独取：社区服务没起来时，工作台其余指标不该跟着变灰
+  try {
+    const c = await (await fetch("/api/community/stats")).json();
+    if (c && typeof c.users === "number") tiles.push({ v: c.pubs, k: "社区发布", note: c.users + " 个账号 · " + c.plays + " 次游玩" });
+  } catch { /* 没有社区就不显示这一格 */ }
   $("metrics").innerHTML = tiles.map((t) => `<div class="mt"><b>${esc(t.v)}</b><div class="mtr"><em>${esc(t.k)}</em><i>${esc(t.note)}</i></div></div>`).join("");
 }
 
@@ -139,6 +145,7 @@ function row(w) {
     <td><div class="wb-acts">
       <button class="p" data-act="edit">编辑</button>
       <button data-act="run">运行</button>
+      <button class="ib" data-act="pub" title="发布到社区">◎</button>
       <button class="ib" data-act="dup" title="复制为新世界">⧉</button>
       <button class="ib" data-act="ren" title="重命名">✎</button>
       <button class="ib" data-act="exp" title="导出官方 .zip 项目包">↓</button>
@@ -157,6 +164,7 @@ function card(w) {
       <div class="cmeta"><span>${esc(w.shape || "—")}</span><span>${fmt(w.blockCount)} 体素</span><span>${w.entities || 0} 实体</span></div>
       <div class="cfoot">
         <button class="p wb-btn" style="height:24px" data-act="run">运行</button>
+        <button class="wb-btn" style="height:24px" data-act="pub">发布</button>
         <button class="wb-btn" style="height:24px" data-act="dup">复制</button>
         <button class="wb-btn" style="height:24px" data-act="exp">导出</button>
         <button class="wb-btn" style="height:24px" data-act="del">删除</button>
@@ -206,6 +214,11 @@ async function act(action, id) {
   if (action === "edit") return (location.href = "/edit/" + id);
   if (action === "run") return (location.href = "/edit/" + id + "?play=1");
   if (action === "exp") return (location.href = "/edit/" + id + "?export=1");
+  if (action === "pub") {
+    // 发布要登录、要填标题简介；这些都在 pubs.js 里，工作台不重复实现一份
+    const { openPublishDialog } = await import("/js/pubs.js");
+    return openPublishDialog({ id, name: w.name || id, shape: w.shapeArr });
+  }
   if (action === "ren") {
     const name = prompt("新的项目名称", w.name || id);
     if (name == null || !name.trim()) return;
@@ -233,6 +246,7 @@ async function act(action, id) {
 }
 
 async function refresh() { await Promise.all([loadWorlds(), loadStats()]); }
+mountAuth();
 
 /* ---------------- 导入 ---------------- */
 function importFile(file) {

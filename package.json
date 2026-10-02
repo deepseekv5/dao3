@@ -1,8 +1,8 @@
 {
-  "name": "@deepseekv5/dao3-editor-clone",
-  "version": "2.1.0",
+  "name": "laoyou-metaverse",
+  "version": "3.0.0",
   "private": false,
-  "description": "dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、20 TPS 定步长物理、体素编辑、VOXA 建模、项目包导入导出。零第三方运行时依赖。",
+  "description": "老攸元宇宙：跑在自己机器上的体素元宇宙。编辑器 + 运行时 + VOXA 建模负责创作，服务端社区负责发布快照、账号、好友、关注与评论。引擎接口层与 dao3.fun 的 GameAPI 语义兼容。零第三方运行时依赖。",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "main": "server.js",
   "bin": {
-    "dao3-editor": "start.mjs"
+    "laoyou": "start.mjs"
   },
   "repository": {
     "type": "git",
@@ -38,10 +38,12 @@
     "check:dist": "node scripts/check-distribution.mjs",
     "fetch:official": "node scripts/fetch-official-project.mjs",
     "fetch:audio": "node scripts/fetch-official-audio.mjs",
-    "test:pkg": "node test/packaging.mjs"
+    "test:pkg": "node test/packaging.mjs",
+    "test:community": "node test/community.test.mjs"
   },
   "files": [
     "server.js",
+    "server/community.mjs",
     "start.mjs",
     "scripts",
     "play-src",
@@ -51,6 +53,7 @@
     "official-project/racing-template.json.gz",
     "official-project/racing-assets",
     "public/index.html",
+    "public/community.html",
     "public/editor.html",
     "public/voxa.html",
     "public/site.html",
@@ -77,11 +80,11 @@
   ],
   "keywords": [
     "voxel",
+    "metaverse",
+    "ugc",
     "editor",
     "game-engine",
-    "dao3",
-    "box3",
-    "gameapi",
+    "community",
     "three.js"
   ],
   "dependencies": {},
