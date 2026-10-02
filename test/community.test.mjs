@@ -12,6 +12,18 @@
  */
 import { resolveBase } from "./browser.mjs";
 
+// 服务发现靠 /api/whoami 的 app 标识。改名时只改 server.js 的话，
+// 所有浏览器测试会安静地 SKIP 掉——比失败更糟，所以这里当场对一遍。
+{
+  const fs = await import("node:fs");
+  const ours = /const OUR_APP = "([^"]+)"/.exec(fs.readFileSync(new URL("../server.js", import.meta.url), "utf8"));
+  const probe = /const APP_ID = "([^"]+)"/.exec(fs.readFileSync(new URL("./browser.mjs", import.meta.url), "utf8"));
+  if (!ours || !probe || ours[1] !== probe[1]) {
+    console.log("FAIL  服务标识不一致：server.js=" + (ours && ours[1]) + " test/browser.mjs=" + (probe && probe[1]));
+    process.exit(1);
+  }
+}
+
 const BASE = await resolveBase();
 if (!BASE) { console.log("SKIP  找不到本地服务：先 ./run.sh 或 node server.js（或设 BASE=http://127.0.0.1:PORT）"); process.exit(0); }
 

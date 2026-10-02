@@ -109,7 +109,9 @@ export async function playwright() {
 // 所以写死 5173 的测试会对着别人的 dev server 跑，报出一堆莫名其妙的失败。
 // 这里改成读 run.out 里服务自己打印的地址，并用 /api/whoami 的指纹确认是本项目。
 const ROOT_DIR = path.resolve(here, "..");
-const APP_ID = "dao3-editor-clone";
+// 与 server.js 的 OUR_APP 同一个值：改名时这里必须跟着改，
+// 否则所有浏览器测试都会认为"本地没有服务在跑"而静默 SKIP。
+const APP_ID = "laoyou-metaverse";
 
 async function probe(origin) {
   try {
