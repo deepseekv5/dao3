@@ -43,11 +43,18 @@ function build() {
   on("view", () => { const p = rt.player; p.cameraMode = p.cameraMode === "fps" ? "follow" : "fps"; close(); });
   on("settings", () => { close(); document.getElementById("gameHudSettings")?.classList.add("show"); });
   on("profile", () => { location.href = "/me"; });
-  on("leave", () => {
-    if (isCommunity()) { location.href = leaveTarget(); return; }
-    // 编辑器里的"运行"是作者的预览，出口本来就是回到编辑器
-    rt.e.stopPlay ? rt.e.stopPlay() : rt.stop();
-  });
+  on("leave", () => leave());
+}
+
+/** 出口只有一条逻辑：社区图回作品页，编辑器里的运行回编辑器。
+    菜单按钮和顶栏停止按钮必须走同一个函数，否则两处行为会慢慢分叉——
+    一处能退、一处只是"看起来没反应"。 */
+export function leave(_rt) {
+  const r = _rt || rt;
+  if (!r) return;
+  if (isCommunity()) { location.href = leaveTarget(); return; }
+  // 编辑器里的"运行"是作者的预览，出口本来就是回到编辑器
+  r.e && r.e.stopPlay ? r.e.stopPlay() : r.stop();
 }
 
 export function open(_rt) {

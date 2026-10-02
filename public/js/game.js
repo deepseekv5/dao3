@@ -437,9 +437,21 @@ export class GameRuntime {
     if (this.playerJoinSound) this._playAt(this.playerJoinSound, this.playerEntity.position);
     if (this.ambientSound) this._startAmbient();
     this._initNet();
+    this._preloadShell(false);   // 菜单要在按下 Esc 的那一刻就在，不能现去加载
     this._channels.Tick.fire(this._tickEvent(0, false));
     this._oldOnRender = r.onRender;
     r.onRender = () => this._frame();
+  }
+
+  /** 进入运行时就预加载游玩菜单模块。
+   *  @param {boolean} alsoOpen 加载完顺手把菜单打开——第一次按 Esc 时模块还没到就靠它。 */
+  _preloadShell(alsoOpen) {
+    if (this._shell) { if (alsoOpen) this._shell.toggle(this); return Promise.resolve(this._shell); }
+    return import("./playshell.js").then((m) => {
+      this._shell = m;
+      if (alsoOpen && this.running) m.toggle(this);
+      return m;
+    }).catch(() => null);
   }
 
   /* ---------------- 联机：同一张图里的其他人 ---------------- */
@@ -541,6 +553,9 @@ export class GameRuntime {
     this.running = false;
     const e = this.e, r = e.renderer;
     if (this._net) { this._net.close(); this._net = null; }
+    // 从菜单里点"退出"时菜单还开着；不关掉的话下一次进运行，
+    // 屏幕上杵着一个上一层留下的菜单，而且它会吃掉所有点击。
+    if (this._shell) this._shell.close();
     for (const id of [...this._netPeers.keys()]) this._netDespawn(id);
     this._channels.PlayerLeave.fire({ tick: this.currentTick, entity: this.playerEntity });
     r.onRender = this._oldOnRender || null;
@@ -1073,7 +1088,9 @@ export class GameRuntime {
       if (c === "escape" && rt._storeOpen) { rt._toggleStore(false); return; }
       // Esc 开的是游戏内菜单。以前这里直接 stopPlay()，玩家一按退出就被丢回编辑器界面，
       // 对"点开一张图玩"的人来说等于被踢出产品；世界继续跑，出口在菜单里。
-      if (c === "escape") { import("./playshell.js").then((m) => m.toggle(rt)); return; }
+      // 菜单模块在进入运行时时就预加载好了（见 _preloadShell）：按下去才开始 import，
+      // 第一次按键就必然像"没反应"，而玩家以为根本没有退出方式。
+      if (c === "escape") { rt._shell ? rt._shell.toggle(rt) : rt._preloadShell(true); return; }
     };
     this._onKeyUp = (ev) => {
       if (!rt.running || !rt.player) return;
@@ -1766,7 +1783,10 @@ const ZERO = new GameVector3();
       const vx = ent.velocity.x, vz = ent.velocity.z;
       if (p.cameraMode === GameCameraMode.RELATIVE) ent._faceYaw = this._yaw;
       else if (vx * vx + vz * vz > 1e-4) {
-        const want = Math.atan2(vx, vz);
+        // 部件组朝 +Z 是"脸"，而旋转 θ 之后本地 -Z 才落在 (-sinθ, -cosθ) 上；
+        // 角色网格又整体被转过 180°（让默认第三人称看到的是背），所以这里必须取反。
+        // 少取反一次的后果是：人往前挪、脸朝后走，看着就是"行走方向不对"。
+        const want = Math.atan2(-vx, -vz);
         const cur = ent._faceYaw == null ? want : ent._faceYaw;
         let d = want - cur;
         while (d > Math.PI) d -= Math.PI * 2;
@@ -3876,7 +3896,7 @@ void main() {
   }
   _bindHudControls() {
     const h = this.hud, rt = this;
-    if (h.stop) h.stop.onclick = () => import("./playshell.js").then((m) => m.open(rt));
+    if (h.stop) h.stop.onclick = () => { const m = rt._shell; if (m) m.leave(rt); else rt._preloadShell(false).then((mm) => mm && mm.leave(rt)); };
     const settings = document.getElementById("gameHudSettings");
     if (!settings) return;
     const bind = (id, get, set) => {

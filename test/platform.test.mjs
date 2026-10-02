@@ -289,6 +289,36 @@ const left = await until(A, `window.__game._netPeers.size === 0`, { tries: 24, m
 ok("对方关标签页后房间里的分身被收掉", left, await A.evaluate(`JSON.stringify({ n: window.__game._netPeers.size, online: window.__online })`));
 ok("人走了 HUD 上的在线数跟着回落", await until(A, `(document.getElementById("hudOnline")||{}).textContent === ""`), await A.evaluate(`String((document.getElementById("hudOnline")||{}).textContent)`));
 
+/* ---------------- 编辑器里的运行：作者路径 ---------------- */
+// 不带 pub 的那一路是作者预览，出口必须是编辑器；而且"按了没反应"等于没有退出方式。
+await A.goto(BASE + "/edit/216d665d3ca92bd1b9a2?play=1");
+const replay = await until(A, `!!(window.__game && window.__game.running && window.__game.player)`, { tries: 80, ms: 1000 });
+ok("作者路径也能进运行", !!replay, await A.evaluate(`document.body.textContent.slice(0,120)`));
+const pos0 = await A.evaluate(`(() => { const p = window.__game.playerEntity.position; return [p.x, p.z]; })()`);
+await A.send("Input.dispatchKeyEvent", { type: "keyDown", code: "KeyW", key: "w", windowsVirtualKeyCode: 87, nativeVirtualKeyCode: 87 });
+let walked = 0;
+for (let i = 0; i < 40 && walked < 0.6; i++) {
+  await sleep(250);
+  walked = await A.evaluate(`(() => { const p = window.__game.playerEntity.position; return Math.hypot(p.x - ${pos0[0]}, p.z - ${pos0[1]}); })()`);
+}
+ok("按 W 真的往前走", walked > 0.6, "位移 " + walked);
+await A.send("Input.dispatchKeyEvent", { type: "keyUp", code: "KeyW", key: "w", windowsVirtualKeyCode: 87, nativeVirtualKeyCode: 87 });
+// 脸朝向与移动方向必须同向：曾经角色往前挪、脸朝后走（部件组转了 180° 而父级公式没跟着改）
+const face = await A.evaluate(`(() => {
+  const ent = window.__game.playerEntity; ent._obj.updateWorldMatrix(true, true);
+  const e = ent._obj.matrixWorld.elements;
+  let wx = -e[8], wz = -e[10]; const fl = Math.hypot(wx, wz) || 1;
+  const v = ent.velocity, dl = Math.hypot(v.x, v.z);
+  return dl < 1e-4 ? null : +(((wx / fl) * (v.x / dl)) + ((wz / fl) * (v.z / dl))).toFixed(2);
+})()`);
+ok("角色脸朝向与移动方向一致", face === null || face > 0.6, "dot=" + face);
+await A.evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape", bubbles: true }))`);
+const emenu = await until(A, `(() => { const m = document.getElementById("playMenu"); return m && m.classList.contains("show") ? (document.querySelector("#pmLeave")||{}).textContent : false; })()`, { tries: 6, ms: 400 });
+ok("作者预览的出口写着「返回编辑器」，且第一次按 Esc 就出现", emenu === "返回编辑器", String(emenu));
+await A.evaluate(`document.querySelector('#playMenu [data-x="leave"]').click()`);
+ok("点出口回到编辑器", await until(A, `!window.__game.running && !document.body.classList.contains("playing")`, { tries: 12, ms: 400 }));
+ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = document.getElementById("playMenu"); return !m || !m.classList.contains("show"); })()`));
+
 /* 全程不许有未捕获异常：上面每一条都可能"看着过了"其实页面早就报错在跑降级路径 */
 const errsA = await A.evaluate(`JSON.stringify((window.__errs || []).slice(0, 5))`);
 ok("两个会话全程没有未捕获错误", errsA === "[]" && errsB === "[]", "A=" + errsA + " B=" + errsB);
