@@ -2,6 +2,8 @@
 // 口径来自官方文档 vendor/box3-product-document/voxa/：
 //   部件=体素容器，骨骼=层级，绑定为刚体（多部件需先编组），动画固定 24 帧/秒，
 //   物理盒 默认=初始模型最小包围盒 / 自定义=固定立方体，部件上限 128。
+import { readVox } from "../world.js";
+
 export const VOXA_VERSION = 1;
 export const MAX_PARTS = 128;
 export const ANIM_FPS = 24; // editor/animation/animationPanel.md：默认速率 24 帧/秒（不可更改）
@@ -418,23 +420,9 @@ export function importVox(voxels, palette, doc, partName = "导入部件") {
   return addPart(doc, part);
 }
 export function parseVoxPalette(bytes) {
-  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const dec = new TextDecoder("latin1");
-  const out = [];
-  let o = 0;
-  const u32 = () => { const v = dv.getUint32(o, true); o += 4; return v; };
-  while (o + 12 <= buf.length) {
-    const id = dec.decode(buf.subarray(o, o + 4)); o += 4;
-    const clen = u32(), nlen = u32();
-    const end = Math.min(buf.length, o + clen + nlen);
-    if (id === "RGBA") {
-      o += 4;
-      for (let i = 0; i < 256 && o + 4 <= end; i++) { out.push([buf[o], buf[o + 1], buf[o + 2], buf[o + 3]]); o += 4; }
-    }
-    o = end;
-  }
-  return out.length ? out : [[200, 160, 108, 255]];
+  // 旧实现只在**顶层**找 RGBA，而规范文件的 RGBA 是套在 MAIN 里面的：
+  // 于是所有 .vox 导入进来都只剩一个兜底色（"导入的模型颜色全没了"的来历）。
+  try { return readVox(bytes).palette; } catch { return []; }
 }
 
 /* ------------------------------ glTF 导出 ------------------------------ */

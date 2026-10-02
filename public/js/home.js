@@ -254,7 +254,12 @@ function importFile(file) {
   tip("正在解析 " + file.name + " …", 0);
   (async () => {
     const io = await import("/js/io.js");
-    const atlas = (await import("/js/atlas.js")).atlas;
+    // atlas.js 只导出 BlockAtlas 这个类，没有名为 atlas 的单例——
+    // 之前直接取 .atlas 拿到 undefined，于是 .vox 导入必然报
+    // "Cannot read properties of undefined (reading 'list')"。
+    const { BlockAtlas } = await import("/js/atlas.js");
+    const atlas = new BlockAtlas();
+    await atlas.load("/data");
     let res;
     if (ext === "zip") res = await io.importProjectZip(file);
     else if (ext === "vox") res = { world: await io.importVox(file, atlas), name: file.name.replace(/\.vox$/i, ""), scripts: [], entities: [], meshNames: [], meshes: {}, warnings: [] };

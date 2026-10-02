@@ -1,7 +1,7 @@
 // io.js — 世界持久化与导入导出。
 // .gz 格式与 box3lab Unity 导出一致：gzip(JSON(VoxelPayload))，用浏览器原生 CompressionStream。
 import * as THREE from "../vendor/three/three.module.js";
-import { VoxelWorld, encodeVox, decodeVox } from "./world.js";
+import { VoxelWorld, encodeVox, decodeVox, readVox } from "./world.js";
 import { decodeVb } from "./vb.js";
 import { readZipEntries, writeZip } from "./zip.js";
 
@@ -53,16 +53,30 @@ export function exportVox(world, atlas) {
 }
 export async function importVox(file, atlas) {
   const buf = new Uint8Array(await file.arrayBuffer());
-  const voxels = decodeVox(buf);
+  const { voxels, size, palette: pal } = readVox(buf);
+  // 世界尺寸跟着模型走：以前硬开 64³，100 格的模型导入进来会被无声裁掉一半
+  const span = (i) => Math.max(...voxels.map((v) => v[i]), size && size[i] || 0, 8);
+  const hi = (v) => Math.min(256, Math.max(8, v));
+  const world = new VoxelWorld([hi(span(0)) + 1, hi(span(1)) + 1, hi(span(2)) + 1]);
   // 用方块 id 序列重建（palette 顺序 = 出现顺序），无颜色信息时退化为默认方块
-  const world = new VoxelWorld([64, 64, 64]);
-  const palette = atlas.list().slice(0, 255).map((b) => b.id);
-  let maxy = 0; for (const v of voxels) maxy = Math.max(maxy, v[2]);
-  for (const [x, z, yDown, pal] of voxels) {
-    const y = maxy - yDown;
-    const id = palette[Math.max(0, Math.min(254, pal - 1))] || atlas.get("grass").id;
-    if (world.inBounds(x, y, z)) world.set(x, y, z, id);
+  const ids = atlas.list().slice(0, 255).map((b) => b.id);
+  const fallback = (atlas.get("grass") || atlas.list()[0] || { id: 1 }).id;
+  // 模型居中：不居中的话导入完玩家出生在空地处，看到的是世界角落的一个小方块
+  const lo = [Infinity, Infinity, Infinity], hi3 = [-Infinity, -Infinity, -Infinity];
+  for (const [x, z, yd] of voxels) {
+    lo[0] = Math.min(lo[0], x); hi3[0] = Math.max(hi3[0], x);
+    lo[1] = Math.min(lo[1], z); hi3[1] = Math.max(hi3[1], z);
+    lo[2] = Math.min(lo[2], yd); hi3[2] = Math.max(hi3[2], yd);
   }
+  const off = [0, 0, 0];
+  for (let i = 0; i < 3; i++) off[i] = Math.floor((world.shape[i] - (hi3[i] - lo[i] + 1)) / 2) - lo[i];
+  let maxy = 0; for (const v of voxels) maxy = Math.max(maxy, v[2]);
+  for (const [x, z, yDown, palIdx] of voxels) {
+    const y = maxy - yDown + off[1];
+    const id = ids[Math.max(0, Math.min(254, palIdx - 1))] || fallback;
+    if (world.inBounds(x + off[0], y, z + off[2])) world.set(x + off[0], y, z + off[2], id);
+  }
+  world.voxPalette = pal;
   return world;
 }
 

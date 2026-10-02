@@ -126,6 +126,16 @@ export class Session {
     await this.send("Input.insertText", { text });
   }
 
+  /** 真的往 <input type=file> 里塞文件：走 DOM.setFileInputFiles，会触发 change。 */
+  async setFile(selector, paths) {
+    await this.send("DOM.enable");
+    const { root } = await this.send("DOM.getDocument", { depth: -1 });
+    const { nodeId } = await this.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+    if (!nodeId) throw new Error(`找不到文件输入框 ${selector}`);
+    await this.send("DOM.setFileInputFiles", { files: [].concat(paths), nodeId });
+    await wait(200);
+  }
+
   async shot(file) {
     const { data } = await this.send("Page.captureScreenshot", { format: "png" });
     fs.mkdirSync(path.dirname(file), { recursive: true });

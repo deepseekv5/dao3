@@ -39,7 +39,8 @@
     "fetch:official": "node scripts/fetch-official-project.mjs",
     "fetch:audio": "node scripts/fetch-official-audio.mjs",
     "test:pkg": "node test/packaging.mjs",
-    "test:community": "node test/community.test.mjs"
+    "test:community": "node test/community.test.mjs",
+    "test:vox": "node test/vox.test.mjs"
   },
   "files": [
     "server.js",
