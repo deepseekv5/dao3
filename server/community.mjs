@@ -18,9 +18,13 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
+import { blockColors, renderCover } from "./covers.mjs";
 
 const PUB_ID_RE = /^[a-f0-9]{12,24}$/;
 const WORLD_ID_RE = /^[a-zA-Z0-9_-]{1,80}$/;
+// 广场的主导航按玩法分，不按"精选/热门/新作"那种运营位分：
+// 玩家找的是"有没有能跑一圈的图"，不是被推荐。
+const CATEGORIES = ["竞速", "跑酷", "解谜", "生存", "角色扮演", "模拟经营", "创造", "对战", "恐怖", "休闲"];
 const SESSION_COOKIE = "ly_session";
 const CSRF_COOKIE = "ly_csrf";
 const SESSION_TTL = 30 * 24 * 3600;
@@ -185,7 +189,7 @@ async function readBody(req) {
   try { return JSON.parse(text); } catch { throw new Error("bad-json"); }
 }
 
-export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, moderation } = {}) {
+export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, moderation, atlas } = {}) {
   const store = createStore(path.join(dataRoot, "community"));
   // 世界资产可能落在两处：可写数据目录，或仓库内的 public/assets（老包）
   const roots = assetRoots || [assetRoot].filter(Boolean);
@@ -589,7 +593,14 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     if (seg[0] === "feed" && method === "GET") {
       const sort = ["new", "hot", "following"].includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "new";
       const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+      // 玩法分类是广场的主导航，不是标签云：作者多半不会自己打标签，
+      // 所以标题与简介里出现这个词也算命中，否则每个分类都是空的。
+      const cat = CATEGORIES.includes(url.searchParams.get("cat")) ? url.searchParams.get("cat") : "";
       let rows = livePubs();
+      if (cat) {
+        rows = rows.filter((p) => (p.tags || []).includes(cat)
+          || `${p.title} ${p.desc}`.toLowerCase().includes(cat.toLowerCase()));
+      }
       if (q) {
         rows = rows.filter((p) => `${p.title} ${p.desc} ${(p.tags || []).join(" ")} ${docs.users.byId[p.authorId]?.name || ""}`.toLowerCase().includes(q));
       }
@@ -603,7 +614,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       rows.sort((a, b) => (sort === "hot" ? score(b) - score(a) || b.created - a.created : b.created - a.created));
       const offset = clamp(url.searchParams.get("offset") || 0, 0, 1e6);
       const limit = clamp(url.searchParams.get("limit") || 24, 1, 100);
-      reply.json(200, { total: rows.length, sort, offset, rows: rows.slice(offset, offset + limit).map((p) => pubCard(p, viewerId)) });
+      reply.json(200, { total: rows.length, sort, cat, cats: CATEGORIES, offset, rows: rows.slice(offset, offset + limit).map((p) => pubCard(p, viewerId)) });
       return true;
     }
 
@@ -675,6 +686,16 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       if (up) {
         const src = path.join(store.uploads, path.basename(up));
         if (fs.existsSync(src)) { fs.copyFileSync(src, store.pubCover(id)); fs.copyFileSync(src, store.pubCover(id).replace(/\.png$/, "." + src.split(".").pop())); }
+      }
+      // 既没上传封面、也没有编辑器截图：拿这张图自己的体素画一张小地图。
+      // 广场里最刺眼的"AI 做的"就是每张缺封面的图都退化成同一段渐变——
+      // 颜色不该由 id 派生的随机数决定，应该由地图本身决定。
+      if (kind === "map" && atlas && !fs.existsSync(store.pubCover(id))) {
+        try {
+          const snap = JSON.parse(zlib.gunzipSync(fs.readFileSync(store.pubFile(id))).toString());
+          const png = renderCover({ indices: snap.indices, data: snap.data, shape: snap.shape, colors: blockColors(atlas.json, atlas.png) });
+          if (png) fs.writeFileSync(store.pubCover(id), png);
+        } catch { /* 封面画不出来不影响发布，广场会退回文字占位 */ }
       }
       const rec = Object.assign(prev || {}, {
         id, key, kind, authorId: viewerId, title, tags,

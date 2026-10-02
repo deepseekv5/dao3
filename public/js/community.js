@@ -13,16 +13,29 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------------- 广场 ---------------- */
 const FEED_TABS = [["new", "最新"], ["hot", "最热"], ["following", "关注"]];
-let feed = { sort: "new", q: "", offset: 0, total: 0, rows: [] };
+let feed = { sort: "new", cat: "", q: "", offset: 0, total: 0, rows: [], cats: [] };
 
 async function feedView() {
-  pageTitle.textContent = "社区广场";
+  pageTitle.textContent = "地图展厅";
   pageSub.textContent = "别人发布的世界，点进去就能跑一圈";
   qBox.closest(".wb-search").hidden = false;
-  root.innerHTML = `<div class="cm-tabs" id="cmTabs"></div><div class="cm-grid" id="cmGrid"></div>
+  root.innerHTML = `<div class="cm-cats" id="cmCats"></div>
+    <div class="cm-tabs" id="cmTabs"></div><div class="cm-grid" id="cmGrid"></div>
     <div id="cmMore" style="text-align:center"></div>`;
   drawTabs();
   await loadFeed(true);
+}
+
+/** 玩法分类是主导航：玩家找的是"有没有能跑一圈的图"，不是被运营位推荐。
+    列表由服务端给（/feed 的 cats 字段），不在前端再抄一份，否则两边会慢慢长歪。 */
+function drawCats() {
+  const el = $("cmCats");
+  if (!el) return;
+  const cats = feed.cats.length ? feed.cats : ["竞速", "跑酷", "解谜", "生存", "角色扮演", "模拟经营", "创造", "对战", "恐怖", "休闲"];
+  el.innerHTML = [`<button class="cm-cat ${feed.cat ? "" : "on"}" data-c="">全部`]
+    .concat(cats.map((c) => `<button class="cm-cat ${feed.cat === c ? "on" : ""}" data-c="${esc(c)}">${esc(c)}`))
+    .join("</button>") + "</button>";
+  for (const b of el.querySelectorAll("[data-c]")) b.onclick = () => { feed.cat = b.dataset.c; reload(); };
 }
 
 function drawTabs() {
@@ -33,7 +46,7 @@ function drawTabs() {
   for (const b of el.querySelectorAll("[data-s]")) b.onclick = () => { feed.sort = b.dataset.s; reload(); };
 }
 
-async function reload() { feed = { ...feed, offset: 0, rows: [] }; drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }
+async function reload() { feed = { ...feed, offset: 0, rows: [] }; drawCats(); drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }
 
 async function loadFeed(reset) {
   const grid = $("cmGrid");
@@ -41,11 +54,13 @@ async function loadFeed(reset) {
   if (reset) grid.innerHTML = `<div class="cm-empty">正在读取广场…</div>`;
   let r;
   try {
-    r = await api("GET", `/api/community/feed?sort=${feed.sort}&q=${encodeURIComponent(feed.q)}&offset=${feed.offset}&limit=24`);
+    r = await api("GET", `/api/community/feed?sort=${feed.sort}&cat=${encodeURIComponent(feed.cat)}&q=${encodeURIComponent(feed.q)}&offset=${feed.offset}&limit=24`);
   } catch (e) {
     grid.innerHTML = `<div class="cm-empty"><b>${esc(e.message)}</b>${feed.sort === "following" ? "登录后才能看关注的人发布了什么。" : "社区服务没起来？"}</div>`;
     return;
   }
+  if (Array.isArray(r.cats) && r.cats.join() !== feed.cats.join()) feed.cats = r.cats;
+  drawCats();
   feed.total = r.total;
   feed.rows = feed.rows.concat(r.rows);
   feed.offset = r.rows.length;

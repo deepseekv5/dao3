@@ -60,17 +60,16 @@ export const face = (u, cls = "") => u && u.avatar && String(u.avatar).startsWit
   ? `<img class="au-face ${cls}" src="${esc(u.avatar)}" alt=""/>`
   : `<span class="au-face au-init ${cls}" style="background:${avatarBg(u && u.name)}">${esc(u && u.name ? [...u.name][0] : "?")}</span>`;
 export function hue(s) { let h = 0; for (const c of String(s || "?")) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
-/** 头像底色：同一套青→紫，靠名字在带内取位，避免广场变成彩虹。 */
-export const avatarBg = (name) => { const h = 196 + (hue(name) % 74); return `linear-gradient(140deg,hsl(${h} 92% 66%),hsl(${h - 30} 84% 55%))`; };
-/** 没有封面时也要像被设计过：按发布 id 派生一层渐变 + 细网格，而不是孤零零一个字。
-    色相锁在品牌的青→蓝→紫这一段（约 190–285），否则随机色会把广场变成调色盘。 */
-export const coverArt = (p) => {
-  const h = 190 + (hue(p.id) % 96);
-  return `background-image:radial-gradient(120% 90% at 18% 0%,hsl(${h} 82% 26%) 0%,transparent 62%),`
-    + `repeating-linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px 26px),`
-    + `repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 26px),`
-    + `linear-gradient(140deg,#12151f,#0d1016 55%,hsl(${(h + 40) % 360} 60% 12%))`;
-};
+/** 没有头像就是 initials：一块中性石墨 + 首字。
+    以前这里按名字取一段青→紫渐变，于是每个默认头像都是"同一种不同深浅的品牌色"，
+    一眼就是生成的。真人论坛的默认头像从来不做渐变。 */
+export const avatarBg = () => "#2a2a2a";
+/** 缺封面时不再画渐变——服务端已经会用这张图自己的体素画一张小地图，
+    走到这里说明那张图真的是空的。空的就该看起来是空的：一张没落笔的方格纸。 */
+export const coverArt = () => "background-color:#161616;"
+  + "background-image:linear-gradient(rgba(255,255,255,.045) 0 1px,transparent 1px),"
+  + "linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px);"
+  + "background-size:22px 22px";
 export const coverHtml = (p) => p.hasCover
   ? `<img src="/api/community/pubs/${p.id}/cover" alt="" loading="lazy" onerror="this.remove()"/>`
   : "";

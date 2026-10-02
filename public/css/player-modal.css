@@ -181,7 +181,7 @@
 .pm-list button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;
   padding:11px 12px;margin:2px 0;background:none;border:0;border-radius:10px;cursor:pointer;
   color:#dfe7f5;font:inherit;font-size:13.5px;transition:background .13s,color .13s}
-.pm-list button:hover{background:rgba(79,155,255,.16);color:#fff}
+.pm-list button:hover{background:rgba(255, 90, 52,.16);color:#fff}
 .pm-list button kbd{font:11px/1 ui-monospace,Menlo,monospace;color:rgba(210,225,250,.5);
   border:1px solid rgba(255,255,255,.16);border-radius:5px;padding:3px 6px;min-width:26px;text-align:center}
 .pm-list button.danger{color:#ffb0b0}

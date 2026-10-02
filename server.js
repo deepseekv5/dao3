@@ -430,7 +430,11 @@ const scrub = (text, key) => {
 // 账号、关注、好友、地图发布与评论。数据落在 DATA_ROOT/community/ 下，
 // 和世界存档同一个可写策略（安装目录只读时退到用户目录）。
 const moderation = createModeration({ file: path.join(DATA_ROOT, "community", "mute-words.json") });
-const community = createCommunity({ dataRoot: DATA_ROOT, worldsDir: WORLDS, assetRoots: [ASSETS, ASSETS_IN_TREE], moderation });
+const community = createCommunity({
+  dataRoot: DATA_ROOT, worldsDir: WORLDS, assetRoots: [ASSETS, ASSETS_IN_TREE], moderation,
+  // 缺封面的图要用方块自己的颜色画小地图，而不是退化成一段按 id 派生的渐变
+  atlas: { json: path.join(PUBLIC, "data", "block-atlas.json"), png: path.join(PUBLIC, "data", "block-atlas.png") },
+});
 
 // 联机通道：升级请求由它自己判会话 cookie，路径不是 /ws/play/<pub> 的原样放回去。
 const realtime = createRealtime({ community });

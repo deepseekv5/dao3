@@ -27,15 +27,15 @@
 .boot-name { font-size: 25px; font-weight: 700; letter-spacing: 3px; }
 .boot-name small { display: block; font-size: 10.5px; letter-spacing: 5px; font-weight: 500; color: rgba(190, 215, 255, .62); margin-top: 5px; }
 .boot-title { margin: 20px 0 3px; font-size: 14px; font-weight: 600; letter-spacing: .4px; }
-.boot-stage { font-size: 12px; color: rgba(190, 210, 245, .66); min-height: 18px; letter-spacing: .3px; }
+.boot-stage { font-size: 12px; color: rgba(255, 255, 255, .58); min-height: 18px; letter-spacing: .3px; }
 
 /* 进度条：底轨 + 发光填充 + 扫光。数字在右边，用等宽避免跳动。 */
 .boot-rail { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
-.boot-bar { position: relative; flex: 1; height: 4px; border-radius: 99px; background: rgba(150, 180, 230, .16); overflow: hidden; }
+.boot-bar { position: relative; flex: 1; height: 4px; border-radius: 99px; background: rgba(255, 255, 255, .1); overflow: hidden; }
 .boot-bar i {
   position: absolute; inset: 0 auto 0 0; width: 0%;
-  background: linear-gradient(90deg, #5eeaff, #4f9bff 55%, #a06bff);
-  box-shadow: 0 0 14px rgba(90, 170, 255, .8); border-radius: 99px;
+  background: var(--primary);
+  box-shadow: 0 0 14px rgba(255, 90, 52, .45); border-radius: 99px;
   transition: width .35s cubic-bezier(.25, .8, .3, 1);
 }
 .boot-bar::after {

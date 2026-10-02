@@ -342,6 +342,36 @@ try {
   const evil = await uploadFile(A, "/api/community/upload?kind=cover", Buffer.from("<script>alert(1)</script>"));
   ok("非图片内容上传被拒", evil.status === 400, JSON.stringify(evil.data));
 
+  // 没上传封面、也没编辑器截图时，服务端要用这张图自己的体素画一张小地图。
+  // 广场里最"AI 做的"就是缺封面的图全退化成同一段渐变——颜色不该由 id 派生。
+  const TW3 = "lytest3" + suffix;
+  await fetch(`${BASE}/api/world/${TW3}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      formatVersion: 1, shape: [8, 8, 8], dir: [1, 1, 1],
+      // 下半截是石头、上半截是木头：封面必须同时画出两种颜色才算读了体素
+      indices: Array.from({ length: 512 }, (_, i) => i),
+      data: Array.from({ length: 512 }, (_, i) => (Math.floor(i / 64) % 2 ? 129 : 137)),
+      rot: new Array(512).fill(0), meta: { name: "封面自绘用图", created: Date.now() },
+    }),
+  }).then((x) => x.json());
+  const noCover = await A.call("POST", "/api/community/publish", { worldId: TW3, title: RUN + " 无封面图", desc: "看服务端会不会自己画" });
+  const ncId = noCover.data && noCover.data.pub && noCover.data.pub.id;
+  ok("没封面的发布也带上了封面", !!(noCover.data && noCover.data.pub && noCover.data.pub.hasCover), JSON.stringify(noCover.data && noCover.data.pub).slice(0, 160));
+  const coverRes = await fetch(BASE + "/api/community/pubs/" + ncId + "/cover");
+  const coverBuf = Buffer.from(await coverRes.arrayBuffer());
+  ok("自绘封面取得到，是合法 PNG", coverRes.status === 200 && coverRes.headers.get("content-type") === "image/png"
+    && coverBuf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), coverRes.status + " " + coverRes.headers.get("content-type"));
+  // 纯色说明它只是铺了个底色，根本没读体素
+  const { decodePng } = await import("../server/covers.mjs");
+  const img = decodePng(coverBuf);
+  const seen = new Set();
+  for (let i = 0; i < img.px.length; i += 4) {
+    if (img.px[i] === 18 && img.px[i + 1] === 18 && img.px[i + 2] === 19) continue;   // 背景
+    seen.add(`${img.px[i] >> 4},${img.px[i + 1] >> 4},${img.px[i + 2] >> 4}`);
+  }
+  ok("封面画的是地图本身（不止一种方块色）", seen.size >= 2, "colors=" + seen.size);
+
   const model = await A.call("POST", "/api/community/publish", {
     kind: "model", title: RUN + " 测试模型", slug: "test-model", doc: { name: "t", parts: [{ name: "p", size: [2, 2, 2], voxels: [{ x: 0, y: 0, z: 0, c: 1 }] }], colors: ["#ff0000"] },
   });
@@ -415,7 +445,7 @@ try {
 
   /* ---------- 收尾：把测试造的一次性世界删掉，测试发布下架 ---------- */
   await A.call("DELETE", `/api/community/pubs/${pubId}`);
-  for (const id of [TW, TW2]) await fetch(`${BASE}/api/world/${id}`, { method: "DELETE" });
+  for (const id of [TW, TW2, TW3]) await fetch(`${BASE}/api/world/${id}`, { method: "DELETE" });
   const gone = await (await fetch(BASE + "/api/worlds")).json();
   ok("一次性世界已清理", ![TW, TW2].some((id) => gone.worlds.some((w) => w.id === id)), TW);
 } catch (e) {
