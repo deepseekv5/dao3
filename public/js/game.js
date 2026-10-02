@@ -470,7 +470,14 @@ export class GameRuntime {
           chat: (m) => this._chatLine(`${m.name}: ${m.m}`, "#bfe0ff"),
           throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#ffd9a8"),
           rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3"),
-          status: (s) => { if (s.connected) count(); else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#ffd9a8"); },
+          status: (s) => {
+            if (s.connected) {
+              count();
+              // 连上就先报一次坐标：否则别人在那 16ms 的间隔里看到的是你站在世界原点。
+              const me = this.playerEntity;
+              if (me) this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
+            } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#ffd9a8");
+          },
         },
       });
       count();
@@ -480,10 +487,14 @@ export class GameRuntime {
   _netSpawn(p) {
     if (!p || !p.id || this._netPeers.has(p.id) || !this.playerEntity) return;
     const here = this.playerEntity.position;
-    const pos = Array.isArray(p.p) && p.p.length === 3 ? p.p : [here.x, here.y, here.z];
+    // 刚进来的人还没来得及报坐标，服务端给的就是 [0,0,0]。真把分身摆到世界原点，
+    // 他会正好长在相机里——先摆在出生点附近，等第一条 state 来了再插值过去。
+    const raw = Array.isArray(p.p) ? p.p.map(Number) : [];
+    const at = (raw.length === 3 && raw.every((v) => Number.isFinite(v)) && raw.some((v) => v !== 0))
+      ? raw : [here.x, here.y, here.z];
     // 标签用 netplayer 而不是 player：地图脚本普遍拿 "player" 查玩家，
     // 把别人的分身也标成 player 会让每个脚本都以为场上全是玩家，玩法直接错掉。
-    const ent = this._makeEntity({ id: "net:" + p.id, tags: ["netplayer"], position: pos, bounds: [0.3, 0.9, 0.3], collides: false });
+    const ent = this._makeEntity({ id: "net:" + p.id, tags: ["netplayer"], position: at, bounds: [0.3, 0.9, 0.3], collides: false });
     ent.fixed = true; ent.gravity = false;
     ent.showEntityName = true; ent.customName = String(p.name || "玩家").slice(0, 20);
     const avatar = makeAvatar(p.skin);
@@ -491,7 +502,7 @@ export class GameRuntime {
     avatar.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     ent._obj.add(avatar);
     ent._obj.rotation.y = Number(p.r) || 0;
-    this._netPeers.set(p.id, { ent, tx: pos.slice(), ry: 0 });
+    this._netPeers.set(p.id, { ent, tx: at.slice(), ry: 0 });
   }
 
   _netDespawn(id) {
@@ -502,7 +513,7 @@ export class GameRuntime {
   }
 
   _netStep(dt) {
-    if (!this._net || !this._netPeers.size) return;
+    if (!this._net) return;
     const k = Math.min(1, dt * 12);
     for (const peer of this._netPeers.values()) {
       if (!peer.tx) continue;
@@ -515,8 +526,14 @@ export class GameRuntime {
       while (d < -Math.PI) d += Math.PI * 2;
       e._obj.rotation.y += d * k;
     }
+    // 一个人的时候也要报坐标：新进来的人看的是服务端记着的"你刚才在哪"，
+    // 不报就等于让所有人第一次看见你都站在世界原点。
+    // 客户端自己先按 80ms 掐一次：服务端也会掐，但没必要把 60Hz 的包白送上去。
     const me = this.playerEntity;
-    if (me) this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
+    if (me && performance.now() - (this._netSentAt || 0) > 80) {
+      this._netSentAt = performance.now();
+      this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
+    }
   }
 
   stop() {

@@ -258,15 +258,22 @@ const ghost = await A.evaluate(`(() => { const p = [...(window.__game._netPeers 
   return p ? { name: p.ent.customName, shown: p.ent.showEntityName, tags: [...p.ent._tags], solid: p.ent.collides, inScene: !!p.ent._obj.parent } : null; })()`);
 ok("同伴是以账号昵称出现的角色，且不带碰撞", !!ghost && ghost.name === nameB && ghost.shown && !ghost.solid && ghost.inScene, JSON.stringify(ghost));
 ok("联机分身不会冒充脚本眼里的 player", !!ghost && ghost.tags.indexOf("player") === -1, JSON.stringify(ghost));
+// 刚进来的人还没报坐标时，服务端记的是 [0,0,0]。真把分身摆到原点，
+// 他就长在相机里糊满半个屏幕——这条断言盯的就是这个。
 const moved = await until(A, `(() => { const p = [...(window.__game._netPeers || new Map()).values()][0];
-  return !!p && Number.isFinite(p.ent.position.x); })()`, { tries: 10, ms: 500 });
-ok("同伴的位置在插值跟进（不是停在原点）", moved);
+  if (!p || !Number.isFinite(p.ent.position.x)) return false;
+  const d = Math.hypot(p.ent.position.x, p.ent.position.y, p.ent.position.z);
+  return d > 1; })()`, { tries: 20, ms: 500 });
+ok("同伴不会站在世界原点（不会糊在镜头上）", moved,
+  await A.evaluate(`(() => { const p = [...(window.__game._netPeers || new Map()).values()][0]; return p ? JSON.stringify(p.ent.position) : "null"; })()`));
 const badge = await A.evaluate(`(document.getElementById("hudOnline") || {}).textContent`);
 ok("HUD 显示 2 人在线", badge === "2 人在线", String(badge));
 
 const sent = await B.evaluate(`(() => { const g = window.__game; const okSend = !!(g._net && g._net.live); g.sendChat("我进来了，看得见我吗"); return okSend; })()`);
 ok("发送时 B 的房间通道是连着的", sent === true);
-const heard = await until(A, `document.getElementById("gameChat").textContent.includes("看得见我吗")`, { tries: 40, ms: 500 });
+// 聊天条本身 15 秒后会淡掉，所以这条只能"当场看到"。两个软件渲染的 WebGL 页面
+// 同屏跑时，A 的主线程可能几十秒才轮到处理一条消息——等得起，判据不放宽。
+const heard = await until(A, `document.getElementById("gameChat").textContent.includes("看得见我吗")`, { tries: 90, ms: 1000 });
 if (!heard) {
   console.log("      A: " + await A.evaluate(`JSON.stringify({ chat: document.getElementById("gameChat").textContent.slice(0, 120), peers: window.__game._netPeers.size })`));
   console.log("      B: " + await B.evaluate(`JSON.stringify({ chat: document.getElementById("gameChat").textContent.slice(0, 120), live: !!(window.__game._net && window.__game._net.live) })`));
