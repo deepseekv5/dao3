@@ -250,6 +250,10 @@ export class VoxelRenderer {
     this.hemi = new THREE.HemisphereLight(0xbcd4ff, 0x6b5a44, 0.65);
     this.scene.add(this.hemi);
     this.ambient = new THREE.AmbientLight(0xffffff, 0.22);
+    // 视角补光：跟着镜头走，专门负责"背对太阳的那一面"。
+    // 没有它，官方那种大结构体的背面只剩环境光，直接糊成一块黑。
+    this.viewLight = new THREE.DirectionalLight(0xdce8ff, 0.42);
+    this.scene.add(this.viewLight);
     this.scene.add(this.ambient);
 
     // 材质：PBR 标准材质，粗糙表面，配合色调映射更自然
@@ -929,7 +933,10 @@ vec2 fxTileRect(float t){
     }
     // 六面天光：上下喂半球光，左右前后平均后作为补光颜色与强度，globalLight 作为环境光基准
     if (t.skyTop != null) this.hemi.color.set(t.skyTop);
-    if (t.skyBottom != null) this.hemi.groundColor.set(t.skyBottom);
+    // 半球光的地面反弹色要用地面自己的颜色，不是天空色。
+    // 之前直接 set(skyBottom)，等于把一片亮蓝从下往上打——暗面被洗平、阴影看不见，
+    // 整个画面因此发灰。官方那套低饱和场景下这个错最明显。
+    if (t.skyBottom != null) this.hemi.groundColor.setHex(this._groundFromSky(t.skyBottom));
     const sides = [t.skyLeft, t.skyRight, t.skyFront, t.skyBack].filter((v) => v != null);
     if (sides.length) {
       const avg = new THREE.Color(0, 0, 0);
@@ -948,7 +955,16 @@ vec2 fxTileRect(float t){
     const base = this._exposureBase == null ? 1.12 : this._exposureBase;
     this.renderer.toneMappingExposure = base * (1 + u.night.value * 0.42);
   }
-  _groundFromSky(skyHex) { const c = new THREE.Color(skyHex); const g = c.clone().multiplyScalar(0.45); g.offsetHSL(0, -0.1, -0.15); return g.getHex(); }
+  _groundFromSky(skyHex) {
+    const c = new THREE.Color(skyHex);
+    const g = c.clone().multiplyScalar(0.45);
+    g.offsetHSL(0, -0.1, -0.15);
+    // 地面反弹不能压到纯黑：官方那套天顶色偏暗，全黑等于把暗面所有细节抹掉。
+    // 混一个暖色底，保证最少有一点来自地面的补光。
+    const warm = new THREE.Color(0x4a3f36);
+    g.lerp(warm, 0.35);
+    return g.getHex();
+  }
   // 官方 world.rendering3d=false：暂停提交新帧，画面停在最后一帧（不是藏起画布）
   setRender3d(on) { this._render3d = on !== false; }
   setFirstPerson(on, spawn) {
@@ -979,7 +995,16 @@ vec2 fxTileRect(float t){
       if (this.fpMode) this.fpControls.update(delta);
       else this.controls.update();
       this.updateWeather(delta);
+      // 阴影贴图每两帧刷一次：投影把每帧的 draw call 直接翻倍，而 15.6 tick/s 的
+      // 定步长循环里没人看得出影子少更新了一帧。软件渲染下这一步差 2 倍帧率。
+      this.renderer.shadowMap.autoUpdate = false;
+      if ((this._shadowFlip = !this._shadowFlip)) this.renderer.shadowMap.needsUpdate = true;
       if (this.onRender) this.onRender(delta);
+      { const c = this.activeCam || this.camera, d = new THREE.Vector3();
+        c.getWorldDirection(d);
+        this.viewLight.position.copy(c.position).addScaledVector(d, -14).add(new THREE.Vector3(0, 9, 0));
+        this.viewLight.target.position.copy(c.position).addScaledVector(d, 26);
+        this.viewLight.target.updateMatrixWorld(); }
       // rendering3d=false 时不再提交新帧，画布保留最后一帧（官方语义）
       if (this._render3d === false) return;
       this.renderer.render(this.scene, this.activeCam || this.camera);

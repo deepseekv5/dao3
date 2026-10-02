@@ -140,6 +140,9 @@ function rbox(w, h, d, r, seg = 5) {
   return geo;
 }
 
+/** 第三人称出生俯角（弧度）。0 度会让地平线卡在画面正中、人物像浮在半空。 */
+const DEFAULT_PITCH = -0.2;
+
 function makeAvatar() {
   const g = new THREE.Group();
   // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
@@ -805,12 +808,17 @@ export class GameRuntime {
     this.playerEntity = ent;
     // 默认角色外观（官方第三人称下玩家以可见角色呈现）
     const avatar = makeAvatar();
-    avatar.castShadow = true;
+    // 模型的正脸建在 +Z 上，而旋转 0 度的前向是 -Z：不转这一下的话
+    // 第三人称永远看到角色的正面。整组转 180°，让"背对镜头"成为默认。
+    avatar.rotation.y = Math.PI;
+    // three.js 的 castShadow 不沿 Group 继承，必须逐个网格开——
+    // 之前只在组上置了 true，所以角色脚下从来没有影子。
+    avatar.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     ent._obj.add(avatar);
     ent._avatar = avatar;
     ent._obj.position.set(ent.position.x, ent.position.y, ent.position.z);
     this._meshForPlayer = null;
-    this._yaw = 0; this._pitch = 0; this._tYaw = 0; this._tPitch = 0;
+    this._yaw = 0; this._pitch = DEFAULT_PITCH; this._tYaw = 0; this._tPitch = DEFAULT_PITCH;
     this._vy = 0; this._grounded = false; this._coyote = 0; this._jumpBuf = 0;
     this._doubleJumpUsed = false; this._jumpPhase = false; this._bob = 0; this._landShake = 0;
     this._stepAccum = 0;
@@ -1609,7 +1617,10 @@ const ZERO = new GameVector3();
       this._stepAccum += Math.hypot(ent.velocity.x, ent.velocity.z);
       if (this._stepAccum > 0.55) { this._stepAccum = 0; this._playAt(p.stepSound, ent.position); }
     }
-    p.facingDirection = new GameVector3(Math.sin(this._yaw), 0, Math.cos(this._yaw));
+    // yaw=0 时面向 -Z（three.js 与相机前向的口径）。旧写法给的是 +Z，
+    // 于是角色永远正对着第三人称镜头——玩家看到的是自己角色的脸，
+    // 而镜头里的"前方"其实是角色的背后。默认值本来就是 (0,0,-1)，这里跟它对齐。
+    p.facingDirection = new GameVector3(-Math.sin(this._yaw), 0, -Math.cos(this._yaw));
     // 官方表现：角色朝实际移动方向转身，没有横向速度时才跟镜头同向。
     // RELATIVE 是「镜头相对身体固定」：身体刚性对齐镜头，否则侧移之后身体与镜头会错开。
     if (ent._lookYaw != null) ent._obj.rotation.y = ent._lookYaw;

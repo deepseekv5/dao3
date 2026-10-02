@@ -60,7 +60,9 @@ export class Session {
     this._on = new Set();
   }
 
-  static async open(port, { isolated = false, width = 1440, height = 900, initScripts = [] } = {}) {
+  // dsf 默认 1：软件渲染（swiftshader）下每个像素都要 CPU 算，2× 的画布等于 4 倍开销，
+  // 编辑器一帧要两三秒，截图永远抓到半帧。要看真机观感请直接在浏览器里开。
+  static async open(port, { isolated = false, width = 1440, height = 900, dsf = 1, initScripts = [] } = {}) {
     let contextId = null;
     if (isolated) ({ browserContextId: contextId } = await callBrowser(port, "Target.createBrowserContext", { disposeOnDetach: true }));
     const target = await callBrowser(port, "Target.createTarget", { url: "about:blank", ...(contextId ? { browserContextId: contextId } : {}) });
@@ -73,7 +75,7 @@ export class Session {
     await s.send("Page.enable");
     await s.send("Runtime.enable");
     // 每个会话各自设视口：设备指标是 per-target 的，所以同屏两个尺寸互不干扰。
-    await s.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 2, mobile: false });
+    await s.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: dsf, mobile: false });
     // about:blank 是隔离源，写不进站点 localStorage。初始化脚本在文档脚本之前跑，
     // 用来预置"已确认免责声明"这类开关——不然截到的每张图都是那张遮罩。
     if (initScripts.length) await s.send("Page.addScriptToEvaluateOnNewDocument", { source: initScripts.join("\n;\n") });
