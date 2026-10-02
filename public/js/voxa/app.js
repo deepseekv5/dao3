@@ -363,6 +363,7 @@ class VoxaApp {
       case "importVox": this.pickFile(".vox", (f) => this.importVoxFile(f)); break;
       case "exportGlb": this.exportGlb(); break;
       case "publish": this.publish(); break;
+      case "publishModel": this.publishModel(); break;
       case "undo": this.undo(); break;
       case "redo": this.redo(); break;
       case "saveVersion": this.pushHistory("手动存档"); break;
@@ -1177,6 +1178,11 @@ class VoxaApp {
     const blob = toGLB(this.doc);
     download(blob, this.doc.name + ".glb");
     this.toast("已导出 glTF");
+  }
+  /** 发布到社区：作品跟着账号走，别人能在广场看到并下载/在 VOXA 里打开。 */
+  async publishModel() {
+    const { openModelPublishDialog } = await import("../publish-model.js");
+    openModelPublishDialog(this.doc, (msg) => this.toast(msg));
   }
   async publish() {
     const worldId = new URLSearchParams(location.search).get("world") || localStorage.getItem("dao3_last_world") || "216d665d3ca92bd1b9a2";

@@ -5,6 +5,11 @@
 // 于是首页莫名多出两个 DOM 依赖，缺一个就整块报错。
 import * as auth from "/js/auth.js";
 const { api, esc, openAuth } = auth;
+/** 图片上传走 fetch 的 body，不走 api()，所以 CSRF 头要自己取。 */
+function csrfToken() {
+  const m = /(?:^|; )ly_csrf=([^;]+)/.exec(document.cookie || "");
+  return m ? decodeURIComponent(m[1]) : "";
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -145,6 +150,9 @@ export async function openPublishDialog(world) {
     <label>标题<input id="pTitle" maxlength="60" value="${esc(world.name || "")}"/></label>
     <label>简介<textarea id="pDesc" maxlength="2000" placeholder="这张图玩什么、怎么触发、有什么坑"></textarea></label>
     <label>标签（逗号分隔，最多 6 个）<input id="pTags" placeholder="竞速, 地图, 教程"/></label>
+    <label>封面（不选就用编辑器截图；都没有就用生成的色块）
+      <input id="pCover" type="file" accept="image/png,image/jpeg,image/webp"/></label>
+    <label>更新说明（再发一次同一张图时写进版本历史）<input id="pNote" maxlength="200" placeholder="加了两个检查点"/></label>
     <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="pOk">发布</button></div>`,
     async (box, close) => {
       const me = auth.me;
@@ -155,8 +163,20 @@ export async function openPublishDialog(world) {
         const ok = box.querySelector("#pOk");
         ok.disabled = true;
         try {
+          let coverUrl = null;
+          const f = box.querySelector("#pCover").files[0];
+          if (f) {
+            const buf = await f.arrayBuffer();
+            const up = await fetch("/api/community/upload?kind=cover", {
+              method: "POST", headers: { "Content-Type": f.type || "image/png", "X-CSRF-Token": csrfToken() }, body: buf,
+            });
+            const uj = await up.json().catch(() => null);
+            if (!up.ok) throw new Error((uj && uj.error) || "封面上传失败");
+            coverUrl = uj.url;
+          }
           const r = await api("POST", "/api/community/publish", {
-            worldId: world.id, title,
+            worldId: world.id, title, coverUrl,
+            note: box.querySelector("#pNote").value.trim(),
             desc: box.querySelector("#pDesc").value.trim(),
             tags: box.querySelector("#pTags").value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
           });

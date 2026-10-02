@@ -24,6 +24,12 @@ const WORLD_ID_RE = /^[a-zA-Z0-9_-]{1,80}$/;
 const SESSION_COOKIE = "ly_session";
 const CSRF_COOKIE = "ly_csrf";
 const SESSION_TTL = 30 * 24 * 3600;
+// 限流阈值可以按部署调；本机开发反复跑回归时，注册上限太紧会把自己锁在门外。
+const RATE = {
+  register: Number(process.env.COMMUNITY_RATE_REGISTER || 60),
+  login: Number(process.env.COMMUNITY_RATE_LOGIN || 10),
+  comment: Number(process.env.COMMUNITY_RATE_COMMENT || 20),
+};
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, Number(n) | 0));
 const newId = (n = 9) => crypto.randomBytes(n).toString("hex");
@@ -56,6 +62,7 @@ function makeReply(res) {
 function createStore(root) {
   const pubs = path.join(root, "pubs");
   fs.mkdirSync(pubs, { recursive: true });
+  fs.mkdirSync(path.join(root, "uploads"), { recursive: true });
   const fileOf = (k) => path.join(root, `${k}.json`);
   const DEFAULTS = {
     users: () => ({ byId: {}, byLower: {} }),
@@ -64,6 +71,9 @@ function createStore(root) {
     pubs: () => ({ byId: {} }),
     comments: () => ({ byPub: {} }),
     notes: () => ({ list: [] }),
+    history: () => ({ byUser: {} }),
+    versions: () => ({ byPub: {} }),
+    reports: () => ({ list: [] }),
   };
   const docs = {};
   for (const key of Object.keys(DEFAULTS)) {
@@ -80,8 +90,11 @@ function createStore(root) {
   }
   return {
     docs, touch: persist,
+    uploads: path.join(root, "uploads"),
     pubFile: (id) => path.join(pubs, `${id}.json.gz`),
+    verFile: (pubId, v) => path.join(pubs, `${pubId}.v${v}.json.gz`),
     pubCover: (id) => path.join(pubs, `${id}.cover.png`),
+    pubModelFile: (id) => path.join(pubs, `${id}.voxa.json`),
     pubAssets: (id) => path.join(pubs, `${id}.assets`),
   };
 }
@@ -137,19 +150,42 @@ function parseCookies(req) {
   return out;
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let raw = "";
-    req.on("data", (ch) => {
-      raw += ch;
-      if (raw.length > 512 * 1024) reject(new Error("too-large"));
-    });
-    req.on("end", () => { if (!raw) return resolve({}); try { resolve(JSON.parse(raw)); } catch { reject(new Error("bad-json")); } });
-    req.on("error", () => reject(new Error("read")));
-  });
+/** 二进制上传：原样收字节，带体积上限；不看 Content-Type，只看文件头。 */
+function rawBody(req) {
+  const chunks = req._rawChunks || [];
+  return Buffer.concat(chunks);
+}
+/** 按文件魔数判类型：扩展名与 Content-Type 都是调用方可以随便写的。 */
+function imageType(buf) {
+  if (buf.length > 8 && buf.readUInt32BE(0) === 0x89504e47) return "png";
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpg";
+  if (buf.length > 6 && buf.toString("latin1", 0, 3) === "GIF") return "gif";
+  if (buf.length > 12 && buf.toString("latin1", 0, 4) === "RIFF" && buf.toString("latin1", 8, 12) === "WEBP") return "webp";
+  return null;
 }
 
-export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } = {}) {
+/**
+ * 一次请求只读一次体：图片上传要原始字节，JSON 接口要解析后的对象。
+ * 先按 Content-Type 决定，判错也不丢字节（chunks 始终留在 req 上）。
+ */
+async function readBody(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const ch of req) {
+    size += ch.length;
+    if (size > 4 * 1024 * 1024) { req.destroy(); throw new Error("too-large"); }
+    chunks.push(ch);
+  }
+  req._rawChunks = chunks;
+  const buf = Buffer.concat(chunks);
+  const ct = String(req.headers["content-type"] || "");
+  if (ct && !/json/i.test(ct)) return {};            // 二进制上传：交给 rawBody()
+  const text = buf.toString("utf8").trim();
+  if (!text) return {};
+  try { return JSON.parse(text); } catch { throw new Error("bad-json"); }
+}
+
+export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, moderation } = {}) {
   const store = createStore(path.join(dataRoot, "community"));
   // 世界资产可能落在两处：可写数据目录，或仓库内的 public/assets（老包）
   const roots = assetRoots || [assetRoot].filter(Boolean);
@@ -165,6 +201,12 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
     return rec.n > max;
   }
 
+  const mod = moderation || { check: () => ({ level: "ok", reason: "" }), sanitize: (v) => String(v == null ? "" : v) };
+  /** 过一遍审查：block 直接抛给调用方变成 400，flag 就在记录上打标记。 */
+  function screen(text, opts) {
+    const r = mod.check(text, opts);
+    return { blocked: r.level === "block", flagged: r.level === "flag", reason: r.reason, clean: mod.sanitize(text) };
+  }
   const userByName = (name) => {
     const id = docs.users.byLower[normName(name).toLowerCase()];
     return id ? docs.users.byId[id] : null;
@@ -183,7 +225,11 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
 
   function publicUser(u, viewerId) {
     if (!u) return null;
-    const out = { id: u.id, name: u.name, bio: u.bio || "", createdAt: u.createdAt, avatar: u.avatar || null };
+    const out = {
+      id: u.id, name: u.name, bio: u.bio || "", createdAt: u.createdAt,
+      avatar: u.avatar || null, banner: u.banner || null, skin: u.skin || null,
+      role: u.role || "user",
+    };
     if (!viewerId || viewerId === u.id) { if (viewerId === u.id) out.counts = countsOf(u.id); return out; }
     out.relation = {
       following: docs.graph.follows.some((e) => e.a === viewerId && e.b === u.id),
@@ -194,6 +240,15 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
     };
     out.counts = countsOf(u.id);
     return out;
+  }
+
+  function addReport(targetType, targetId, ownerId, reason, byId, pubId) {
+    const text = String(reason || "").slice(0, 200);
+    const dup = docs.reports.list.find((r) => r.target === targetId && r.by === byId);
+    if (dup) return;                       // 同一个人重复举报不叠加
+    docs.reports.list.unshift({ id: newId(6), target: targetId, targetType, owner: ownerId, reason: text, by: byId, pubId: pubId || null, ts: now(), state: "open" });
+    while (docs.reports.list.length > 500) docs.reports.list.pop();
+    store.touch("reports");
   }
 
   function notify(to, kind, actorId, pubId) {
@@ -207,6 +262,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
     const author = docs.users.byId[p.authorId];
     return {
       id: p.id, worldId: p.worldId, title: p.title, desc: p.desc, tags: p.tags || [],
+      kind: p.kind || "map", version: p.version || 1, flagged: !!p.flagged,
       created: p.created, updated: p.updated, plays: p.plays || 0,
       likes: (p.likes || []).length, likedByMe: !!viewerId && (p.likes || []).includes(viewerId),
       comments: commentsOf(p.id).length, hasCover: !!p.hasCover, bytes: p.bytes, shape: p.shape || null,
@@ -215,10 +271,29 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
       author: author ? { id: author.id, name: author.name, avatar: author.avatar || null } : null,
     };
   }
+  /** 只允许站内上传目录里的图片路径，挡掉 //host 与 javascript: 这类。 */
+  function safeAssetPath(v) {
+    const s = String(v || "").trim();
+    if (!s) return null;
+    return s.startsWith("/api/community/uploads/") && !s.startsWith("//") ? s.slice(0, 120) : null;
+  }
+  /** 皮肤：只留认识的键，颜色必须 #rrggbb，模型只能指向站内资产。 */
+  function normalizeSkin(v) {
+    const src = v && typeof v === "object" ? v : {};
+    const hex = (x, d) => (/^#[0-9a-fA-F]{6}$/.test(String(x)) ? String(x).toLowerCase() : d);
+    const out = {
+      skin: hex(src.skin, "#ffd7b0"), shirt: hex(src.shirt, "#5aa8e8"), pants: hex(src.pants, "#5b6c8e"),
+      hair: hex(src.hair, "#6b4630"), shoe: hex(src.shoe, "#7b5441"),
+    };
+    if (typeof src.model === "string" && !src.model.startsWith("//")
+      && /^(\/assets\/worlds\/|\/api\/community\/)[A-Za-z0-9_.\/%-]{1,160}$/.test(src.model)) out.model = src.model.slice(0, 160);
+    if (typeof src.name === "string") out.name = String(src.name).slice(0, 24);
+    return out;
+  }
   const commentCard = (c, viewerId) => {
     const u = docs.users.byId[c.userId];
     return {
-      id: c.id, body: c.body, ts: c.ts, likes: (c.likes || []).length,
+      id: c.id, body: c.body, ts: c.ts, likes: (c.likes || []).length, flagged: !!c.flagged,
       likedByMe: !!viewerId && (c.likes || []).includes(viewerId),
       mine: !!viewerId && c.userId === viewerId,
       author: u ? { id: u.id, name: u.name, avatar: u.avatar || null } : { id: null, name: "已注销", avatar: null },
@@ -260,6 +335,9 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
       reply.cookie(`${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL}`);
     }
 
+    if (viewerId && docs.users.byId[viewerId] && docs.users.byId[viewerId].banned) {
+      reply.fail(403, "这个账号已被封禁，只能浏览"); return true;
+    }
     if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
       if (!cookies["ly_csrf"] || req.headers["x-csrf-token"] !== cookies["ly_csrf"]) {
         reply.fail(403, "缺少或错误的 X-CSRF-Token：写操作要把页面上那枚 ly_csrf 原样带回来");
@@ -272,6 +350,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
       try { body = await readBody(req) || {}; }
       catch (e) { reply.fail(e.message === "too-large" ? 413 : 400, e.message === "bad-json" ? "请求体不是合法 JSON" : "读请求体失败"); return true; }
     }
+    const isAdmin = () => !!(viewerId && docs.users.byId[viewerId] && docs.users.byId[viewerId].role === "admin");
 
     const login = (fn) => {
       if (!viewerId) { reply.fail(401, "先登录"); return true; }
@@ -291,8 +370,28 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
     }
     if (seg[0] === "me" && method === "PATCH") return login(() => {
       const u = docs.users.byId[viewerId];
-      if ("bio" in body) u.bio = String(body.bio || "").trim().slice(0, 200);
-      if ("avatar" in body) u.avatar = body.avatar ? String(body.avatar).trim().slice(0, 24) : null;
+      if ("bio" in body) {
+        const r = screen(body.bio, { field: "简介", max: 200 });
+        if (r.blocked) { reply.fail(400, r.reason); return true; }
+        u.bio = r.clean.trim().slice(0, 200); u.bioFlagged = r.flagged;
+      }
+      // 昵称可以改：和注册同一套规则，且不能撞别人的名字
+      if ("name" in body) {
+        const nn = normName(body.name);
+        if (!NAME_RE.test(nn)) { reply.fail(400, "名字要 2–20 个字符，只能用中英文、数字、空格、_ 与 -"); return true; }
+        const r = screen(nn, { field: "名字", max: 20 });
+        if (r.blocked) { reply.fail(400, r.reason); return true; }
+        const taken = docs.users.byLower[nn.toLowerCase()];
+        if (taken && taken !== u.id) { reply.fail(409, "这个名字已经被占了"); return true; }
+        delete docs.users.byLower[u.lower];
+        u.name = nn; u.lower = nn.toLowerCase(); u.nameFlagged = r.flagged;
+        docs.users.byLower[u.lower] = u.id;
+      }
+      // 头像/横幅只认站内上传后的相对路径，不接受外部 URL
+      for (const k of ["avatar", "banner"]) {
+        if (k in body) u[k] = safeAssetPath(body[k]);
+      }
+      if ("skin" in body) u.skin = normalizeSkin(body.skin);
       store.touch("users");
       reply.json(200, { user: publicUser(u, viewerId) });
       return true;
@@ -303,8 +402,14 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
       if (!NAME_RE.test(name)) { reply.fail(400, "名字要 2–20 个字符，只能用中英文、数字、空格、_ 与 -"); return true; }
       if (pw.length < 8 || pw.length > 128) { reply.fail(400, "口令至少 8 位，最多 128 位"); return true; }
       if (userByName(name)) { reply.fail(409, "这个名字已经被占了"); return true; }
-      if (limited("reg", req.socket.remoteAddress || "?", 20, 10 * 60 * 1000)) { reply.fail(429, "注册太频繁，等一会儿再试"); return true; }
-      const u = { id: newId(), name, lower: name.toLowerCase(), ...hashPassword(pw), bio: "", avatar: null, createdAt: now() };
+      if (limited("reg", req.socket.remoteAddress || "?", RATE.register, 10 * 60 * 1000)) { reply.fail(429, "注册太频繁，等一会儿再试"); return true; }
+      { const r = screen(name, { field: "名字", max: 20 }); if (r.blocked) { reply.fail(400, r.reason); return true; } }
+      const first = Object.keys(docs.users.byId).length === 0;
+      const u = {
+        id: newId(), name, lower: name.toLowerCase(), ...hashPassword(pw),
+        bio: "", avatar: null, banner: null, skin: null,
+        role: first ? "admin" : "user", createdAt: now(),
+      };
       docs.users.byId[u.id] = u;
       docs.users.byLower[u.lower] = u.id;
       store.touch("users");
@@ -315,12 +420,13 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
 
     if (seg[0] === "login" && method === "POST") {
       const name = normName(body.name);
-      if (limited("login", `${name.toLowerCase()}|${req.socket.remoteAddress || "?"}`, 10, 5 * 60 * 1000)) {
+      if (limited("login", `${name.toLowerCase()}|${req.socket.remoteAddress || "?"}`, RATE.login, 5 * 60 * 1000)) {
         reply.fail(429, "试得太多次了，5 分钟后再来"); return true;
       }
       const u = userByName(name);
       const ok = verifyPassword(body.password, u || DUMMY) && !!u;
       if (!ok) { reply.fail(401, "名字或口令不对"); return true; }
+      if (u.banned) { reply.fail(403, "这个账号已被封禁：" + String(u.bannedReason || "违反社区规则")); return true; }
       const c = startSession(reply, u.id);
       reply.json(200, { user: publicUser(u, u.id), csrf: c });
       return true;
@@ -333,6 +439,38 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
         `${CSRF_COOKIE}=; Path=/; Max-Age=0`,
       ]);
       reply.json(200, { ok: true, csrf: null });
+      return true;
+    }
+
+    /* ---------------- 上传图片（封面 / 头像 / 横幅 / 模型预览） ---------------- */
+    if (seg[0] === "upload" && method === "POST") return login(() => {
+      const kind = ["cover", "avatar", "banner", "preview"].includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "cover";
+      const buf = rawBody(req);
+      if (!buf.length) { reply.fail(400, "空的上传体"); return true; }
+      if (buf.length > 3 * 1024 * 1024) { reply.fail(413, "图片最大 3 MB"); return true; }
+      const ext = imageType(buf);
+      if (!ext) { reply.fail(400, "只接受 PNG / JPEG / WEBP / GIF"); return true; }
+      const fname = newId() + "." + ext;
+      fs.writeFileSync(path.join(store.uploads, fname), buf);
+      // 封面可以直接落到某个发布上：省掉"先上传、再引用"的两次来回
+      const pid = url.searchParams.get("pub");
+      if (pid && docs.pubs.byId[pid] && docs.pubs.byId[pid].authorId === viewerId) {
+        fs.copyFileSync(path.join(store.uploads, fname), store.pubCover(pid));
+        docs.pubs.byId[pid].hasCover = true;
+        docs.pubs.byId[pid].updated = now();
+        store.touch("pubs");
+      }
+      reply.json(200, { url: "/api/community/uploads/" + fname, kind, bytes: buf.length });
+      return true;
+    });
+    if (seg[0] === "uploads" && method === "GET") {
+      const f = path.join(store.uploads, path.basename(String(seg[1] || "")));
+      if (!seg[1] || !f.startsWith(store.uploads) || !fs.existsSync(f)) { reply.fail(404, "没有这个文件"); return true; }
+      const ext = path.extname(f).slice(1).toLowerCase();
+      reply.raw(200, fs.readFileSync(f), {
+        "Content-Type": ext === "png" ? "image/png" : ext === "gif" ? "image/gif" : ext === "webp" ? "image/webp" : "image/jpeg",
+        "Cache-Control": "public, max-age=86400",
+      });
       return true;
     }
 
@@ -352,7 +490,18 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
         return true;
       }
       if (sub === "pubs") {
-        reply.json(200, { rows: livePubs().filter((p) => p.authorId === u.id).sort((a, b) => b.created - a.created).map((p) => pubCard(p, viewerId)) });
+        const kind = url.searchParams.get("kind");
+        const rows = livePubs().filter((p) => p.authorId === u.id && (!kind || (p.kind || "map") === kind))
+          .sort((a, b) => b.created - a.created).map((p) => pubCard(p, viewerId));
+        reply.json(200, { rows });
+        return true;
+      }
+      if (sub === "recent") {
+        // 最近游玩只有本人和管理员看得全，别人主页只显示公开的那几条
+        const rows = (docs.history.byUser[u.id] || []).slice(0, viewerId === u.id || isAdmin() ? 20 : 6)
+          .map((h) => ({ ...h, pub: docs.pubs.byId[h.pubId] ? pubCard(docs.pubs.byId[h.pubId], viewerId) : null }))
+          .filter((h) => h.pub);
+        reply.json(200, { rows });
         return true;
       }
     }
@@ -459,44 +608,89 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
     }
 
     if (seg[0] === "publish" && method === "POST") return login(() => {
-      const wid = String(body.worldId || "");
-      if (!WORLD_ID_RE.test(wid)) { reply.fail(400, "worldId 不合法"); return true; }
-      const src = path.join(worldsDir, `${wid}.json.gz`);
-      if (!fs.existsSync(src)) { reply.fail(404, "本地找不到这个世界"); return true; }
-      const title = String(body.title || "").trim().slice(0, 60);
+      const kind = body.kind === "model" ? "model" : "map";
+      const t = screen(body.title, { field: "标题", max: 60 });
+      const d = screen(body.desc, { field: "简介", max: 2000 });
+      if (t.blocked) { reply.fail(400, t.reason); return true; }
+      if (d.blocked) { reply.fail(400, d.reason); return true; }
+      const title = t.clean.trim().slice(0, 60);
       if (title.length < 2) { reply.fail(400, "标题至少 2 个字"); return true; }
-      let shape = null;
-      try { shape = JSON.parse(zlib.gunzipSync(fs.readFileSync(src))).shape || null; }
-      catch { reply.fail(400, "世界存档读不出来，发布先取消"); return true; }
-      const id = newId();
-      fs.copyFileSync(src, store.pubFile(id));
-      const cover = assetRoots.map((r) => path.join(r, wid, "cover.png")).find((p) => fs.existsSync(p));
-      if (cover) fs.copyFileSync(cover, store.pubCover(id));
-      // 地图引用的模型/贴图必须跟着快照走：只存体素的话，别人点开你发布的图会是一片 404。
-      const assetDir = assetRoots.map((r) => path.join(r, wid)).find((p) => fs.existsSync(p));
-      let assets = { files: [], copied: 0, truncated: false };
-      if (assetDir) {
-        assets = copyAssets(assetDir, store.pubAssets(id));
-        if (assets.truncated) {
-          fs.rmSync(store.pubAssets(id), { recursive: true, force: true });
-          fs.rmSync(store.pubFile(id), { force: true });
-          reply.fail(413, `这张图引用的素材太多（${assets.files.length} 个文件），发布先取消；删掉没用到的模型再试`);
-          return true;
-        }
+      const tags = (Array.isArray(body.tags) ? body.tags : [])
+        .map((x) => screen(x, { field: "标签", max: 16 }).clean.trim().slice(0, 16)).filter(Boolean).slice(0, 6);
+
+      let shape = null, srcFile = null, bytes = 0, key = "";
+      if (kind === "map") {
+        const wid = String(body.worldId || "");
+        if (!WORLD_ID_RE.test(wid)) { reply.fail(400, "worldId 不合法"); return true; }
+        const src = path.join(worldsDir, `${wid}.json.gz`);
+        if (!fs.existsSync(src)) { reply.fail(404, "本地找不到这个世界"); return true; }
+        try { shape = JSON.parse(zlib.gunzipSync(fs.readFileSync(src))).shape || null; }
+        catch { reply.fail(400, "世界存档读不出来，发布先取消"); return true; }
+        srcFile = src; key = "map:" + wid;
+      } else {
+        // 模型发布：VOXA 文档 + 可选 glb/vox 附件，都走 base64（同一个 JSON 通道，省一套 multipart）
+        const doc = body.doc;
+        if (!doc || typeof doc !== "object") { reply.fail(400, "模型内容为空"); return true; }
+        const json = JSON.stringify(doc);
+        if (json.length > 8 * 1024 * 1024) { reply.fail(413, "模型太大（8 MB 上限）"); return true; }
+        key = "model:" + String(body.slug || body.name || title).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40);
+        bytes = Buffer.byteLength(json);
+        srcFile = { text: json };
       }
-      const rec = {
-        id, worldId: wid, authorId: viewerId, title,
-        desc: String(body.desc || "").trim().slice(0, 2000),
-        tags: (Array.isArray(body.tags) ? body.tags : []).map((t) => String(t).trim().slice(0, 16)).filter(Boolean).slice(0, 6),
-        created: now(), updated: now(), plays: 0, likes: [], status: "live",
-        bytes: fs.statSync(store.pubFile(id)).size, shape, hasCover: !!cover,
-        assets: assets.files.length,
-      };
+      const flagged = t.flagged || d.flagged || tags.some((x) => screen(x, { field: "标签", max: 16 }).flagged);
+
+      // 同一个作者、同一个源，再发一次就是"更新版本"，不是在广场堆一张重复卡片
+      const prev = Object.values(docs.pubs.byId).find((p) => p.authorId === viewerId && p.key === key);
+      const id = prev ? prev.id : newId();
+      const versions = docs.versions.byPub[id] || (docs.versions.byPub[id] = []);
+      if (prev) {
+        const v = (prev.version || 1);
+        const archive = store.verFile(id, v);
+        if (kind === "map" && fs.existsSync(store.pubFile(id))) fs.copyFileSync(store.pubFile(id), archive);
+        if (kind === "model" && fs.existsSync(store.pubModelFile(id))) fs.copyFileSync(store.pubModelFile(id), store.verFile(id, v) + ".voxa.json");
+        versions.push({ v, ts: prev.updated || prev.created, note: String(body.note || "").slice(0, 200), bytes: prev.bytes, kind });
+      }
+      if (kind === "map") {
+        fs.copyFileSync(srcFile, store.pubFile(id));
+        const assetDir = assetRoots.map((r) => path.join(r, String(body.worldId))).find((x) => fs.existsSync(x));
+        if (!prev) {
+          const cover = assetRoots.map((r) => path.join(r, String(body.worldId), "cover.png")).find((x) => fs.existsSync(x));
+          if (cover) fs.copyFileSync(cover, store.pubCover(id));
+          if (assetDir) {
+            const a = copyAssets(assetDir, store.pubAssets(id));
+            if (a.truncated) {
+              fs.rmSync(store.pubAssets(id), { recursive: true, force: true });
+              fs.rmSync(store.pubFile(id), { force: true });
+              reply.fail(413, `这张图引用的素材太多（${a.files.length} 个文件），发布先取消；删掉没用到的模型再试`);
+              return true;
+            }
+          }
+        }
+        bytes = fs.statSync(store.pubFile(id)).size;
+      } else {
+        fs.writeFileSync(store.pubModelFile(id), srcFile.text);
+      }
+      // 上传过的图可以直接当封面：一步到位，不用先发布再编辑
+      const up = safeAssetPath(body.coverUrl);
+      if (up) {
+        const src = path.join(store.uploads, path.basename(up));
+        if (fs.existsSync(src)) { fs.copyFileSync(src, store.pubCover(id)); fs.copyFileSync(src, store.pubCover(id).replace(/\.png$/, "." + src.split(".").pop())); }
+      }
+      const rec = Object.assign(prev || {}, {
+        id, key, kind, authorId: viewerId, title, tags,
+        desc: d.clean.trim().slice(0, 2000),
+        worldId: kind === "map" ? String(body.worldId) : null,
+        created: prev ? prev.created : now(), updated: now(),
+        plays: prev ? prev.plays || 0 : 0, likes: prev ? prev.likes || [] : [],
+        version: prev ? (prev.version || 1) + 1 : 1, status: "live",
+        bytes, shape, hasCover: fs.existsSync(store.pubCover(id)),
+        assets: prev ? prev.assets || 0 : (kind === "map" ? listFiles(store.pubAssets(id)).length : 0),
+        flagged: !!flagged,
+      });
       docs.pubs.byId[id] = rec;
-      store.touch("pubs");
-      // 关注作者的人收到"你关注的人发布了新地图"
-      for (const f of docs.graph.follows) if (f.b === viewerId) notify(f.a, "publish", viewerId, id);
-      reply.json(200, { pub: pubCard(rec, viewerId) });
+      store.touch("pubs"); store.touch("versions");
+      if (!prev) for (const f of docs.graph.follows) if (f.b === viewerId) notify(f.a, "publish", viewerId, id);
+      reply.json(200, { pub: pubCard(rec, viewerId), flagged: rec.flagged, versions: versions.length });
       return true;
     });
 
@@ -539,8 +733,54 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
 
       if (sub === "play" && method === "POST") {
         p.plays = (p.plays || 0) + 1;
+        // 顺手记一条"最近游玩"：个人主页要按时间列出玩过什么，
+        // 没有记录的话那个 tab 只能永远空着。
+        if (viewerId) {
+          const list = docs.history.byUser[viewerId] || (docs.history.byUser[viewerId] = []);
+          const hit = list.find((h) => h.pubId === p.id);
+          if (hit) { hit.ts = now(); hit.count = (hit.count || 1) + 1; }
+          else list.unshift({ pubId: p.id, ts: now(), count: 1, title: p.title, kind: p.kind || "map" });
+          while (list.length > 40) list.pop();
+          store.touch("history");
+        }
         store.touch("pubs");
         reply.json(200, { plays: p.plays });
+        return true;
+      }
+
+      if (sub === "versions" && method === "GET") {
+        const rows = (docs.versions.byPub[p.id] || []).slice().reverse()
+          .map((v) => ({ v: v.v, ts: v.ts, note: v.note || "", bytes: v.bytes, kind: v.kind || "map", current: v.v === (p.version || 1) - 1 }));
+        reply.json(200, { current: p.version || 1, rows });
+        return true;
+      }
+      // 回滚：把归档的那一版换回主文件，当前版反过来进归档——两边都不丢
+      if (sub === "rollback" && method === "POST") {
+        if (p.authorId !== viewerId) { reply.fail(403, "只有作者能回滚"); return true; }
+        const v = Number(body.v) | 0;
+        const list = docs.versions.byPub[p.id] || [];
+        const at = list.findIndex((x) => x.v === v);
+        const archive = store.verFile(p.id, v);
+        if (at < 0 || !fs.existsSync(archive)) { reply.fail(404, "没有这个版本，或归档文件不在"); return true; }
+        const cur = p.version || 1;
+        list[at] = { ...list[at], v: cur };
+        fs.copyFileSync(store.pubFile(p.id), store.verFile(p.id, cur));
+        fs.copyFileSync(archive, store.pubFile(p.id));
+        p.version = cur + 1; p.updated = now(); p.bytes = fs.statSync(store.pubFile(p.id)).size;
+        store.touch("pubs"); store.touch("versions");
+        reply.json(200, { ok: true, version: p.version, restored: v });
+        return true;
+      }
+      if (sub === "report" && method === "POST") {
+        if (!viewerId) { reply.fail(401, "举报要先登录"); return true; }
+        addReport("pub", p.id, p.authorId, body.reason, viewerId);
+        reply.json(200, { ok: true });
+        return true;
+      }
+      if (sub === "model" && method === "GET") {
+        const f = store.pubModelFile(p.id);
+        if (!fs.existsSync(f)) { reply.fail(404, "这不是模型发布"); return true; }
+        reply.raw(200, fs.readFileSync(f), { "Content-Type": "application/json", "Cache-Control": "no-store" });
         return true;
       }
 
@@ -580,11 +820,12 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
         const list = commentsOf(p.id);
         if (method === "GET") { reply.json(200, { rows: list.map((c) => commentCard(c, viewerId)) }); return true; }
         if (method === "POST") return login(() => {
-          const text = String(body.body || "").trim();
+          const r = screen(body.body, { field: "评论", max: 500 });
+          if (r.blocked) { reply.fail(400, r.reason); return true; }
+          const text = r.clean.trim();
           if (!text) { reply.fail(400, "评论不能是空的"); return true; }
-          if (text.length > 500) { reply.fail(400, "评论最多 500 字"); return true; }
-          if (limited("cmt", viewerId, 20, 60 * 1000)) { reply.fail(429, "评论太频繁了，一分钟后再发"); return true; }
-          const c = { id: newId(6), pubId: p.id, userId: viewerId, body: text, ts: now(), likes: [] };
+          if (limited("cmt", viewerId, RATE.comment, 60 * 1000)) { reply.fail(429, "评论太频繁了，一分钟后再发"); return true; }
+          const c = { id: newId(6), pubId: p.id, userId: viewerId, body: text, ts: now(), likes: [], flagged: r.flagged };
           list.push(c);
           store.touch("comments");
           notify(p.authorId, "comment", viewerId, p.id);
@@ -601,6 +842,20 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
           return true;
         });
       }
+    }
+
+    if (seg[0] === "comments" && PUB_ID_RE.test(seg[1] || "") && seg[2] === "report" && method === "POST") {
+      return login(() => {
+        for (const [pid, list] of Object.entries(docs.comments.byPub)) {
+          const c = list.find((x) => x.id === seg[1]);
+          if (!c) continue;
+          addReport("comment", c.id, c.userId, body.reason, viewerId, pid);
+          reply.json(200, { ok: true });
+          return true;
+        }
+        reply.fail(404, "没有这条评论");
+        return true;
+      });
     }
 
     if (seg[0] === "comments" && PUB_ID_RE.test(seg[1] || "") && seg[2] === "like" && method === "POST") {
@@ -636,6 +891,89 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots } =
         reply.json(200, { ok: true });
         return true;
       });
+    }
+
+    /* ---------------- 管理后台 ---------------- */
+    if (seg[0] === "admin") {
+      if (!viewerId) { reply.fail(401, "先登录"); return true; }
+      if (!isAdmin()) { reply.fail(403, "这个账号不是管理员"); return true; }
+      const sub = seg[1];
+
+      if (sub === "overview" && method === "GET") {
+        const pubs = livePubs();
+        const perUser = (id) => Object.values(docs.pubs.byId).filter((p) => p.authorId === id).length;
+        reply.json(200, {
+          users: Object.values(docs.users.byId).map((u) => ({
+            id: u.id, name: u.name, role: u.role || "user", createdAt: u.createdAt,
+            banned: !!u.banned, bannedReason: u.bannedReason || "", bio: u.bio || "",
+            pubs: perUser(u.id), comments: Object.values(docs.comments.byPub).reduce((a, l) => a + l.filter((c) => c.userId === u.id).length, 0),
+            friends: docs.graph.friends.filter((e) => e.a === u.id || e.b === u.id).length,
+            plays: (docs.history.byUser[u.id] || []).length,
+          })).sort((a, b) => b.createdAt - a.createdAt),
+          reports: docs.reports.list.filter((r) => r.state === "open").map((r) => ({
+            ...r, target: r.target, byName: (docs.users.byId[r.by] || {}).name || "?",
+            ownerName: (docs.users.byId[r.owner] || {}).name || "?",
+            excerpt: r.targetType === "comment"
+              ? (Object.values(docs.comments.byPub).flat().find((c) => c.id === r.target) || {}).body || ""
+              : (docs.pubs.byId[r.target] || {}).title || "",
+          })),
+          flagged: { pubs: pubs.filter((p) => p.flagged).length, comments: Object.values(docs.comments.byPub).flat().filter((c) => c.flagged).length },
+          totals: {
+            users: Object.keys(docs.users.byId).length, pubs: pubs.length, models: pubs.filter((p) => p.kind === "model").length,
+            comments: Object.values(docs.comments.byPub).reduce((a, v) => a + v.length, 0),
+            plays: pubs.reduce((a, p) => a + (p.plays || 0), 0), reports: docs.reports.list.length,
+            bytes: pubs.reduce((a, p) => a + (p.bytes || 0), 0),
+          },
+        });
+        return true;
+      }
+      if (sub === "role" && method === "POST") {
+        const u = userByName(body.name);
+        if (!u) { reply.fail(404, "没有这个用户"); return true; }
+        if (!["admin", "user"].includes(body.role)) { reply.fail(400, "角色只能是 admin 或 user"); return true; }
+        if (u.id === viewerId && body.role !== "admin" && Object.values(docs.users.byId).filter((x) => x.role === "admin").length < 2) {
+          reply.fail(400, "这是唯一的管理员，降下来就没人能进后台了"); return true;
+        }
+        u.role = body.role; store.touch("users");
+        reply.json(200, { ok: true, role: u.role });
+        return true;
+      }
+      if (sub === "ban" && method === "POST") {
+        const u = userByName(body.name);
+        if (!u) { reply.fail(404, "没有这个用户"); return true; }
+        if (u.id === viewerId) { reply.fail(400, "不能封自己"); return true; }
+        u.banned = !!body.banned; u.bannedReason = String(body.reason || "").slice(0, 120);
+        if (u.banned) for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === u.id) delete docs.sessions[h];
+        store.touch("users"); store.touch("sessions");
+        reply.json(200, { ok: true, banned: u.banned });
+        return true;
+      }
+      if (sub === "takedown" && method === "POST") {
+        const p = docs.pubs.byId[String(body.pubId || "")];
+        if (!p) { reply.fail(404, "没有这个发布"); return true; }
+        p.status = "removed"; p.removedBy = "admin"; p.updated = now();
+        store.touch("pubs");
+        reply.json(200, { ok: true });
+        return true;
+      }
+      if (sub === "report" && method === "POST") {
+        const r = docs.reports.list.find((x) => x.id === seg[2] || x.id === body.id);
+        if (!r) { reply.fail(404, "没有这条举报"); return true; }
+        r.state = body.action === "dismiss" ? "dismissed" : "resolved";
+        r.handledAt = now(); r.by2 = viewerId;
+        if (r.state === "resolved" && body.remove && r.targetType === "comment") {
+          for (const list of Object.values(docs.comments.byPub)) {
+            const i = list.findIndex((c) => c.id === r.target);
+            if (i >= 0) list.splice(i, 1);
+          }
+          store.touch("comments");
+        }
+        store.touch("reports");
+        reply.json(200, { ok: true, state: r.state });
+        return true;
+      }
+      reply.fail(404, "后台没有这个接口：" + sub);
+      return true;
     }
 
     if (seg[0] === "stats" && method === "GET") {

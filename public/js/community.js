@@ -2,6 +2,7 @@
 // 一个 HTML 壳 + 按路径分派，因为这几屏共用同一条数据管线（发布卡片、关注按钮、头像）。
 import * as auth from "/js/auth.js";
 import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, cardHtml, bindCards, playPub, materialize, openPublishDialog } from "/js/pubs.js";
+import { profileView } from "/js/profile.js";
 const { api, esc, mountAuth, onLogin, openAuth } = auth;
 
 const root = document.getElementById("cmRoot");
@@ -100,12 +101,14 @@ async function pubView(id) {
       </div>
       <div class="cm-panel">
         <h4>这张地图</h4>
-        <div class="cm-acts">
-          <button class="cm-btn primary" id="cmPlay">开始游玩</button>
+        <div class="cm-acts" id="cmPubActs">
+          <button class="cm-btn primary" id="cmPlay">${p.kind === "model" ? "下载模型" : "开始游玩"}</button>
           <button class="cm-btn ${p.likedByMe ? "on" : ""}" id="cmLike">♥ 点赞 <b>${p.likes}</b></button>
           <button class="cm-btn" id="cmFork">存为我的地图</button>
           ${d.canEdit ? `<button class="cm-btn" id="cmEdit">编辑简介</button><button class="cm-btn" id="cmUnpub">下架</button>` : ""}
+          ${d.canEdit ? "" : `<button class="cm-report" id="cmReport">举报这张${p.kind === "model" ? "模型" : "地图"}</button>`}
         </div>
+        ${p.version > 1 ? `<div style="margin-top:10px"><h4 style="margin:0 0 4px;font-size:11px;color:var(--fg3)">版本 ${p.version}</h4><div class="cm-ver" id="cmVer"></div></div>` : ""}
         <p class="cm-hint" style="margin:10px 0 0">游玩会先把这份<b>快照</b>取回本地：作者之后的改动不会跟着进来。</p>
       </div>
     </aside>
@@ -140,6 +143,48 @@ async function pubView(id) {
         } catch (e) { toast(e.message, true); }
       };
     });
+  if (p.kind === "model") {
+    $("cmPlay").onclick = async () => {
+      const r = await fetch(`/api/community/pubs/${p.id}/model`);
+      const j = await r.json().catch(() => null);
+      if (!j) return toast("取不到模型内容", true);
+      const blob = new Blob([JSON.stringify(j)], { type: "application/octet-stream" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = (p.title || "model") + ".voxa"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast("已下载 " + (p.title || "") + ".voxa");
+    };
+    const note = document.createElement("button");
+    note.className = "cm-btn"; note.textContent = "在 VOXA 里打开";
+    note.onclick = async () => {
+      try {
+        const j = await (await fetch(`/api/community/pubs/${p.id}/model`)).json();
+        sessionStorage.setItem("ly_voxa_import", JSON.stringify(j));
+        location.href = "/voxa?import=1";
+      } catch (e) { toast(e.message, true); }
+    };
+    $("cmPubActs").append(note);
+  }
+  const reportBtn = $("cmReport");
+  if (reportBtn) reportBtn.onclick = async () => {
+    if (!auth.me) return openAuth("login");
+    const reason = prompt("举报理由（会进入管理员的审核队列）");
+    if (reason == null || !reason.trim()) return;
+    try { await api("POST", `/api/community/pubs/${p.id}/report`, { reason: reason.trim() }); toast("已提交举报"); }
+    catch (e) { toast(e.message, true); }
+  };
+  const verHost = $("cmVer");
+  if (verHost) {
+    try {
+      const vs = await api("GET", `/api/community/pubs/${p.id}/versions`);
+      verHost.innerHTML = vs.rows.map((v) => `<button data-v="${v.v}">v${v.v} · ${new Date(v.ts).toLocaleDateString()}</button>`).join("");
+      for (const b of verHost.querySelectorAll("[data-v]")) b.onclick = async () => {
+        if (!confirm(`回到 v${b.dataset.v}？当前版本会被归档，不会丢。`)) return;
+        try { await api("POST", `/api/community/pubs/${p.id}/rollback`, { v: Number(b.dataset.v) }); toast("已回滚"); pubView(id); }
+        catch (e) { toast(e.message, true); }
+      };
+    } catch { verHost.remove(); }
+  }
   const unpub = $("cmUnpub");
   if (unpub) unpub.onclick = async () => {
     if (!confirm("下架后这张图就从广场消失了，确定？")) return;
@@ -234,77 +279,6 @@ async function loadComments(pubId) {
   function bumpCount(n) { const el = $("cmCmtN"); if (el) el.textContent = Math.max(0, Number(el.textContent) + n); }
 }
 
-/* ---------------- 用户主页 ---------------- */
-async function userView(name) {
-  qBox.closest(".wb-search").hidden = true;
-  root.innerHTML = `<div class="cm-empty">正在读取主页…</div>`;
-  let d;
-  try { d = await api("GET", "/api/community/users/" + encodeURIComponent(name)); }
-  catch (e) { root.innerHTML = `<div class="cm-empty"><b>${esc(e.message)}</b></div>`; return; }
-  const u = d.user;
-  pageTitle.textContent = u.name + " 的主页";
-  pageSub.textContent = u.bio || "这个人还没写简介";
-  const mine = !!auth.me && auth.me.id === u.id;
-  root.innerHTML = `<div class="cm-rows">
-    <div class="cm-profile">${face(u, "lg")}
-      <div><h2 style="margin:0;font-size:17px">${esc(u.name)}</h2>
-        <p class="bio">${esc(u.bio || "")}</p>
-        <p class="cm-hint" style="margin:4px 0 0">加入于 ${esc(new Date(u.createdAt).toLocaleDateString())}</p></div>
-    </div>
-    <div class="cm-rel">
-      <span class="num"><b>${u.counts ? u.counts.followers : 0}</b> 关注者</span>
-      <span class="num"><b>${u.counts ? u.counts.following : 0}</b> 关注中</span>
-      <span class="num"><b>${u.counts ? u.counts.friends : 0}</b> 好友</span>
-      <span class="num"><b>${u.counts ? u.counts.pubs : 0}</b> 张发布</span>
-      <span class="spacer" style="flex:1"></span>
-      ${mine ? '<button class="cm-btn sm" id="uEdit">编辑简介</button>' : '<span id="uActs"></span>'}
-    </div>
-    <div class="cm-tabs" id="uTabs">
-      <button class="cm-btn on" data-t="pubs">发布的地图</button>
-      <button class="cm-btn" data-t="followers">关注者</button>
-      <button class="cm-btn" data-t="following">关注中</button>
-    </div>
-    <div id="uBody"></div>
-  </div>`;
-  if (!mine) {
-    $("uActs").innerHTML = `<button class="cm-btn ${u.relation && u.relation.following ? "on" : ""}" id="uFollow">${u.relation && u.relation.following ? "已关注" : "关注"}</button>`;
-    $("uFollow").onclick = async () => {
-      if (!requireLogin()) return;
-      const r = await api("POST", "/api/community/follow", { name: u.name });
-      toast(r.following ? "已关注" : "已取消关注");
-      userView(name);
-    };
-  } else {
-    $("uEdit").onclick = () => modal(`<h3>编辑简介</h3><label>一句话介绍自己<textarea id="uBio" maxlength="200">${esc(u.bio || "")}</textarea></label>
-      <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="uOk">保存</button></div>`,
-      (box, close) => {
-        box.querySelector("#uOk").onclick = async () => {
-          try { await api("PATCH", "/api/community/me", { bio: box.querySelector("#uBio").value }); close(); toast("已保存"); userView(name); }
-          catch (e) { toast(e.message, true); }
-        };
-      });
-  }
-  const tabs = $("uTabs");
-  const show = async (which) => {
-    for (const b of tabs.querySelectorAll("[data-t]")) b.classList.toggle("on", b.dataset.t === which);
-    const body = $("uBody");
-    body.innerHTML = `<div class="cm-empty">读取中…</div>`;
-    if (which === "pubs") {
-      const rows = (await api("GET", `/api/community/users/${encodeURIComponent(name)}/pubs`)).rows;
-      body.innerHTML = rows.length ? `<div class="cm-grid">${rows.map(cardHtml).join("")}</div>` : `<div class="cm-empty">还没有发布过地图。</div>`;
-      bindCards(body);
-      return;
-    }
-    const rows = (await api("GET", `/api/community/users/${encodeURIComponent(name)}/${which}`)).rows;
-    body.innerHTML = rows.length ? rows.map((x) => `<div class="cm-row">${face(x)}
-      <div class="grow"><b>${esc(x.name)}</b><div class="sub">${esc(x.bio || "")}</div></div>
-      <a class="cm-btn sm" href="/u/${encodeURIComponent(x.name)}">看主页</a></div>`).join("")
-      : `<div class="cm-empty">${which === "followers" ? "还没有人关注这个人。" : "这个人还没关注谁。"}</div>`;
-  };
-  for (const b of tabs.querySelectorAll("[data-t]")) b.onclick = () => show(b.dataset.t);
-  await show("pubs");
-}
-
 /* ---------------- 好友与关注 ---------------- */
 async function friendsView() {
   qBox.closest(".wb-search").hidden = false;
@@ -381,9 +355,9 @@ export function go(path) { location.href = path; }
 async function route() {
   const p = location.pathname;
   if (p.startsWith("/p/")) return pubView(p.slice(3));
-  if (p.startsWith("/u/")) return userView(decodeURIComponent(p.slice(3)));
+  if (p.startsWith("/u/")) return profileView(decodeURIComponent(p.slice(3)), root, (x) => (pageTitle.textContent = x), (x) => (pageSub.textContent = x));
   if (p.startsWith("/friends")) return friendsView();
-  if (p.startsWith("/me")) { if (!auth.me) { openAuth("login"); return feedView(); } return userView(auth.me.name); }
+  if (p.startsWith("/me")) { if (!auth.me) { openAuth("login"); return feedView(); } return profileView(auth.me.name, root, (x) => (pageTitle.textContent = x), (x) => (pageSub.textContent = x)); }
   if (new URLSearchParams(location.search).get("mine") && auth.me) return userView(auth.me.name);
   return feedView();
 }

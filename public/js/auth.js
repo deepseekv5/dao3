@@ -30,6 +30,8 @@ export async function refreshMe() {
   return me;
 }
 export const isMe = () => me;
+/** 改完资料后把新身份写回模块状态，顶栏与所有页面立刻跟着变，不用刷新。 */
+export function setMe(u) { me = u || null; paint(); }
 
 /* ---------------- 弹层：登录 / 注册 ---------------- */
 export function openAuth(tab = "login") {

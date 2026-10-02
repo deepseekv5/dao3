@@ -10,22 +10,51 @@
  * 跑完把自己造的用户删不掉（社区没有注销接口，这是刻意的：发布内容要能追责），
  * 但快照与评论不会污染广场——测完把测试发布下架。
  */
-import { resolveBase } from "./browser.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // 服务发现靠 /api/whoami 的 app 标识。改名时只改 server.js 的话，
 // 所有浏览器测试会安静地 SKIP 掉——比失败更糟，所以这里当场对一遍。
 {
-  const fs = await import("node:fs");
-  const ours = /const OUR_APP = "([^"]+)"/.exec(fs.readFileSync(new URL("../server.js", import.meta.url), "utf8"));
-  const probe = /const APP_ID = "([^"]+)"/.exec(fs.readFileSync(new URL("./browser.mjs", import.meta.url), "utf8"));
+  const ours = /const OUR_APP = "([^"]+)"/.exec(fs.readFileSync(path.join(ROOT, "server.js"), "utf8"));
+  const probe = /const APP_ID = "([^"]+)"/.exec(fs.readFileSync(path.join(ROOT, "test/browser.mjs"), "utf8"));
   if (!ours || !probe || ours[1] !== probe[1]) {
     console.log("FAIL  服务标识不一致：server.js=" + (ours && ours[1]) + " test/browser.mjs=" + (probe && probe[1]));
     process.exit(1);
   }
 }
 
-const BASE = await resolveBase();
-if (!BASE) { console.log("SKIP  找不到本地服务：先 ./run.sh 或 node server.js（或设 BASE=http://127.0.0.1:PORT）"); process.exit(0); }
+/* 自己起一个服务、自己挑一个干净的数据目录。
+   借用开发中那个实例有两个问题：测试账号永远留在开发库里；
+   而"首个注册账号是管理员"这类规则只有在空库上才测得准。 */
+const PORT = 5400 + ((Date.now() % 400) | 0);
+const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ly-community-test-"));
+const child = spawn(process.execPath, [path.join(ROOT, "server.js")], {
+  cwd: ROOT, stdio: "ignore", env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1", DATA_DIR },
+});
+const BASE = `http://127.0.0.1:${PORT}`;
+function cleanup() {
+  try { child.kill("SIGTERM"); } catch { /* 已经退了 */ }
+  try { fs.rmSync(DATA_DIR, { recursive: true, force: true }); } catch { /* 临时目录交给系统 */ }
+}
+process.on("exit", cleanup);
+{
+  let up = false;
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    try {
+      const r = await fetch(BASE + "/api/whoami");
+      const j = await r.json().catch(() => null);
+      if (j && j.app === "laoyou-metaverse") { up = true; break; }
+    } catch { /* 还没起来 */ }
+  }
+  if (!up) { console.log("FAIL  测试用的本地服务起不来（端口 " + PORT + "）"); process.exit(1); }
+}
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => {
@@ -33,6 +62,15 @@ const ok = (name, cond, extra = "") => {
   else { fail++; console.log("FAIL  " + name + (extra ? "\n      " + String(extra).slice(0, 300) : "")); }
 };
 const S = (n) => new Promise((r) => setTimeout(r, n));
+/** 二进制上传：call() 只会发 JSON，这里单独走一条。 */
+async function uploadFile(c, path, buf) {
+  const res = await fetch(BASE + path, {
+    method: "POST",
+    headers: { "Content-Type": "image/png", cookie: [...c.jar].map(([k, v]) => `${k}=${v}`).join("; "), "x-csrf-token": c.csrf },
+    body: buf,
+  });
+  return { status: res.status, data: await res.json().catch(() => null) };
+}
 
 /* 最小 cookie jar：只关心 ly_session / ly_csrf 两枚。
    写接口一律要 CSRF，所以每个客户端先 GET 一次 /me 领 cookie——浏览器也是这个顺序：
@@ -73,6 +111,7 @@ const RUN = "r" + suffix;
 const A = client(), B = client(), C = client();
 const nameA = `老攸${suffix}`, nameB = `测试乙${suffix}`, nameC = `路人丙${suffix}`;
 const PW = "a-long-enough-password-42";
+const RATE_COMMENT = Number(process.env.COMMUNITY_RATE_COMMENT || 20);
 
 try {
   await Promise.all([A.boot(), B.boot(), C.boot()]);
@@ -172,8 +211,13 @@ try {
   const putWorld = (payload) => fetch(`${BASE}/api/world/${TW}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
   }).then((x) => x.json());
+  const TW2 = "lytest2" + suffix;
+  const putWorld2 = (payload) => fetch(`${BASE}/api/world/${TW2}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  }).then((x) => x.json());
   const world = { id: TW };
   ok("能建一张一次性世界", (await putWorld(mkPayload(1, "社区回归用图"))).ok === true);
+  ok("能建第二张一次性世界", (await putWorld2(mkPayload(2, "排序用图"))).ok === true);
 
   r = await A.call("POST", "/api/community/publish", { worldId: world.id, title: RUN + " 回归测试图", desc: "由 community.test.mjs 发布", tags: ["测试", "回归"] });
   ok("A 发布成功", r.status === 200 && r.data.pub.title === RUN + " 回归测试图", JSON.stringify(r.data));
@@ -198,9 +242,15 @@ try {
   ok("原世界确实被改过（对照组）", live.meta.name === "改名后的世界", live.meta.name);
 
   /* ---------- 7. 广场排序 / 搜索 / 关注流 ---------- */
-  r = await A.call("POST", "/api/community/publish", { worldId: world.id, title: RUN + " 第二张图", desc: "排序用" });
+  // 同一个世界再发一次 = 新版本，不是广场上多出一张重复卡片
+  r = await A.call("POST", "/api/community/publish", { worldId: world.id, title: RUN + " 回归测试图", desc: "作者可以自己改简介", note: "加了检查点" });
+  ok("同图再发是更新版本，不是多一张卡", r.data.pub.id === pubId && r.data.pub.version === 2, JSON.stringify({ id: r.data.pub && r.data.pub.id, v: r.data.pub && r.data.pub.version }));
+  const ver = await A.call("GET", `/api/community/pubs/${pubId}/versions`);
+  ok("版本历史留得下来", ver.data.current === 2 && ver.data.rows.length === 1 && ver.data.rows[0].note === "加了检查点", JSON.stringify(ver.data));
+  // 另一张世界发出来才是新作品
+  r = await A.call("POST", "/api/community/publish", { worldId: TW2, title: RUN + " 第二张图", desc: "排序用" });
   const pub2 = r.data.pub?.id;
-  ok("能发布第二张", !!pub2, JSON.stringify(r.data));
+  ok("不同世界发布成新作品", !!pub2 && pub2 !== pubId, JSON.stringify({ pub2, pubId }));
 
   await B.call("POST", `/api/community/pubs/${pub2}/play`);
   await B.call("POST", `/api/community/pubs/${pub2}/play`);
@@ -253,7 +303,11 @@ try {
   r = await A.call("POST", "/api/community/publish", { worldId: "nonexistent-world-id", title: "不存在" });
   ok("发布不存在的世界报 404", r.status === 404, r.status);
   r = await A.call("PATCH", "/api/community/me", { bio: "<img src=x onerror=alert(1)>" });
-  ok("个人简介原样存（转义是前端的责任）", r.status === 200 && r.data.user.bio === "<img src=x onerror=alert(1)>", JSON.stringify(r.data));
+  ok("简介里的 HTML 标签被服务端直接拒绝", r.status === 400, JSON.stringify(r.data));
+  r = await A.call("PATCH", "/api/community/me", { bio: "正常一句话简介" });
+  ok("正常简介能存下来", r.status === 200 && r.data.user.bio === "正常一句话简介", JSON.stringify(r.data));
+  r = await A.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "加群 123456789 代刷低价" });
+  ok("广告内容被拒绝或打标记", r.status === 400 || (r.status === 200 && r.data.row.flagged === true), JSON.stringify(r.data).slice(0, 160));
   r = await A.call("GET", "/api/community/nope");
   ok("未知社区接口 404 而不是 500", r.status === 404, r.status);
 
@@ -273,11 +327,97 @@ try {
   r = await (await fetch(BASE + "/api/community/stats")).json();
   ok("统计数得出来", r.users >= 3 && r.pubs >= 1 && r.comments >= 1, JSON.stringify(r));
 
+  /* ---------- 12. 发布 v2：图片上传、模型发布、版本回滚 ---------- */
+  // 1x1 的合法 PNG：服务端认的是文件魔数，不是扩展名或 Content-Type
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const pngBuf = Buffer.from(PNG, "base64");
+  const up = await A.call("POST", "/api/community/upload?kind=cover&pub=" + pubId, undefined);
+  ok("没带图片体的上传被拒", up.status === 400, JSON.stringify(up.data));
+  const upRes = await uploadFile(A, "/api/community/upload?kind=cover&pub=" + pubId, pngBuf);
+  ok("封面图片能上传", upRes.status === 200 && /^\/api\/community\/uploads\/[a-f0-9]+\.png$/.test(upRes.data.url), JSON.stringify(upRes.data));
+  const served = await fetch(BASE + upRes.data.url);
+  ok("上传的文件能取回且类型正确", served.status === 200 && served.headers.get("content-type") === "image/png", served.headers.get("content-type"));
+  const afterCover = await (await fetch(BASE + "/api/community/pubs/" + pubId)).json().catch(() => null);
+  ok("上传的封面立刻生效在发布上", afterCover?.pub?.hasCover === true, JSON.stringify(afterCover).slice(0, 200));
+  const evil = await uploadFile(A, "/api/community/upload?kind=cover", Buffer.from("<script>alert(1)</script>"));
+  ok("非图片内容上传被拒", evil.status === 400, JSON.stringify(evil.data));
+
+  const model = await A.call("POST", "/api/community/publish", {
+    kind: "model", title: RUN + " 测试模型", slug: "test-model", doc: { name: "t", parts: [{ name: "p", size: [2, 2, 2], voxels: [{ x: 0, y: 0, z: 0, c: 1 }] }], colors: ["#ff0000"] },
+  });
+  ok("模型也能发布", model.status === 200 && model.data.pub.kind === "model", JSON.stringify(model.data).slice(0, 160));
+  const modelId = model.data.pub?.id;
+  const gotModel = await fetch(BASE + "/api/community/pubs/" + modelId + "/model");
+  const jm = await gotModel.json().catch(() => null);
+  ok("模型内容能取回", gotModel.status === 200 && jm && jm.parts[0].voxels.length === 1, JSON.stringify(jm).slice(0, 120));
+  const feedModel = await (await fetch(BASE + "/api/community/feed?sort=new")).json();
+  ok("广场里模型和地图一起出现", feedModel.rows.some((r) => r.kind === "model" && r.id === modelId));
+
+  // 版本回滚：把 v1 换回来，当前版进归档
+  const rb = await A.call("POST", `/api/community/pubs/${pubId}/rollback`, { v: 1 });
+  ok("作者能回滚到上一版", rb.status === 200 && rb.data.restored === 1 && rb.data.version === 3, JSON.stringify(rb.data));
+  const rb2 = await B.call("POST", `/api/community/pubs/${pubId}/rollback`, { v: 1 });
+  ok("非作者不能回滚", rb2.status === 403 || rb2.status === 401, rb2.status);
+
+  /* ---------- 13. 最近游玩 ---------- */
+  await B.call("POST", "/api/community/login", { name: nameB, password: PW });   // 上面刚登出过
+  await B.call("POST", `/api/community/pubs/${pubId}/play`);
+  const recent = await B.call("GET", `/api/community/users/${encodeURIComponent(nameB)}/recent`);
+  ok("玩过什么会记进最近游玩", recent.status === 200 && recent.data.rows.some((h) => h.pubId === pubId), JSON.stringify(recent.data).slice(0, 160));
+  const recentOther = await A.call("GET", `/api/community/users/${encodeURIComponent(nameB)}/recent`);
+  ok("别人的最近游玩也能读（只给公开条数）", recentOther.status === 200 && Array.isArray(recentOther.data.rows));
+
+  /* ---------- 14. 举报与管理员 ---------- */
+  const rep1 = await B.call("POST", `/api/community/pubs/${pubId}/report`, { reason: "标题党" });
+  ok("能举报一张图", rep1.status === 200, JSON.stringify(rep1.data));
+  const rep2 = await B.call("POST", `/api/community/pubs/${pubId}/report`, { reason: "再报一次" });
+  ok("同一个人重复举报不叠加", rep2.status === 200);
+  const notAdmin = await B.call("GET", "/api/community/admin/overview");
+  ok("普通用户进不了后台", notAdmin.status === 403, JSON.stringify(notAdmin.data));
+  // 本轮第一个注册的 A 就是管理员（服务端把首个账号提为 admin）
+  const ov = await A.call("GET", "/api/community/admin/overview");
+  ok("首个注册账号是管理员并能读后台总览", ov.status === 200 && ov.data.totals.users >= 3, JSON.stringify(ov.data.totals || ov.data).slice(0, 160));
+  ok("举报队列里有刚才那条", ov.data.reports.some((r) => r.target === pubId && r.reason === "标题党"), JSON.stringify(ov.data.reports.map((r) => r.reason)));
+  ok("后台能列出用户与其产出", ov.data.users.some((u) => u.name === nameA && u.pubs >= 1));
+  const ban = await A.call("POST", "/api/community/admin/ban", { name: nameC, banned: true, reason: "测试封禁" });
+  ok("管理员能封号", ban.status === 200 && ban.data.banned === true, JSON.stringify(ban.data));
+  // 封号会连带踢掉在线会话，所以这里既可能是 401（会话没了）也可能是 403（明确封禁）；
+  // 要断言的是"写不进去"，不是它先撞上哪一道。
+  const bannedWrite = await C.call("POST", "/api/community/follow", { name: nameA });
+  ok("被封的账号写不了东西", [401, 403].includes(bannedWrite.status), JSON.stringify(bannedWrite.data));
+  ok("封号时在线会话被踢掉", !C.jar.get("ly_session") || bannedWrite.status === 401, JSON.stringify(bannedWrite.data));
+  const bannedLogin = await client().call("POST", "/api/community/login", { name: nameC, password: PW });
+  ok("被封的账号登录被拒并说明原因", bannedLogin.status === 403 && /封禁/.test(bannedLogin.data.error), JSON.stringify(bannedLogin.data));
+  await A.call("POST", "/api/community/admin/ban", { name: nameC, banned: false });
+  const td = await A.call("POST", "/api/community/admin/takedown", { pubId: modelId });
+  ok("管理员能下架任何人的作品", td.status === 200, JSON.stringify(td.data));
+  const goneModel = await client().call("GET", "/api/community/pubs/" + modelId);
+  ok("下架的模型不在广场了", goneModel.status === 404, goneModel.status);
+
+  /* ---------- 15. 昵称与皮肤 ---------- */
+  const rename = await A.call("PATCH", "/api/community/me", { name: "改名后" + suffix });
+  ok("昵称可以改", rename.status === 200 && rename.data.user.name === "改名后" + suffix, JSON.stringify(rename.data).slice(0, 160));
+  const dup = await B.call("PATCH", "/api/community/me", { name: "改名后" + suffix });
+  ok("改名不能撞别人", dup.status === 409, dup.status);
+  const skin = await A.call("PATCH", "/api/community/me", { skin: { shirt: "#ff0000", pants: "#00ff00", hair: "#123456", model: "//evil.example/x" } });
+  ok("皮肤颜色收下了", skin.status === 200 && skin.data.user.skin.shirt === "#ff0000", JSON.stringify(skin.data.user && skin.data.user.skin));
+  ok("皮肤里的外部模型地址被丢掉", skin.data.user.skin.model === undefined, JSON.stringify(skin.data.user.skin));
+  const badAvatar = await A.call("PATCH", "/api/community/me", { avatar: "https://evil.example/a.png" });
+  ok("头像只认站内上传路径", badAvatar.status === 200 && badAvatar.data.user.avatar === null, JSON.stringify(badAvatar.data.user.avatar));
+
+  /* ---------- 16. 限流是真的在数次数 ---------- */
+  let blocked = 0;
+  for (let i = 0; i < RATE_COMMENT + 2; i++) {
+    const x = await B.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "刷屏 " + i });
+    if (x.status === 429) { blocked = i; break; }
+  }
+  ok("评论刷屏会被限流", blocked > 0, "连发 " + (RATE_COMMENT + 2) + " 条也没挡下");
+
   /* ---------- 收尾：把测试造的一次性世界删掉，测试发布下架 ---------- */
   await A.call("DELETE", `/api/community/pubs/${pubId}`);
-  await fetch(`${BASE}/api/world/${TW}`, { method: "DELETE" });
+  for (const id of [TW, TW2]) await fetch(`${BASE}/api/world/${id}`, { method: "DELETE" });
   const gone = await (await fetch(BASE + "/api/worlds")).json();
-  ok("一次性世界已清理", !gone.worlds.some((w) => w.id === TW), TW);
+  ok("一次性世界已清理", ![TW, TW2].some((id) => gone.worlds.some((w) => w.id === id)), TW);
 } catch (e) {
   fail++;
   console.log("FAIL  跑挂了：" + ((e && e.stack) || e));

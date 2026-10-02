@@ -168,3 +168,76 @@
   .cm-root { padding: 12px 12px 48px; }
   .cm-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 }
+
+/* ---------- 个人主页 ---------- */
+.pf-wrap { max-width: 1080px; }
+.pf-banner {
+  position: relative; height: 168px; border-radius: 14px; overflow: hidden;
+  background: #101726 center/cover no-repeat; border: 1px solid var(--line);
+}
+.pf-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pf-head { display: flex; gap: 14px; align-items: flex-end; margin: -34px 0 0; padding: 0 16px; position: relative; }
+.pf-avatar .au-face { width: 68px; height: 68px; border-radius: 18px; font-size: 30px; border: 3px solid var(--bg1); box-shadow: 0 8px 22px rgba(0,0,0,.5); }
+.pf-id { flex: 1; min-width: 0; padding-bottom: 4px; }
+.pf-id h2 { margin: 0; font-size: 19px; display: flex; align-items: center; gap: 8px; }
+.pf-role { font: 10.5px/1 var(--mono); letter-spacing: .4px; color: #061018; background: var(--brand-cyan); padding: 3px 6px; border-radius: 5px; }
+.pf-bio { margin: 5px 0 0; font-size: 12.5px; color: var(--fg2); white-space: pre-wrap; }
+.pf-meta { margin: 4px 0 0; font-size: 11.5px; color: var(--fg3); }
+.pf-acts { display: flex; gap: 8px; padding-bottom: 6px; }
+.pf-head .cm-tabs { margin-top: 14px; }
+.pf-wrap .cm-tabs { margin: 18px 0 14px; }
+
+.pf-recent { display: flex; flex-direction: column; gap: 8px; max-width: 720px; }
+.pf-rrow {
+  display: flex; align-items: center; gap: 12px; padding: 11px 13px; text-decoration: none; color: inherit;
+  background: var(--bg1); border: 1px solid var(--line); border-radius: 11px; transition: .13s;
+}
+.pf-rrow:hover { border-color: rgba(79,155,255,.5); background: var(--bg2); }
+.pf-rtitle { font-size: 13px; font-weight: 600; }
+.pf-rmeta { margin-left: auto; font-size: 11.5px; color: var(--fg3); font-family: var(--mono); }
+
+/* 编辑资料 */
+.pf-edit { max-width: 660px; }
+.pf-cols { display: grid; grid-template-columns: 1fr 244px; gap: 20px; }
+.pf-up { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.pf-file { position: relative; overflow: hidden; display: inline-flex; align-items: center; height: 28px; padding: 0 11px;
+  border: 1px solid var(--line2); border-radius: 8px; background: var(--bg3); color: var(--fg); font-size: 12px; cursor: pointer; margin: 0; }
+.pf-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.pf-hint { font-size: 11px; color: var(--fg3); }
+.pf-ok { font-size: 11.5px; color: var(--ok); }
+.pf-skinrow { display: flex; gap: 14px; align-items: flex-start; }
+.pf-swatches { flex: 1; min-width: 0; }
+.pf-part { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); padding: 4px 6px; border-radius: 7px; cursor: pointer; }
+.pf-part.on { background: var(--primary-dim); color: var(--fg); }
+.pf-part span { width: 15px; height: 15px; border-radius: 4px; border: 1px solid rgba(255,255,255,.22); }
+.pf-pal { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.pf-c { width: 21px; height: 21px; border-radius: 5px; border: 1px solid rgba(255,255,255,.2); cursor: pointer; padding: 0; }
+.pf-custom { position: relative; overflow: hidden; background: conic-gradient(#f66,#fc6,#6f9,#6cf,#96f,#f6c,#f66); }
+.pf-custom input { position: absolute; inset: -6px; opacity: 0; cursor: pointer; }
+.pf-edit h4 { margin: 0 0 8px; font-size: 12px; color: var(--fg3); font-weight: 600; }
+
+/* CSS 人偶：预览用，不引 three.js */
+.pf-doll { position: relative; width: 82px; height: 128px; flex: none; }
+.pf-doll i { position: absolute; display: block; border-radius: 3px; }
+.d-hair { left: 25px; top: 2px; width: 32px; height: 12px; border-radius: 5px 5px 2px 2px; }
+.d-head { left: 27px; top: 10px; width: 28px; height: 26px; }
+.d-torso { left: 22px; top: 38px; width: 38px; height: 40px; }
+.d-arm { top: 40px; width: 11px; height: 34px; }
+.d-arm.l { left: 9px; } .d-arm.r { left: 62px; }
+.d-leg { top: 80px; width: 15px; height: 34px; }
+.d-leg.l { left: 24px; } .d-leg.r { left: 43px; }
+.d-foot { top: 114px; width: 17px; height: 10px; }
+.d-foot.l { left: 23px; } .d-foot.r { left: 42px; }
+
+/* 版本与举报 */
+.cm-ver { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cm-ver button { font: 11px/1 var(--mono); padding: 5px 8px; border-radius: 6px; background: var(--bg2); border: 1px solid var(--line2); color: var(--fg2); cursor: pointer; }
+.cm-ver button:hover { border-color: var(--primary); color: var(--primary); }
+.cm-flag { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: #ffd27a; background: rgba(245,195,67,.14); border: 1px solid rgba(245,195,67,.34); padding: 2px 7px; border-radius: 5px; }
+.cm-report { font-size: 11.5px; color: var(--fg3); background: none; border: 0; cursor: pointer; padding: 0; }
+.cm-report:hover { color: var(--bad); }
+
+@media (max-width: 760px) {
+  .pf-cols { grid-template-columns: 1fr; }
+  .pf-head { flex-wrap: wrap; }
+}

@@ -22,6 +22,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { createCommunity } from "./server/community.mjs";
+import { createModeration } from "./server/moderate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = (() => {
@@ -52,7 +53,10 @@ function writableDir(candidates) {
   return null;
 }
 const HOME_DATA = path.join(os.homedir(), ".dao3-editor");
-const DATA_ROOT = writableDir([path.join(__dirname, "server", "data"), HOME_DATA]) || HOME_DATA;
+// 显式给目录时用给的（回归测试要跑在一个干净的临时库里，
+// 不然大数据量的测试账号会永远留在开发用的库中）；没给才自动挑可写位置。
+const DATA_ROOT = process.env.DATA_DIR || writableDir([path.join(__dirname, "server", "data"), HOME_DATA]) || HOME_DATA;
+if (process.env.DATA_DIR) { try { fs.mkdirSync(process.env.DATA_DIR, { recursive: true }); } catch { /* 交给后面的 writableDir 使用者报错 */ } }
 const WORLDS = path.join(DATA_ROOT, "worlds");
 fs.mkdirSync(WORLDS, { recursive: true });
 
@@ -424,7 +428,8 @@ const scrub = (text, key) => {
 // ── 社区层 ────────────────────────────────────────────────────────────────
 // 账号、关注、好友、地图发布与评论。数据落在 DATA_ROOT/community/ 下，
 // 和世界存档同一个可写策略（安装目录只读时退到用户目录）。
-const community = createCommunity({ dataRoot: DATA_ROOT, worldsDir: WORLDS, assetRoots: [ASSETS, ASSETS_IN_TREE] });
+const moderation = createModeration({ file: path.join(DATA_ROOT, "community", "mute-words.json") });
+const community = createCommunity({ dataRoot: DATA_ROOT, worldsDir: WORLDS, assetRoots: [ASSETS, ASSETS_IN_TREE], moderation });
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -775,6 +780,9 @@ const server = http.createServer((req, res) => {
     pathname = "/manual.html";
   }
   // 社区四个区共用一个壳：/community 广场、/p/<id> 详情、/u/<name> 主页、/friends 关系
+  if (pathname === "/admin" || pathname === "/admin/") {
+    pathname = "/admin.html";
+  }
   if (pathname === "/me" || pathname === "/me/"
     || pathname === "/community" || pathname === "/community/"
     || pathname === "/friends" || pathname === "/friends/"

@@ -1,0 +1,26 @@
+/* admin.css — 后台：数据卡 + 表格 + 队列行。沿用工作台色板，不另起一套。 */
+.ad-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.ad-cards > div { background: var(--bg1); border: 1px solid var(--line); border-radius: 11px; padding: 12px 13px; }
+.ad-cards b { display: block; font: 600 20px/1.2 var(--mono); letter-spacing: -.3px; }
+.ad-cards em { display: block; font-style: normal; font-size: 11.5px; color: var(--fg2); margin-top: 3px; }
+.ad-cards i { display: block; font-style: normal; font-size: 10.5px; color: var(--fg3); margin-top: 2px; }
+
+.ad-row { display: flex; align-items: center; gap: 9px; padding: 12px 13px; margin-bottom: 8px;
+  background: var(--bg1); border: 1px solid var(--line); border-radius: 11px; }
+.ad-row .grow { flex: 1; min-width: 0; }
+.ad-row b { font-size: 13px; }
+.ad-row .sub { font-size: 11.5px; color: var(--fg3); margin-top: 3px; line-height: 1.5; word-break: break-word; }
+
+.ad-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ad-table th { text-align: left; font-size: 11px; letter-spacing: .4px; color: var(--fg3); font-weight: 600;
+  padding: 0 10px 8px 0; border-bottom: 1px solid var(--line2); }
+.ad-table td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ad-table td.num { font-family: var(--mono); }
+.ad-table td.sub { font-size: 11px; color: var(--fg3); }
+.ad-table tr.banned td { opacity: .55; }
+.ad-table a { color: var(--fg); text-decoration: none; }
+.ad-table a:hover { color: var(--primary); }
+.ad-table .ops { display: flex; gap: 6px; flex-wrap: wrap; }
+.ad-ban { color: #ffb4b4; background: rgba(239,90,90,.14); border: 1px solid rgba(239,90,90,.34); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
+.cm-btn.danger { color: #ffb4b4; border-color: rgba(239,90,90,.4); }
+.cm-btn.danger:hover { border-color: var(--bad); color: #ffd7d7; }

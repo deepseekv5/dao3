@@ -40,6 +40,7 @@
     "fetch:audio": "node scripts/fetch-official-audio.mjs",
     "test:pkg": "node test/packaging.mjs",
     "test:community": "node test/community.test.mjs",
+    "test:platform": "node test/platform.test.mjs",
     "test:vox": "node test/vox.test.mjs"
   },
   "files": [
