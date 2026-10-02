@@ -132,7 +132,8 @@ export async function playPub(p) {
   const done = await materialize(p);
   if (done) {
     toast(`快照已就位（${done.files} 个素材），正在进入…`, false, 1200);
-    setTimeout(() => (location.href = `/edit/${done.wid}?play=1`), 500);
+    const qs = new URLSearchParams({ play: "1", pub: p.id, title: p.title, author: (p.author && p.author.name) || "" });
+    setTimeout(() => (location.href = `/edit/${done.wid}?` + qs), 500);
   } else if (btn) btn.disabled = false;
 }
 

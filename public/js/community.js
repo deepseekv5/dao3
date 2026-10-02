@@ -383,6 +383,7 @@ async function route() {
   if (p.startsWith("/p/")) return pubView(p.slice(3));
   if (p.startsWith("/u/")) return userView(decodeURIComponent(p.slice(3)));
   if (p.startsWith("/friends")) return friendsView();
+  if (p.startsWith("/me")) { if (!auth.me) { openAuth("login"); return feedView(); } return userView(auth.me.name); }
   if (new URLSearchParams(location.search).get("mine") && auth.me) return userView(auth.me.name);
   return feedView();
 }

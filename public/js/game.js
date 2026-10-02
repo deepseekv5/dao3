@@ -936,7 +936,9 @@ export class GameRuntime {
       if (c === "backquote") { const cn = rt.hud.console; cn && cn.classList.toggle("show"); }
       if (c === "keyh") { const s = document.getElementById("gameHudSettings"); s && s.classList.toggle("show"); }
       if (c === "escape" && rt._storeOpen) { rt._toggleStore(false); return; }
-      if (c === "escape" && document.pointerLockElement !== rt.e.renderer.renderer.domElement) rt.e.stopPlay && rt.e.stopPlay();
+      // Esc 开的是游戏内菜单。以前这里直接 stopPlay()，玩家一按退出就被丢回编辑器界面，
+      // 对"点开一张图玩"的人来说等于被踢出产品；世界继续跑，出口在菜单里。
+      if (c === "escape") { import("./playshell.js").then((m) => m.toggle(rt)); return; }
     };
     this._onKeyUp = (ev) => {
       if (!rt.running || !rt.player) return;
@@ -3736,7 +3738,7 @@ void main() {
   }
   _bindHudControls() {
     const h = this.hud, rt = this;
-    if (h.stop) h.stop.onclick = () => (rt.e.stopPlay ? rt.e.stopPlay() : rt.stop());
+    if (h.stop) h.stop.onclick = () => import("./playshell.js").then((m) => m.open(rt));
     const settings = document.getElementById("gameHudSettings");
     if (!settings) return;
     const bind = (id, get, set) => {

@@ -775,7 +775,8 @@ const server = http.createServer((req, res) => {
     pathname = "/manual.html";
   }
   // 社区四个区共用一个壳：/community 广场、/p/<id> 详情、/u/<name> 主页、/friends 关系
-  if (pathname === "/community" || pathname === "/community/"
+  if (pathname === "/me" || pathname === "/me/"
+    || pathname === "/community" || pathname === "/community/"
     || pathname === "/friends" || pathname === "/friends/"
     || /^\/p\/[a-f0-9]{12,24}$/.test(pathname)
     || (pathname.startsWith("/u/") && pathname.length > 3 && !pathname.slice(3).includes("/"))) {

@@ -1,0 +1,62 @@
+.boot {
+  position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; overflow: hidden;
+  background: #05070c; color: #eaf1ff;
+  font-family: Rubik, MiSans, "PingFang SC", "noto-sans-sc", system-ui, sans-serif;
+}
+/* 海报本身字太多，直接铺会和我们叠加的标题、进度条打架。
+   所以背景层只当氛围：放大一点、糊掉、慢慢推近，前景才是要读的东西。 */
+.boot::before {
+  content: ""; position: absolute; inset: -6%;
+  background: url("/img/hero.png") center 38%/cover no-repeat;
+  filter: blur(7px) saturate(.82) brightness(.62);
+  animation: bootDrift 26s ease-in-out infinite alternate;
+}
+.boot::after {
+  content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(115% 78% at 50% 44%, rgba(5, 7, 12, .34) 0%, rgba(5, 7, 12, .82) 58%, rgba(4, 6, 10, .95) 100%),
+    linear-gradient(180deg, rgba(5, 7, 12, .72) 0%, rgba(5, 7, 12, .3) 38%, rgba(4, 6, 10, .9) 100%);
+}
+@keyframes bootDrift {
+  from { transform: scale(1) translate3d(0, 0, 0); }
+  to { transform: scale(1.09) translate3d(-1.4%, -1.2%, 0); }
+}
+.boot.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+.boot-inner { position: relative; z-index: 2; width: min(520px, 86vw); text-align: center; }
+.boot-mark { width: 78px; height: 78px; margin: 0 auto 14px; filter: drop-shadow(0 6px 22px rgba(80, 160, 255, .45)); }
+.boot-name { font-size: 25px; font-weight: 700; letter-spacing: 3px; }
+.boot-name small { display: block; font-size: 10.5px; letter-spacing: 5px; font-weight: 500; color: rgba(190, 215, 255, .62); margin-top: 5px; }
+.boot-title { margin: 20px 0 3px; font-size: 14px; font-weight: 600; letter-spacing: .4px; }
+.boot-stage { font-size: 12px; color: rgba(190, 210, 245, .66); min-height: 18px; letter-spacing: .3px; }
+
+/* 进度条：底轨 + 发光填充 + 扫光。数字在右边，用等宽避免跳动。 */
+.boot-rail { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+.boot-bar { position: relative; flex: 1; height: 4px; border-radius: 99px; background: rgba(150, 180, 230, .16); overflow: hidden; }
+.boot-bar i {
+  position: absolute; inset: 0 auto 0 0; width: 0%;
+  background: linear-gradient(90deg, #5eeaff, #4f9bff 55%, #a06bff);
+  box-shadow: 0 0 14px rgba(90, 170, 255, .8); border-radius: 99px;
+  transition: width .35s cubic-bezier(.25, .8, .3, 1);
+}
+.boot-bar::after {
+  content: ""; position: absolute; inset: 0; width: 34%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent);
+  animation: bootSweep 1.5s linear infinite; opacity: .55;
+}
+@keyframes bootSweep { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+.boot-pct { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: rgba(200, 222, 255, .8); min-width: 38px; text-align: right; }
+.boot-tip { margin-top: 26px; font-size: 11.5px; color: rgba(180, 200, 235, .5); line-height: 1.7; }
+.boot-tip b { color: rgba(210, 228, 255, .8); font-weight: 600; }
+.boot-err { margin-top: 14px; color: #ffb4b4; font-size: 12.5px; line-height: 1.7; }
+.boot-err a { color: #9fd0ff; }
+
+@media (max-width: 640px) {
+  .boot-mark { width: 60px; height: 60px; }
+  .boot-name { font-size: 20px; letter-spacing: 2px; }
+  .boot-tip { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-bar::after { animation: none; opacity: 0; }
+  .boot::before { animation: none; }
+  .boot { transition: none; }
+}

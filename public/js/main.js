@@ -11,6 +11,7 @@ import * as io from "./io.js";
 import { buildUI } from "./ui.js";
 import { initFeatures, moveSelectedModel, importProject, migratePlayerMeta, placeHeldModel, moveHeldModelTo, rotateHeldModel, dropHeldModel, ensureHeldFromSelection, refreshModelList, refreshScriptFiles, createWorld } from "./features.js";
 import { GameRuntime, logGameError } from "./game.js";
+import * as bootUi from "./boot-ui.js";
 
 const worldId = (location.pathname.match(/\/edit\/([a-zA-Z0-9_-]+)/) || [])[1] || "216d665d3ca92bd1b9a2";
 
@@ -120,7 +121,10 @@ function enterPlay() {
   game.gameRules = Object.assign({}, game.gameRules, state.meta.gameRules || {});
   game.start({ scripts: state.scripts || [], assets, player: migratePlayerMeta(state.meta.player) });
   const hint = document.getElementById("gameHint");
-  if (hint) { hint.classList.add("show"); clearTimeout(hint._t); hint._t = setTimeout(() => hint.classList.remove("show"), 6000); }
+  if (hint) {
+    import("./playshell.js").then((m) => { hint.textContent = m.hintText(); });
+    hint.classList.add("show"); clearTimeout(hint._t); hint._t = setTimeout(() => hint.classList.remove("show"), 6000);
+  }
   // 全局错误 → 游戏控制台（异步报错同样要"报错"）
   if (!game._errFlush) game._errFlush = setInterval(() => {
     while (game.running && window.__errs && window.__errs.length) logGameError(window.__errs.shift());
@@ -471,15 +475,20 @@ ctx.notify = toast;
 /* ---- 启动 ---- */
 async function boot() {
   try { localStorage.setItem("dao3_last_world", worldId); } catch {}
+  bootUi.adoptOld();
+  bootUi.stage(6, "正在装载方块图集…");
   await atlas.load("/data");
   for (const m of [renderer.opaqueMat, renderer.transparentMat, renderer.waterMat, renderer.glowMat, renderer.barrierMat]) { m.map = atlas.texture; m.needsUpdate = true; }
   // 接缝线/序列帧动画按图集瓦片边界计算
   renderer.setAtlasParams(atlas);
   state.currentBlock = atlas.get("grass")?.id || 127;
+  bootUi.stage(24, "正在读取世界存档…");
   const seed = await io.apiLoadWorld(worldId);
   if (seed) { world = VoxelWorld.fromPayload(seed); ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (seed.meta?.terrain) Object.assign(state.terrain, seed.meta.terrain); if (seed.meta?.scripts && seed.meta.scripts.length) state.scripts = seed.meta.scripts; if (seed.meta?.entities) state.entities = seed.meta.entities; if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(seed.meta); } }
+  bootUi.stage(46, "正在生成体素网格…");
   renderer.setWorld(world);
   applyTerrain();
+  bootUi.title(state.meta.name || worldId);
   renderer.start();
   // 工具指针调度（非 FP + FP 模式统一通过指针事件驱动 TOOLS；模型模式下拖放/放置模型）
   const viewport = document.getElementById("viewport");
@@ -616,6 +625,7 @@ async function boot() {
   // 没有这个钩子，"取回"就只改了磁盘上的字节，画面上什么都不会变。
   window.__editor.replaceSceneModels = () => applySceneModels(state.meta);
   initFeatures(window.__editor);
+  bootUi.stage(62, "正在取回模型与音效…");
   restoreSceneModels(state.meta); // boot 也一样：场景模型与实体标记都由它负责
   // 第一人称中心拾取预览（幽灵方块跟随屏幕中心）
   ui.setFPRenderer && ui.setFPRenderer(null);
@@ -632,19 +642,21 @@ async function boot() {
   };
   // 启动参数：工作台用 /edit/<新id>?new=1&mode=&X=&Y=&Z=&T=&name= 建图，?play=1 直接进运行模式
   const q = new URLSearchParams(location.search);
+  // 从社区详情页进来时带上 pub/title/author，游玩外壳与菜单要知道自己在玩谁的哪张图
+  if (q.get("pub")) window.__playMeta = { pubId: q.get("pub"), title: q.get("title") || "", author: q.get("author") || "" };
   if (q.get("new") === "1") {
     const num = (k, d, a, b) => Math.max(a, Math.min(b, Number(q.get(k)) || d));
     createWorld(q.get("mode") || "flat", num("X", 100, 8, 256), num("Y", 32, 8, 128), num("Z", 100, 8, 256), num("T", 5, 1, 64), (q.get("name") || "").trim() || null);
     updateStatus();
     save();
   } else if (seed && seed.indices && seed.indices.length > 2000) {
-    updateStatus(); document.getElementById("loading")?.remove();
+    updateStatus(); bootUi.done();
   } else {
     if (window.__openSizeModal) window.__openSizeModal(); // 进入即选择大小并生成
     updateStatus();
-    document.getElementById("loading")?.remove();
   }
-  document.getElementById("loading")?.remove();
+  bootUi.stage(88, "正在准备界面…");
+  requestAnimationFrame(() => bootUi.done());
   if (q.get("export") === "1") {
     io.exportProjectZip({ world, state, name: state.meta.name || worldId, download: true })
       .then(() => toast("已导出项目包"))

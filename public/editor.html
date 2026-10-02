@@ -6,6 +6,7 @@
 <title>老攸元宇宙 · 编辑器</title>
 <link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
 <link rel="stylesheet" href="/css/editor.css"/>
+<link rel="stylesheet" href="/css/boot.css"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
 <script type="importmap">{"imports":{"three":"/vendor/three/three.module.js"}}</script>
 <script>window.__errs=[];window.__errLog=[];
@@ -17,7 +18,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
 </script>
 </head>
 <body>
-<div id="loading"><div class="load-logo"></div><div class="load-bar"><i></i></div><span>正在启动容器…</span></div>
+<div id="loading" hidden></div>
 
 <!-- 顶部菜单栏 -->
 <header id="topbar">
