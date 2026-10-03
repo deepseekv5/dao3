@@ -175,6 +175,10 @@ const c1 = await wsConnect(`/ws/play/${pubId}`, A.cookie);
 const w1 = await c1.until((m) => m.t === "welcome");
 ok("进房拿到 welcome 与自己是谁", !!w1 && !!w1.you, JSON.stringify(w1));
 ok("房里的第一个人没有同伴", !!w1 && (!w1.peers || w1.peers.length === 0), JSON.stringify(w1 && w1.peers));
+// 世界时间要有共同起点：welcome 得带房间创建时刻与服务端当前时间，
+// 否则每个人各自从 tick 0 数，按 currentTick 计时的脚本在两人屏幕上会错开。
+ok("welcome 带世界时钟（t0 与 now）", !!w1 && Number.isFinite(w1.t0) && Number.isFinite(w1.now) && w1.now >= w1.t0,
+  JSON.stringify(w1 && { t0: w1.t0, now: w1.now }));
 
 const c2 = await wsConnect(`/ws/play/${pubId}`, B.cookie);
 const joined = await c1.until((m) => m.t === "join" && m.peer && m.peer.name === B.name);

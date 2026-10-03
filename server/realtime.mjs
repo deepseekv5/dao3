@@ -102,7 +102,14 @@ export function createRealtime({ community } = {}) {
 
   function roomOf(key) {
     let r = rooms.get(key);
-    if (!r) { r = new Set(); r.key = key; rooms.set(key, r); }
+    if (!r) {
+      r = new Set(); r.key = key;
+      // 房间创建即"这张图的世界时间起点"。每个客户端原先都从 tick 0 自己数，
+      // 后进来的人与先进来的人 tick 不同，凡按 world.currentTick 计时的脚本
+      // （整点事件、昼夜、按 tick 刷新的道具）就会在两个人屏幕上错开。
+      r.start = Date.now();
+      rooms.set(key, r);
+    }
     return r;
   }
 
@@ -152,7 +159,10 @@ export function createRealtime({ community } = {}) {
       peer.lastState = now();
       const p = Array.isArray(m.p) ? m.p.slice(0, 3).map(Number) : [];
       if (p.length !== 3 || p.some((v) => !Number.isFinite(v) || Math.abs(v) > 1e5)) return;
-      const yaw = Number(m.r); peer.yaw = Number.isFinite(yaw) ? yaw : 0;
+      const yaw = Number(m.r);
+      // 朝向同样要夹：客户端拿它做角度差，Infinity 会让"减 2π 直到落回 ±π"那种
+      // 归一化循环永远跑不完，一个坏包就能把同伴的整个页面钉死。
+      peer.yaw = Number.isFinite(yaw) ? Math.max(-1e4, Math.min(1e4, yaw)) : 0;
       peer.anim = typeof m.a === "string" ? m.a.slice(0, 12) : "idle";
       // 网格名只用来查本图已有的资产，去掉路径分隔符就没有别的作用；长度照截。
       peer.mesh = typeof m.m === "string" ? m.m.replace(/[\\/:*?<>|\u0000-\u001f\u007f]/g, "").slice(0, 48) : "";
@@ -196,7 +206,7 @@ export function createRealtime({ community } = {}) {
     stats.joins++;
 
     peer.send({
-      t: "welcome", you: peer.id, room: key,
+      t: "welcome", you: peer.id, room: key, t0: room.start, now: Date.now(),
       peers: [...room].filter((p) => p !== peer).map((p) => ({ id: p.id, name: p.user.name, skin: p.user.skin,
         p: p.pos, r: p.yaw, a: p.anim, m: p.mesh, s: p.meshScale, h: p.hidden ? 1 : 0 })),
     });

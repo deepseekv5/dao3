@@ -384,6 +384,19 @@ ok("B 也进了同一张图的运行时", bUp, await B.evaluate(`document.body.t
 const sawEachOther = await until(A, `(() => { const g = window.__game; return g && g._netPeers && g._netPeers.size === 1; })()`, { tries: 60, ms: 500 });
 ok("B 进图后 A 的运行时里多出一个同伴", sawEachOther, await A.evaluate(`JSON.stringify({ peers: window.__game && window.__game._netPeers && window.__game._netPeers.size, online: window.__online })`));
 ok("B 那边也看到 A", await until(B, `(() => { const g = window.__game; return g && g._netPeers && g._netPeers.size === 1; })()`), await B.evaluate(`String(window.__online)`));
+// 世界时间对齐：B 是后进来的，它的 tick 必须按"房间创建时刻"数，而不是从自己
+// 加载完那一刻重新从 0 数。判据用"tick 数 > B 自己跑过的时间对应的 tick 数"，
+// 这条只有种过起点才可能成立。
+{
+  // 判据的分母用"这一页加载至今的秒数"：没种起点的话 tick 最多等于它，
+  // 种过之后 tick 等于房间年龄，必然更大。
+  const bTick = await B.evaluate(`(() => { const g = window.__game;
+    return { tick: g.currentTick, 本页已加载秒: performance.now() / 1000 }; })()`);
+  const aTick = await A.evaluate(`window.__game ? window.__game.currentTick : -1`);
+  ok("后进来的人按房间起点数 tick，不是各自从 0 开始",
+    bTick.tick > 0 && aTick > 0 && bTick.tick >= Math.floor(bTick.本页已加载秒 * 15.625),
+    JSON.stringify({ aTick, bTick }));
+}
 const ghost = await A.evaluate(`(() => { const p = [...(window.__game._netPeers || new Map()).values()][0];
   return p ? { name: p.ent.customName, shown: p.ent.showEntityName, tags: [...p.ent._tags], solid: p.ent.collides, inScene: !!p.ent._obj.parent } : null; })()`);
 ok("同伴是以账号昵称出现的角色，且不带碰撞", !!ghost && ghost.name === nameB && ghost.shown && !ghost.solid && ghost.inScene, JSON.stringify(ghost));

@@ -494,7 +494,20 @@ export class GameRuntime {
       this._net = connect({
         pubId: meta.pubId,
         on: {
-          welcome: (m) => { for (const p of m.peers || []) this._netSpawn(p); count(); },
+          welcome: (m) => {
+            // 世界时间对齐：房间创建那一刻就是这张图的 tick 0。不种的话每个人
+            // 都从 0 自己数，凡按 world.currentTick 计时的脚本（整点事件、昼夜、
+            // 按 tick 刷新的道具）就会在两个人屏幕上错开——同一张图，两种玩法。
+            // 两边机器时钟不一定同步，所以先用 now 估一次偏差，再按 t0 推起点。
+            if (Number.isFinite(m.t0) && Number.isFinite(m.now)) {
+              const skew = Date.now() - m.now;
+              const elapsed = Date.now() - skew - m.t0;
+              const tick = Math.floor(elapsed / TICK_MS);
+              if (tick >= 0 && tick < 1e9) { this.currentTick = tick; this._acc = elapsed % TICK_MS; }
+            }
+            for (const p of m.peers || []) this._netSpawn(p);
+            count();
+          },
           join: (m) => { this._netSpawn(m.peer); count(); this._chatLine(`${m.peer.name} 进来了`, "#9fd6a0", "sys"); },
           leave: (m) => { this._netDespawn(m.id); count(); },
           state: (m) => {
@@ -621,10 +634,12 @@ export class GameRuntime {
       e.position.x += (peer.tx[0] - e.position.x) * k;
       e.position.y += (peer.tx[1] - e.position.y) * k;
       e.position.z += (peer.tx[2] - e.position.z) * k;
-      let d = peer.ry - e._obj.rotation.y;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      e._obj.rotation.y += d * k;
+      // 角度归一化不能用 while 减 2π：peer.ry 来自网线，一旦是 Infinity（或本地
+      // rotation.y 被某步算成 Infinity），d 永远大于 π，这一帧就把主线程锁死到永远——
+      // 表现是"联机进图后整个页面再也不响应"。atan2 是 O(1) 且对任何有限值都收敛。
+      const cur = e._obj.rotation.y;
+      const raw = peer.ry - (Number.isFinite(cur) ? cur : 0);
+      e._obj.rotation.y = Number.isFinite(raw) ? e._obj.rotation.y + Math.atan2(Math.sin(raw), Math.cos(raw)) * k : cur;
     }
     // 一个人的时候也要报坐标：新进来的人看的是服务端记着的"你刚才在哪"，
     // 不报就等于让所有人第一次看见你都站在世界原点。
