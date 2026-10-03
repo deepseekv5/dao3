@@ -165,6 +165,14 @@ input{font-family:inherit}
 .pp-chk input{accent-color:var(--primary);width:13px;height:13px}
 @media (max-width:1180px){.pp-grid{grid-template-columns:1fr}}
 .frow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+/* 玩家属性这些行只给了 label 和带 .finput 的控件配色，剩下的数字框、复选框、
+   取色器一律吃浏览器默认白底——深色面板里一排白块，是整块面板最廉价的地方。
+   写在这儿而不是逐个补 class：JS 里现造的 .frow 也一并管住。 */
+.frow input[type=number],.frow input[type=text]{background:rgba(0,0,0,.3);border:1px solid var(--grey2);border-radius:6px;
+  color:#fff;padding:5px 9px;font-size:12px;font-family:inherit;min-width:120px;text-align:right;outline:none}
+.frow input[type=number]:focus,.frow input[type=text]:focus{border-color:var(--primary)}
+.frow input[type=checkbox]{width:15px;height:15px;margin:0;accent-color:var(--primary)}
+.frow input[type=color]{width:46px;height:26px;padding:1px;border:1px solid var(--grey2);border-radius:6px;background:rgba(0,0,0,.3)}
 .frow label{font-size:12px;color:var(--font-white-minor)}
 .frow.dim{opacity:.5}
 .finput{background:rgba(0,0,0,.3);border:1px solid var(--grey2);border-radius:6px;color:#fff;padding:5px 9px;font-size:12px;min-width:120px;text-align:right;outline:none}
