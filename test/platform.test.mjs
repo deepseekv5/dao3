@@ -462,6 +462,37 @@ ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = doc
   ok("授权之后起点卡改成服务端的尺寸与数量", on === want && c.installed === true, JSON.stringify({ on, want, installed: c.installed }));
 }
 
+/* ---------------- 界面统一：设计变量与侧栏导航都只该有一份 ---------------- */
+{
+  // 这条守的是"三份 :root / 三份手抄侧栏"重新长出来。以前工作台、社区、后台各抄一份
+  // <nav class="wb-railnav">，admin 那份最后只剩 4 条还把"社区广场"写成"社区"，
+  // 人在后台点不回手册与 API；四份 :root 则是换主题色时必然漏改的地方。
+  const read = `(async () => {
+    const nav = document.querySelector(".wb-railnav");
+    return JSON.stringify({
+      items: nav ? [...nav.querySelectorAll("a")].map((a) => a.title) : null,
+      bg: getComputedStyle(document.body).backgroundColor,
+      primary: getComputedStyle(document.documentElement).getPropertyValue("--primary").trim(),
+      tokens: !!document.querySelector('link[href*="tokens.css"]'),
+    });
+  })()`;
+  const parsed = {};
+  for (const [k, url] of [["工作台", "/"], ["社区", "/community"], ["后台", "/admin"]]) {
+    await A.goto(BASE + url); await sleep(1300);
+    parsed[k] = JSON.parse(await A.evaluate(read));
+  }
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  ok("三个页面的侧栏条目逐字一致",
+    parsed.工作台.items && same(parsed.工作台.items, parsed.社区.items) && same(parsed.社区.items, parsed.后台.items),
+    JSON.stringify(parsed.后台.items));
+  ok("侧栏由 rail.js 渲染，不再手抄", (parsed.工作台.items || []).length >= 7, String((parsed.工作台.items || []).length));
+  ok("全站底色与主色来自同一份 tokens.css",
+    new Set(Object.values(parsed).map((p) => p.bg)).size === 1 && parsed.工作台.bg === "rgb(13, 13, 13)"
+    && new Set(Object.values(parsed).map((p) => p.primary)).size === 1
+    && Object.values(parsed).every((p) => p.tokens),
+    JSON.stringify(Object.fromEntries(Object.entries(parsed).map(([k, p]) => [k, p.bg + " " + p.primary]))));
+}
+
 /* 全程不许有未捕获异常：上面每一条都可能"看着过了"其实页面早就报错在跑降级路径 */
 const errsA = await A.evaluate(`JSON.stringify((window.__errs || []).slice(0, 5))`);
 ok("两个会话全程没有未捕获错误", errsA === "[]" && errsB === "[]", "A=" + errsA + " B=" + errsB);

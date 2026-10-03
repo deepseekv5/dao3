@@ -229,6 +229,21 @@ console.log("== Agent 动作协议：它想干什么，都得先过这一关 =="
   ok("覆盖了官方契约里的脚本与存储动作",
     ["script.upload", "script.get", "script.list", "storage.set", "storage.get", "storage.list", "storage.remove"]
       .every((n) => TOOL_NAMES.includes(n)));
+  // 社区动作：Agent 之前只会改图，看不到广场也发不出去。写动作要 confirm 才落地。
+  ok("Agent 能读广场、能发布、能评论",
+    ["community.who", "community.feed", "community.publish", "community.comment"].every((n) => TOOL_NAMES.includes(n)));
+
+  // 动作名与执行体必须名实一致。apc 二次校准抓到过一个真 bug：TOOLS 里写 map.blocks，
+  // switch 里却是 case "map.resource" —— 模型照目录写就走到 default，报"没有实现的动作"，
+  // 是静默失败。这条断言把整类问题钉死：目录里的每一个名字都得有对应 case。
+  {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../public/js/ai-agent.js", import.meta.url), "utf8");
+    const cases = new Set([...src.matchAll(/case "([a-z]+\.[a-zA-Z]+)":/g)].map((m) => m[1]));
+    const missing = TOOL_NAMES.filter((n) => n !== "finish" && !cases.has(n));
+    ok("TOOLS 里每个动作都有对应的执行分支", missing.length === 0, "缺 case: " + missing.join("、"));
+    ok("旧名 map.blocks 归一化到 map.resource", normalizeAction("map.blocks") === "map.resource");
+  }
   ok("旧驼峰名与 model 爱写的写法都能归一化",
     normalizeAction("inspectWorld") === "project.info"
     && normalizeAction("writeScript") === "script.upload"
