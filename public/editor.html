@@ -339,10 +339,9 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
         <textarea id="scriptCode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </div>
     </div>
-    <div class="ss-console">
-      <div class="ss-console-head">控制台</div>
+    <div class="ss-console" id="scriptConsole">
+      <button class="ss-console-head" id="scriptConsoleHead" title="运行游戏时脚本报错也会显示在这里；运行期间修改不会保存">控制台<span>▾</span></button>
       <div id="scriptOut" class="scriptout"></div>
-      <div class="ss-console-tip">运行游戏时脚本报错也会显示在这里；运行期间修改不会保存。</div>
     </div>
   </div>
 </div>

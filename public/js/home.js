@@ -14,7 +14,6 @@ const timeAgo = (t) => {
   if (s < 86400 * 30) return Math.floor(s / 86400) + " 天前";
   return new Date(t).toLocaleDateString();
 };
-const dur = (sec) => (sec >= 3600 ? (sec / 3600).toFixed(1) + "h" : sec >= 60 ? Math.round(sec / 60) + "m" : sec + "s");
 const newId = () => "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const tip = (msg, ms = 3000) => {
@@ -33,16 +32,16 @@ async function loadStats() {
   let s;
   try { s = await (await fetch("/api/stats")).json(); }
   catch { return $("metrics").innerHTML = '<div class="mt"><b>—</b><em>服务未启动</em></div>'; }
+  // 指标条只放"我自己的东西"。方块种类 383、API 成员 809 这类是产品说明书上的数字，
+  // 摆在每天打开的工作台顶上，既不是我的进度也不是我的资产，只会把这块地方
+  // 变成一块自夸的记分牌。
   const tiles = [
     { v: s.worlds, k: "本地世界", note: s.newest ? timeAgo(s.newest) : "空" },
     { v: fmt(s.voxels), k: "体素总量", note: s.worlds + " 张图" },
     { v: fmt(s.entities), k: "实体", note: (s.zones || 0) + " 区域" },
     { v: fmt(s.scripts), k: "脚本文件", note: (s.ui || 0) + " 界面" },
-    { v: s.blocks, k: "方块种类", note: "官方图集" },
     { v: s.voxaModels, k: "VOXA 模型", note: fmt(s.voxaVoxels) + " 体素" },
     { v: kb(s.saveBytes), k: "存档体积", note: "gzip" },
-    { v: (s.apiMembers || 0), k: "API 成员", note: "契约覆盖" },
-    { v: dur(s.uptime), k: "服务运行", note: "node " + String(s.node || "").split(".")[0] },
   ];
   // 社区那一格单独取：社区服务没起来时，工作台其余指标不该跟着变灰
   try {
@@ -80,8 +79,11 @@ function renderStarts() {
   for (const s of STARTS) {
     const b = document.createElement("button");
     b.className = "wb-start" + (s.hot ? " hot" : "");
-    b.innerHTML = `<div class="ico">${s.ico}</div><div><h3>${esc(s.name)}</h3><small class="m">${esc(s.meta)}</small></div><span class="go">\u2192</span>`
-      + (s.badge ? `<span class="wb-badge">${esc(s.badge)}</span>` : "");
+    // 徽标跟着标题走，不钉在卡片角落：钉在右下角时它和标题隔了一整行，
+    // 看上去像这张卡的注脚，而不是这张图的身份。
+    b.innerHTML = `<div class="ico">${s.ico}</div><div><h3>${esc(s.name)}`
+      + (s.badge ? ` <span class="wb-badge">${esc(s.badge)}</span>` : "")
+      + `</h3><small class="m">${esc(s.meta)}</small></div><span class="go">\u2192</span>`;
     b.onclick = () => (s.action ? s.action() : null);
     grid.appendChild(b);
   }

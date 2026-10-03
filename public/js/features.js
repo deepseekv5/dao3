@@ -285,11 +285,12 @@ function wireScriptChecks() {
       const cb = document.createElement("input");
       cb.type = "checkbox"; cb.checked = it.tsOnly ? false : !!cfg[it.key];
       cb.disabled = !!it.tsOnly;
+      // 说明收进悬停：每一项下面都挂一行小字，面板就成了一页说明书。
+      // tsOnly 那两项留一个短标记而不是整句"点了也不会生效"——灰掉 + TS 已经说清了。
       const txt = document.createElement("span");
-      txt.innerHTML = `<b></b>${it.hint || it.tsOnly ? "<i></i>" : ""}`;
+      txt.innerHTML = `<b></b>${it.tsOnly ? '<em class="sc-tag">TS</em>' : ""}`;
       txt.querySelector("b").textContent = it.label;
-      const sub = txt.querySelector("i");
-      if (sub) sub.textContent = it.tsOnly ? TS_ONLY_NOTE : it.hint;
+      row.title = it.tsOnly ? TS_ONLY_NOTE : (it.hint || "");
       row.append(cb, txt);
       cb.onchange = () => { cfg[it.key] = cb.checked; e.markDirty(); e.toast(it.label + "：" + (cb.checked ? "开" : "关")); };
       box.appendChild(row);
@@ -298,9 +299,20 @@ function wireScriptChecks() {
   host.appendChild(box);
 }
 
+/** 脚本控制台默认收成一条标题，来内容就自己展开。
+ *  原来它是一根常驻的 300px 空栏：多数时候里面什么都没有，却把代码区常年挤窄一截。 */
+function wireScriptConsole() {
+  const box = document.getElementById("scriptConsole"), head = document.getElementById("scriptConsoleHead"), out = document.getElementById("scriptOut");
+  if (!box || !head || !out) return;
+  box.classList.add("is-closed");
+  head.onclick = () => box.classList.toggle("is-closed");
+  new MutationObserver(() => { if (out.childElementCount) box.classList.remove("is-closed"); }).observe(out, { childList: true });
+}
+
 function wireScript() {
   const e = E;
   wireScriptChecks();
+  wireScriptConsole();
   e.state.scripts = e.state.scripts && e.state.scripts.length ? e.state.scripts : [
     { name: "index.js", code: DEFAULT_SCRIPT },
     { name: "clientIndex.js", code: "" },
