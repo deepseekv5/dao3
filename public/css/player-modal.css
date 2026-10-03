@@ -164,27 +164,6 @@
 .pm-attrs .modal-actions{position:sticky;bottom:0;width:100%;margin-top:16px;padding-top:12px;
   background:linear-gradient(180deg,rgba(24,28,35,0) 0,#181c23 42%)}
 
-/* ---------- 游戏内菜单（Esc）：浮在游戏上，不暂停世界、不跳编辑器 ---------- */
-.pm-menu{position:fixed;inset:0;z-index:120;display:none;place-items:center;
-  background:radial-gradient(120% 90% at 50% 45%,rgba(6,9,16,.42),rgba(4,6,11,.78));
-  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-.pm-menu.show{display:grid}
-.pm-card{width:min(392px,92vw);background:rgba(13,16,24,.94);border:1px solid rgba(255,255,255,.12);
-  border-radius:16px;overflow:hidden;box-shadow:0 26px 70px rgba(0,0,0,.62);color:#e9eef8;
-  font-family:Rubik,MiSans,"PingFang SC",system-ui,sans-serif}
-.pm-card>header{display:flex;gap:11px;align-items:center;padding:15px 17px;
-  border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(120deg,rgba(94,234,255,.13),rgba(160,107,255,.13))}
-.pm-card>header img{width:32px;height:32px;flex:none}
-.pm-card>header b{display:block;font-size:14.5px;font-weight:600}
-.pm-card>header i{font-style:normal;font-size:11.5px;color:rgba(220,232,255,.6)}
-.pm-list{padding:8px}
-.pm-list button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;
-  padding:11px 12px;margin:2px 0;background:none;border:0;border-radius:10px;cursor:pointer;
-  color:#dfe7f5;font:inherit;font-size:13.5px;transition:background .13s,color .13s}
-.pm-list button:hover{background:rgba(255, 90, 52,.16);color:#fff}
-.pm-list button kbd{font:11px/1 ui-monospace,Menlo,monospace;color:rgba(210,225,250,.5);
-  border:1px solid rgba(255,255,255,.16);border-radius:5px;padding:3px 6px;min-width:26px;text-align:center}
-.pm-list button.danger{color:#ffb0b0}
-.pm-list button.danger:hover{background:rgba(239,90,90,.16);color:#ffd5d5}
-.pm-card>footer{display:flex;justify-content:space-between;gap:10px;padding:11px 16px;
-  border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:rgba(205,220,245,.45)}
+/* 游戏内 Esc 菜单（.gm-menu）的样式在 editor.css 里。
+   它以前写在这份文件里，而这份文件要等玩家面板第一次打开才注入，
+   冷启动直接进游玩时菜单是裸的；而且 .pm-card / .pm-list 与上面的皮肤卡重名。 */

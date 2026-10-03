@@ -20,23 +20,24 @@ function leaveTarget() {
 function build() {
   host = document.createElement("div");
   host.id = "playMenu";
-  host.className = "pm-menu";
+  host.className = "gm-menu";
   host.innerHTML = `
-    <div class="pm-card">
+    <div class="gm-card">
       <header>
         <img src="${LOGO}" alt=""/>
-        <div><b id="pmMap">—</b><i id="pmWho"></i></div>
+        <div><b id="gmMap">—</b><i id="gmWho"></i></div>
       </header>
-      <div class="pm-list">
+      <div class="gm-list">
         <button data-x="resume"><span>继续游戏</span><kbd>Esc</kbd></button>
         <button data-x="view"><span>切换视角</span><kbd>V</kbd></button>
         <button data-x="settings"><span>画面与操作</span><kbd>H</kbd></button>
+        <button data-x="chat"><span>聊天</span><kbd>↵</kbd></button>
         <button data-x="profile"><span>个人资料</span><kbd></kbd></button>
-        <button class="danger" data-x="leave"><span id="pmLeave">离开游戏</span><kbd></kbd></button>
+        <button class="danger" data-x="leave"><span id="gmLeave">离开游戏</span><kbd></kbd></button>
       </div>
       <footer>
-        <span>老攸元宇宙 · 菜单不会暂停世界</span>
-        <span id="pmOnline"></span>
+        <span>菜单不会暂停世界</span>
+        <span id="gmOnline"></span>
       </footer>
     </div>`;
   document.body.appendChild(host);
@@ -45,9 +46,8 @@ function build() {
   on("resume", close);
   on("view", () => { const p = rt.player; p.cameraMode = p.cameraMode === "fps" ? "follow" : "fps"; close(); });
   on("settings", () => { close(); document.getElementById("gameHudSettings")?.classList.add("show"); });
+  on("chat", () => { close(); rt.openChat && rt.openChat(); });
   on("profile", () => { location.href = "/me"; });
-  // 体验版是纯静态站，没有账号层，点"个人资料"只会 404
-  if (!window.__me) host.querySelector('[data-x="profile"]').hidden = true;
   on("leave", () => leave());
 }
 
@@ -68,11 +68,16 @@ export function open(_rt) {
   menuOpen = true;
   host.classList.add("show");
   const m = window.__playMeta || {};
-  host.querySelector("#pmMap").textContent = m.title || (rt.e.state && rt.e.state.meta && rt.e.state.meta.name) || "未命名世界";
+  // 菜单只建一次，但登录态和房间是每次运行才知道的：藏哪几项必须在 open 里判，不能写在 build 里
+  const profile = host.querySelector('[data-x="profile"]');
+  if (profile) profile.hidden = !window.__me;
+  const chat = host.querySelector('[data-x="chat"]');
+  if (chat) chat.hidden = !(rt._net && rt._net.live);
+  host.querySelector("#gmMap").textContent = m.title || (rt.e.state && rt.e.state.meta && rt.e.state.meta.name) || "未命名世界";
   const who = window.__me && window.__me.name;
-  host.querySelector("#pmWho").textContent = who ? "玩家 " + who + (m.author ? " · 作者 " + m.author : "") : (m.author ? "作者 " + m.author : "本地玩家");
-  host.querySelector("#pmLeave").textContent = isCommunity() ? "离开游戏" : "返回编辑器";
-  host.querySelector("#pmOnline").textContent = (window.__online || 1) > 1 ? window.__online + " 人在线" : "";
+  host.querySelector("#gmWho").textContent = who ? "玩家 " + who + (m.author ? " · 作者 " + m.author : "") : (m.author ? "作者 " + m.author : "本地玩家");
+  host.querySelector("#gmLeave").textContent = isCommunity() ? "离开游戏" : "返回编辑器";
+  host.querySelector("#gmOnline").textContent = (window.__online || 1) > 1 ? window.__online + " 人在线" : "";
 }
 
 export function close() {

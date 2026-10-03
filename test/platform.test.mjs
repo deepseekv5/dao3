@@ -205,6 +205,26 @@ const shirt = await A.evaluate(`(() => {
 ok("账号皮肤贴到了角色身上", shirt === "#e8604c", String(shirt));
 await A.shot(path.join(ROOT, "tmp/ui-play.png"));
 
+/* HUD 的三条硬判据。都是这一版重做踩过的坑，光看截图看不出回归：
+   1) 画布要铺满视口——以前 #stage 永远留 48px 顶边，HUD 挂在那条死带上；
+   2) 菜单样式必须随页面到——.gm-menu 以前住在懒加载的 player-modal.css 里，
+      冷启动进游玩时它是裸的：一整屏透明 div 吃掉所有点击，却什么都看不见。 */
+const hud = await A.evaluate(`(() => {
+  const cv = document.getElementById("viewport"), r = cv.getBoundingClientRect();
+  const tools = document.querySelector(".hud-tools"), map = document.querySelector(".hud-map");
+  const cs = (el) => (el ? getComputedStyle(el) : null);
+  return {
+    vw: innerWidth, vh: innerHeight,
+    canvas: { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top) },
+    legacyBar: !!document.querySelector(".pe-top"),
+    tools: tools && cs(tools).display, map: map && cs(map).display,
+    exit: (() => { const b = document.getElementById("gameStop"); return b && { text: b.textContent.trim(), bg: cs(b).backgroundColor }; })(),
+  };
+})()`);
+ok("运行画布铺满视口，不留顶边死带", hud.canvas.top === 0 && hud.canvas.h >= hud.vh - 2 && hud.canvas.w >= hud.vw - 2, JSON.stringify(hud));
+ok("整宽顶栏已经拿掉，HUD 改成四角浮块", !hud.legacyBar && hud.tools === "flex" && hud.map === "flex", JSON.stringify(hud));
+ok("出口是带文字的按钮，不是一个猜得出的圆点", !!hud.exit && hud.exit.text === "退出", JSON.stringify(hud.exit));
+
 const realKey = async (code, key, vk) => {
   for (const type of ["keyDown", "keyUp"]) {
     await A.send("Input.dispatchKeyEvent", { type, code, key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk });
@@ -228,7 +248,7 @@ await A.evaluate(`import("/js/playshell.js").then(() => true)`);
 // 真 Esc 有时会"迟到"：先派发的那下晚到会把菜单又关掉。所以反复派发直到菜单出现，
 // 验的是"Esc 这条处理路径能把菜单开出来"，而不是某一次按键的到达时刻。
 const menuOf = `(() => { const m = document.getElementById("playMenu"); return m && m.classList.contains("show") ? {
-  leave: (document.querySelector("#pmLeave") || {}).textContent,
+  leave: (document.querySelector("#gmLeave") || {}).textContent,
   running: !!(window.__game && window.__game.running),
 } : false; })()`;
 let menu = await A.evaluate(menuOf);
@@ -239,6 +259,18 @@ for (let i = 0; i < 8 && !menu; i++) {
 if (!menu) console.log("      菜单诊断: " + await A.evaluate(`JSON.stringify({ el: !!document.getElementById("playMenu"), cls: (document.getElementById("playMenu")||{}).className, running: !!(window.__game && window.__game.running), errs: (window.__errs||[]).slice(0,2) })`));
 ok("Esc 打开内嵌菜单，世界还在跑", !!menu && menu.running, JSON.stringify({ escReal, menu }));
 ok("社区图的出口是作品页，不是编辑器", !!menu && menu.leave === "离开游戏", menu && menu.leave);
+/* 菜单样式必须随页面一起到：.gm-menu 以前住在懒加载的 player-modal.css 里，
+   而那份 CSS 要等玩家面板第一次打开才注入——冷启动进游玩时它是裸的，
+   一整屏透明 div 吃掉所有点击却什么都看不见。 */
+const styledMenu = await A.evaluate(`(() => {
+  const m = document.getElementById("playMenu");
+  if (!m) return { el: false };
+  const card = m.querySelector(".gm-card"), b = m.querySelector(".gm-list button");
+  return { el: true, pos: getComputedStyle(m).position, cardBg: card && getComputedStyle(card).backgroundColor,
+    btnFont: b && getComputedStyle(b).fontSize };
+})()`);
+ok("内嵌菜单拿到的是真样式，不是裸按钮", styledMenu.el && styledMenu.pos === "fixed"
+  && styledMenu.cardBg !== "rgba(0, 0, 0, 0)" && styledMenu.btnFont === "13.5px", JSON.stringify(styledMenu));
 await A.shot(path.join(ROOT, "tmp/ui-menu.png"));
 
 /* ---------------- 联机：两个人真的在同一个房间里 ---------------- */
@@ -313,7 +345,7 @@ const face = await A.evaluate(`(() => {
 })()`);
 ok("角色脸朝向与移动方向一致", face === null || face > 0.6, "dot=" + face);
 await A.evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", key: "Escape", bubbles: true }))`);
-const emenu = await until(A, `(() => { const m = document.getElementById("playMenu"); return m && m.classList.contains("show") ? (document.querySelector("#pmLeave")||{}).textContent : false; })()`, { tries: 6, ms: 400 });
+const emenu = await until(A, `(() => { const m = document.getElementById("playMenu"); return m && m.classList.contains("show") ? (document.querySelector("#gmLeave")||{}).textContent : false; })()`, { tries: 6, ms: 400 });
 ok("作者预览的出口写着「返回编辑器」，且第一次按 Esc 就出现", emenu === "返回编辑器", String(emenu));
 await A.evaluate(`document.querySelector('#playMenu [data-x="leave"]').click()`);
 ok("点出口回到编辑器", await until(A, `!window.__game.running && !document.body.classList.contains("playing")`, { tries: 12, ms: 400 }));

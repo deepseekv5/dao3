@@ -25,15 +25,12 @@
 /* editor.css 给 #viewport 写了 inset:0 + height:100%，只挪 top 会让画布比窗口高出 32px，
    这里必须同时把 bottom/height 收回来自适应，否则整页纵向溢出。 */
 #viewport{top:var(--bbh);bottom:0;height:auto;width:100%;touch-action:none;-webkit-user-select:none;user-select:none;display:block}
-#playEntry .pe-top{top:var(--bbh)}
-#gameHint{top:calc(var(--bbh) + 54px)}
+/* 体验版的画布从品牌条下面开始，HUD 四角控件要一起让开这条带子 */
+.hud-map{top:calc(var(--bbh) + 12px)}
+.hud-tools{top:calc(var(--bbh) + 12px)}
+#gameHint{top:calc(var(--bbh) + 58px)}
 #nojs{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;
   font-size:14px;z-index:1100;padding:24px;text-align:center}
-
-/* 桌面只显桌面提示，触屏只显触屏提示（判定由 JS 落在 html 类上，不看 UA） */
-.pe-hint-touch{display:none}
-html.touch-capable .pe-hint{display:none}
-html.touch-capable .pe-hint-touch{display:inline;color:var(--font-white-minor);font-size:11px}
 
 /* ---------- 首屏 ---------- */
 #boot{position:fixed;inset:0;z-index:1000;background:radial-gradient(120% 90% at 50% 0%,#151a22 0%,#07080a 62%);
@@ -76,22 +73,18 @@ html.touch-capable .pe-hint-touch{display:inline;color:var(--font-white-minor);f
 .end-btns .primary{background:var(--primary);border-color:transparent;font-weight:600}
 .end-btns .primary:hover{background:var(--primary-hover)}
 
-/* ---------- 触屏布局避让：摇杆/按钮压在左下角与右下角 ---------- */
-/* 顶部只留一条紧凑 HUD：地图名 + 一行短操作提示，血条与状态各占一角，
-   再往下才是 #gameHint 的橙色说明条，互不重叠。 */
-html.touch-capable .pe-top{height:40px}
-html.touch-capable .pe-title{font-size:13px;white-space:nowrap;flex:0 0 auto}
-html.touch-capable .pe-hint-touch{font-size:10.5px;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis}
-html.touch-capable #gameVitals{left:14px;bottom:auto;top:calc(var(--bbh) + 46px)}
-html.touch-capable .pe-readout{top:calc(var(--bbh) + 46px);bottom:auto;right:12px;gap:6px;font-size:10.5px}
+/* 触屏布局避让：摇杆/按钮压在左下角与右下角。
+   HUD 已是四角浮块，这里只把左上/右上两块往下再挪一点，避开摇杆与品牌条。 */
+html.touch-capable .hud-map{max-width:52vw}
+html.touch-capable .pe-title{font-size:12.5px}
+html.touch-capable #gameVitals{left:14px;bottom:auto;top:calc(var(--bbh) + 54px)}
+html.touch-capable .pe-readout{top:calc(var(--bbh) + 54px);bottom:auto;right:12px;font-size:10.5px}
 html.touch-capable #gameCoords{display:none}
-html.touch-capable #gameConsole{left:14px;right:14px;bottom:auto;top:calc(var(--bbh) + 96px);width:auto;max-height:32vh}
+html.touch-capable #gameConsole{left:14px;right:14px;bottom:auto;top:calc(var(--bbh) + 100px);width:auto;max-height:32vh}
 html.touch-capable #gameChat{bottom:200px;max-width:52vw}
 html.touch-capable #gameHudSettings{bottom:200px;left:14px;right:14px;width:auto}
 html.touch-capable #gameHint{top:calc(var(--bbh) + 100px);left:50%;right:auto;transform:translateX(-50%);max-width:84vw;text-align:center;white-space:normal}
 html.touch-capable #toast{bottom:200px;max-width:80vw;text-align:center}
-/* 中屏（平板 / 小笔记本）：桌面提示语必须省略而不是把停止按钮挤出去 */
-#playEntry .pe-hint{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* game.js 只在 (pointer:coarse) 命中时补 body.touch；这里按自己的判定兜一层 */
 html.touch-capable body.playing #touchUI,body.touch.playing #touchUI{display:block}
 #joyBase{bottom:max(56px,env(safe-area-inset-bottom));left:max(28px,env(safe-area-inset-left))}

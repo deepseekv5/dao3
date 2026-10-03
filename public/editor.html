@@ -168,21 +168,24 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
 <div id="hud"><span id="coords">—</span><span class="hud-sep">·</span><span>体素 <b id="blockCount">0</b></span></div>
 <div id="ctxmenu"><button data-c="rename">重命名</button><button data-c="copy">复制</button><button data-c="delete">删除</button></div>
 
-<!-- 运行模式 HUD（对齐官方：第三人称跟随 + 准星 + 交互提示 + 头顶名牌 + 🐞 控制台） -->
+<!-- 运行模式 HUD：浮在游戏画面上的四角控件，不是网页顶栏。
+     以前这里是一条铺满宽度的 .pe-top 长条（标题 + 一长串键位 + 右侧按钮），
+     玩起来像在看一个嵌了 3D 窗口的网页。现在键位收进 Esc 菜单，角上只留必要的东西。 -->
 <div id="playEntry">
-  <div class="pe-top">
+  <div class="hud-map">
     <span id="gameTitle" class="pe-title">运行中</span>
-    <span class="pe-hint">WASD 移动 · Shift 跑 · Ctrl 蹲/刹车 · Space 跳或吃道具 · E 交互/上车 · V 视角 · H 设置 · Esc 退出</span>
-    <div class="pe-actions">
-      <button id="gameStoreBtn" class="pe-store" title="商品列表（world.products()）" hidden>商店</button>
-      <a id="peManual" class="pe-store" href="/manual" target="_blank" rel="noopener" title="玩家游玩手册：键位、比赛流程、加速道具与常见问题">手册</a>
-      <button id="gameStop" class="play stop" data-ico="stop" title="返回编辑器"></button>
-    </div>
+    <span id="hudOnline" class="hud-online"></span>
+  </div>
+  <div class="hud-tools">
+    <button id="gameStoreBtn" class="pe-store" title="商品列表（world.products()）" hidden>商店</button>
+    <a id="peManual" class="pe-store" href="/manual" target="_blank" rel="noopener" title="玩家游玩手册：键位、比赛流程、加速道具与常见问题">手册</a>
+    <button id="ghToggle" class="pe-store" title="画面与操作（H）">设置</button>
+    <button id="gameStop" class="pe-store exit" title="返回编辑器（Esc）">退出</button>
   </div>
   <div id="gameStore" class="game-store"></div>
   <div id="gameCross"></div>
   <div id="gameLockHint">点击画面锁定视角（未锁定时可按住左/右键拖动转视角）· Esc 释放</div>
-  <div class="pe-readout"><span id="gameCoords" class="game-coords">X 0  Y 0  Z 0</span><span id="gameState" class="game-state">follow</span><span id="hudOnline" class="hud-online"></span></div>
+  <div class="pe-readout"><span id="gameCoords" class="game-coords">X 0  Y 0  Z 0</span><span id="gameState" class="game-state">follow</span></div>
   <div id="gameNameTags" class="name-tags"></div>
   <div id="gameInteract"></div>
   <div id="gameVitals">
@@ -194,24 +197,25 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   <div id="gameChat"></div>
   <div id="gameDialog"></div>
   <div id="gameConsole"></div>
-  <div id="gameHudSettings" class="game-hud-settings">
-    <div class="gh-row"><span>日照</span><input id="ghSun" type="range" min="0" max="4" step="0.05" value="2.4"><em>2.4</em></div>
-    <div class="gh-row"><span>环境光</span><input id="ghAmbient" type="range" min="0" max="1" step="0.01" value="0.22"><em>0.22</em></div>
-    <div class="gh-row"><span>曝光</span><input id="ghExposure" type="range" min="0.4" max="2" step="0.02" value="1.12"><em>1.12</em></div>
-    <div class="gh-row"><span>视场角</span><input id="ghFov" type="range" min="0.05" max="1.6" step="0.01" value="0.25"><em>0.25</em></div>
-    <div class="gh-row"><span>镜头距离</span><input id="ghDist" type="range" min="1" max="30" step="0.5" value="8.5"><em>8.5</em></div>
-    <div class="gh-btns">
-      <button id="ghSpawn" title="将当前点设为出生点">设出生点</button>
-      <button id="ghRespawn" title="立刻回到出生点（官方 player.forceRespawn()）">立即重生</button>
-      <button id="ghDay" title="白天">白天</button>
-      <button id="ghNight" title="夜晚">夜晚</button>
-      <button id="ghReset" title="重置为世界设置">重置</button>
-      <button id="ghSound" title="声音开关">声音:开</button>
-      <button id="ghFloat" title="把屏幕操作按钮悬浮显示在画面上（桌面也可以开）">悬浮按键:关</button>
-      <button id="ghFloatEdit" title="拖动摇杆与按键到顺手的位置" hidden>摆放按键</button>
-      <button id="ghFloatReset" title="恢复摇杆与按键的默认位置" hidden>复位</button>
-      <button id="ghConsole" title="调试控制台（反引号键）">控制台</button>
-    </div>
+</div>
+<!-- 设置面板在 #playEntry 之外：隐藏 HUD 时不该跟着一起消失 -->
+<div id="gameHudSettings" class="game-hud-settings">
+  <div class="gh-row"><span>日照</span><input id="ghSun" type="range" min="0" max="4" step="0.05" value="2.4"><em>2.4</em></div>
+  <div class="gh-row"><span>环境光</span><input id="ghAmbient" type="range" min="0" max="1" step="0.01" value="0.22"><em>0.22</em></div>
+  <div class="gh-row"><span>曝光</span><input id="ghExposure" type="range" min="0.4" max="2" step="0.02" value="1.12"><em>1.12</em></div>
+  <div class="gh-row"><span>视场角</span><input id="ghFov" type="range" min="0.05" max="1.6" step="0.01" value="0.25"><em>0.25</em></div>
+  <div class="gh-row"><span>镜头距离</span><input id="ghDist" type="range" min="1" max="30" step="0.5" value="8.5"><em>8.5</em></div>
+  <div class="gh-btns">
+    <button id="ghSpawn" title="将当前点设为出生点">设出生点</button>
+    <button id="ghRespawn" title="立刻回到出生点（官方 player.forceRespawn()）">立即重生</button>
+    <button id="ghDay" title="白天">白天</button>
+    <button id="ghNight" title="夜晚">夜晚</button>
+    <button id="ghReset" title="重置为世界设置">重置</button>
+    <button id="ghSound" title="声音开关">声音:开</button>
+    <button id="ghFloat" title="把屏幕操作按钮悬浮显示在画面上（桌面也可以开）">悬浮按键:关</button>
+    <button id="ghFloatEdit" title="拖动摇杆与按键到顺手的位置" hidden>摆放按键</button>
+    <button id="ghFloatReset" title="恢复摇杆与按键的默认位置" hidden>复位</button>
+    <button id="ghConsole" title="调试控制台（反引号键）">控制台</button>
   </div>
 </div>
 <div id="gameUIWidgets" class="uiw-host"></div>

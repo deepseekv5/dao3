@@ -334,22 +334,35 @@ body.playing .prop-card{display:none !important}
 .mitem .mname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px}
 .model-panel .lc-add:nth-of-type(2) .round{background:var(--grey2);color:var(--primary)}
 
-/* ---------- 运行模式 HUD ---------- */
+/* ---------- 运行模式 HUD ----------
+   运行态是一块内嵌的游戏区域，不是一个套了 3D 窗口的网页：
+   · 画布铺满视口（原来 #stage 永远留 48px 顶边，运行时那条带子空着，HUD 就挂在缝里）
+   · HUD 只浮在四角，中间留给画面本身
+   · 键位说明收进 Esc 菜单和开场提示，不再拿一条铺满宽度的顶栏常驻挡着 */
 #playEntry{position:fixed;inset:0;pointer-events:none;z-index:60;display:none}
 #playEntry.show{display:block}
+body.playing #stage{top:0}
 body.playing #topbar,body.playing #libCard,body.playing #editToolbar,body.playing #rightPanel,body.playing #hud,body.playing #ctxmenu{display:none !important}
 body.playing canvas{cursor:crosshair}
-.pe-top{position:absolute;top:0;left:0;right:0;height:46px;background:rgba(10,12,16,.72);backdrop-filter:blur(6px);display:flex;align-items:center;gap:12px;padding:0 14px;pointer-events:auto}
-.pe-title{color:#fff;font-size:14px;font-weight:600}
-.pe-hint{color:var(--font-black-minor);font-size:11px;margin-left:12px}
-#playEntry .play{width:30px;height:30px;pointer-events:auto}
-.pe-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
-.pe-store{pointer-events:auto;background:var(--grey2);color:#fff;border:1px solid var(--grey2);border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer}
+/* HUD 通用外壳：半透石墨底 + 发丝描边，所有浮层共用，避免每块各调各的 */
+.hud-map,.hud-tools,.pe-readout,#gameLockHint,#gameInteract,#gameHint,.game-hud-settings{
+  background:rgba(14,14,16,.72);border:1px solid var(--line);border-radius:10px;
+  backdrop-filter:blur(10px);box-shadow:0 6px 22px rgba(0,0,0,.35)}
+/* 左上：地图名 + 在线人数 */
+.hud-map{position:absolute;top:14px;left:14px;display:none;align-items:center;gap:9px;padding:7px 12px;pointer-events:none}
+body.playing .hud-map{display:flex}
+.pe-title{color:#fff;font-size:13px;font-weight:600;letter-spacing:.2px;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 右上：出口与工具。退出是这里唯一的强调色，别的都压成灰 */
+.hud-tools{position:absolute;top:14px;right:14px;display:none;align-items:center;gap:2px;padding:4px;pointer-events:auto}
+body.playing .hud-tools{display:flex}
+.pe-store{pointer-events:auto;background:transparent;color:var(--fg2);border:1px solid transparent;border-radius:7px;
+  padding:6px 11px;font-size:12px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px;line-height:1.4;text-decoration:none}
 .pe-store[hidden]{display:none}
-a.pe-store{text-decoration:none;display:inline-block;line-height:1.45}
-.pe-store:hover{border-color:var(--primary);color:#ffd9a8}
-.pe-store:disabled{opacity:.45;cursor:default}
-.game-store{position:absolute;right:14px;top:56px;width:296px;max-height:62vh;overflow:auto;background:rgba(12,15,20,.94);border:1px solid var(--grey2);border-radius:12px;box-shadow:0 16px 50px rgba(0,0,0,.6);padding:10px;display:none;pointer-events:auto}
+.pe-store:hover{color:#fff;background:rgba(255,255,255,.08)}
+.pe-store.exit{color:#ffd9cf}
+.pe-store.exit:hover{background:var(--primary);color:#1a1206;border-color:var(--primary)}
+.game-store{position:absolute;right:14px;top:60px;width:296px;max-height:62vh;overflow:auto;border-radius:12px;padding:10px;display:none;pointer-events:auto;
+  background:rgba(12,15,20,.94);border:1px solid var(--grey2);box-shadow:0 16px 50px rgba(0,0,0,.6)}
 .game-store.show{display:block}
 .gs-empty{color:var(--font-black-minor);font-size:11px;padding:8px 6px;line-height:1.6}
 .gs-item{display:flex;gap:10px;align-items:flex-start;padding:8px 6px;border-top:1px solid rgba(255,255,255,.07)}
@@ -362,43 +375,51 @@ a.pe-store{text-decoration:none;display:inline-block;line-height:1.45}
 .gs-buy:hover{background:var(--primary);color:#fff}
 .gs-buy:disabled{opacity:.4;cursor:default;border-color:var(--grey2);color:var(--font-black-minor)}
 .gs-buy:disabled:hover{background:transparent;color:var(--font-black-minor)}
-#gameCross{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;display:none}
+/* 准星：小圆点 + 四向短刻线。原来的 18px 实心十字在亮场景里几乎糊住目标 */
+#gameCross{position:absolute;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;display:none}
 #gameCross.show{display:block}
-#gameCross::before,#gameCross::after{content:"";position:absolute;background:rgba(255,255,255,.9);box-shadow:0 0 3px rgba(0,0,0,.8)}
-#gameCross::before{left:8px;top:0;width:2px;height:18px}
-#gameCross::after{left:0;top:8px;width:18px;height:2px}
-#gameInteract{position:absolute;left:50%;top:56%;transform:translateX(-50%);background:rgba(0,0,0,.55);border:1px solid var(--primary);color:#ffd9a8;padding:6px 14px;border-radius:8px;font-size:13px;pointer-events:none}
+#gameCross::before{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;margin:-1.5px;border-radius:50%;
+  background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
+#gameCross::after{content:"";position:absolute;inset:0;border-radius:50%;border:1px solid rgba(255,255,255,.32)}
+#gameInteract{position:absolute;left:50%;top:62%;transform:translateX(-50%);color:#fff;padding:7px 14px;font-size:13px;pointer-events:none}
 #gameInteract:empty{display:none}
 /* 运行模式：血量 / 状态 / 聊天输入 / 死亡重生 */
-#gameVitals{position:absolute;left:16px;bottom:130px;display:none;flex-direction:column;gap:3px;pointer-events:none}
+#gameVitals{position:absolute;left:16px;bottom:130px;display:none;flex-direction:column;gap:4px;pointer-events:none}
 body.playing #gameVitals.show{display:flex}
 /* 悬浮层的摇杆默认就在左下角（left 28 / bottom 56 / 120 见方），血条同侧会压上去。
    只在血条本来贴底的场合抬它——体验版把血条改成顶部定位，那时再写 bottom
    就等于同时钉住上下两边，元素会被拉成 560px 高的一条。 */
 html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 .vit-name{font-size:12px;color:#fff;text-shadow:0 1px 3px #000;display:flex;gap:8px;align-items:center}
-.vit-name span{color:#ffd9a8;font-size:11px}
-.vit-bar{width:150px;height:7px;border-radius:4px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.25);overflow:hidden}
+.vit-name span{color:var(--primary-hover);font-size:11px}
+.vit-bar{width:150px;height:6px;border-radius:99px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.22);overflow:hidden}
 .vit-bar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff5b5b,#ff8a5b);transition:width .18s}
 #gameChatInput{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;display:none;width:min(520px,80vw)}
 #gameChatInput.show{display:block}
-#gameChatInput input{width:100%;padding:9px 13px;border-radius:9px;background:rgba(10,12,16,.9);border:1px solid var(--primary);color:#fff;font-size:13px;font-family:inherit}
-#gameChatInput input:focus{outline:none}
+#gameChatInput input{width:100%;padding:9px 13px;border-radius:10px;background:rgba(10,12,16,.9);border:1px solid var(--line2);color:#fff;font-size:13px;font-family:inherit}
+#gameChatInput input:focus{outline:none;border-color:var(--primary)}
 #gameDead{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,4,4,.55);pointer-events:auto}
 #gameDead.show{display:flex}
 .dead-card{display:flex;flex-direction:column;align-items:center;gap:14px;padding:26px 40px;border-radius:14px;background:var(--panel);border:1px solid var(--grey2);box-shadow:0 20px 60px rgba(0,0,0,.6)}
 .dead-card b{font-size:17px;color:#ff8a8a}
-#gameLockHint{position:absolute;left:50%;top:64%;transform:translateX(-50%);display:none;padding:7px 16px;border-radius:20px;background:rgba(8,10,14,.72);border:1px solid var(--primary);color:#ffd9a8;font-size:12.5px;pointer-events:none;backdrop-filter:blur(4px)}
+#gameLockHint{position:absolute;left:50%;top:68%;transform:translateX(-50%);display:none;padding:7px 16px;border-radius:99px;color:var(--fg2);font-size:12.5px;pointer-events:none}
 #gameLockHint.show{display:block}
-#gameChat{position:absolute;left:16px;bottom:18px;display:flex;flex-direction:column;gap:2px;pointer-events:none;max-width:46vw}
-#gameChat div{background:rgba(8,10,14,.5);color:#f3f0e8;font-size:12.5px;padding:3px 9px;border-radius:6px;width:fit-content;max-width:100%}
-#gameDialog{position:absolute;left:50%;top:38%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--grey2);border-radius:12px;padding:16px 18px;min-width:240px;max-width:70vw;display:none;box-shadow:0 16px 50px rgba(0,0,0,.6);pointer-events:auto}
+#gameChat{position:absolute;left:16px;bottom:18px;display:flex;flex-direction:column;gap:3px;pointer-events:none;max-width:46vw}
+#gameChat div{background:rgba(8,10,14,.62);color:#f2f2f2;font-size:12.5px;padding:4px 10px;border-radius:8px;width:fit-content;max-width:100%}
+#gameDialog{position:absolute;left:50%;top:38%;transform:translateX(-50%);background:rgba(16,16,18,.94);border:1px solid var(--line2);border-radius:14px;
+  padding:18px 20px;min-width:280px;max-width:70vw;display:none;box-shadow:0 20px 60px rgba(0,0,0,.6);pointer-events:auto;backdrop-filter:blur(10px)}
 #gameDialog.show{display:block}
-#gameDialog .d-title{color:#fff;font-size:14px;margin-bottom:12px;white-space:pre-wrap}
+#gameDialog .d-title{color:#fff;font-size:14.5px;line-height:1.6;margin-bottom:14px;white-space:pre-wrap}
+#gameDialog .d-content{color:var(--font-black-minor);font-size:12.5px;line-height:1.6;margin-bottom:14px}
 #gameDialog .d-options{display:flex;flex-direction:column;gap:8px}
-#gameDialog .playbtn{background:var(--grey2);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer;text-align:left}
-#gameDialog .playbtn:hover{background:var(--primary);color:#fff}
-#gameConsole{position:absolute;left:16px;bottom:140px;width:min(520px,46vw);max-height:38vh;overflow-y:auto;background:rgba(5,8,12,.78);border:1px solid var(--grey2);border-radius:10px;padding:8px 10px;font-family:Menlo,Consolas,monospace;font-size:11.5px;line-height:1.5;display:none;pointer-events:auto}
+#gameDialog .d-input{width:100%;padding:9px 12px;border-radius:9px;background:rgba(0,0,0,.4);border:1px solid var(--grey2);color:#fff;font-size:13px;font-family:inherit}
+#gameDialog .d-input:focus{outline:none;border-color:var(--primary)}
+#gameDialog .playbtn{background:var(--grey2);color:#fff;border:1px solid transparent;border-radius:9px;padding:10px 14px;font-size:13px;font-family:inherit;cursor:pointer;text-align:left}
+#gameDialog .playbtn:hover{background:var(--primary);color:#1a1206;border-color:var(--primary)}
+/* 重生按钮以前挂着 .playbtn 却没有任何裸规则（那条只作用于 #gameDialog 内），等于没样式 */
+.playbtn{background:var(--primary);color:#1a1206;border:none;border-radius:9px;padding:9px 20px;font-size:13px;font-family:inherit;font-weight:600;cursor:pointer}
+.playbtn:hover{background:var(--primary-hover)}
+#gameConsole{position:absolute;left:16px;bottom:140px;width:min(520px,46vw);max-height:38vh;overflow-y:auto;background:rgba(5,8,12,.82);border:1px solid var(--grey2);border-radius:10px;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.5;display:none;pointer-events:auto}
 #gameConsole.show{display:block}
 #gameConsole::-webkit-scrollbar{width:6px}
 #gameConsole::-webkit-scrollbar-thumb{background:var(--grey2);border-radius:3px}
@@ -407,17 +428,44 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 #gameConsole .c-info{color:#ffd9a8}
 #gameConsole .c-warn{color:#ffd863}
 #gameConsole .c-err{color:#ff7b7b}
-#gameHint{position:fixed;left:50%;top:58px;transform:translateX(-50%);background:rgba(252,131,8,.92);color:#fff;font-size:12px;padding:6px 14px;border-radius:8px;z-index:61;display:none;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+/* 开场提示：一条会自己消失的说明，不是常驻横幅 */
+#gameHint{position:fixed;left:50%;top:66px;transform:translateX(-50%);color:#fff;font-size:12.5px;padding:8px 16px;border-radius:99px;z-index:61;
+  display:none;pointer-events:none;box-shadow:0 8px 26px rgba(0,0,0,.45)}
 #gameHint.show{display:block}
-.game-hud-settings{position:absolute;left:12px;bottom:180px;width:min(520px,46vw);background:rgba(10,12,16,.78);border:1px solid var(--grey2);border-radius:10px;padding:10px 12px;display:none;pointer-events:auto;backdrop-filter:blur(6px)}
+/* 设置面板挂在左上角下面：左下是聊天与控制台，右下是读数，中间是准星与交互提示，
+   只有这一块平时是空的，展开时不会盖住任何正在发生的事 */
+.game-hud-settings{position:fixed;left:14px;top:62px;width:min(420px,44vw);max-height:calc(100vh - 92px);overflow:auto;
+  border-radius:12px;padding:12px 14px;display:none;pointer-events:auto;z-index:62}
 .game-hud-settings.show{display:block}
-.gh-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:var(--font-white-minor)}
-.gh-row span{width:50px}
+.gh-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:11.5px;color:var(--font-white-minor)}
+.gh-row span{width:52px;flex:none}
 .gh-row input{flex:1;accent-color:var(--primary)}
-.gh-row em{width:40px;text-align:right;color:#fff}
-.gh-btns{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
-.gh-btns button{background:var(--grey2);color:#fff;border:1px solid var(--grey3);border-radius:6px;padding:5px 10px;font-size:11px}
-.gh-btns button:hover{background:var(--primary);border-color:var(--primary)}
+.gh-row em{width:40px;text-align:right;color:#fff;font-style:normal;font-family:var(--mono);font-size:11px}
+.gh-btns{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.gh-btns button{background:rgba(255,255,255,.07);color:var(--fg2);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:11px;font-family:inherit;cursor:pointer}
+.gh-btns button:hover{background:var(--primary);border-color:var(--primary);color:#1a1206}
+
+/* Esc 游戏内菜单：浮在画面上、不暂停世界。
+   这套规则以前住在 player-modal.css 里，而那个文件要等玩家面板第一次打开才注入，
+   冷启动直接进游玩时菜单是裸的——一整屏透明 div 吃掉所有点击。挪到这里，跟着页面一起到。 */
+.gm-menu{position:fixed;inset:0;z-index:120;display:none;place-items:center;pointer-events:auto;
+  background:radial-gradient(120% 90% at 50% 40%,rgba(0,0,0,.55),rgba(0,0,0,.78));backdrop-filter:blur(6px)}
+.gm-menu.show{display:grid}
+.gm-card{width:min(380px,90vw);border-radius:16px;overflow:hidden;background:rgba(18,18,20,.96);border:1px solid var(--line2);box-shadow:0 30px 90px rgba(0,0,0,.7)}
+.gm-card header{display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.03)}
+.gm-card header img{width:30px;height:30px;flex:none}
+.gm-card header b{display:block;color:#fff;font-size:14px;font-weight:600}
+.gm-card header i{display:block;font-style:normal;color:var(--fg3);font-size:11.5px;margin-top:2px}
+.gm-list{display:flex;flex-direction:column;padding:8px}
+.gm-list button{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;
+  background:none;border:0;border-radius:9px;padding:11px 12px;color:var(--fg);font-size:13.5px;font-family:inherit;cursor:pointer;text-align:left}
+.gm-list button:hover{background:rgba(255,255,255,.08)}
+.gm-list button[hidden]{display:none}
+.gm-list kbd{font-family:var(--mono);font-size:10.5px;color:var(--fg3);border:1px solid var(--line2);border-radius:5px;padding:2px 6px;background:rgba(0,0,0,.3)}
+.gm-list kbd:empty{display:none}
+.gm-list button.danger{color:#ff8a7a}
+.gm-list button.danger:hover{background:rgba(226,112,95,.16)}
+.gm-card footer{display:flex;justify-content:space-between;gap:12px;padding:11px 18px;border-top:1px solid var(--line);color:var(--fg3);font-size:11px}
 
 /* 触屏操控（运行模式 + 触屏设备）：左摇杆 / 右侧跳跃·交互 / 右半屏拖动转视角 */
 /* 悬浮操作层：容器本身不吃点击，只有里面的控件接事件，
@@ -498,16 +546,16 @@ body.float-edit #tbtns{cursor:grab}
 .witem .wdel:hover{background:rgba(255,107,107,.15)}
 .witem{position:relative}
 
-/* 运行模式实时坐标 */
-.game-coords{position:fixed;right:14px;bottom:12px;z-index:62;display:none;padding:5px 12px;border-radius:8px;background:rgba(10,12,16,.65);color:#d8e2ee;font-family:Menlo,Consolas,monospace;font-size:12px;letter-spacing:.4px;backdrop-filter:blur(4px)}
-body.playing .game-coords{display:block}
-
-/* 运行模式读数（坐标 + moveState/walkState/tick） */
-.pe-readout{position:fixed;right:14px;bottom:12px;z-index:62;display:none;gap:8px;align-items:center}
-body.playing .pe-readout{display:flex}
-.pe-readout .game-coords{position:static}
-.game-state{padding:5px 10px;border-radius:8px;background:rgba(10,12,16,.65);color:#ffd9a8;font-family:Menlo,Consolas,monospace;font-size:12px;backdrop-filter:blur(4px)}
-.hud-online{padding:5px 10px;border-radius:8px;background:rgba(10,12,16,.65);color:#9fe3b5;font-family:Menlo,Consolas,monospace;font-size:12px;backdrop-filter:blur(4px)}
+/* 运行模式读数：以前坐标 / moveState / 在线人数是三个各带背景的小药丸并排在右下角，
+   看着像三块掉在画面上的贴片。合成一条等宽读数，在线人数挪去左上跟地图名一起。 */
+.pe-readout{position:absolute;right:14px;bottom:14px;z-index:62;display:none;gap:0;align-items:center;
+  padding:6px 11px;font-family:var(--mono);font-size:11px;color:var(--fg3);letter-spacing:.2px;pointer-events:none}
+body.hud-debug .pe-readout{display:flex}
+.pe-readout span{background:none;padding:0;color:inherit;font-family:inherit;font-size:inherit;letter-spacing:inherit;backdrop-filter:none}
+.pe-readout span+span::before{content:"·";margin:0 8px;opacity:.5}
+.game-state{color:var(--primary-hover)}
+.hud-online{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#7fd6a4;font-family:var(--mono)}
+.hud-online::before{content:"";width:6px;height:6px;border-radius:50%;background:#57c78a;box-shadow:0 0 0 3px rgba(87,199,138,.16)}
 .hud-online:empty{display:none}
 
 /* 头顶名牌 / 血条 / 浮动喊话（官方 showEntityName、showHealthBar、entity.say） */

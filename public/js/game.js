@@ -1083,7 +1083,7 @@ export class GameRuntime {
         rt.player.cameraMode = rt.player.cameraMode === GameCameraMode.FPS ? GameCameraMode.FOLLOW : GameCameraMode.FPS;
         rt.toast(rt.player.cameraMode === GameCameraMode.FPS ? "第一人称 (fps)" : "第三人称 (follow)");
       }
-      if (c === "backquote") { const cn = rt.hud.console; cn && cn.classList.toggle("show"); }
+      if (c === "backquote") rt._toggleConsole();
       if (c === "keyh") { const s = document.getElementById("gameHudSettings"); s && s.classList.toggle("show"); }
       if (c === "escape" && rt._storeOpen) { rt._toggleStore(false); return; }
       // Esc 开的是游戏内菜单。以前这里直接 stopPlay()，玩家一按退出就被丢回编辑器界面，
@@ -1113,7 +1113,7 @@ export class GameRuntime {
       if (!axis.includes("x")) rt._tPitch = clamp(rt._tPitch - clamp(ev.movementY || 0, -80, 80) * 0.0022, -1.52, 1.52);
     };
     // 点 HUD / 脚本创建的 UI 不能同时被当成 ACTION0 或抢指针锁（官方不变式）
-    const inUi = (ev) => { const t = ev && ev.target; return !!(t && t.closest && t.closest("#clientUiRoot, .uiw-host, #gameStore, #gameHudSettings, #gameUIWidgets, .pe-top")); };
+    const inUi = (ev) => { const t = ev && ev.target; return !!(t && t.closest && t.closest("#clientUiRoot, .uiw-host, #gameStore, #gameHudSettings, #gameUIWidgets, .hud-tools")); };
     this._onMouseDown = (ev) => {
       if (!rt.running || inUi(ev)) return;
       const el = rt.e.renderer.renderer.domElement;
@@ -3843,6 +3843,15 @@ void main() {
   get gameRulesObj() { return this.gameRules; }
 
   /* ---------------- HUD ---------------- */
+  /** 控制台与坐标读数一起开关：那串 X/Y/Z·moveState·tick 是给作者看的遥测，
+      不该在玩家面前常驻。反引号一键同时出、一起收。 */
+  _toggleConsole(on) {
+    const cn = this.hud && this.hud.console;
+    if (!cn) return;
+    const next = on == null ? !cn.classList.contains("show") : !!on;
+    cn.classList.toggle("show", next);
+    document.body.classList.toggle("hud-debug", next);
+  }
   _setupHud() {
     const $ = (id) => document.getElementById(id);
     this.hud = {
@@ -3851,7 +3860,7 @@ void main() {
       coords: $("gameCoords"), tags: $("gameNameTags"), state: $("gameState"), widgets: $("gameUIWidgets"),
       vitals: $("gameVitals"), vitName: $("vitName"), vitHp: $("vitHp"), vitState: $("vitState"),
       chatBox: $("chatBox"), chatInput: $("gameChatInput"), dead: $("gameDead"), respawn: $("btnRespawn"),
-      storeBtn: $("gameStoreBtn"), store: $("gameStore"),
+      storeBtn: $("gameStoreBtn"), store: $("gameStore"), lockHint: $("gameLockHint"),
     };
     this._storeOpen = false;
     this._purchases = {};
@@ -3891,6 +3900,7 @@ void main() {
     if (h.chatInput) h.chatInput.classList.remove("show");
     if (h.lockHint) document.getElementById("gameLockHint")?.classList.remove("show");
     this.tags && this.tags.clear();
+    document.body.classList.remove("hud-debug");
     const s = document.getElementById("gameHudSettings");
     if (s) s.classList.remove("show");
   }
@@ -3899,6 +3909,9 @@ void main() {
     if (h.stop) h.stop.onclick = () => { const m = rt._shell; if (m) m.leave(rt); else rt._preloadShell(false).then((mm) => mm && mm.leave(rt)); };
     const settings = document.getElementById("gameHudSettings");
     if (!settings) return;
+    // HUD 右上角那个"设置"和 H 键是同一个开关；面板现在浮在 HUD 之外，两处必须同步
+    const toggleBtn = document.getElementById("ghToggle");
+    if (toggleBtn) toggleBtn.onclick = () => settings.classList.toggle("show");
     const bind = (id, get, set) => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -3951,7 +3964,7 @@ void main() {
       sync();
     }
     const dbg = document.getElementById("ghConsole");
-    if (dbg) dbg.onclick = () => h.console && h.console.classList.toggle("show");
+    if (dbg) dbg.onclick = () => rt._toggleConsole();
   }
   _renderWidgets() {
     const host = this.hud.widgets;
