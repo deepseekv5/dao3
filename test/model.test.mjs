@@ -53,7 +53,9 @@ let chrome;
 try { chrome = await launchChrome({}); }
 catch (e) { console.log("SKIP  起不了浏览器，模型社交验收跳过：" + e.message); process.exit(0); }
 const S = await Session.open(chrome.port, {
-  width: 1360, height: 900, isolated: true,
+  // 620 高的视口是故意的：详情页首屏本来就比这高，用 900 高的窗口量"滚不滚得动"
+  // 会量到一个恰好不需要滚的布局，那条断言就永远是真的，也就永远抓不到 bug。
+  width: 1360, height: 620, isolated: true,
   initScripts: ['localStorage.setItem("dao3_disclaimer_ack","3");window.__errs=[];'
     + 'addEventListener("error",e=>__errs.push(e.message+" @"+(e.filename||"").split("/").pop()+":"+e.lineno));'
     + 'addEventListener("unhandledrejection",e=>__errs.push("rej:"+((e.reason&&e.reason.message)||e.reason)));'],
@@ -113,6 +115,17 @@ const detail = await S.evaluate(`(() => ({
 ok("模型卡上不再挂「存为我的地图」", !detail.fork && detail.acts.every((a) => !/存为我的地图/.test(a)), JSON.stringify(detail.acts));
 ok("模型给的是「取回到模型库」", detail.pull && detail.acts.includes("取回到模型库"), JSON.stringify(detail.acts));
 ok("模型详情页有评论区", detail.box);
+// 评论区在折线以下，所以"有没有评论区"要看滚得动滚不动。
+// .wb-app 只钉高度不钉行高时，内层容器被内容撑到一样高 → 它自己滚不动，
+// 而它身上的 overscroll-behavior:contain 把滚轮截在这里，用户看到的就是"页面滑不动"。
+await S.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 640, y: 400, deltaX: 0, deltaY: 700 });
+await sleep(500);
+const scrolled = await S.evaluate(`(() => { const sc = document.querySelector(".wb-scroll"), box = document.getElementById("cBody"), r = box.getBoundingClientRect();
+  return JSON.stringify({ 滚了: sc.scrollTop, 有余量: sc.scrollHeight - sc.clientHeight, 看得见: r.bottom > 0 && r.top < innerHeight }); })()`);
+const sv = JSON.parse(scrolled);
+ok("详情页滚得动，评论框滚得到", sv.有余量 > 0 && sv.滚了 > 0 && sv.看得见, scrolled);
+ok("滚动条只有一条（内层容器滚，文档不跟着长）", await S.evaluate(`document.scrollingElement.scrollHeight <= innerHeight + 1`),
+  await S.evaluate(`JSON.stringify({ sh: document.scrollingElement.scrollHeight, vh: innerHeight })`));
 await S.type("#cBody", "这个铁盒的关节做得不错");
 await S.evaluate(`document.querySelector("#cSend").click()`);
 ok("别人能在模型下面留言", await until(`document.querySelectorAll(".cm-cmt").length === 1`, 12));

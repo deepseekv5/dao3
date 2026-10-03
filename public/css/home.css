@@ -28,7 +28,10 @@ body.wb input, body.wb select { font-family: inherit; color: inherit; }
 body.wb ::selection { background: rgba(34, 200, 221, .32); }
 
 /* ---------------- shell ---------------- */
-.wb-app { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); height: 100vh; }
+/* 行高必须一起钉死：只写 height:100vh 时网格行仍会按内容长高，
+   于是 .wb-scroll 永远不会溢出、自己一点都滚不动，而它身上的
+   overscroll-behavior:contain 又把滚轮截在这里——详情页就变成"往下滑不动"。 */
+.wb-app { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); grid-template-rows: minmax(0, 100vh); height: 100vh; }
 
 .wb-rail {
   display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 0 10px;
@@ -53,7 +56,7 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
 .wb-railfoot button svg { width: 16px; height: 16px; display: block; }
 .wb-railfoot button:hover { color: var(--fg); background: rgba(255, 255, 255, .06); }
 
-.wb-body { display: flex; flex-direction: column; min-width: 0; }
+.wb-body { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* ---------------- 顶栏 ---------------- */
 .wb-top {
@@ -98,7 +101,7 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
 .wb-btn.primary { background: var(--primary); border-color: transparent; color: #04222a; font-weight: 700; }
 .wb-btn.primary:hover { background: var(--primary-hover); }
 
-.wb-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px 60px; }
+.wb-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px 60px; }
 .wb-scroll::-webkit-scrollbar { width: 11px; }
 .wb-scroll::-webkit-scrollbar-thumb { background: #2c2c31; border: 3px solid transparent; background-clip: padding-box; border-radius: 8px; }
 .wb-scroll::-webkit-scrollbar-thumb:hover { background: #3b3b42; background-clip: padding-box; }
@@ -264,7 +267,7 @@ tr:hover .wb-acts, td:hover .wb-acts { opacity: 1; }
 /* ---------------- 响应式 ---------------- */
 @media (max-width: 900px) {
   body.wb { overflow: auto; }
-  .wb-app { grid-template-columns: 1fr; height: auto; }
+  .wb-app { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
   .wb-rail { flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--line); padding: 8px 12px; }
   .wb-railnav { flex-direction: row; }
   .wb-railnav a { width: auto; padding: 6px 10px; }

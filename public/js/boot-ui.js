@@ -79,9 +79,12 @@ export function done() {
   if (!el) return;
   clearInterval(tipTimer);
   stage(100, "就绪");
-  el.classList.add("gone");
-  setTimeout(() => el.remove(), 520);
+  const node = el;
   el = null;
+  node.classList.add("gone");
+  // 先清掉模块级的 el 再延时摘节点：以前写成闭包引用 el，而 el 在同一轮里就被置 null,
+  // 于是 520ms 后这句必然抛 "Cannot read properties of null (reading 'remove')"。
+  setTimeout(() => node.remove(), 520);
 }
 
 // 已经存在的旧遮罩（editor.html 里的 #loading）由这里统一接管，避免两层遮罩叠着。
