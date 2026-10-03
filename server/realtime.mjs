@@ -17,6 +17,12 @@ const MAX_MSG = 200;                  // 聊天长度
 const CHAT_COOLDOWN = 1200;           // 同一个人两句话之间至少隔这么久
 const STATE_HZ = 12;                  // 状态转发节流：人手每秒发 12 帧足够顺滑
 const IDLE_MS = 45_000;               // 这么久没有任何动静就踢掉
+// 一条世界改动包的上限。一格是 5 个数，2000 格 ≈ 一次大挖掘；实体 500 个已经
+// 超过一张图里会被脚本同时驱动的规模。超出的部分丢掉，也不能让一个人用一条包
+// 把整个房间的内存与带宽吃掉。
+const MAX_OP_CELLS = 1000;
+const MAX_OP_ENTS = 500;
+const WORLD_OP_HZ = 8;                // 世界改动转发节流：方块不需要跟到 60Hz
 
 const now = () => Date.now();
 
@@ -74,6 +80,7 @@ class Peer {
     this.lastSeen = now();
     this.dead = false;
     this.pos = [0, 0, 0]; this.yaw = 0; this.anim = "idle";
+    this.lastOp = 0;
     // 载具与换肤：赛车那类地图会把玩家本体换成 mesh 并把自己藏起来。这三样是本地状态，
     // 服务端不记不转，同伴看见的就是一具悬在车位置上的裸人偶。
     this.mesh = ""; this.meshScale = 1; this.hidden = false;
@@ -108,9 +115,53 @@ export function createRealtime({ community } = {}) {
       // 后进来的人与先进来的人 tick 不同，凡按 world.currentTick 计时的脚本
       // （整点事件、昼夜、按 tick 刷新的道具）就会在两个人屏幕上错开。
       r.start = Date.now();
+      // 世界改动的权威副本：谁改的都记在这里，再发给所有人（包括改的人自己），
+      // 所以"一处更改落到所有人身上"，而且后进来的人拿到的是当前状态而不是初始状态。
+      // 记的是增量叠加（last write wins），不是重跑模拟——模拟仍在各端跑。
+      r.voxels = new Map();   // "x,y,z" -> [id, rot]，id=0 表示这格被挖掉
+      r.entities = new Map(); // 实体键 -> [x, y, z, ry, scale]
+      r.seq = 0;
       rooms.set(key, r);
     }
     return r;
+  }
+
+  /** 收一条世界改动。所有字段都当不可信输入：越界、非整数、超量的直接丢。 */
+  function applyWorldOp(room, m) {
+    const changedV = [], changedE = [];
+    if (Array.isArray(m.v)) {
+      for (const cell of m.v.slice(0, MAX_OP_CELLS)) {
+        if (!Array.isArray(cell) || cell.length < 5) continue;
+        const [x, y, z, id, rot] = cell.map(Number);
+        if (![x, y, z, id, rot].every((n) => Number.isFinite(n))) continue;
+        if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) continue;
+        if (Math.abs(x) > 1e5 || Math.abs(y) > 1e5 || Math.abs(z) > 1e5) continue;
+        if (id < 0 || id > 1e6 || (rot & 3) !== rot) continue;
+        const k = `${x},${y},${z}`;
+        if (id === 0) room.voxels.delete(k); else room.voxels.set(k, [id | 0, rot | 0]);
+        changedV.push([x, y, z, id | 0, rot | 0]);
+      }
+    }
+    if (Array.isArray(m.e)) {
+      for (const ent of m.e.slice(0, MAX_OP_ENTS)) {
+        if (!Array.isArray(ent) || ent.length < 6) continue;
+        const [key, x, y, z, ry, s] = ent;
+        if (typeof key !== "string" || !key || key.length > 96) continue;
+        const nums = [x, y, z, ry, s].map(Number);
+        if (!nums.every((n) => Number.isFinite(n))) continue;
+        if (Math.abs(nums[0]) > 1e5 || Math.abs(nums[1]) > 1e5 || Math.abs(nums[2]) > 1e5) continue;
+        room.entities.set(key, [nums[0], nums[1], nums[2], nums[3], Math.min(1e3, Math.max(1e-4, nums[4] || 1))]);
+        changedE.push([key, ...room.entities.get(key)]);
+      }
+    }
+    if (!changedV.length && !changedE.length) return;
+    room.seq++;
+    broadcast(room, { t: "world", seq: room.seq, v: changedV, e: changedE });
+  }
+
+  function worldSnapshot(room) {
+    return { seq: room.seq, v: [...room.voxels.entries()].map(([k, val]) => [...k.split(",").map(Number), val[0], val[1]]),
+      e: [...room.entities.entries()].map(([k, val]) => [k, ...val]) };
   }
 
   function broadcast(room, msg, except) {
@@ -175,6 +226,16 @@ export function createRealtime({ community } = {}) {
       return;
     }
 
+    if (m.t === "op") {
+      // 世界改动走服务端叠加，不走"谁先到谁说了算"的直转：房间里的每个人都只有
+      // 提案权，落地顺序由服务端定序，这样两个人同时挖同一格也不会各留一份真相。
+      const dt = now() - peer.lastOp;
+      if (dt < 1000 / WORLD_OP_HZ) return;
+      peer.lastOp = now();
+      applyWorldOp(room, m);
+      return;
+    }
+
     if (m.t === "chat") {
       const raw = String(m.m == null ? "" : m.m).slice(0, MAX_MSG * 2);
       const clean = raw.replace(/\s+/g, " ").trim();
@@ -207,6 +268,7 @@ export function createRealtime({ community } = {}) {
 
     peer.send({
       t: "welcome", you: peer.id, room: key, t0: room.start, now: Date.now(),
+      world: worldSnapshot(room),
       peers: [...room].filter((p) => p !== peer).map((p) => ({ id: p.id, name: p.user.name, skin: p.user.skin,
         p: p.pos, r: p.yaw, a: p.anim, m: p.mesh, s: p.meshScale, h: p.hidden ? 1 : 0 })),
     });

@@ -30,7 +30,9 @@ process.on("exit", cleanup);
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => {
-  if (cond) { pass++; console.log("PASS  " + name); }
+  if (cond) { pass++; 
+
+console.log("PASS  " + name); }
   else { fail++; console.log("FAIL  " + name + (extra ? "\n      → " + String(extra).slice(0, 240) : "")); }
 };
 
@@ -221,6 +223,7 @@ const badSeen = c2.msgs.filter((m) => m.t === "state"
   && (!Array.isArray(m.p) || m.p.length !== 3 || m.p.some((v) => !Number.isFinite(v) || Math.abs(v) > 1e6)));
 ok("非数字或越界的坐标不会被广播出去", badSeen.length === 0, JSON.stringify(badSeen));
 
+
 c1.send({ t: "chat", m: "你那边能看到我了吗" });
 const chat = await c2.until((m) => m.t === "chat" && m.name === A.name);
 ok("聊天以发送者的昵称播出", !!chat && chat.m === "你那边能看到我了吗", JSON.stringify(chat));
@@ -285,5 +288,46 @@ ok("和握手挤在同一个包里的第一帧不会丢", !!first, JSON.stringif
 listener.close();
 
 c1.close(); c2.close();
+/* ---------------- 世界改动：服务端定序，落到所有人身上 ---------------- */
+{
+  // 自己开两个连接：前面那组 c1/c2 在"同伴离开"那条测试里已经关掉了，
+  // 而且它们的消息尾巴被后面的断言按位置读取，插进来只会互相污染。
+  const A2 = await account("世界甲" + Date.now().toString(36).slice(-4));
+  const B2 = await account("世界乙" + Date.now().toString(36).slice(-4));
+  const C2 = await account("世界丙" + Date.now().toString(36).slice(-4));
+  const a = await wsConnect(`/ws/play/${pubId}`, A2.cookie);
+  const b = await wsConnect(`/ws/play/${pubId}`, B2.cookie);
+  await a.until((x) => x.t === "welcome");
+  await b.until((x) => x.t === "welcome");
+  await sleep(150);
+  a.send({ t: "op", v: [[10, 20, 30, 7, 1]], e: [["门#0", 1.5, 2, 3.5, 0.5, 1]] });
+  const wa = await a.until((x) => x.t === "world" && x.v && x.v.length);
+  const wb = await b.until((x) => x.t === "world" && x.v && x.v.length);
+  // 改的人自己也收到：权威在服务端，客户端不假设"我改了就一定对"。
+  ok("世界改动发给房间里所有人，包括改的人自己", !!wa && !!wb && wa.seq === wb.seq, JSON.stringify({ a: wa && wa.seq, b: wb && wb.seq }));
+  ok("方块改动带值转发（不是只报坐标）", !!wb && JSON.stringify(wb.v[0]) === "[10,20,30,7,1]", JSON.stringify(wb && wb.v));
+  ok("实体位姿一起转发", !!wb && wb.e && wb.e[0][0] === "门#0" && wb.e[0][1] === 1.5, JSON.stringify(wb && wb.e));
+  // 后进来的人必须看到"已被改过的世界"，否则他眼里的图和别人不是同一张。
+  const c = await wsConnect(`/ws/play/${pubId}`, C2.cookie);
+  const wc = await c.until((x) => x.t === "welcome");
+  ok("后进来的人拿到世界改动快照", !!wc && !!wc.world && wc.world.v.some((v) => v[0] === 10 && v[3] === 7)
+    && wc.world.e.some((e) => e[0] === "门#0"), JSON.stringify(wc && wc.world));
+  ok("快照带服务端序号", !!wc && Number.isFinite(wc.world.seq) && wc.world.seq >= 1, String(wc && wc.world && wc.world.seq));
+  // 坏包：非整数、越界、非法旋转码都不能进权威日志
+  await sleep(150);
+  a.send({ t: "op", v: [[1.5, 2, 3, 7, 0], [1e9, 0, 0, 7, 0], [0, 0, 0, 7, 9], ["x", 1, 2, 3, 0]] });
+  await sleep(300);
+  ok("非整数/越界/非法旋转码的方块改动被丢掉", !b.msgs.some((x) => x.t === "world" && x.v
+    && x.v.some((v) => v[0] === 1.5 || v[0] === 1e9 || v[4] === 9 || typeof v[0] === "string")),
+    JSON.stringify(b.msgs.filter((x) => x.t === "world").slice(-1)));
+  await sleep(150);
+  // 5000 格那种包在帧上限就被拒了（见上面"超大帧"），要验这条叠加上限得用一条
+  // 合法大小、但格数超过 MAX_OP_CELLS 的包。
+  a.send({ t: "op", v: Array.from({ length: 1200 }, (_, i) => [i, 0, 0, 7, 0]) });
+  const big = await b.until((x) => x.t === "world" && x.v && x.v.length >= 1000, 2500);
+  ok("一条包里的改动格数有上限", !!big && big.v.length === 1000, big ? String(big.v.length) : "没转发");
+  a.close(); b.close(); c.close();
+}
+
 console.log(`\nrealtime: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

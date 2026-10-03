@@ -58,6 +58,8 @@ export function connect(opts) {
       if (look && look.h) extra.h = 1;
       return send({ t: "state", p, r, ...extra });
     },
+    // 世界改动交给服务端定序再发给所有人：每个人只有提案权，没有"我先改所以是我对"。
+    op(v, e) { return send({ t: "op", ...(v && v.length ? { v } : {}), ...(e && e.length ? { e } : {}) }); },
     chat(m) { return send({ t: "chat", m }); },
     get live() { return !!ws && ws.readyState === 1; },
     close() { closedByUs = true; clearInterval(hb); try { ws && ws.close(); } catch { /* 已经关了 */ } },

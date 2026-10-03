@@ -43,6 +43,10 @@ export * from "./gapi.js";
    作者面板上的数值仍然线性有效，改 jumpPower 就是改跳多高，只是不再原样当速度用。 */
 const JUMP_V_SCALE = 0.53;
 
+/* 实体位姿不是每 tick 都查一遍：脏格 flush 每 tick 都会走，但场景里被脚本同时驱动的
+   实体通常一秒才变几回。16 tick（约 1 秒）比一次，改动立刻可见，包又不会把房间压满。 */
+const NET_ENT_EVERY = 16;
+
 /* ============================ 名牌 / 头顶文字层 ============================ */
 class TagLayer {
   constructor(host) {
@@ -482,6 +486,8 @@ export class GameRuntime {
   _initNet() {
     const meta = window.__playMeta;
     this._netPeers = new Map();
+    this._netEntTick = 0; this._netWorldSeq = 0;
+    this._netEntOut = new Map(); this._netEntSeen = new Set();
     if (!meta || !meta.pubId || !window.__me) return;
     import("./net.js").then(({ connect }) => {
       if (!this.running) return;
@@ -506,6 +512,8 @@ export class GameRuntime {
               if (tick >= 0 && tick < 1e9) { this.currentTick = tick; this._acc = elapsed % TICK_MS; }
             }
             for (const p of m.peers || []) this._netSpawn(p);
+            // 后进来的人要看到"已经被别人改过的世界"，而不是发布时的初始状态。
+            if (m.world) { this._netWorldSeq = m.world.seq || 0; this._netApplyWorld(m.world); }
             count();
           },
           join: (m) => { this._netSpawn(m.peer); count(); this._chatLine(`${m.peer.name} 进来了`, "#9fd6a0", "sys"); },
@@ -523,6 +531,7 @@ export class GameRuntime {
               }
             }
           },
+          world: (m) => this._netApplyWorld(m),
           chat: (m) => this._chatLine(`${m.name}: ${m.m}`, "#bfe0ff"),
           throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#8fe3ef", "sys"),
           rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3", "sys"),
@@ -796,6 +805,7 @@ export class GameRuntime {
       particleDamping: 0, particleAcceleration: new GameVector3(), particleNoise: 0,
       particleNoiseFrequency: 1, particleTarget: null, particleTargetWeight: 0,
       destroyed: false, isPlayer: false, player: undefined,
+      _netIndex: this._entNetIndex = (this._entNetIndex || 0) + 1,
       _tags: new Set(cfg.tags || []), _obj: cfg.obj || null, _external: !!cfg.obj,
       _entityContacts: [], _voxelContacts: [], _fluidContacts: [],
       _prevVoxelContacts: [], _prevFluidContacts: [],
@@ -2650,10 +2660,80 @@ const ZERO = new GameVector3();
   }
   // API 批量写方块（官方示例里有 127×127 的循环）不能每格重建一次网格、每格响一次放置音
   _flushVoxelDirty() {
-    if (!this._voxelDirty || !this._voxelDirty.size) return;
-    const cells = [...this._voxelDirty.values()];
-    this._voxelDirty.clear();
+    const cells = this._voxelDirty && this._voxelDirty.size ? [...this._voxelDirty.values()] : [];
+    if (this._voxelDirty) this._voxelDirty.clear();
     for (const c of cells) this.e.renderer.markDirty(c[0], c[1], c[2]);
+    if (!this._net || this._netApplying) { this._netEntTick = 0; return; }
+    // 世界改动不是直转给某一个人，而是交给服务端叠加后再发给所有人（包括自己）：
+    // 两个人同时挖同一格时，落地顺序由服务端定序，各端才会收敛到同一个世界。
+    if (cells.length || ++this._netEntTick >= NET_ENT_EVERY) {
+      this._netEntTick = 0;   // 发完就归零：不归零的话计数会一直大于阈值，每 tick 都发一次空包
+      this._net.op(cells, this._netEntityDelta());
+    }
+  }
+  /** 与上一次发出去的位姿比一遍，只报真的动了的实体。
+   *  键用「实体名#创建序号」：官方语义里 entity.id 就是名字，而名字在一张图里
+   *  可以重复（场景模型普遍叫"草地4-10"），只按名字当键会把两个模型的位置互相覆盖。
+   *  创建序号在各端一致的前提是"大家跑的是同一份快照、同一套脚本"——这个前提
+   *  成立（房间就是按发布快照开的），但它确实是前提，不是被证明的事实。 */
+  _netEntityDelta() {
+    const out = [];
+    const seen = this._netEntSeen || (this._netEntSeen = new Set());
+    seen.clear();
+    for (const ent of this.entities) {
+      if (!ent || ent.isPlayer || (ent._tags && ent._tags.has("netplayer")) || !ent.position) continue;
+      const key = ent._netKey || (ent._netKey = `${ent.id || "e"}#${ent._netIndex}`);
+      seen.add(key);
+      const p = ent.position;
+      const ry = ent._lookYaw != null ? ent._lookYaw : (ent._obj ? ent._obj.rotation.y : 0);
+      const sc = ent.scale != null ? ent.scale : 1;
+      const cur = [Math.round(p.x * 1000) / 1000, Math.round(p.y * 1000) / 1000, Math.round(p.z * 1000) / 1000,
+        Math.round(ry * 1000) / 1000, sc];
+      const last = this._netEntOut && this._netEntOut.get(key);
+      if (last && last.every((v, i) => Math.abs(v - cur[i]) < 1e-4)) continue;
+      (this._netEntOut || (this._netEntOut = new Map())).set(key, cur);
+      out.push([key, ...cur]);
+      if (out.length >= 120) break; // 一条包不摊平整个场景：剩下的下一轮再报
+    }
+    return out;
+  }
+  /** 把服务端定序后发来的世界改动落到本地。_netApplying 防回声：落地时产生的脏格
+   *  不能再发回去，否则一次编辑会在房间里来回放大成无限循环。 */
+  _netApplyWorld(msg) {
+    if (!msg || (msg.seq != null && msg.seq <= (this._netWorldSeq || 0))) return;
+    if (msg.seq != null) this._netWorldSeq = msg.seq;
+    this._netApplying = true;
+    try {
+      for (const c of (msg.v || [])) {
+        const [x, y, z, id, rot] = c.map(Number);
+        if (![x, y, z, id, rot].every(Number.isFinite)) continue;
+        if (id === 0) this.e.world.set(x | 0, y | 0, z | 0, 0, 0);
+        else this.e.world.set(x | 0, y | 0, z | 0, id | 0, rot & 3);
+        this.e.renderer.markDirty(x | 0, y | 0, z | 0);
+      }
+      for (const e of (msg.e || [])) {
+        const key = e[0]; const ent = this._entityByKey(key);
+        if (!ent) continue;
+        ent.position.set(Number(e[1]), Number(e[2]), Number(e[3]));
+        const ry = Number(e[4]); if (Number.isFinite(ry)) { ent._lookYaw = ry; if (ent._obj) ent._obj.rotation.y = ry; }
+        const sc = Number(e[5]);
+        if (Number.isFinite(sc) && sc > 0) { ent.scale = sc; if (ent._obj) ent._obj.scale.setScalar(sc); }
+        // 把"上一次发出去的值"对齐成刚收到的值，否则本地 diff 会立刻把它原样回发一次
+        (this._netEntOut || (this._netEntOut = new Map())).set(key, [e[1], e[2], e[3], e[4], e[5]]);
+      }
+    } finally { this._netApplying = false; }
+  }
+  _entityByKey(key) {
+    const hash = String(key).lastIndexOf("#");
+    const name = hash > 0 ? String(key).slice(0, hash) : String(key);
+    const idx = hash > 0 ? Number(String(key).slice(hash + 1)) : 0;
+    let n = 0;
+    for (const ent of this.entities) {
+      if (!ent || ent.isPlayer || String(ent.id) !== name) continue;
+      if (n === idx) return ent;
+      n++;
+    }
+    return null;
   }
   // 引擎托管计时器：随运行结束统一回收，避免脚本回调打到已销毁实体
   _addTimer(fn, ms, repeat) {
@@ -3657,11 +3737,15 @@ void main() {
     } else return 0;
     if (!id) { this._clearVox(x, y, z); return 0; }
     w.set(x, y, z, id, r);
-    this._voxelDirty.set(`${x},${y},${z}`, [x, y, z]);
+    // 脏格里必须带上"变成了什么"：只记坐标的话，同伴无从知道这格是多了块石头
+    // 还是被换成了木头，联机同步就只能靠重发整张图。
+    this._voxelDirty.set(`${x},${y},${z}`, [x, y, z, id, r]);
     return packId(id, r);
   }
   _clearVox(x, y, z) {
     this.e.world.set(x, y, z, 0, 0);
+    // 删除以前绕过脏格直接 markDirty，于是联机时"我挖掉一块"这件事根本进不了同步队列。
+    this._voxelDirty.set(`${x},${y},${z}`, [x, y, z, 0, 0]);
     this.e.renderer.markDirty(x, y, z);
     this._playAt(this.breakVoxelSound, new GameVector3(x + 0.5, y + 0.5, z + 0.5));
   }

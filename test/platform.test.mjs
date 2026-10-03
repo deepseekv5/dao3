@@ -401,6 +401,51 @@ const ghost = await A.evaluate(`(() => { const p = [...(window.__game._netPeers 
   return p ? { name: p.ent.customName, shown: p.ent.showEntityName, tags: [...p.ent._tags], solid: p.ent.collides, inScene: !!p.ent._obj.parent } : null; })()`);
 ok("同伴是以账号昵称出现的角色，且不带碰撞", !!ghost && ghost.name === nameB && ghost.shown && !ghost.solid && ghost.inScene, JSON.stringify(ghost));
 ok("联机分身不会冒充脚本眼里的 player", !!ghost && ghost.tags.indexOf("player") === -1, JSON.stringify(ghost));
+
+/* ---------------- 世界改动的客户端两半：发出去 / 落得下 ---------------- */
+{
+  // 这一节刻意不开第二个浏览器：两机同屏在软件 WebGL 下会把每条 evaluate 拖到几十秒，
+  // 测到的是渲染速度而不是这段逻辑。服务端定序与"发给所有人"由
+  // test/realtime.test.mjs 用真 WebSocket 覆盖；这里只验客户端的发出与落地两半。
+  const one = await A.evaluate(`(async () => {
+    const g = window.__game, w = g.e.world;
+    const sent = [];
+    const real = g._net;
+    g._net = { op: (v, e) => sent.push({ v, e }), state() {}, close() {}, get live() { return true; } };
+    const p = g.playerEntity.position;
+    const x = Math.floor(p.x), y = Math.floor(p.y) + 7, z = Math.floor(p.z);
+    const out = {};
+    out.空格 = w.get(x, y, z) === 0;
+    g._setVox(x, y, z, 1, 0); g._flushVoxelDirty();
+    out.放置发出去了 = sent.some((o) => (o.v || []).some((c) => c[0] === x && c[1] === y && c[2] === z && c[3] !== 0));
+    sent.length = 0;
+    g._clearVox(x, y, z); g._flushVoxelDirty();
+    out.删除也发出去了 = sent.some((o) => (o.v || []).some((c) => c[0] === x && c[1] === y && c[2] === z && c[3] === 0));
+    // 实体位姿：每 NET_ENT_EVERY 个 tick 才 diff 一次，所以要把脏区流程走满
+    let ent = g.entities.find((e2) => !e2.isPlayer && !(e2._tags && e2._tags.has("netplayer")) && e2.position);
+    // 这张测试图可能一个实体都没有：那就自己造一个。不然这条断言测的是"恰好没东西可测"。
+    if (!ent) ent = g._makeEntity({ id: "同步测试", position: [x + 1, y, z], bounds: [1, 1, 1] });
+    out.有可动实体 = !!ent && !!ent.position;
+    sent.length = 0;
+    if (ent) { ent.position.set(ent.position.x + 3.5, ent.position.y, ent.position.z); }
+    for (let i = 0; i < 20 && !sent.some((o) => (o.e || []).length); i++) g._flushVoxelDirty();
+    const eop = sent.find((o) => (o.e || []).length);
+    out.实体位姿发出去了 = !!eop && eop.e[0][1] !== 0;
+    out.实体键带创建序号 = !!eop && /#\\d+$/.test(eop.e[0][0]);
+    // 落地远端改动：写进本地世界，且不能回声再发一次
+    sent.length = 0;
+    g._netApplyWorld({ seq: 999999, v: [[x, y, z, 5, 2]] });
+    out.远端改动已落地 = w.get(x, y, z) !== 0;
+    out.落地不回声 = sent.length === 0;
+    // 旧序号的包要丢掉：乱序到达时不能把世界倒回早先的状态
+    const before = w.get(x, y, z);
+    g._netApplyWorld({ seq: 1, v: [[x, y, z, 0, 0]] });
+    out.过期序号被丢弃 = w.get(x, y, z) === before;
+    g._net = real;
+    return out;
+  })()`);
+  for (const [k, v] of Object.entries(one)) ok("世界改动·" + k, v === true, JSON.stringify(one));
+}
 // 刚进来的人还没报坐标时，服务端记的是 [0,0,0]。真把分身摆到原点，
 // 他就长在相机里糊满半个屏幕——这条断言盯的就是这个。
 const moved = await until(A, `(() => { const p = [...(window.__game._netPeers || new Map()).values()][0];
