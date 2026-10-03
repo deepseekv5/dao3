@@ -597,7 +597,11 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       // 玩法分类是广场的主导航，不是标签云：作者多半不会自己打标签，
       // 所以标题与简介里出现这个词也算命中，否则每个分类都是空的。
       const cat = CATEGORIES.includes(url.searchParams.get("cat")) ? url.searchParams.get("cat") : "";
+      // 地图和模型混在一条流里时，模型永远排在后面：它没有"游玩"这个动作，
+      // 热度天然低一截。给一个按类型切的开关，两边才谈得上都能被看到、被评论。
+      const kind = ["map", "model"].includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "";
       let rows = livePubs();
+      if (kind) rows = rows.filter((p) => (p.kind || "map") === kind);
       if (cat) {
         rows = rows.filter((p) => (p.tags || []).includes(cat)
           || `${p.title} ${p.desc}`.toLowerCase().includes(cat.toLowerCase()));

@@ -152,7 +152,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   <div class="lc-add"><button id="modelFromVoxels" class="round">▣</button><span>把选区转为体素模型</span></div>
   <div class="lc-add"><a href="/voxa" target="_blank" rel="noopener" class="round" title="在新标签页打开 VOXA 体素模型编辑器">◇</a><span>用 VOXA 建模（部件 / 骨骼 / 动画）</span></div>
   <div id="modelList" class="model-list"></div>
-  <div class="model-hint">点选后到场景点击放置。名称为 #id 或 .tag 的模型会成为实体标记（运行时可用 world.querySelector 查询）。</div>
+  <div class="model-hint" title="名称为 #id 或 .tag 的模型会成为实体标记，运行时可用 world.querySelector 查询">点选后到场景点击放置</div>
 </div>
 
 <!-- 实体属性卡：独立于「模型」页签，任何模式下选中模型都能改 -->
@@ -265,7 +265,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
 <div id="terrainModal" class="modal">
   <div class="modal-box">
     <div class="modal-title">生成地形</div>
-    <p class="modal-note">只替换方块，实体 / 脚本 / 区域 / 商品 / 出生点都保留。想从零开始请用「新建世界」。</p>
+    <p class="modal-note">只替换方块，实体 / 脚本 / 区域 / 商品 / 出生点都保留。</p>
     <div class="size-custom">
       <label>地貌<select id="tmPreset"></select></label>
       <label>种子<input id="tmSeed" type="number" min="1" max="999999" value="20260924"></label>
@@ -404,7 +404,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <div class="pp-sub">虚拟按键图标（官方 gamepad）</div>
     <div id="plPad" class="pp-grid"></div>
     <div class="modal-actions"><button id="plReset">恢复官方默认</button><button id="plOk" class="primary">完成</button></div>
-    <div class="ss-console-tip" style="border:none">速度单位为官方口径的「格 / tick（64ms）」：默认行走 0.22、奔跑 0.4。保存到世界 meta，运行游戏时生效；脚本仍可实时覆盖。</div>
+    <div class="ss-console-tip" style="border:none" title="单位是官方口径的「格 / tick（64ms）」，默认行走 0.22、奔跑 0.4；脚本仍可实时覆盖这些值">单位：格 / tick（64ms）</div>
   </div>
 </div>
 

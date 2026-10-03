@@ -88,6 +88,12 @@ const kfmt = (n) => {
   if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
   return String(v);
 };
+/** 卡片底部那一行计数。图标自己画：字体里的 ★ ♥ 💬 在不同系统上会漂成 emoji，
+ *  而漂不漂只有用户看得到，测试抓不到。 */
+const ico = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const EYE = ico('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>');
+const HEART = ico('<path d="M12 20s-7.4-4.6-7.4-9.4A4.1 4.1 0 0 1 12 8.2a4.1 4.1 0 0 1 7.4 2.4C19.4 15.4 12 20 12 20z"/>');
+const CHAT = ico('<path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-4 3.5V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5z"/>');
 export function cardHtml(p) {
   const isModel = p.kind === "model";
   return `<article class="cm-card" data-id="${esc(p.id)}">
@@ -101,8 +107,9 @@ export function cardHtml(p) {
       <h4 class="cm-title">${esc(p.title)}</h4>
       <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span></div>
       <div class="cm-views">
-        <svg viewBox="0 0 24 24" class="cm-eye"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
-        <span>${kfmt(p.plays)} 浏览</span>
+        <span title="浏览">${EYE}${kfmt(p.plays)}</span>
+        <span title="点赞">${HEART}${kfmt(p.likes)}</span>
+        <span title="评论">${CHAT}${kfmt(p.comments)}</span>
       </div>
     </div>
   </article>`;
@@ -111,6 +118,24 @@ export function bindCards(scope) {
   for (const c of scope.querySelectorAll(".cm-card")) c.onclick = () => (location.href = "/p/" + c.dataset.id);
 }
 /* ---------------- 游玩 / 取回本地 ---------------- */
+/** 把社区里的模型取回本机 VOXA 库。
+ *  原来模型发布只有"下载 .voxa"一条路：下载完还得自己找到导入入口，对玩家来说这一步等于没有。
+ *  同名不覆盖——加序号，因为覆盖掉自己手上的模型比多一个副本糟得多。 */
+export async function pullModel(p, btn) {
+  if (!auth.me) { openAuth("register"); toast("取回模型要先有个账号"); return; }
+  btn.disabled = true;
+  try {
+    const doc = await (await fetch(`/api/community/pubs/${p.id}/model`)).json();
+    if (!doc || !Array.isArray(doc.parts)) throw new Error("这份发布里没有模型内容");
+    const have = new Set((((await (await fetch("/api/models")).json()) || {}).models || []).map((m) => m.name));
+    const base = String(p.title || "模型").replace(/[\\/\0]/g, "").trim().slice(0, 60) || "模型";
+    let name = base;
+    for (let i = 2; have.has(name) && i < 60; i++) name = `${base} · ${i}`;
+    await api("POST", "/api/models/" + encodeURIComponent(name), Object.assign({}, doc, { name }));
+    btn.textContent = "已取回";
+    toast(`已取回模型库：${name}`);
+  } catch (e) { btn.disabled = false; toast(e.message || "取回失败", true, 4200); }
+}
 /** 把发布快照落到本地世界：id 固定，重复游玩就是刷新，不会把世界列表塞满。 */
 export async function materialize(p, { keep = false } = {}) {
   const wid = "pub" + p.id.slice(0, 16);

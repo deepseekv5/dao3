@@ -136,7 +136,9 @@ ok("上传的封面成为详情页头图", await until(A, `!!document.querySelec
 await A.shot(path.join(ROOT, "tmp/ui-detail.png"));
 
 /* ---------------- 个人主页：简介 / 头像 / 皮肤 ---------------- */
-await A.goto(BASE + "/me"); await sleep(1400);
+await A.goto(BASE + "/me");
+// 关掉缓存之后每次进页面都要重新拉模块，固定 sleep 会读到还没渲染完的主页
+if (!await until(A, `!!document.querySelector(".pf-banner")`, { tries: 24, ms: 400 })) await sleep(1200);
 const pf = await A.evaluate(`(() => ({ banner: !!document.querySelector(".pf-banner"), cards: document.querySelectorAll(".cm-card").length, edit: !!document.querySelector("#pfEdit") }))()`);
 ok("个人主页有横幅、自己的作品与编辑入口", pf.banner && pf.cards === 1 && pf.edit, JSON.stringify(pf));
 await A.click("#pfEdit");

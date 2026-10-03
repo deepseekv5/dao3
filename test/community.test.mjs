@@ -388,6 +388,22 @@ try {
   const prevBuf = Buffer.from(await prev.arrayBuffer());
   ok("模型发布会自绘一张预览", prev.status === 200 && prev.headers.get("content-type") === "image/png"
     && prevBuf.subarray(0, 4).toString("hex") === "89504e47", prev.status + " " + prev.headers.get("content-type"));
+  // 模型和地图混在一条流里时，模型没有"游玩"这个动作，热度天然低一截，永远沉底。
+  // 所以广场要能按类型切；而"模型能不能评论"这件事，用户问过一次，就别再让它只是接口通。
+  const onlyModel = await (await fetch(BASE + "/api/community/feed?sort=new&kind=model")).json();
+  const onlyMap = await (await fetch(BASE + "/api/community/feed?sort=new&kind=map")).json();
+  ok("广场能只看模型", onlyModel.rows.length > 0 && onlyModel.rows.every((r) => r.kind === "model"), JSON.stringify(onlyModel.rows.map((r) => r.kind)));
+  ok("广场能只看地图", onlyMap.rows.length > 0 && onlyMap.rows.every((r) => !r.kind || r.kind === "map"), JSON.stringify(onlyMap.rows.map((r) => r.kind)));
+  // 用 C：B 在上面那节刚登出过，到 414 行才重新登录
+  const mCmt = await C.call("POST", `/api/community/pubs/${modelId}/comments`, { body: "这个模型的关节做得不错" });
+  ok("模型也能被评论", mCmt.status === 200 && mCmt.data.row.body === "这个模型的关节做得不错", JSON.stringify(mCmt.data).slice(0, 140));
+  const mFeed = await (await fetch(BASE + "/api/community/feed?sort=new&kind=model")).json();
+  ok("模型的评论数上了卡片", (mFeed.rows.find((r) => r.id === modelId) || {}).comments >= 1,
+    JSON.stringify(mFeed.rows.find((r) => r.id === modelId)));
+  const mNote = await A.call("GET", "/api/community/notifications");
+  ok("别人评论我的模型，作者会收到通知", (mNote.data?.rows || []).some((n) => n.kind === "comment" && n.pub && n.pub.id === modelId),
+    JSON.stringify((mNote.data?.rows || []).map((n) => n.kind)));
+  ok("模型发布没有世界快照可取", (await fetch(BASE + "/api/community/pubs/" + modelId + "/world")).status === 404);
 
   // 版本回滚：把 v1 换回来，当前版进归档
   const rb = await A.call("POST", `/api/community/pubs/${pubId}/rollback`, { v: 1 });

@@ -1,7 +1,7 @@
 // community.js — 社区页：广场、地图详情、用户主页、好友与关注。
 // 一个 HTML 壳 + 按路径分派，因为这几屏共用同一条数据管线（发布卡片、关注按钮、头像）。
 import * as auth from "/js/auth.js";
-import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, cardHtml, bindCards, playPub, materialize, openPublishDialog } from "/js/pubs.js";
+import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, cardHtml, bindCards, playPub, materialize, pullModel, openPublishDialog } from "/js/pubs.js";
 import { profileView } from "/js/profile.js";
 const { api, esc, mountAuth, onLogin, openAuth } = auth;
 
@@ -13,7 +13,8 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------------- 广场 ---------------- */
 const FEED_TABS = [["new", "最新"], ["hot", "最热"], ["following", "关注"]];
-let feed = { sort: "new", cat: "", q: "", offset: 0, total: 0, rows: [], cats: [] };
+const FEED_KINDS = [["", "全部"], ["map", "地图"], ["model", "模型"]];
+let feed = { sort: "new", cat: "", kind: "", q: "", offset: 0, total: 0, rows: [], cats: [] };
 
 async function feedView() {
   pageTitle.textContent = "地图展厅";
@@ -42,8 +43,13 @@ function drawTabs() {
   const el = $("cmTabs");
   el.innerHTML = FEED_TABS.map(([k, label]) =>
     `<button class="cm-btn ${feed.sort === k ? "on" : ""}" data-s="${k}">${label}</button>`).join("")
+    // 地图和模型是两种东西：模型不能被"游玩"，只能被看、被评论、被取回自己的库里用。
+    // 混在一条流里模型永远沉底，所以给一条按类型切的开关。
+    + `<span class="cm-kinds">${FEED_KINDS.map(([k, label]) =>
+      `<button class="cm-kind ${feed.kind === k ? "on" : ""}" data-k="${k}">${label}</button>`).join("")}</span>`
     + `<span class="spacer"></span><span class="cm-count" id="cmCount"></span>`;
   for (const b of el.querySelectorAll("[data-s]")) b.onclick = () => { feed.sort = b.dataset.s; reload(); };
+  for (const b of el.querySelectorAll("[data-k]")) b.onclick = () => { feed.kind = b.dataset.k; reload(); };
 }
 
 async function reload() { feed = { ...feed, offset: 0, rows: [] }; drawCats(); drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }
@@ -54,7 +60,7 @@ async function loadFeed(reset) {
   if (reset) grid.innerHTML = `<div class="cm-empty">正在读取广场…</div>`;
   let r;
   try {
-    r = await api("GET", `/api/community/feed?sort=${feed.sort}&cat=${encodeURIComponent(feed.cat)}&q=${encodeURIComponent(feed.q)}&offset=${feed.offset}&limit=24`);
+    r = await api("GET", `/api/community/feed?sort=${feed.sort}&cat=${encodeURIComponent(feed.cat)}&kind=${feed.kind}&q=${encodeURIComponent(feed.q)}&offset=${feed.offset}&limit=24`);
   } catch (e) {
     grid.innerHTML = `<div class="cm-empty"><b>${esc(e.message)}</b>${feed.sort === "following" ? "登录后才能看关注的人发布了什么。" : "社区服务没起来？"}</div>`;
     return;
@@ -64,7 +70,8 @@ async function loadFeed(reset) {
   feed.total = r.total;
   feed.rows = feed.rows.concat(r.rows);
   feed.offset = r.rows.length;
-  grid.innerHTML = feed.rows.length ? feed.rows.map(cardHtml).join("") : `<div class="cm-empty" style="grid-column:1/-1"><b>这里还空着</b>还没有人发布地图。打开工作台，把你的世界发上来就是第一张。</div>`;
+  const noun = feed.kind === "model" ? "模型" : feed.kind === "map" ? "地图" : "作品";
+  grid.innerHTML = feed.rows.length ? feed.rows.map(cardHtml).join("") : `<div class="cm-empty" style="grid-column:1/-1"><b>这里还空着</b>还没有${noun}发布。</div>`;
   $("cmCount").textContent = `${feed.rows.length} / ${r.total}`;
   $("cmMore").innerHTML = feed.rows.length < r.total ? `<button class="cm-btn" id="cmMoreBtn">再看 24 张</button>` : "";
   const more = $("cmMoreBtn");
@@ -119,7 +126,9 @@ async function pubView(id) {
         <div class="cm-acts" id="cmPubActs">
           <button class="cm-btn primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${p.kind === "model" ? "下载模型" : "开始游玩"}</button>
           <button class="cm-btn ${p.likedByMe ? "on" : ""}" id="cmLike">♥ 点赞 <b>${p.likes}</b></button>
-          <button class="cm-btn" id="cmFork">存为我的地图</button>
+          ${p.kind === "model"
+            ? `<button class="cm-btn" id="cmPull">取回到模型库</button>`
+            : `<button class="cm-btn" id="cmFork">存为我的地图</button>`}
           ${d.canEdit ? `<button class="cm-btn" id="cmEdit">编辑简介</button><button class="cm-btn" id="cmUnpub">下架</button>` : ""}
           ${d.canEdit ? "" : `<button class="cm-report" id="cmReport">举报这张${p.kind === "model" ? "模型" : "地图"}</button>`}
         </div>
@@ -130,7 +139,10 @@ async function pubView(id) {
 
   if (a) renderAuthorActs(a, rel);
   $("cmPlay").onclick = () => playPub(p);
-  $("cmFork").onclick = () => materialize(p, { keep: true });
+  const fork = $("cmFork");
+  if (fork) fork.onclick = () => materialize(p, { keep: true });
+  const pull = $("cmPull");
+  if (pull) pull.onclick = () => pullModel(p, pull);
   $("cmLike").onclick = async () => {
     if (!requireLogin()) return;
     try {
