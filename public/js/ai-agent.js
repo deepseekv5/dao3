@@ -17,8 +17,11 @@
 //  1. **不设步数上限**，但会认"卡住"：同一动作连续失败 4 次、或连续 12 步
 //     没有任何成功改动，就停下来等人。这不是保守，是因为那种情况下继续跑
 //     只会一直花用户的 API 额度而不会再产出任何东西。
-//  2. **不越权**。Agent 能写的只有地图脚本与体素；碰不到存档、网络、文件系统，
-//     也碰不到用户填的密钥（写脚本时故意不告诉它配置的存在）。
+//  2. **不越权**。Agent 能改的是地图脚本、体素、实体与世界设置；社区那一侧只有四个
+//     口子（who/feed/publish/comment），其中 publish 与 comment 是**别的账号也看得见**
+//     的写操作，所以和 storage.remove 一样要模型显式传 confirm:true 才落地——
+//     "用户让我发布"不等于 Agent 可以自己决定发布哪一版、以什么标题发布。
+//     仍然碰不到文件系统，也碰不到用户填的密钥（写脚本时故意不告诉它配置的存在）。
 //  3. **每步都可撤销**。盖体素走 history，写脚本前整份脚本表先 snapshot，
 //     所以"Agent 把世界搞坏了"这件事的正确答案永远是 Cmd-Z。
 
@@ -27,6 +30,7 @@ import { apiDigest, specPrompt } from "./ai-script.js";
 import { runSandboxCode, createWorld, addEntityMarker } from "./features.js";
 import { exportProjectZip } from "./io.js";
 import { dataStorageKey, dataStoragePrefix } from "./game.js";
+import * as auth from "./auth.js";
 import { PRESETS } from "./terrain.js";
 import { renderMd, mdEl, MD_CSS } from "./md.js";
 
@@ -104,6 +108,13 @@ export const TOOLS = [
     args: { gameRules: "可选对象，写进 meta.gameRules", worldSettings: "可选对象，写进 meta.worldSettings" } },
   { name: "project.export", desc: "把整个工程导出成官方同构的项目包 .zip —— 这就是交付物。",
     args: { name: "可选导出名" } },
+  { name: "community.who", desc: "看当前登录的是谁。社区的发布与评论都要先登录。无参数。" },
+  { name: "community.feed", desc: "读本地社区广场：pubId、标题、作者、赞、评论、游玩数。想知道有什么图、或要找某条发布的 pubId 用它。",
+    args: { kind: "可选 map|model", sort: "可选 new|hot，默认 new", limit: "可选 1..20，默认 8" } },
+  { name: "community.publish", desc: "把**当前这张图**发布到本地社区广场。会先自动 map.save，发的是那一刻的快照（之后再改这张图不会跟着变）。对外可见，必须显式 confirm:true。",
+    args: { title: "标题，至少 2 个字", desc: "可选简介", tags: "可选字符串数组，最多 6 个", confirm: "必须传 true" } },
+  { name: "community.comment", desc: "给某条发布（地图或模型）写一条评论。对外可见，必须显式 confirm:true。",
+    args: { pubId: "发布 id（community.feed 第一列那个）", body: "评论内容，500 字内", confirm: "必须传 true" } },
   { name: "plan.set", desc: "登记或更新你的计划清单（会显示在小窗顶部）。开工前先发一次；每完成一项就再发一次把状态改成 done。",
     args: { items: `[{text, status}]，status 只能是 todo / doing / done / skip，最多 12 项` } },
   { name: "finish", desc: "收工。summary 里说清做了什么、怎么触发、还剩什么没做。", args: { summary: "给用户看的中文小结" } },
@@ -893,6 +904,53 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
         }
         E.markDirty?.();
         return { ok: true, obs: `已改设置 ${keys.join(" · ")}；下一次进入运行模式时生效` };
+      }
+      case "community.who": {
+        const me = auth.me;
+        return { ok: !!me, obs: me ? `已登录：${me.name}（id ${me.id}）` : "未登录：社区发布与评论都要先登录（右上角登录或注册）" };
+      }
+      case "community.feed": {
+        const kind = args.kind === "map" || args.kind === "model" ? args.kind : "";
+        const limit = Math.min(20, Math.max(1, Number(args.limit) || 8));
+        const sort = args.sort === "hot" ? "hot" : "new";
+        let r;
+        try { r = await auth.api("GET", `/api/community/feed?sort=${sort}&kind=${kind}&limit=${limit}`); }
+        catch (e) { return { ok: false, obs: "读广场失败：" + (e && e.message || e) }; }
+        const rows = (r && r.rows) || [];
+        if (!rows.length) return { ok: true, obs: "广场现在是空的" };
+        return { ok: true, obs: `广场 ${rows.length} 条（共 ${r.total} 条，按${sort === "hot" ? "热度" : "最新"}）：\n`
+          + rows.map((p) => `${p.id} · ${p.title}［${p.kind === "model" ? "模型" : "地图"}］by ${p.author ? p.author.name : "匿名"}`
+            + ` · 赞 ${p.likes} 评论 ${p.comments} 游玩 ${p.plays}${p.mine ? " · 我的" : ""}`).join("\n") };
+      }
+      case "community.publish": {
+        // 发布与评论是这台机器之外也看得见的写操作（本地社区也有别的账号在读），
+        // 所以和 storage.remove 一样要显式 confirm，不能因为"用户让我发布"就自己发。
+        if (args.confirm !== true) return { ok: false, obs: "community.publish 是对外可见的写操作：要显式传 confirm:true 才会真的发布" };
+        if (!auth.me) return { ok: false, obs: "发布要先登录" };
+        const title = String(args.title || "").trim();
+        if (title.length < 2) return { ok: false, obs: "title 至少 2 个字" };
+        // 发的是"已保存的那张图"的快照：不先落盘，别人拿到的就是上一版
+        const id = await E.save();
+        if (!id) return { ok: false, obs: "保存失败，没有可发布的 worldId" };
+        let r;
+        try {
+          r = await auth.api("POST", "/api/community/publish", {
+            worldId: id, title, desc: String(args.desc || "").slice(0, 2000),
+            tags: Array.isArray(args.tags) ? args.tags.slice(0, 6).map(String) : [],
+          });
+        } catch (e) { return { ok: false, obs: "发布失败：" + (e && e.message || e) }; }
+        return { ok: true, obs: `已发布到社区：${r.pub.title}（${r.pub.id}）→ /p/${r.pub.id}` };
+      }
+      case "community.comment": {
+        if (args.confirm !== true) return { ok: false, obs: "community.comment 是对外可见的写操作：要显式传 confirm:true" };
+        if (!auth.me) return { ok: false, obs: "评论要先登录" };
+        const body = String(args.body || "").trim().slice(0, 500);
+        if (!body) return { ok: false, obs: "body 是评论内容，不能空" };
+        if (!args.pubId) return { ok: false, obs: "要 pubId（先用 community.feed 拿到）" };
+        try {
+          const r = await auth.api("POST", `/api/community/pubs/${encodeURIComponent(String(args.pubId))}/comments`, { body });
+          return { ok: true, obs: `已评论，这条发布现在 ${r.total} 条评论` };
+        } catch (e) { return { ok: false, obs: "评论失败：" + (e && e.message || e) }; }
       }
       case "project.export": {
         const r = await exportProjectZip({ world: E.world, state: E.state,
