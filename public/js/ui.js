@@ -597,6 +597,47 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
       i.onchange = () => cb(parseFloat(i.value) || 0);
       r.appendChild(s); r.appendChild(i); return r;
     }
+    /** 门的目标：本机能玩到的两类来源——本地世界 + 广场上的地图发布。
+     *  只拉一次并缓存：区域列表每改一个数字就整体重绘，不缓存就是每改一个字段打两次接口。 */
+    let gotoOpts = null;
+    async function loadGotoOpts() {
+      if (gotoOpts) return gotoOpts;
+      const out = [];
+      try {
+        const ws = (((await (await fetch("/api/worlds")).json()).worlds) || []);
+        for (const w of ws) out.push({ v: w.id, label: "本地 · " + (w.name || w.id) });
+      } catch { /* 世界列表读不到，至少还有广场那半 */ }
+      try {
+        const f = await (await fetch("/api/community/feed?sort=new&kind=map&limit=100")).json();
+        for (const p of (f.rows || [])) out.push({ v: p.id, label: "广场 · " + p.title + "（" + ((p.author && p.author.name) || "匿名") + "）" });
+      } catch { /* 社区没起来 */ }
+      gotoOpts = out;
+      return out;
+    }
+    function gotoRow(z, markDirty, rerender) {
+      const row = document.createElement("div"); row.className = "zrow";
+      const lab = document.createElement("span"); lab.textContent = "通往";
+      const sel = document.createElement("select");
+      sel.innerHTML = '<option value="">不传送</option>';
+      row.appendChild(lab); row.appendChild(sel);
+      const cur = String(z.goto || "");
+      loadGotoOpts().then((opts) => {
+        for (const o of opts) {
+          const e = document.createElement("option");
+          e.value = o.v; e.textContent = o.label;
+          if (o.v === cur) e.selected = true;
+          sel.appendChild(e);
+        }
+        // 目标被下架/删掉了要看得出来，否则作者会以为门设好了
+        if (cur && !opts.some((o) => o.v === cur)) {
+          const e = document.createElement("option");
+          e.value = cur; e.textContent = "目标已不存在 · " + cur; e.selected = true;
+          sel.appendChild(e);
+        }
+      }, () => { /* 读不到列表就只留"不传送"，别把面板卡住 */ });
+      sel.onchange = () => { const v = sel.value.trim(); if (v) z.goto = v; else delete z.goto; markDirty(); rerender(); };
+      return row;
+    }
     function renderZones() {
       zoneList.innerHTML = "";
       const zs = state.meta.zones;
@@ -643,6 +684,9 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
         const f = z.force || [0, 0, 0];
         ["X", "Y", "Z"].forEach((ax, ai) => box.appendChild(zrow("力 " + ax, f[ai], "0.01", (v) => { z.force[ai] = v; markDirty(); })));
         box.appendChild(zrow("massScale", z.massScale ?? 1, "0.1", (v) => { z.massScale = v; markDirty(); }));
+        // 门：走进这个区域就换图。目标给的是下拉而不是文本框——本机的世界 id 与发布 id
+        // 都是 20 位十六进制，逼作者手抄 id 的门基本不会有人摆。
+        box.appendChild(gotoRow(z, markDirty, renderZones));
         // 官方区域可覆盖环境（fog* / rain* / snow* / sky*），运行时按前缀透传后生效
         const zkey = (label, key, step, kind) => {
           kind = kind || "num";

@@ -174,8 +174,21 @@ export async function materialize(p, { keep = false } = {}) {
   }
 }
 
-export async function playPub(p) {
-  const btn = $("cmPlay");
+/** 从运行时里"走进一扇门"到一张社区地图：取回快照、记一次游玩、换页。
+ *  game.js 那边只认得 id 与标题，而素材路径改写要用作者的 worldId，所以先取一次详情。 */
+export async function gotoPub(dest, fromTitle) {
+  const d = await (await fetch(`/api/community/pubs/${encodeURIComponent(dest.id)}`)).json().catch(() => null);
+  const p = d && d.pub;
+  if (!p) throw Object.assign(new Error("那张图取不到了"), { status: "UNKNOWN" });
+  const done = await materialize(p);
+  if (!done) throw Object.assign(new Error("快照没能取回本地"), { status: "UNKNOWN" });
+  const qs = new URLSearchParams({ play: "1", pub: p.id, title: p.title, author: (p.author && p.author.name) || dest.author || "" });
+  if (fromTitle) qs.set("from", fromTitle);
+  location.href = `/edit/${done.wid}?` + qs;
+  return done;
+}
+
+export async function playPub(p) {  const btn = $("cmPlay");
   if (btn) btn.disabled = true;
   const done = await materialize(p);
   if (done) {

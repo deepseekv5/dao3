@@ -642,8 +642,25 @@ vec2 fxTileRect(float t){
     if (this.onQuality) this.onQuality(q);
   }
 
-  setOrtho(on) {
-    if (on && !this._ortho) {
+  /** 运行时和编辑器共用同一台 renderer，雾的"上次生效值"（_fogNear / _fogDensity / _fogMax）
+   *  也是共用的。进运行前存一份、退出时原样还回去，否则编辑器下一次 setTerrain 只带
+   *  fogDensity 那一个键，fogStartDistance 与 maxFog 继续沿用运行时留下的值——
+   *  表现就是"从游玩退回编辑器，雾突然变得很大"。 */
+  pushEnvironmentState() {
+    this._envSave = {
+      near: this._fogNear, density: this._fogDensity, max: this._fogMax,
+      cap: this._qFogCap, tint: this.scene.fog ? this.scene.fog.color.getHex() : null,
+    };
+  }
+  popEnvironmentState() {
+    const s = this._envSave;
+    if (!s) return;
+    this._envSave = null;
+    this._fogNear = s.near; this._fogDensity = s.density; this._fogMax = s.max; this._qFogCap = s.cap;
+    if (s.tint != null && this.scene.fog) this.scene.fog.color.setHex(s.tint);
+  }
+
+  setOrtho(on) {    if (on && !this._ortho) {
       const d = 60; const a = this.camera.aspect;
       this._ortho = new THREE.OrthographicCamera(-d * a, d * a, d, -d, 0.1, 2000);
       this._ortho.position.copy(this.camera.position);

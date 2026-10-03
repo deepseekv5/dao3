@@ -876,9 +876,12 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
         const z = { id: "z" + Date.now().toString(36), name: args.name, selector: args.selector,
           bounds: { min: args.min, max: args.max }, force: [0, 0, 0], massScale: 1, enabled: true };
         if (args.label) z.labels = [args.label];
+        // 门也要能让 Agent 摆：填目标（本地世界 id / 社区发布 id / 精确名字）即可
+        if (args.goto) z.goto = String(args.goto);
         zones.push(z);
         E.markDirty?.();
-        return { ok: true, obs: `已加区域「${args.name}」[${args.min}]→[${args.max}]（选择器 ${args.selector}），共 ${zones.length} 个；脚本用 world.onZoneEnter / onZoneLeave 响应` };
+        return { ok: true, obs: `已加区域「${args.name}」[${args.min}]→[${args.max}]（选择器 ${args.selector}），共 ${zones.length} 个；脚本用 world.onZoneEnter / onZoneLeave 响应`
+          + (args.goto ? `；这是一道门，走进去会去「${args.goto}」` : "") };
       }
       case "settings.set": {
         const meta = E.state.meta;

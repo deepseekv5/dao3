@@ -33,6 +33,7 @@ function build() {
         <button data-x="settings"><span>画面与操作</span><kbd>H</kbd></button>
         <button data-x="chat"><span>聊天</span><kbd>↵</kbd></button>
         <button data-x="profile"><span>个人资料</span><kbd></kbd></button>
+        <button data-x="back" hidden><span id="gmBack">回到上一张</span><kbd></kbd></button>
         <button class="danger" data-x="leave"><span id="gmLeave">离开游戏</span><kbd></kbd></button>
       </div>
       <footer>
@@ -48,7 +49,21 @@ function build() {
   on("settings", () => { close(); document.getElementById("gameHudSettings")?.classList.add("show"); });
   on("chat", () => { close(); rt.openChat && rt.openChat(); });
   on("profile", () => { location.href = "/me"; });
+  on("back", () => {
+    const f = cameFrom();
+    if (f && f.id) location.href = "/edit/" + encodeURIComponent(f.id) + "?play=1&from=" + encodeURIComponent(mTitle());
+  });
   on("leave", () => leave());
+}
+
+/** 当前这张图叫什么：回指的时候要带上，否则"回去"按钮只是一句无主的话。 */
+function mTitle() {
+  const m = window.__playMeta || {};
+  return m.title || (rt && rt.e && rt.e.state && rt.e.state.meta && rt.e.state.meta.name) || "";
+}
+/** 从哪张图走过来。门本身是单向链接，没有这条就回不去，玩家穿两扇门就迷路了。 */
+function cameFrom() {
+  try { return JSON.parse(sessionStorage.getItem("ly.cameFrom") || "null"); } catch { return null; }
 }
 
 /** 出口只有一条逻辑：社区图回作品页，编辑器里的运行回编辑器。
@@ -77,6 +92,14 @@ export function open(_rt) {
   const who = window.__me && window.__me.name;
   host.querySelector("#gmWho").textContent = who ? "玩家 " + who + (m.author ? " · 作者 " + m.author : "") : (m.author ? "作者 " + m.author : "本地玩家");
   host.querySelector("#gmLeave").textContent = isCommunity() ? "离开游戏" : "返回编辑器";
+  const back = host.querySelector('[data-x="back"]');
+  const f = cameFrom();
+  // 只有真的是"走过来的"才给这个出口：直接打开一张图时它没有意义
+  if (back) {
+    back.hidden = !(f && f.id && f.id !== String((rt.e && rt.e.worldId) || ""));
+    const name = back.querySelector("#gmBack");
+    if (name && f && f.title) name.textContent = "回到「" + f.title + "」";
+  }
   host.querySelector("#gmOnline").textContent = (window.__online || 1) > 1 ? window.__online + " 人在线" : "";
 }
 

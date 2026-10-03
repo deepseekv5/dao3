@@ -646,7 +646,7 @@ async function boot() {
   // 启动参数：工作台用 /edit/<新id>?new=1&mode=&X=&Y=&Z=&T=&name= 建图，?play=1 直接进运行模式
   const q = new URLSearchParams(location.search);
   // 从社区详情页进来时带上 pub/title/author，游玩外壳与菜单要知道自己在玩谁的哪张图
-  if (q.get("pub")) window.__playMeta = { pubId: q.get("pub"), title: q.get("title") || "", author: q.get("author") || "" };
+  if (q.get("pub")) window.__playMeta = { pubId: q.get("pub"), title: q.get("title") || "", author: q.get("author") || "", from: q.get("from") || "" };
   if (q.get("new") === "1") {
     const num = (k, d, a, b) => Math.max(a, Math.min(b, Number(q.get(k)) || d));
     createWorld(q.get("mode") || "flat", num("X", 100, 8, 256), num("Y", 32, 8, 128), num("Z", 100, 8, 256), num("T", 5, 1, 64), (q.get("name") || "").trim() || null);

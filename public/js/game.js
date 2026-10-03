@@ -428,6 +428,7 @@ export class GameRuntime {
     r.setFirstPerson(false);
     r.controls.enabled = false;
     r.setBarriersVisible && r.setBarriersVisible(false);
+    r.pushEnvironmentState && r.pushEnvironmentState();   // 退出时要还回去，见 renderer 里那段注释
     this._buildRegistry();
     this._client().attach();
     // 编辑器里摆好的触发区域：脚本执行前先注册，world.zones() 立刻能查到
@@ -604,6 +605,7 @@ export class GameRuntime {
     this._teardownHud();
     if (this._cliApi) { this._cliApi.teardown(); this._cliApi = null; } // 脚本建的 UI 不跨次运行残留
     r.setWeather({ rain: 0, snow: 0, thunder: 0 });
+    r.popEnvironmentState && r.popEnvironmentState();   // 先把雾还回编辑器的状态，再让它按原值重算
     e.applyTerrain();
   }
 
@@ -2339,6 +2341,10 @@ const ZERO = new GameVector3();
     for (const k of Object.keys(cfg)) if (/^(fog|rain|snow|sky)[A-Z]/.test(k)) z[k] = cfg[k];
     if (cfg.name != null) z.name = cfg.name;
     if (cfg.id != null) z.id = cfg.id;
+    // 区域当门用：编辑器里填一个目标（世界 id / 发布 id / 名字），走进去就换图。
+    // 官方没有"门"这个物件，图与图之间靠 world.teleport，而绝大多数作者写不出那段脚本，
+    // 所以同一个字段在面板上也开给不写代码的人填。
+    if (cfg.goto != null && String(cfg.goto).trim()) z.goto = String(cfg.goto).trim();
     z._channels = attachChannels(z, ["Enter", "Leave"]);
     z.entities = () => [...z._occupants];
     z.remove = () => {
@@ -2349,8 +2355,58 @@ const ZERO = new GameVector3();
     rt.zones.push(z);
     return z;
   }
-  _stepZones() {
-    if (!this.zones.length) return;
+
+  /* ---------------- 世界之门 ---------------- */
+  /** 传送目标 → {kind:"world"|"pub", id, title, author}，认不出来就 null。
+   *  官方 mapId 是数字、且限定"同一图组内的其他地图"；本机没有图组这一层，
+   *  所以这里认三种写法：本地世界 id、社区发布 id，以及两者的精确名字——
+   *  作者记不住 20 位十六进制，逼他们抄 id 的门没人摆。 */
+  async _resolveGoto(target) {
+    const t = String(target == null ? "" : target).trim();
+    if (!t) return null;
+    try {
+      const ws = ((await (await fetch("/api/worlds")).json()).worlds) || [];
+      const w = ws.find((x) => x.id === t) || ws.find((x) => (x.name || "") === t);
+      if (w) return { kind: "world", id: w.id, title: w.name || w.id };
+    } catch { /* 世界列表读不到就继续按发布找 */ }
+    try {
+      const d = await (await fetch(`/api/community/pubs/${encodeURIComponent(t)}`)).json();
+      if (d && d.pub && d.pub.kind !== "model") {
+        return { kind: "pub", id: d.pub.id, title: d.pub.title, author: (d.author && d.author.name) || "" };
+      }
+    } catch { /* 不是发布 id */ }
+    try {
+      const f = await (await fetch(`/api/community/feed?sort=new&kind=map&limit=100&q=${encodeURIComponent(t)}`)).json();
+      const hit = (f.rows || []).find((p) => p.title === t);
+      if (hit) return { kind: "pub", id: hit.id, title: hit.title, author: (hit.author && hit.author.name) || "" };
+    } catch { /* 广场读不到 */ }
+    return null;
+  }
+
+  /** 真的走一趟：先把未保存的编辑落盘，再记下从哪来，最后换页。
+   *  作者预览时丢掉未保存的改动，比"传送没成功"严重得多，所以落盘这步不能省。 */
+  async _goto(target) {
+    if (this._going) throw Object.assign(new Error("已经在传送了"), { status: "UNKNOWN" });
+    const dest = await this._resolveGoto(target);
+    if (!dest) throw Object.assign(new Error("找不到要去的那张图"), { status: "UNKNOWN" });
+    if (dest.kind === "world" && dest.id === String(this.e.worldId || "")) {
+      throw Object.assign(new Error("已经在这张图里了"), { status: "UNKNOWN" });
+    }
+    this._going = true;
+    try {
+      if (this.e.state && this.e.state.dirty && this.e.save) await this.e.save();
+      const from = { id: String(this.e.worldId || ""), title: (this.e.state && this.e.state.meta && this.e.state.meta.name) || "上一张图", at: Date.now() };
+      try { sessionStorage.setItem("ly.cameFrom", JSON.stringify(from)); } catch { /* 隐私模式下记不住就算了，不值得为此打断传送 */ }
+      if (dest.kind === "world") {
+        location.href = `/edit/${encodeURIComponent(dest.id)}?play=1&from=${encodeURIComponent(from.title)}`;
+      } else {
+        const m = await import("./pubs.js");
+        await m.gotoPub(dest, from.title);
+      }
+      return { serverId: "local" };
+    } catch (e) { this._going = false; throw e; }
+  }
+  _stepZones() {    if (!this.zones.length) return;
     const tick = this.currentTick;
     for (const z of this.zones) {
       if (z._removed) continue;
@@ -2362,6 +2418,15 @@ const ZERO = new GameVector3();
         if (!z._occupants.has(e2)) {
           z._occupants.add(e2);
           z._channels.Enter.fire({ tick, entity: e2 });
+          // 门只对"这张屏幕前的玩家"生效：联机分身是别人客户端投过来的影子，
+          // 替他换图会让他自己那边对不上，所以 isPlayer 之外一概不动。
+          if (z.goto && e2.isPlayer && !this._going) {
+            const me = this;
+            me._goto(z.goto).catch((err) => {
+              me.toast(err && err.message ? "这道门：" + err.message : "这道门不通", true);
+              z.goto = null;   // 失败一次就把门拆了：站在门里的人不该被同一句提示刷屏
+            });
+          }
         }
         const f = z.force;
         if (f && (f.x || f.y || f.z)) {
@@ -3288,16 +3353,16 @@ void main() {
       getTempChats: () => Promise.resolve([...rt._tempChats.keys()]),
       getTempChatUsers: (id) => Promise.resolve(id == null ? [...rt._tempChats.keys()].map((k) => [...rt._tempChats.get(k)]) : [...(rt._tempChats.get(String(id)) || [])]),
       sound: (spec) => rt._makeSound(spec, null),
-      // 官方签名 Promise<{serverId}>：本地没有图组，未知地图必须 reject 而不是假装成功
+      // 官方签名 (mapId, players, serverId?) => Promise<{serverId}>，错误状态是
+      // PLAYER_OFFLINE / ACCESS_DENIED / UNKNOWN 三种。本机一台客户端只驱动得了自己这个玩家，
+      // 所以列表里没有本人就按 ACCESS_DENIED 拒绝，而不是偷偷把人送走。
       teleport: (mapId, players, serverId) => {
-        const cur = String(rt.e.worldId || "");
-        const target = String(mapId || "");
-        if (!target || (target !== cur && !/^\d+$/.test(target))) {
-          rt.toast("本地运行只支持当前世界，跨世界传送未实现");
-          return Promise.reject(new Error("teleport: unknown map " + target));
+        const list = players == null ? [] : (Array.isArray(players) ? players : [players]);
+        if (list.length && !list.some((p) => p === rt.playerEntity || (p && p.isPlayer))) {
+          rt.toast("这一趟送不走他们：本机只能移动自己这个玩家", true);
+          return Promise.reject(Object.assign(new Error("teleport: ACCESS_DENIED"), { status: "ACCESS_DENIED" }));
         }
-        rt.toast("本地运行不支持跨世界传送");
-        return Promise.resolve({ serverId: serverId || "local" });
+        return rt._goto(mapId).then((r) => ({ serverId: serverId || r.serverId }));
       },
       animate: (kf, playback) => rt._animate(rt.world, kf, playback, "world"),
       getAnimations: () => rt.animations.filter((a) => a.target === rt.world),
