@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { createCommunity } from "./server/community.mjs";
 import { createModeration } from "./server/moderate.mjs";
 import { createRealtime } from "./server/realtime.mjs";
+import { blockColors, renderCover } from "./server/covers.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_VERSION = (() => {
@@ -398,6 +399,33 @@ function ensureSeed() {
   console.log(`seeded demo world '${seedId}' with ${indices.length} blocks`);
 }
 ensureSeed();
+
+/* 还没封面的图，开服务时顺手画一张。
+   以前封面只有"人开着编辑器、编辑器截到视图"这一条来路，于是新建的图、导入的图、
+   脚本批量生成的图在列表里全是一个按 id 派生渐变的占位块。服务启动跑一遍，
+   "所有地图都有封面"就跟有没有人打开过编辑器无关了。跑在后台，不挡启动。 */
+const _coverSweep = setTimeout(() => {
+  try {
+    const colors = blockColors(path.join(PUBLIC, "data", "block-atlas.json"), path.join(PUBLIC, "data", "block-atlas.png"));
+    let made = 0;
+    for (const f of fs.readdirSync(WORLDS)) {
+      if (!f.endsWith(".json.gz")) continue;
+      const id = f.replace(/\.json\.gz$/, "");
+      const cover = path.join(ASSETS, id, "cover.png");
+      if (fs.existsSync(cover)) continue;
+      try {
+        const snap = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(WORLDS, f))).toString());
+        const png = renderCover({ indices: snap.indices, data: snap.data, shape: snap.shape, colors });
+        if (!png) continue;
+        fs.mkdirSync(path.dirname(cover), { recursive: true });
+        fs.writeFileSync(cover, png);
+        made++;
+      } catch { /* 单张画不出来不影响服务 */ }
+    }
+    if (made) console.log(`为 ${made} 张地图生成了封面`);
+  } catch (e) { console.log("封面生成跳过：" + (e.message || e)); }
+}, 1200);
+if (_coverSweep.unref) _coverSweep.unref();   // 不给进程吊着一根定时器
 
 /* --------------------------------- router -------------------------------- */
 /* ---------------- AI 代理 ----------------
