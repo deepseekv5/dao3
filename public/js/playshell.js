@@ -3,7 +3,10 @@
 // 为什么要有这个文件：以前 Esc 直接 stopPlay()，玩家一按退出就掉回编辑器界面，
 // 对"打开一张图玩"的人来说等于被踢出产品。Roblox 的 escape 菜单是浮在游戏上的，
 // 世界继续跑，菜单只给出口与设置——这里照这个口径做。
-import { esc } from "/js/auth.js";
+
+/* 体验版是纯静态站点，部署在 Pages 子路径下，所以图标不能写根绝对路径。
+   从模块自己的 URL 推：应用里模块在 /js/、图标在 /img/；体验版同理，只是多了个子路径前缀。 */
+const LOGO = new URL("../img/laoyou.svg", import.meta.url).href;
 
 let host = null, rt = null, menuOpen = false;
 
@@ -21,7 +24,7 @@ function build() {
   host.innerHTML = `
     <div class="pm-card">
       <header>
-        <img src="/img/laoyou.svg" alt=""/>
+        <img src="${LOGO}" alt=""/>
         <div><b id="pmMap">—</b><i id="pmWho"></i></div>
       </header>
       <div class="pm-list">
@@ -43,6 +46,8 @@ function build() {
   on("view", () => { const p = rt.player; p.cameraMode = p.cameraMode === "fps" ? "follow" : "fps"; close(); });
   on("settings", () => { close(); document.getElementById("gameHudSettings")?.classList.add("show"); });
   on("profile", () => { location.href = "/me"; });
+  // 体验版是纯静态站，没有账号层，点"个人资料"只会 404
+  if (!window.__me) host.querySelector('[data-x="profile"]').hidden = true;
   on("leave", () => leave());
 }
 
@@ -84,4 +89,3 @@ export function hintText() {
     ? "WASD 移动 · V 切换视角 · 回车聊天 · Esc 呼出菜单"
     : "运行模式 · WASD 移动 · V 切换视角 · Esc 呼出菜单（不会退出到编辑器）";
 }
-export const escapeHtml = esc;

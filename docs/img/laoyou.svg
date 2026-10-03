@@ -1,13 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 132 132" role="img" aria-label="老攸元宇宙">
   <defs>
     <linearGradient id="ly-g" x1="10" y1="14" x2="122" y2="118" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5eeaff"/>
-      <stop offset=".5" stop-color="#4f9bff"/>
-      <stop offset="1" stop-color="#a06bff"/>
+      <stop offset="0" stop-color="#ff7a58"/>
+      <stop offset="1" stop-color="#e8431f"/>
     </linearGradient>
     <linearGradient id="ly-core" x1="66" y1="34" x2="66" y2="98" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#eafaff"/>
-      <stop offset="1" stop-color="#6f9dff"/>
+      <stop offset="0" stop-color="#ffefe9"/>
+      <stop offset="1" stop-color="#ff6a44"/>
     </linearGradient>
     <!-- 星球本体是不透明的：环的后半段被它挡住，才读得出"绕着转" -->
     <mask id="ly-out" maskUnits="userSpaceOnUse" x="-20" y="-20" width="172" height="172">
