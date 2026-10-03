@@ -13,6 +13,7 @@
 //  · meta.player.skinInvisible —— 隐藏部件的开关，皮肤不管这个字段，套皮肤时也不去动它。
 //  · meta.gamepadLayout 在 gamepad.js 里，本文件不写。
 import { h, iconSvg, toHex, renderDoll, disposeGL, openPlayerModal, registerPanel } from "./player-modal-shell.js";
+import { FACE_PLACEHOLDER, facePreview, MC_PRESETS, presetUrl, readSkinFile, skinNameFrom } from "../skin-sheet.js";
 
 // 六个本地部件 ↔ 官方 18 槽（game.js 的 PART_SLOT 反向表，那边没导出，只能自带一份）
 const PARTS = [
@@ -90,6 +91,10 @@ function applySkin(E, skin, notify) {
   const p = (E.state.meta.player = E.state.meta.player || {});
   const cur = (p.skin = p.skin || {});
   for (const [part] of PARTS) for (const slot of PART_SLOTS[part]) cur[slot] = skin.skin[part];
+  // 贴图是本地扩展键（官方 player.skin 只有 18 个颜色槽）。运行时按它决定走经典
+  // 六面体还是细节人偶，所以"设默认"必须把它一起写过去；而选中一套没贴图的皮肤
+  // 时必须清掉——不然切过去还是上一张脸。
+  if (skin.texture) cur.texture = skin.texture; else delete cur.texture;
   for (const s of E.state.meta.skins) s.default = s === skin;
   E.markDirty && E.markDirty();
   // 玩家面板的取色器要重新灌一次值，否则它显示的还是上一套皮肤
@@ -140,7 +145,13 @@ function renderSkinPanel(ctx, skins) {
   }
 
   function card(s) {
-    const img = h("img", { class: "pm-card-preview", src: previewOf(s), alt: s.name, loading: "lazy" });
+    const img = h("img", { class: "pm-card-preview", src: s.texture ? FACE_PLACEHOLDER : previewOf(s), alt: s.name, loading: "lazy" });
+    if (s.texture) {
+      // 贴图皮肤用展开图的正脸当缩略图：WebGL 人偶渲染器只吃颜色，喂不出这张脸
+      img.classList.add("is-mc");
+      img.title = "Minecraft 皮肤 · 预览取展开图的正脸";
+      facePreview(s.texture).then((url) => { if (url) img.src = url; });
+    }
     const menuBtn = h("button", { class: "pm-card-more", type: "button", title: "更多操作", text: "⋮" });
     menuBtn.onclick = () => popMenu(menuBtn, [
       ["设为本图默认", () => { applySkin(E, s, notify); refresh(); }],
@@ -173,6 +184,14 @@ function renderSkinPanel(ctx, skins) {
         class: "pm-btn", type: "button", text: "从素材库导入",
         onclick: () => importFromVoxa(E, skins, refresh, notify),
       }),
+      h("button", {
+        class: "pm-btn", type: "button", text: "MC 皮肤", title: "用随包附带的 Minecraft 皮肤做预设",
+        onclick: () => pickMcPreset(E, skins, refresh, notify),
+      }),
+      h("button", {
+        class: "pm-btn", type: "button", text: "上传皮肤图", title: "64×64 的 MC 皮肤展开图（PNG）",
+        onclick: () => uploadSkinTexture(E, skins, refresh, notify),
+      }),
       dirBtn, sortSel, search,
     ]),
     grid,
@@ -189,6 +208,38 @@ function renderSkinPanel(ctx, skins) {
     closePlayerOverlays();
     disposeGL();
   };
+}
+
+/* ------------------------------ Minecraft 皮肤 ------------------------------ */
+function addTextureSkin(E, skins, refresh, notify, opt) {
+  const hit = skins.find((s) => s.texture === opt.texture);
+  const skin = hit || makeSkin(uniqueName(skins, opt.name), Object.assign({}, DEFAULT_COLORS), { texture: opt.texture });
+  if (!hit) { skins.push(skin); touch(skin); }
+  applySkin(E, skin, notify);
+  E.markDirty && E.markDirty();
+  notify(hit ? `已切回「${skin.name}」` : `已加入并启用「${skin.name}」${opt.hint ? " · " + opt.hint : ""}`);
+  refresh();
+}
+
+function pickMcPreset(E, skins, refresh, notify) {
+  const items = MC_PRESETS.map((p) => ({ label: p.name, value: { name: p.name, texture: presetUrl(p.file) }, hint: "64×64" }));
+  listDialog({ title: "Minecraft 皮肤预设", items, onPick: (v) => addTextureSkin(E, skins, refresh, notify, v) });
+}
+
+function uploadSkinTexture(E, skins, refresh, notify) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg";
+  input.onchange = async () => {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    let read;
+    try { read = await readSkinFile(f); } catch (err) { notify(String(err && err.message || err), true); return; }
+    // 存成 dataURL 而不是文件路径：皮肤跟着世界存档走，导出项目包、发给别人
+    // 都还在；换成 /api/community/uploads/... 的话对方一断网就只剩六块素色。
+    addTextureSkin(E, skins, refresh, notify, { name: skinNameFrom(f, "我的皮肤"), texture: read.dataUrl });
+  };
+  input.click();
 }
 
 /* ------------------------------ 创建 / 重命名 ------------------------------ */

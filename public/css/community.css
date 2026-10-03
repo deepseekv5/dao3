@@ -283,3 +283,19 @@
 .pf-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 6px; }
 .pf-custom { display: inline-flex; margin-top: 7px; overflow: hidden; position: relative; }
 .pf-custom input[type=color] { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); border: 0; padding: 0; background: none; cursor: pointer; }
+
+/* MC 贴图皮肤：预设按脸那一格显示，整张展开图缩进 34px 只会是一片噪点 */
+.pf-mcblk { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line2); }
+.pf-mc-h { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; font-size: 12px; font-weight: 600; color: var(--fg3); }
+.pf-mc-tip { font-size: 10.5px; font-weight: 400; color: var(--fg3); opacity: .8; }
+.pf-mc-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.pf-mc-btn { width: 34px; height: 34px; padding: 3px; border-radius: 8px; border: 1px solid var(--line2); background: var(--bg2); cursor: pointer; }
+.pf-mc-btn:hover { border-color: var(--primary); }
+.pf-mc-btn.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.pf-mc-btn img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 4px; image-rendering: pixelated; }
+.pf-mc-name { max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--fg2); }
+.pf-mc-off { height: 28px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--line2); background: none; color: var(--fg3); font-size: 11.5px; cursor: pointer; }
+.pf-mc-off:hover { color: var(--fg); border-color: var(--primary); }
+.pf-mc-up { height: 28px; }
+/* 预览人偶的头：贴图时盖一层正脸，颜色仍留着当"没贴图会是什么样"的底 */
+.pf-doll .d-face { position: absolute; z-index: 1; left: 27px; top: 10px; width: 28px; height: 26px; border-radius: 3px; image-rendering: pixelated; }

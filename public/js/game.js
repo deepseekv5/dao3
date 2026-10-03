@@ -15,6 +15,7 @@ import {
 } from "./gapi.js";
 import { createClientApi, createAudioClass } from "./clientui.js";
 import { sunDirFromPhase, nightFromElev } from "./sun.js";
+import { buildTexturedAvatar, loadSkinTexture } from "./skin3d.js";
 
 /**
  * 地图级持久化数据的键名，只在这里定义一次。
@@ -187,6 +188,16 @@ function avatarPalette(override) {
 }
 
 function makeAvatar(skinOverride) {
+  // 带 MC 皮肤贴图时走经典六面体：把苦力怕的脸贴到 0.46×0.50 的圆角头上，
+  // 脸会被挤变形，认不出是谁。没有贴图才走下面那套细节人偶。
+  const texSrc = skinOverride && typeof skinOverride === "object" ? skinOverride.texture : null;
+  if (typeof texSrc === "string" && texSrc) {
+    const av = buildTexturedAvatar(null);
+    loadSkinTexture(texSrc).then((t) => {
+      av.traverse((o) => { if (o.isMesh) { o.material.map = t; o.material.needsUpdate = true; } });
+    }).catch(() => { /* 图坏了就留着白模，别把角色变没 */ });
+    return av;
+  }
   const g = new THREE.Group();
   // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
   // 所以人偶统一用 Standard（roughness 1 / metalness 0 时观感接近原来的 Lambert）
@@ -1065,16 +1076,10 @@ export class GameRuntime {
     ent.player = p;
     this.player = p;
     this.playerEntity = ent;
-    // 默认角色外观（官方第三人称下玩家以可见角色呈现）
-    const avatar = makeAvatar(window.__me && window.__me.skin);
-    // 模型的正脸建在 +Z 上，而旋转 0 度的前向是 -Z：不转这一下的话
-    // 第三人称永远看到角色的正面。整组转 180°，让"背对镜头"成为默认。
-    avatar.rotation.y = Math.PI;
-    // three.js 的 castShadow 不沿 Group 继承，必须逐个网格开——
-    // 之前只在组上置了 true，所以角色脚下从来没有影子。
-    avatar.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    ent._obj.add(avatar);
-    ent._avatar = avatar;
+    // 默认角色外观（官方第三人称下玩家以可见角色呈现）。
+    // 地图那套要读存档里的 saved.skin：p.skin 此刻还是刚清空的 18 个槽，
+    // 「设为本图默认」的皮肤要到 _applyPlayerMeta 才落到 p.skin 上。
+    this._mountAvatar(ent, this._skinLook(saved.skin));
     ent._obj.position.set(ent.position.x, ent.position.y, ent.position.z);
     this._meshForPlayer = null;
     this._yaw = 0; this._pitch = DEFAULT_PITCH; this._tYaw = 0; this._tPitch = DEFAULT_PITCH;
@@ -1084,6 +1089,37 @@ export class GameRuntime {
     this._prevP = null; this._camDist = null; this._camLift = null; this._camFrameLift = null;
     this._frameScaleCache = null;
     return ent;
+  }
+
+  /** 角色外观的来源：账号皮肤跟着人走，地图的默认皮肤（编辑器「设为本图默认」）
+   *  在这张图里生效。MC 贴图优先账号的，账号没有才用地图的。 */
+  _skinLook(mapSkin) {
+    const acc = (window.__me && window.__me.skin) || null;
+    const map = mapSkin || (this.player && this.player.skin) || null;
+    const look = Object.assign({}, map || {}, acc || {});
+    if (!look.texture && map && map.texture) look.texture = map.texture;
+    return look;
+  }
+
+  /** 装角色：贴图和纯色是两套几何（MC 展开图贴到圆角细节人偶上会挤变形），
+   *  所以换皮肤时整个换掉，而不是改材质。 */
+  _mountAvatar(ent, look) {
+    if (ent._avatar) {
+      ent._avatar.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+      ent._obj.remove(ent._avatar);
+    }
+    const avatar = makeAvatar(look);
+    // 模型的正脸建在 +Z 上，而旋转 0 度的前向是 -Z：不转这一下的话
+    // 第三人称永远看到角色的正面。整组转 180°，让"背对镜头"成为默认。
+    avatar.rotation.y = Math.PI;
+    // three.js 的 castShadow 不沿 Group 继承，必须逐个网格开——
+    // 之前只在组上置了 true，所以角色脚下从来没有影子。
+    avatar.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    ent._obj.add(avatar);
+    ent._avatar = avatar;
+    ent._skinTexture = String((look && look.texture) || "");
+    this._frameScaleCache = null;   // 身形换了，之前量的包围盒作废
+    return avatar;
   }
 
   // 「玩家」面板存的是官方字段名与单位；须在脚本执行前套用，让脚本拥有最终覆盖权
@@ -1146,6 +1182,11 @@ export class GameRuntime {
     if (typeof raw.colorLUT === "string" && raw.colorLUT) this.player.colorLUT = raw.colorLUT;
     if (raw.skin && typeof raw.skin === "object") this.player.skin = raw.skin;
     if (raw.skinInvisible && typeof raw.skinInvisible === "object") this.player.skinInvisible = raw.skinInvisible;
+    // 地图皮肤是在这里才落到 player.skin 上的，而人偶已经按出生时的外观建好了。
+    // 贴图换的是几何不是颜色，所以来源一变必须重挂一次——不然「设为本图默认」
+    // 的 MC 皮肤永远只存在于存档里，进图看到的还是默认人偶。
+    const wantTex = String(this._skinLook(this.player.skin).texture || "");
+    if (wantTex !== String(this.playerEntity._skinTexture || "")) this._mountAvatar(this.playerEntity, this._skinLook(this.player.skin));
     if (raw.gamepad && typeof raw.gamepad === "object") this.player.gamepad = Object.assign({}, this.player.gamepad, raw.gamepad);
     this._applySkinLook(this.player, this.playerEntity);
     this._applyGamepad();
@@ -2480,7 +2521,9 @@ const ZERO = new GameVector3();
       if (base[k] != null) parts[k].position.y = base[k] + bob;
     }
     // 官方把 color/metalness/emissive/shininess 归到「显示」类：脚本里赋值就要立刻看到
-    if (p) {
+    if (p && !av.userData.textured) {
+      // 贴图人偶不跟着 player.color 染色：MC 皮肤本身就是配色，再乘一层
+      // 玩家色会把脸和衣服一起糊成同一种色调。
       const cc = p.color ? colorTriple(p.color) : [1, 1, 1];
       const key = `${cc[0]},${cc[1]},${cc[2]}|${p.metalness || 0}|${p.emissive || 0}|${p.shininess || 0}`;
       if (av.userData._lookKey !== key) { av.userData._lookKey = key; this._applySkinLook(p, ent); }

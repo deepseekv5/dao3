@@ -292,6 +292,13 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     };
     if (typeof src.model === "string" && !src.model.startsWith("//")
       && /^(\/assets\/worlds\/|\/api\/community\/)[A-Za-z0-9_.\/%-]{1,160}$/.test(src.model)) out.model = src.model.slice(0, 160);
+    // MC 贴图皮肤：只认站内路径（随包预设 /img/skins/、用户上传 /api/community/uploads/）。
+    // 放行外链等于让每个账号访问别人主页时把自己的 IP 发给第三方，也让我们的
+    // WebGL 上下文去加载任意图；data: 则会把几百 KB 塞进用户档案，一并拒掉。
+    if (typeof src.texture === "string" && !src.texture.startsWith("//")
+      && /^\/(img\/skins\/|api\/community\/uploads\/)[A-Za-z0-9_.\/%-]{1,160}\.(png|jpe?g|webp)$/.test(src.texture)) {
+      out.texture = src.texture.slice(0, 180);
+    }
     if (typeof src.name === "string") out.name = String(src.name).slice(0, 24);
     return out;
   }
@@ -449,7 +456,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
 
     /* ---------------- 上传图片（封面 / 头像 / 横幅 / 模型预览） ---------------- */
     if (seg[0] === "upload" && method === "POST") return login(() => {
-      const kind = ["cover", "avatar", "banner", "preview"].includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "cover";
+      const kind = ["cover", "avatar", "banner", "preview", "skin"].includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "cover";
       const buf = rawBody(req);
       if (!buf.length) { reply.fail(400, "空的上传体"); return true; }
       if (buf.length > 3 * 1024 * 1024) { reply.fail(413, "图片最大 3 MB"); return true; }

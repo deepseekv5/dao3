@@ -4,6 +4,7 @@
 // 换图、进别人发的图都应该带着走。运行时会读 auth.me.skin 贴到人偶上。
 import * as auth from "/js/auth.js";
 import { cardHtml, bindCards, face, hue } from "/js/pubs.js";
+import { MC_PRESETS, presetUrl, facePreview, readSkinFile, skinNameFrom } from "/js/skin-sheet.js";
 
 const { api, esc } = auth;
 const $ = (id) => document.getElementById(id);
@@ -36,7 +37,9 @@ const OUTFITS = [
 const rand = (a) => a[(Math.random() * a.length) | 0];
 const randomOutfit = () => ({ skin: rand(TONES), shirt: rand(SWATCHES), pants: rand(SWATCHES), hair: rand(HAIRS), shoe: rand(["#2b2f38", "#3b2a1c", "#e8e6e1", "#241f1a"]) });
 
-/** 纯 CSS 的角色预览：不为了看个配色就把 three.js 拖进社区页。 */
+/** 纯 CSS 的角色预览：不为了看个配色就把 three.js 拖进社区页。
+ *  贴图皮肤只把头那一格换成展开图的正脸（src 由 paintFace 异步填），
+ *  身体仍按配色画——展开图整张塞进去只会糊成一片噪点，读不出任何东西。 */
 function previewHtml(skin) {
   const src = skin || {};
   // 颜色要进 style 属性，`red;background:url(...)` 这种值就能改写样式：
@@ -47,14 +50,32 @@ function previewHtml(skin) {
     pants: hex(src.pants, SKIN_DEFAULT.pants), hair: hex(src.hair, SKIN_DEFAULT.hair),
     shoe: hex(src.shoe, SKIN_DEFAULT.shoe),
   };
-  return `<div class="pf-doll" aria-hidden="true">
+  const mc = sameSiteSkin(src.texture);
+  return `<div class="pf-doll${mc ? " is-mc" : ""}" aria-hidden="true">
     <i class="d-hair" style="background:${esc(c.hair)}"></i>
     <i class="d-head" style="background:${esc(c.skin)}"></i>
+    <img class="d-face" alt=""${mc ? ` data-src="${esc(mc)}"` : " hidden"}/>
     <i class="d-torso" style="background:${esc(c.shirt)}"></i>
     <i class="d-arm l" style="background:${esc(c.shirt)}"></i><i class="d-arm r" style="background:${esc(c.shirt)}"></i>
     <i class="d-leg l" style="background:${esc(c.pants)}"></i><i class="d-leg r" style="background:${esc(c.pants)}"></i>
     <i class="d-foot l" style="background:${esc(c.shoe)}"></i><i class="d-foot r" style="background:${esc(c.shoe)}"></i>
   </div>`;
+}
+
+/** 账号皮肤只可能是站内的图：随包预设或用户上传后的地址。别的（外链、data:）不认。 */
+const sameSiteSkin = (v) => {
+  const s = String(v || "");
+  return /^(\/img\/skins\/|\/api\/community\/uploads\/)[A-Za-z0-9_.\/%-]{1,160}$/.test(s) && !s.startsWith("//") ? s : null;
+};
+
+/** 把展开图的正脸裁出来贴到预览的头部（裁脸逻辑与皮肤库共用 skin-sheet.js）。 */
+function paintFace(root) {
+  for (const im of root.querySelectorAll(".d-face")) {
+    const src = im.dataset.src;
+    if (!src || im.dataset.loading) continue;
+    im.dataset.loading = "1";
+    facePreview(src).then((url) => { if (url) { im.src = url; im.hidden = false; } else im.hidden = true; });
+  }
 }
 
 async function uploadImage(file, kind) {
@@ -73,6 +94,19 @@ function fragmentFirst(html) {
   t2.innerHTML = html.trim();
   return t2.content.firstChild;
 }
+
+/** 建一个带 class/文本的元素：MC 那块全走 DOM，用户选的文件名不能拼进 innerHTML。 */
+function mk(tag, cls, text) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (text != null) el.textContent = text;
+  return el;
+}
+
+const presetName = (url) => {
+  const hit = MC_PRESETS.find((p) => presetUrl(p.file) === url);
+  return hit ? hit.name : null;
+};
 
 /* ---------------- 编辑资料 ---------------- */
 function openEditor(u, onSaved) {
@@ -96,6 +130,7 @@ function openEditor(u, onSaved) {
           ${previewHtml(skin)}
           <div class="pf-swatches" id="eSkin"></div>
         </div>
+        <div class="pf-mcblk" id="eMc"></div>
       </div>
     </div>
     <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="eSave">保存</button></div>
@@ -127,6 +162,7 @@ function openEditor(u, onSaved) {
     }
     const doll = box.querySelector(".pf-doll");
     if (doll) doll.replaceWith(fragmentFirst(previewHtml(draft)));
+    paintFace(box);
   };
   const applyPreset = (o, btn) => {
     Object.assign(draft, o);
@@ -148,6 +184,59 @@ function openEditor(u, onSaved) {
   const custom = host.querySelector("#eCustom");
   custom.oninput = () => { draft[active] = custom.value; markCustom(); syncDoll(); };
   paintParts();
+  paintFace(box);
+
+  /* ---------------- MC 贴图皮肤 ---------------- */
+  // 配色只能改六块纯色，想要"有脸有花纹"就得贴一张 MC 展开图。
+  // 上传走社区图床而不是 dataURL：账号档案要下发给别人看，存 base64 等于
+  // 每次访问主页都拖几百 KB。
+  const mcHost = box.querySelector("#eMc");
+  let mcName = presetName(draft.texture) || (draft.texture ? "我的皮肤" : "");
+  const mcBtn = (label, url) => {
+    const b = mk("button", "pf-mc-btn" + (draft.texture === url ? " on" : ""));
+    b.type = "button";
+    b.title = label;
+    const im = document.createElement("img");
+    im.alt = ""; im.loading = "lazy";
+    b.appendChild(im);
+    facePreview(url).then((u2) => { if (u2) im.src = u2; });
+    b.onclick = () => { draft.texture = url; mcName = label; syncDoll(); paintMc(); };
+    return b;
+  };
+  function paintMc() {
+    mcHost.replaceChildren();
+    const head = mk("div", "pf-mc-h", "或套一张 Minecraft 皮肤");
+    head.appendChild(mk("span", "pf-mc-tip", "64×64 展开图 · 套上后角色改用经典六面体身形"));
+    const row = mk("div", "pf-mc-row");
+    for (const p of MC_PRESETS) row.appendChild(mcBtn(p.name, presetUrl(p.file)));
+    const up = mk("label", "pf-file pf-mc-up", "上传皮肤图");
+    up.title = "64×64 的 MC 皮肤展开图（PNG）";
+    const file = document.createElement("input");
+    file.type = "file"; file.accept = "image/png,image/jpeg";
+    file.onchange = async () => {
+      const f = file.files && file.files[0];
+      file.value = "";
+      if (!f) return;
+      try {
+        await readSkinFile(f);          // 先卡尺寸再上传：省一次往返，也给用户一句人话
+        const url = await uploadImage(f, "skin");
+        draft.texture = url;
+        mcName = skinNameFrom(f, "我的皮肤");
+        syncDoll(); paintMc();
+      } catch (err) { alert(String(err && err.message || err)); }
+    };
+    up.appendChild(file);
+    row.appendChild(up);
+    if (draft.texture) {
+      row.appendChild(mk("span", "pf-mc-name", mcName));
+      const off = mk("button", "pf-mc-off", "不用贴图");
+      off.type = "button";
+      off.onclick = () => { delete draft.texture; mcName = ""; syncDoll(); paintMc(); };
+      row.appendChild(off);
+    }
+    mcHost.append(head, row);
+  }
+  paintMc();
 
   for (const [id, kind] of [["eAvatar", "avatar"], ["eBanner", "banner"]]) {
     box.querySelector("#" + id).onchange = async (e) => {
@@ -174,6 +263,11 @@ function openEditor(u, onSaved) {
         bio: box.querySelector("#eBio").value.trim(),
         skin: draft,
       });
+      // 服务端会丢掉它不认的 texture。它丢了却说"已保存"，用户进图才发现还是那张
+      // 纯色人偶，只会以为是我们没接上——所以按返回值说。
+      if (draft.texture && (!r.user.skin || r.user.skin.texture !== draft.texture)) {
+        throw new Error("贴图皮肤没被接受：只能是随包预设或站内上传的皮肤图");
+      }
       auth.setMe(r.user);
       close(); onSaved && onSaved(r.user);
     } catch (e) { btn.disabled = false; alert(e.message); }
