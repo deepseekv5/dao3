@@ -552,7 +552,11 @@ body.float-edit #tbtns{cursor:grab}
 .script-screen.show{display:flex}
 .ss-head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--divider);background:#16181d;flex:0 0 auto}
 .ss-head b{font-size:14px}
-.ss-dim{color:var(--font-black-minor);font-size:11px}
+.ss-dim{color:var(--font-black-minor);font-size:11px;cursor:help}
+/* 空态居中：说明文字贴在巨大空白区左上角，看起来像这页还没做完 */
+.ss-blank{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  min-height:180px;height:100%;padding:24px;text-align:center;color:var(--font-black-minor);font-size:13px}
+.ss-blank .sb-sub{font-size:11px;opacity:.72}
 .ss-spacer{flex:1}
 .ss-back{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:7px;background:var(--grey2);color:var(--font-white-minor);font-size:12px}
 .ss-back:hover{background:var(--grey3,#444);color:#fff}

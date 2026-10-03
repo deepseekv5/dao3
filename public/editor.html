@@ -386,7 +386,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <div class="frow"><label>允许二段跳</label><input id="plEnableDouble" type="checkbox" checked/></div>
     <div class="frow"><label>隐身</label><input id="plInvisible" type="checkbox"/></div>
     <div class="frow"><label>幽灵（穿墙）</label><input id="plSpectator" type="checkbox"/></div>
-    <div class="pp-sub">外观（官方 scale / color / metalness …）</div>
+    <div class="pp-sub" title="官方字段：scale / color / metalness / emissive / shininess">外观</div>
     <div class="frow"><label>体型缩放</label><input id="plScale" type="number" step="0.05" min="0.1" max="8" value="1"/></div>
     <div class="frow"><label>本体颜色</label><input id="plColor" type="color" value="#f2c27d"/></div>
     <div class="frow"><label>发光强度</label><input id="plEmissive" type="number" step="0.1" min="0" max="16" value="0"/></div>
@@ -394,13 +394,13 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <div class="frow"><label>光泽度</label><input id="plShine" type="number" step="0.05" min="0" max="4" value="0"/></div>
     <div class="frow"><label>显示名字</label><input id="plShowName" type="checkbox" checked/></div>
     <div class="frow"><label>头顶指示器</label><input id="plShowInd" type="checkbox"/></div>
-    <div class="pp-sub">玩家音效（官方 playerSounds 14 槽）</div>
+    <div class="pp-sub" title="官方 playerSounds，14 个槽位；留空即不播">玩家音效</div>
     <div id="plSounds" class="pp-grid"></div>
-    <div class="pp-sub">环境音（官方 ambientSound 5 槽）</div>
+    <div class="pp-sub" title="官方 ambientSound，5 个槽位">环境音</div>
     <div id="plAmbient" class="pp-grid"></div>
-    <div class="pp-sub">皮肤（官方 skin / skinInvisible）</div>
+    <div class="pp-sub" title="官方 skin / skinInvisible：逐部件配色与隐藏">皮肤</div>
     <div id="plSkin" class="pp-grid"></div>
-    <div class="pp-sub">虚拟按键图标（官方 gamepad）</div>
+    <div class="pp-sub" title="官方 gamepad 字段：触屏按键的图标资源">虚拟按键图标</div>
     <div id="plPad" class="pp-grid"></div>
     <div class="modal-actions"><button id="plReset">恢复官方默认</button><button id="plOk" class="primary">完成</button></div>
     <div class="ss-console-tip" style="border:none" title="单位是官方口径的「格 / tick（64ms）」，默认行走 0.22、奔跑 0.4；脚本仍可实时覆盖这些值">单位：格 / tick（64ms）</div>
@@ -447,7 +447,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   <div class="ss-head">
     <button id="storeBack" class="ss-back" title="返回搭建界面"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>返回编辑器</button>
     <b>商城</b>
-    <span class="ss-dim">本地商品表 · 随世界与项目包保存 · 脚本用 world.products() 读取、world.onPlayerPurchaseSuccess(cb) 响应购买成功</span>
+    <span class="ss-dim" title="商品随世界与项目包一起保存。脚本里用 world.products() 读商品表、world.onPlayerPurchaseSuccess(cb) 响应购买成功。价格与货币只在本地记账——官方平台的结算不在本地范围内。">本地商品表 · 脚本里用 world.products() 读</span>
     <span class="ss-spacer"></span>
     <button id="storeAdd">＋ 新建商品</button>
   </div>
@@ -462,7 +462,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   <div class="ss-head">
     <button id="packBack" class="ss-back" title="返回搭建界面"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>返回编辑器</button>
     <b>代码包</b>
-    <span class="ss-dim">本图全部素材文件 · 名字下面那行是内容地址（IPFS CID）· 官方包常只给地址不给文件，缺的可以在这里按地址取回</span>
+    <span class="ss-dim" title="这张图用到的全部素材文件。名字下面那行是内容地址（IPFS CID）：官方导出的包常常只给地址、不给文件本体，缺的那些可以在这里按地址取回。">本图素材文件 · 名字下行是内容地址（IPFS CID）</span>
     <span class="ss-spacer"></span>
     <button id="packIndex" hidden>读取官方资源表</button>
   </div>

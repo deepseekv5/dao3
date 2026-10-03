@@ -39,11 +39,11 @@ function wireTopMenu() {
       const uiScreen = document.getElementById("uiScreen");
       const playerPanel = document.getElementById("playerPanel");
       const packScreen = document.getElementById("packScreen");
-      scriptScreen.classList.remove("show");
-      uiScreen.classList.remove("show");
-      playerPanel.classList.remove("show");
-      packScreen?.classList.remove("show");
-      modelPanel.classList.remove("show");
+      // 每个全屏页都得在这里关掉。以前少列了 storeScreen，于是开过商城之后
+      // 点「界面」，看到的还是商城那张盖在上面的页——像界面坏了，其实只是没关。
+      for (const el of [scriptScreen, uiScreen, playerPanel, packScreen, document.getElementById("storeScreen"), modelPanel]) {
+        if (el) el.classList.remove("show");
+      }
       libCard.style.display = "block";
       E.ctx.mode = "build";
       if (m === "model") { libCard.style.display = "none"; modelPanel.classList.add("show"); E.ctx.mode = "model"; }
@@ -1686,7 +1686,7 @@ export function wireStore() {
     const arr = items();
     if (!arr.length) {
       const em = document.createElement("div"); em.className = "muted"; em.style.cssText = "padding:10px;font-size:12px";
-      em.textContent = "还没有商品，点右上角「＋ 新建商品」。"; list.appendChild(em);
+      em.textContent = "还没有商品"; list.appendChild(em);
     }
     arr.forEach((p, i) => {
       const it = document.createElement("div");
@@ -1698,8 +1698,9 @@ export function wireStore() {
     props.innerHTML = "";
     const p = items()[sel];
     if (!p) {
-      const em = document.createElement("div"); em.className = "muted"; em.style.cssText = "padding:10px;font-size:12px";
-      em.textContent = "选中左侧商品后可编辑。价格与货币仅本地记账：官方平台结算不在本地范围内。";
+      // 空态居中：一坨说明文字贴在巨大空白区的左上角，是"这页还没做完"的样子
+      const em = document.createElement("div"); em.className = "ss-blank";
+      em.innerHTML = "没有选中商品<div class=\"sb-sub\">左侧新建一个，或点右上角「＋ 新建商品」</div>";
       props.appendChild(em); return;
     }
     const row = (label, key, type, opts) => {

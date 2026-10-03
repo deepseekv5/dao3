@@ -150,7 +150,7 @@
 /* 原来它是居中浮层（定宽 + max-height + 自己的圆角边框），搬进右栏后这些必须全部让位，
    否则会在面板里再套出一个"窗口中的窗口"，还会带一圈重复描边。 */
 .pm-attrs{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center}
-.pm-attrs .modal-box{width:min(560px,100%);max-height:none;padding:0;background:none;
+.pm-attrs .modal-box{width:min(560px,100%);max-height:none;padding:0 0 78px;background:none;
   border:none;border-radius:0;box-shadow:none;overflow:visible}
 /* 表单行原本按 360px 遮罩设计：space-between 一放到 1100px 弹窗里，
    标签和输入框就被拉到两端，中间空出一片，最后一行还会顶到右上角的 ✕。 */
@@ -161,8 +161,21 @@
 .pm-attrs .frow select{flex:0 0 auto;width:auto;min-width:186px;max-width:230px}
 .pm-attrs .frow input[type=checkbox]{flex:0 0 auto;margin-left:auto}
 .pm-attrs .modal-title{display:none}
-.pm-attrs .modal-actions{position:sticky;bottom:0;width:100%;margin-top:16px;padding-top:12px;
-  background:linear-gradient(180deg,rgba(24,28,35,0) 0,#181c23 42%)}
+/* 操作条是 sticky 的，会浮在滚动内容上。以前只给了半透明渐变，于是最后几行
+   （金属度、光泽度）永远压在它下面读不全——"底部那排够不到"就是这个。
+   现在给它实心底 + 分界，并在表单末尾留出等高的滚动余量。 */
+.pm-attrs .modal-actions{position:sticky;bottom:0;z-index:2;width:100%;margin-top:16px;padding:12px 0 8px;
+  display:flex;justify-content:flex-end;gap:8px;
+  background:#181c23;border-top:1px solid rgba(255,255,255,.07)}
+/* 复选框在深色面板里是原生白方块，和旁边的青色输入框完全两个体系；
+   统一成同一颗强调色的开关。 */
+.pm-attrs .frow input[type=checkbox]{appearance:none;-webkit-appearance:none;flex:0 0 auto;width:34px;height:18px;
+  margin:0;border-radius:9px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18);
+  position:relative;cursor:pointer;transition:.16s}
+.pm-attrs .frow input[type=checkbox]::after{content:"";position:absolute;left:2px;top:1px;width:14px;height:14px;
+  border-radius:50%;background:rgba(255,255,255,.7);transition:.16s}
+.pm-attrs .frow input[type=checkbox]:checked{background:rgba(34,200,221,.26);border-color:var(--primary,#22c8dd)}
+.pm-attrs .frow input[type=checkbox]:checked::after{left:16px;background:var(--primary,#22c8dd)}
 
 /* 游戏内 Esc 菜单（.gm-menu）的样式在 editor.css 里。
    它以前写在这份文件里，而这份文件要等玩家面板第一次打开才注入，
