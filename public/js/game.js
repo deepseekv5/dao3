@@ -1571,7 +1571,12 @@ export class GameRuntime {
     this._updateHud(dt);
   }
   _tickEvent(prevTick, skip) {
-    return { tick: this.currentTick, prevTick, skip: !!skip, elapsedTimeMS: this.currentTick * TICK_MS };
+    // elapsedTimeMS 官方口径是「帧之间的时间间隔」（GameAPI.d.ts:21469），不是从启动算起。
+    // 之前给的是 currentTick * TICK_MS（累计值），于是任何按官方文档写的
+    // `if (e.elapsedTimeMS > 1000) 放一次技能` 第一次 tick 就满足、每 tick 都满足；
+    // 绝对时间请读 tick 本身。掉帧时补报的时间差不做：那段时间根本没被模拟，
+    // 报大了反而让脚本以为"时间过去了"。
+    return { tick: this.currentTick, prevTick, skip: !!skip, elapsedTimeMS: TICK_MS };
   }
   /** 本帧玩家该画在哪：在"上一个 tick 的起点"和"当前终点"之间按累加器余量插值。
    *  物理 15.6Hz、渲染 60Hz，不做这层插值，镜头与角色就按 64ms 一格地跳。 */
@@ -3103,13 +3108,20 @@ void main() {
   /** 官方 GameDataStorage：一块命名空间下的键值库，list 返回可翻页的 QueryList */
   _dataStorage(ns, scope, name) {
     const rt = this;
+    // 官方对存储名有硬约束：1~50 个字符、只允许字母数字下划线（storageTools 里校验）。
+    // 不校验的后果不是报错而是错位——名字里带冒号或空格时，两块存储的键前缀会互相
+    // 套进对方（前缀匹配是 startsWith），A 空间读到 B 空间的数据，而且一声不响。
+    const sname = String(name == null ? "" : name);
+    if (!/^[a-zA-Z0-9_]{1,50}$/.test(sname)) {
+      throw new Error(`${scope === "map" ? "getDataStorage" : "getGroupStorage"}：存储名要是 1~50 个字母、数字或下划线，收到 ${JSON.stringify(name)}`);
+    }
     // worldId 只作用到 map 作用域（见 dataStoragePrefix 上的三条官方隔离规则）
     const wid = () => (scope === "map" ? ((rt.e && rt.e.worldId) || "local") : undefined);
-    const k = (x) => dataStorageKey(ns, scope, name, x, wid());
+    const k = (x) => dataStorageKey(ns, scope, sname, x, wid());
     const read = (x) => { try { const v = localStorage.getItem(k(x)); return v == null ? null : JSON.parse(v); } catch { return null; } };
     const write = (x, v) => { try { localStorage.setItem(k(x), JSON.stringify(v)); return true; } catch { return false; } };
     const keys = () => {
-      const pre = dataStoragePrefix(ns, scope, name, wid()), out = [];
+      const pre = dataStoragePrefix(ns, scope, sname, wid()), out = [];
       try {
         for (let i = 0; i < localStorage.length; i++) {
           const kk = localStorage.key(i);
@@ -3119,7 +3131,7 @@ void main() {
       return out;
     };
     const storage = {
-      key: name,
+      key: sname,
       get: async (x) => read(x),
       set: async (x, v) => { write(x, v); },
       update: async (x, fn) => { const cur = read(x); const next = await fn(cur); write(x, next); return next; },

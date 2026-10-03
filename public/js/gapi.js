@@ -334,7 +334,9 @@ export function newParticle(ent) {
   const spread = (v) => v || 0;
   const pv = toVec3(ent.particleVelocity), pvs = toVec3(ent.particleVelocitySpread);
   const life = Math.max(0.05, (ent.particleLifetime || 1) + (Math.random() - 0.5) * 2 * spread(ent.particleLifetimeSpread));
-  const speed = 60 / TICK_MS; // 官方 velocity 以每 tick 为单位
+  // 官方文档没写粒子速度的单位（d.ts 只说"粒子速度"），这个换算系数是本实现的标定值：
+  // 让 particleVelocity=1 在 60fps 下看起来是 1 格/秒。不要当成官方口径传给脚本作者。
+  const speed = 60 / TICK_MS;
   return {
     t: 0, life,
     x: (Math.random() - 0.5) * 0.4, y: (Math.random() - 0.5) * 0.4, z: (Math.random() - 0.5) * 0.4,

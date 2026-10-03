@@ -86,7 +86,7 @@ function styleRules(side) {
     `- 实体选择：'#名字' 与 '.标签'。**entity.id 暴露的是实体名字**（如 "检查点-0"），要序号就从名字里取数字，不要假设 id 是数字。`,
     `- 新建地图里的实体若需要被脚本按顺序取用，名字必须自带序号（检查点-0、检查点-1 …），否则按序号排序的写法会全部拿到同一个 index。`,
     `- 物理默认值（不要自己编数字，需要改就显式赋值）：walkSpeed ${PLAYER_DEFAULTS.walkSpeed}、runSpeed ${PLAYER_DEFAULTS.runSpeed}、crouchSpeed ${PLAYER_DEFAULTS.crouchSpeed}、jumpPower ${PLAYER_DEFAULTS.jumpPower}、gravity ${WORLD_DEFAULTS.gravity} 格/tick²、自动踏步高度 ${STEP_UP} 格。`,
-    `- 速度单位是「格/tick」，不是「格/秒」。换算关系是 ×${TPS.toFixed(3)}。`,
+    `- 速度单位是「格/tick」（1 tick = ${TICK_MS}ms，约 ${TPS.toFixed(2)} tick/秒）；这是本引擎的约定，官方文档只写「最大步行速度」不写单位，别对脚本作者说这是官方口径。换算成格/秒是 ×${TPS.toFixed(3)}。`,
     side === "client"
       ? `- 这是客户端脚本：只跑在**本地那一个玩家**的浏览器里，没有 world.entities 的服务端权威状态；客户端的 world 只有 rendering3d 等极少成员，UI 用 UiBox.create() / UiText.create() 等工厂构造。`
       : `- 这是服务端脚本：只有它能看到全部玩家与世界状态；要给客户端下发 UI 或数据，用 remoteChannel 的 sendClientEvent / broadcastClientEvent（只允许可序列化的值），不要直接 new UiBox()。`,
