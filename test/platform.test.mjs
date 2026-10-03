@@ -236,6 +236,13 @@ const booted = await until(A, `(() => { const E=window.__editor, g=window.__game
 ok("社区地图走内嵌运行时启动（不是编辑器视图）", booted, await A.evaluate(`document.body.textContent.slice(0,160)`));
 ok("运行时用的是社区昵称", await A.evaluate(`(window.__game && window.__game.player && window.__game.player.name) || "(空)"`) === nameA,
   await A.evaluate(`JSON.stringify({ player: window.__game && window.__game.player && window.__game.player.name, me: window.__me && window.__me.name })`));
+// 进去先站稳、相机不贴脸：这两条就是用户报的"视角极其离谱"的可查口径
+ok("进图后立刻是站稳状态", await until(A, `(() => { const g = window.__game;
+  return !!g && g._grounded && Math.abs(g._vy) < 0.05; })()`, { tries: 30 }),
+  await A.evaluate(`JSON.stringify({ y: window.__game.playerEntity.position.y, vy: window.__game._vy })`));
+ok("跟随相机没有被贴脸挤住", await A.evaluate(`(window.__game._camDist || 0) > 1`),
+  await A.evaluate(`JSON.stringify({ camDist: window.__game._camDist })`));
+
 const shirt = await A.evaluate(`(() => {
   let c = null;
   window.__editor.renderer.scene.traverse((o) => {
@@ -550,6 +557,35 @@ ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = doc
     && Object.values(parsed).every((p) => p.tokens),
     JSON.stringify(Object.fromEntries(Object.entries(parsed).map(([k, p]) => [k, p.bg + " " + p.primary]))));
 }
+
+
+/* ---------------- 出生点在世界之外：必须被纠正，不许自由落体 ---------------- */
+// 用第三个会话做：A 那条联机链路不能被这次导航打断。
+{
+  const C = await Session.open(chrome.port, { isolated: true, width: 1100, height: 720, initScripts: [ACK, HOOK] });
+  await C.goto(BASE + "/"); await sleep(700);
+  // 出生点在世界之外（官方包导入的常见坏值：源图比我们的世界上限高，y=153 落在 128 高的世界里）。
+  // 不纠正就是每次进图几十格自由落体，相机从天上直冲地面。这里造一个坏值走一遍真实链路。
+  await C.evaluate(`(async () => {
+    const r = await (await fetch('/api/world/216d665d3ca92bd1b9a2')).json();
+    const keep = JSON.stringify(r);
+    r.meta = r.meta || {}; r.meta.player = r.meta.player || {};
+    r.meta.player.initialPosition = { x: 64, y: 9999, z: 64 };
+    await fetch('/api/world/216d665d3ca92bd1b9a2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r) });
+    return keep.length;
+  })()`);
+  await C.goto(BASE + `/edit/216d665d3ca92bd1b9a2?play=1`);
+  ok("世界之外的出生点会被纠正并说明", await until(C, `/出生点/.test((window.__game || {})._spawnNotice || "")`),
+    await C.evaluate(`(window.__game || {})._spawnNotice || "(没有提示)"`));
+  ok("纠正后落在该列最高面上，不是从天上掉", await until(C, `(() => { const g = window.__game;
+    return !!g && g._grounded && g.playerEntity.position.y <= g.e.world.shape[1] && g.playerEntity.position.y > 0; })()`, { tries: 30 }),
+    await C.evaluate(`JSON.stringify({ y: window.__game.playerEntity.position.y, H: window.__game.e.world.shape[1] })`));
+  await C.evaluate(`(async () => { const keep = await (await fetch('/api/world/216d665d3ca92bd1b9a2')).json();
+    delete keep.meta.player.initialPosition;
+    await fetch('/api/world/216d665d3ca92bd1b9a2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(keep) }); return 1; })()`);
+  await C.close();
+}
+
 
 /* 全程不许有未捕获异常：上面每一条都可能"看着过了"其实页面早就报错在跑降级路径 */
 const errsA = await A.evaluate(`JSON.stringify((window.__errs || []).slice(0, 5))`);

@@ -469,6 +469,8 @@ export class GameRuntime {
     this._bindInput();
     document.body.classList.add("playing");
     consoleDiv(this.hud.console, "已载入 " + (scripts || []).length + " 个脚本文件", "info");
+    // 出生点被纠正过一定要说：静默把人从天上挪到地面，作者会以为自己的坐标没生效
+    if (this._spawnNotice) consoleDiv(this.hud.console, this._spawnNotice, "warn");
     for (const f of scripts || []) this.runScript(f.name || "index.js", f.code || "", f);
     this._channels.PlayerJoin.fire({ tick: 0, entity: this.playerEntity });
     if (this.playerJoinSound) this._playAt(this.playerJoinSound, this.playerEntity.position);
@@ -1168,9 +1170,19 @@ export class GameRuntime {
     }
     if (raw.initialPosition) {
       const ip = raw.initialPosition;
-      this.player.spawnPoint = new GameVector3(ip.x, ip.y, ip.z);
-      this.spawnPoint = [ip.x, ip.y, ip.z];
-      if (this.playerEntity) this.playerEntity.position.set(ip.x, ip.y, ip.z);
+      // 出生点在世界之外：导入官方包时最常见——源图的世界比我们的体素世界上限高，
+      // 于是 y=153 落在一个只有 128 高的世界里。玩家一进去就是几十格自由落体，
+      // 相机从天上直冲地面，看起来就是"视角极其离谱"。这种坐标不是玩法设计，是坏值。
+      const H = this.e.world.shape[1];
+      let y = Number(ip.y);
+      if (!Number.isFinite(y) || y < 0 || y >= H) {
+        const top = this._topAt(Number(ip.x) || 0, Number(ip.z) || 0);
+        this._spawnNotice = `出生点 y=${Number.isFinite(y) ? y : ip.y} 不在世界高度 0..${H} 之内，已放到该列最高面 y=${top[1]}`;
+        y = top[1];
+      }
+      this.player.spawnPoint = new GameVector3(ip.x, y, ip.z);
+      this.spawnPoint = [ip.x, y, ip.z];
+      if (this.playerEntity) this.playerEntity.position.set(ip.x, y, ip.z);
       if (raw.initialYaw != null) { this._yaw = Number(raw.initialYaw) || 0; this.player.cameraYaw = this._yaw; }
     }
     // 官方 project.json 用 noClip 表示穿墙，运行期 API 叫 spectator；颜色是 0..1 的 [r,g,b] 数组
