@@ -2,12 +2,15 @@
    与官网 public/css/site.css 同一套 token：石墨底、单一青蓝强调、中文优先无衬线。
    两个"官方"页面长得不像同一个产品，比不好看更糟。
    取向：开发者文档站，暗色、密排、数据优先。不做大字报式落地页。 */
+/* 这份副本是故意的：docs/ 要单独发到 GitHub Pages，拿不到 public/css/tokens.css。
+   值必须与 public/css/tokens.css 一致——改那边记得改这里，两边不一致的直观结果就是
+   "文档站和用起来不像同一个产品"（以前这里是偏蓝的 #0c0c0d，应用是中性 #0d0d0d）。 */
 :root {
-  --primary: #22c8dd; --primary-hover: #4ad8ea; --primary-dim: rgba(34, 200, 221, .14);
-  --bg0: #0c0c0d; --bg1: #121214; --bg2: #17171a; --bg3: #1e1e22; --bg4: #26262b;
-  --line: rgba(255, 255, 255, .075); --line2: rgba(255, 255, 255, .13);
-  --fg: #ededf0; --fg2: rgba(255, 255, 255, .66); --fg3: rgba(255, 255, 255, .4);
-  --ok: #48c774; --bad: #ef5a5a;
+  --primary: #22c8dd; --primary-hover: #4ad8ea; --primary-dim: rgba(34, 200, 221, .15);
+  --bg0: #0d0d0d; --bg1: #141414; --bg2: #1a1a1a; --bg3: #202020; --bg4: #2a2a2a;
+  --line: rgba(255, 255, 255, .08); --line2: rgba(255, 255, 255, .13);
+  --fg: #f2f2f2; --fg2: rgba(255, 255, 255, .62); --fg3: rgba(255, 255, 255, .38);
+  --ok: #46b26a; --bad: #e0524b;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
   --font: MiSans, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --maxw: 1180px;

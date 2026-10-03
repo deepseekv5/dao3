@@ -6,20 +6,14 @@
 <title>游玩手册 · 老攸元宇宙</title>
 <meta name="description" content="玩家视角的游玩手册：操作键位、一场比赛的流程、加速道具、视角与界面、常见问题。不需要读代码。"/>
 <link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
+<link rel="stylesheet" href="/css/tokens.css"/>
 <style>
-:root{
-  /* 与工作台同一套 token（css/home.css）：石墨底 + 单一青蓝。
-     手册是从工作台侧栏点开的，长得不像同一个应用会让人以为跳去了别的网站。 */
-  --bg:#0d0d0d; --panel:#171717; --panel2:#1e1e1e; --grey2:#2a2a2a;
-  --ink:#f2f2f2; --mut:rgba(255,255,255,.66); --dim:rgba(255,255,255,.4); --primary:#22c8dd;
-  --sans:MiSans,"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Helvetica Neue",sans-serif;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.75}
 a{color:var(--primary)}
 .bar{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--panel);border-bottom:1px solid #000;position:sticky;top:0;z-index:5;flex-wrap:wrap}
-.brand{font-weight:700;font-size:15px;text-decoration:none;white-space:nowrap}
+.brand{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:15px;text-decoration:none;white-space:nowrap}
+.brand img{border-radius:5px}
 .brand span{color:var(--mut);font-weight:400}
 .nav{display:flex;gap:2px;flex-wrap:wrap;margin-left:auto}
 .nav a{font-size:13px;color:var(--mut);text-decoration:none;padding:5px 9px;border-radius:6px;white-space:nowrap}
@@ -58,7 +52,7 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
 <body>
 
 <div class="bar">
-  <a class="brand" href="/">老攸元宇宙 <span>/ 游玩手册</span></a>
+  <a class="brand" href="/"><img src="/img/laoyou.svg" width="20" height="20" alt=""/>老攸元宇宙 <span>/ 游玩手册</span></a>
   <nav class="nav">
     <a href="#keys">键位</a>
     <a href="#hud">界面</a>

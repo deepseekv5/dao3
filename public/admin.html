@@ -7,6 +7,7 @@
 <meta name="description" content="老攸元宇宙社区的管理面板：用户与角色、内容审核队列、作品数据。数据全部在本机。"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
 <link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
+<link rel="stylesheet" href="/css/tokens.css"/>
 <link rel="stylesheet" href="/css/home.css"/>
 <link rel="stylesheet" href="/css/community.css"/>
 <link rel="stylesheet" href="/css/admin.css"/>
@@ -15,12 +16,7 @@
 <div class="wb-app">
   <aside class="wb-rail">
     <a class="wb-mark" href="/" title="老攸元宇宙"><img src="/img/laoyou.svg" width="24" height="24" alt=""/></a>
-    <nav class="wb-railnav">
-      <a href="/" title="工作台"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></span><i>工作台</i></a>
-      <a href="/community" title="社区"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.1"/><path d="M3.6 19c0-3 2.4-5 5.4-5s5.4 2 5.4 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.6 14.3c2.5.3 4.6 2 4.6 4.4"/></svg></span><i>社区</i></a>
-      <a href="/admin" class="on" title="后台"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.4v2.3M12 18.3v2.3M20.6 12h-2.3M5.7 12H3.4M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6M18.1 18.1l-1.6-1.6M7.5 7.5 5.9 5.9"/></svg></span><i>后台</i></a>
-      <a href="/site" title="简介"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9.5 12.5h5M9.5 16h4"/></svg></span><i>简介</i></a>
-    </nav>
+    <nav class="wb-railnav"><!-- 由 js/rail.js 渲染，见该文件注释 --></nav>
     <div class="wb-railfoot">
       <button id="wbAbout" title="关于" aria-label="关于"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.6M12 7.6v.5"/></svg></button>
     </div>
@@ -42,6 +38,7 @@
 <div id="cmModal" class="cm-modal"></div>
 <div id="cmToast" class="cm-toast" hidden></div>
 <div id="auMenu"></div>
+<script type="module" src="/js/rail.js"></script>
 <script type="module" src="/js/disclaimer.js"></script>
 <script type="module" src="/js/admin.js"></script>
 </body>
