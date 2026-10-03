@@ -33,26 +33,35 @@
 .cm-cat.on { color: var(--fg); border-bottom-color: var(--primary); font-weight: 600; }
 
 /* ---------- 广场卡片 ---------- */
-.cm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(252px, 1fr)); gap: 14px; }
-.cm-card {
-  background: var(--bg1); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
-  cursor: pointer; transition: .15s; display: flex; flex-direction: column;
+/* 照 dao3.fun 展厅：图占绝对主导，字只做索引。
+   格子是纯黑的（不是深灰）——深灰底 + 描边的卡片会互相"吵"，
+   而纯黑让每张图自己变成一个展品。hover 才亮起 2px 强调色边框。 */
+.cm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); gap: 30px 26px; }
+.cm-card { display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+.cm-thumb {
+  position: relative; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden;
+  background: #000 center/cover no-repeat; border: 2px solid transparent; transition: border-color .15s;
 }
-.cm-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0, 0, 0, .45); }
-.cm-cover { position: relative; aspect-ratio: 16 / 10; background: var(--bg1) center/cover no-repeat; display: grid; place-items: center; }
-.cm-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.cm-cover .glyph { font-size: 34px; font-weight: 700; color: rgba(255, 255, 255, .2); }
-/* 有封面就别再压一个大字母上去：之前那个半透明首字是叠在真实截图上的 */
-.cm-cover:not(.none) .glyph { display: none; }
-.cm-cover .shape { position: absolute; right: 7px; bottom: 7px; font: 10.5px/1 var(--mono); color: #f2f2f2; background: rgba(0, 0, 0, .72); padding: 3px 6px; border-radius: 5px; }
-.cm-card .body { padding: 10px 12px 11px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
-.cm-card h3 { margin: 0; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cm-card .desc { margin: 0; font-size: 11.5px; color: var(--fg3); line-height: 1.5; height: 2.9em; overflow: hidden; }
-.cm-card .foot { display: flex; align-items: center; gap: 8px; margin-top: auto; font-size: 11px; color: var(--fg3); }
-.cm-card .foot .who { display: flex; align-items: center; gap: 5px; color: var(--fg2); }
-.cm-card .foot .st { margin-left: auto; display: flex; gap: 9px; font-family: var(--mono); }
-.cm-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-.cm-tag { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--bg3); color: var(--fg2); }
+.cm-card:hover .cm-thumb { border-color: var(--primary); }
+.cm-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cm-glyph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 44px; font-weight: 700; color: rgba(255,255,255,.1); }
+.cm-thumb:has(img) .cm-glyph { display: none; }
+.cm-shape {
+  position: absolute; right: 8px; bottom: 8px; font: 10.5px/1 var(--mono);
+  color: var(--fg2); background: rgba(0,0,0,.72); padding: 4px 7px; border-radius: 6px;
+}
+.cm-badge {
+  position: absolute; left: 8px; top: 8px; font: 10.5px/1 var(--mono);
+  color: var(--fg2); background: rgba(0,0,0,.72); padding: 4px 7px; border-radius: 6px;
+}
+.cm-lines { min-width: 0; }
+.cm-title { margin: 0 0 5px; font-size: 14px; font-weight: 700; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-author { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg3); margin-bottom: 3px; min-width: 0; }
+.cm-author span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-author .au-face { width: 18px; height: 18px; border-radius: 5px; font-size: 10px; flex: none; }
+.cm-views { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fg3); }
+.cm-eye { width: 13px; height: 13px; flex: none; }
+
 
 /* ---------- 小头像 ---------- */
 .au-face { width: 22px; height: 22px; border-radius: 7px; object-fit: cover; flex: none; display: grid; place-items: center; }
@@ -68,6 +77,8 @@
 .cm-hero .meta { padding: 14px 16px 16px; }
 .cm-hero h2 { margin: 0 0 6px; font-size: 19px; letter-spacing: .2px; }
 .cm-hero .lead { margin: 0 0 12px; color: var(--fg2); font-size: 13px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+.cm-hero .cm-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.cm-tag { font-size: 11.5px; color: var(--fg2); background: var(--bg3); border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; }
 .cm-hero .stats { display: flex; gap: 18px; color: var(--fg3); font-size: 12px; font-family: var(--mono); flex-wrap: wrap; }
 .cm-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; }
 .cm-panel { background: var(--bg1); border: 1px solid var(--line); border-radius: 12px; padding: 13px; }

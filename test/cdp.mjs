@@ -101,7 +101,9 @@ export class Session {
     return new Promise((resolve, reject) => {
       this._pending.set(id, { resolve, reject });
       this.ws.send(JSON.stringify({ id, method, params }));
-      setTimeout(() => { if (this._pending.delete(id)) reject(new Error(`${method} 超时`)); }, 30000);
+      // 60 秒不是随手写的：软件光栅化下编辑器首帧要跑到几十秒，
+      // 30 秒会把"慢"误报成"坏了"，然后整条链路都在追一个不存在的 bug。
+      setTimeout(() => { if (this._pending.delete(id)) reject(new Error(`${method} 超时`)); }, 60000);
     });
   }
 

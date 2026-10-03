@@ -73,17 +73,34 @@ export const coverArt = () => "background-color:#161616;"
 export const coverHtml = (p) => p.hasCover
   ? `<img src="/api/community/pubs/${p.id}/cover" alt="" loading="lazy" onerror="this.remove()"/>`
   : "";
+/** 一个作品卡。
+    骨架照 dao3.fun 的展厅抄：一张纯黑底图 + 三行字（标题 / 作者 / 浏览量）。
+    之前这张卡是「小地图 + 简介两行 + 标签 + 三个计数挤一行」，信息量一样，
+    但五样东西分摊不出一条视觉重心，看起来就是一堆生成的卡片；
+    而官方的做法是图占绝对主导，字只做索引——眼睛先看到图，再决定点不点。
+    浏览量要按人读：41234 → 41.2K。 */
+const kfmt = (n) => {
+  const v = Number(n) || 0;
+  if (v >= 1e8) return (v / 1e8).toFixed(1) + "亿";
+  if (v >= 1e4) return (v / 1e4).toFixed(2) + "K";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
+  return String(v);
+};
 export function cardHtml(p) {
+  const isModel = p.kind === "model";
   return `<article class="cm-card" data-id="${esc(p.id)}">
-    <div class="cm-cover${p.hasCover ? "" : " none"}" ${p.hasCover ? "" : `style="${coverArt(p)}"`}>${coverHtml(p)}<span class="glyph">${esc((p.title || "?").slice(0, 1))}</span>
-      ${p.shape ? `<span class="shape">${esc(p.shape.join("×"))}</span>` : ""}</div>
-    <div class="body">
-      <h3>${esc(p.title)}</h3>
-      <p class="desc">${esc(p.desc || "")}</p>
-      ${p.tags && p.tags.length ? `<div class="cm-tags">${p.tags.map((t) => `<span class="cm-tag">${esc(t)}</span>`).join("")}</div>` : ""}
-      <div class="foot">
-        <span class="who">${face(p.author)}${esc(p.author ? p.author.name : "匿名")}</span>
-        <span class="st"><span title="游玩">${p.plays}</span><span title="点赞">♥${p.likes}</span><span title="评论">✎${p.comments}</span></span>
+    <div class="cm-thumb" ${p.hasCover ? "" : `style="${coverArt()}"`}>
+      ${coverHtml(p)}
+      <span class="cm-glyph">${esc((p.title || "?").slice(0, 1))}</span>
+      ${isModel ? `<span class="cm-badge">模型</span>` : ""}
+      ${p.shape && !isModel ? `<span class="cm-shape">${esc(p.shape.join("×"))}</span>` : ""}
+    </div>
+    <div class="cm-lines">
+      <h4 class="cm-title">${esc(p.title)}</h4>
+      <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span></div>
+      <div class="cm-views">
+        <svg viewBox="0 0 24 24" class="cm-eye"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        <span>${kfmt(p.plays)} 浏览</span>
       </div>
     </div>
   </article>`;

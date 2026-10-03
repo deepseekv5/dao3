@@ -7,7 +7,14 @@
   --font-white:#fff; --font-white-minor:hsla(0,0%,100%,.6); --font-white-disabled:hsla(0,0%,100%,.3);
   --divider:hsla(0,0%,100%,.08);
   --radius:8px;
-  --font:Rubik,MiSans,Montserrat,"PingFang SC","noto-sans-sc","Microsoft YaHei",system-ui,sans-serif;
+  --font:MiSans,"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  /* 社区层（发布对话框等）用的是工作台那套变量名。编辑器刻意保留官方橙 #fc8308，
+     所以这里只做名字桥接，不共用强调色——否则编辑器一打开就变成另一个产品。 */
+  --bg0:#0d0d0d; --bg1:var(--panel); --bg2:#232323; --bg3:var(--panel2); --bg4:#3d3d3d;
+  --line:var(--divider); --line2:hsla(0,0%,100%,.14);
+  --fg:var(--font-white); --fg2:var(--font-white-minor); --fg3:hsla(0,0%,100%,.4);
+  --primary-dim:rgba(252,131,8,.16); --on-accent:#1a1206;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0d0d0d;color:var(--font-white);font-family:var(--font);overflow:hidden;font-size:13px;-webkit-font-smoothing:antialiased}
