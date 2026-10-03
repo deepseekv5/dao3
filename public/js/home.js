@@ -364,8 +364,12 @@ const mb = (n) => (n / 1048576).toFixed(2) + " MB";
 /** 把包内实际内容写进确认框。写死数字会和包脱节，那样这个框就变成一份"看着对"的假文案。 */
 function fillScope(s) {
   const b = s.bundle || {};
+  const t = s.template || {};
   const map = $("tplScopeMap");
-  if (map) map.textContent = s.available ? "「赛车模板」· 1,523,592 体素 · 199 个实体 · 2 个脚本" : "本包里没有 racing-template.json.gz";
+  // 数字全部来自服务端现读包，不在这里打字：改一次图就会和文案脱节
+  if (map) map.textContent = s.available && t.shape
+    ? `「${t.name}」· ${t.shape.join("×")} · ${t.blocks.toLocaleString()} 体素 · ${t.entities} 个实体 · ${t.scripts} 个脚本`
+    : "本包里没有 racing-template.json.gz";
   const mo = $("tplScopeModels");
   if (mo) mo.textContent = b.模型 && b.模型.count ? `${b.模型.count} 个 .gltf · ${mb(b.模型.bytes)}` : "本包里没有";
   const au = $("tplScopeAudio");

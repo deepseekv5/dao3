@@ -289,6 +289,26 @@ function bundleStat() {
   }
   return out;
 }
+/** 授权确认框要写清"这张模板到底给你什么"。数字必须从包里真读出来：
+    写死一份就会和包脱节，那个框就变成一份"看着对"的假文案。 */
+let _tplStatCache = null;
+function templateStat() {
+  if (_tplStatCache) return _tplStatCache;
+  if (!fs.existsSync(TEMPLATE_PAYLOAD)) return null;
+  try {
+    const j = JSON.parse(zlib.gunzipSync(fs.readFileSync(TEMPLATE_PAYLOAD)).toString("utf8"));
+    const meta = j.meta || {};
+    // 模板存的是**摊平**的一份世界：shape/indices/data/rot 在顶层，不再套一层 world
+    _tplStatCache = {
+      name: meta.name || "赛车模板",
+      shape: j.shape || null,
+      blocks: (j.indices && j.indices.length) || 0,
+      entities: (meta.entities || []).length,
+      scripts: (meta.scripts || []).length,
+    };
+    return _tplStatCache;
+  } catch { return null; }
+}
 /** 命中受闸门保护的素材前缀则返回 {file, group}，否则 null。
  *  文件名必须落在 bundle 目录内：decodeURIComponent 之后可以带 ../，不挡就是任意文件读。 */
 function gatedAsset(pathname) {
@@ -504,6 +524,7 @@ const server = http.createServer((req, res) => {
           racingAssets: c.racingAssets || "unset",
           available: fs.existsSync(TEMPLATE_PAYLOAD),
           assetsAvailable: bundle.模型.count > 0 && bundle.音效.count > 0,
+          template: templateStat(),
           bundle,
           installed: isTemplate,
         });
