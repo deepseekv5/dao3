@@ -21,6 +21,20 @@ const SKIN_PARTS = [
   ["shirt", "上衣"], ["pants", "裤子"], ["skin", "皮肤"], ["hair", "头发"], ["shoe", "鞋子"],
 ];
 const SWATCHES = ["#5aa8e8", "#e8604c", "#4ecb8d", "#f2c14e", "#a06bff", "#ff7ab8", "#2f3b52", "#e8e6e1", "#6b4630", "#12b5c9"];
+// 皮肤那一格给的是肤色梯度，不是通用色板：拿挑上衣的十色去挑脸，怎么选都像贴了块塑料。
+const TONES = ["#f6d7bd", "#eab98f", "#d3925f", "#a96a3d", "#7b4a28", "#4e2f1c"];
+const HAIRS = ["#1c1c1e", "#3b2a1c", "#6b4630", "#a86a2f", "#c9a227", "#8c8c90", "#b4483c", "#4a63c9"];
+/** 成套预设。没有预设时用户得自己挑五色才可能好看，多数人挑完只会得到一坨。 */
+const OUTFITS = [
+  { name: "水手", shirt: "#2f5fd0", pants: "#e8e6e1", shoe: "#2b2f38", hair: "#3b2a1c" },
+  { name: "工装", shirt: "#c8792f", pants: "#3f4a3b", shoe: "#241f1a", hair: "#1c1c1e" },
+  { name: "运动", shirt: "#e8443c", pants: "#f2f2f2", shoe: "#2b2f38", hair: "#6b4630" },
+  { name: "夜行", shirt: "#22252c", pants: "#2f3b52", shoe: "#12b5c9", hair: "#1c1c1e" },
+  { name: "学院", shirt: "#f2c14e", pants: "#2b3550", shoe: "#3b2a1c", hair: "#a86a2f" },
+  { name: "森系", shirt: "#4ecb8d", pants: "#5b4a32", shoe: "#2f3b2a", hair: "#6b4630" },
+];
+const rand = (a) => a[(Math.random() * a.length) | 0];
+const randomOutfit = () => ({ skin: rand(TONES), shirt: rand(SWATCHES), pants: rand(SWATCHES), hair: rand(HAIRS), shoe: rand(["#2b2f38", "#3b2a1c", "#e8e6e1", "#241f1a"]) });
 
 /** 纯 CSS 的角色预览：不为了看个配色就把 three.js 拖进社区页。 */
 function previewHtml(skin) {
@@ -77,12 +91,11 @@ function openEditor(u, onSaved) {
         </div>
       </div>
       <div>
-        <h4>角色皮肤</h4>
+        <h4 title="配色会带进你游玩的每一张地图；模型皮肤在 VOXA 里发布后选择。">角色皮肤</h4>
         <div class="pf-skinrow">
           ${previewHtml(skin)}
           <div class="pf-swatches" id="eSkin"></div>
         </div>
-        <p class="pf-hint">配色会带进每一张你游玩的地图；模型皮肤请在 VOXA 里发布后选择。</p>
       </div>
     </div>
     <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="eSave">保存</button></div>
@@ -94,20 +107,47 @@ function openEditor(u, onSaved) {
 
   let active = "shirt";
   const draft = Object.assign({}, skin);
-  const paintSwatches = () => {
-    const host = box.querySelector("#eSkin");
-    host.innerHTML = SKIN_PARTS.map(([k, label]) =>
-      `<div class="pf-part ${k === active ? "on" : ""}" data-p="${k}"><span style="background:${esc(draft[k])}"></span>${esc(label)}</div>`).join("")
-      + `<div class="pf-pal">${SWATCHES.map((c) => `<button class="pf-c" data-c="${c}" style="background:${c}"></button>`).join("")}
-         <label class="pf-c pf-custom" title="自定义颜色"><input type="color" id="eCustom" value="${esc(draft[active])}"/></label></div>`;
-    for (const b of host.querySelectorAll("[data-p]")) b.onclick = () => { active = b.dataset.p; paintSwatches(); };
-    for (const b of host.querySelectorAll("[data-c]")) b.onclick = () => { draft[active] = b.dataset.c; paintSwatches(); };
-    const custom = host.querySelector("#eCustom");
-    if (custom) custom.oninput = () => { draft[active] = custom.value; paintSwatches(); };
+  // 每一格给自己的色板：肤色梯度 / 发色 / 通用色
+  const paletteFor = (k) => (k === "skin" ? TONES : k === "hair" ? HAIRS : SWATCHES);
+  const paintParts = () => {
+    for (const b of box.querySelectorAll("[data-p]")) b.classList.toggle("on", b.dataset.p === active);
+    const pal = box.querySelector(".pf-pal");
+    if (pal) pal.replaceChildren(...paletteFor(active).map((c) => {
+      const el = document.createElement("button");
+      el.className = "pf-c"; el.dataset.c = c; el.style.background = c;
+      el.onclick = () => { draft[active] = c; markCustom(); syncDoll(); paintParts(); };
+      return el;
+    }));
+  };
+  // 人偶单独刷，不连带重建色板：自定义取色器是 <input type=color>，
+  // 它在系统面板里每动一下都触发 input，那时把宿主拆掉等于中途销毁用户正在用的控件
+  const syncDoll = () => {
+    for (const b of box.querySelectorAll("[data-p]")) {
+      b.querySelector("span").style.background = draft[b.dataset.p];
+    }
     const doll = box.querySelector(".pf-doll");
     if (doll) doll.replaceWith(fragmentFirst(previewHtml(draft)));
   };
-  paintSwatches();
+  const applyPreset = (o, btn) => {
+    Object.assign(draft, o);
+    for (const b of box.querySelectorAll("[data-o]")) b.classList.toggle("on", b === btn);
+    syncDoll(); paintParts();
+  };
+  const markCustom = () => { for (const b of box.querySelectorAll("[data-o]")) b.classList.remove("on"); };
+  const host = box.querySelector("#eSkin");
+  host.innerHTML = `<div class="pf-fit" id="eFit">${OUTFITS.map((o, i) =>
+    `<button class="pf-o" data-o="${i}" title="${esc(o.name)}"><i style="background:${esc(o.hair)}"></i><i style="background:${esc(o.shirt)}"></i><i style="background:${esc(o.pants)}"></i></button>`).join("")}
+    <button class="pf-o dice" id="eDice" title="随机一套"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button></div>
+    <div class="pf-parts">${SKIN_PARTS.map(([k, label]) =>
+      `<div class="pf-part ${k === active ? "on" : ""}" data-p="${k}"><span style="background:${esc(draft[k])}"></span>${esc(label)}</div>`).join("")}</div>
+    <div class="pf-pal"></div>
+    <label class="pf-c pf-custom" title="自定义颜色"><input type="color" id="eCustom" value="${esc(draft[active])}"/></label>`;
+  for (const b of host.querySelectorAll("[data-p]")) b.onclick = () => { active = b.dataset.p; paintParts(); };
+  for (const b of host.querySelectorAll("[data-o]")) b.onclick = () => applyPreset(OUTFITS[Number(b.dataset.o)], b);
+  host.querySelector("#eDice").onclick = () => applyPreset(randomOutfit());
+  const custom = host.querySelector("#eCustom");
+  custom.oninput = () => { draft[active] = custom.value; markCustom(); syncDoll(); };
+  paintParts();
 
   for (const [id, kind] of [["eAvatar", "avatar"], ["eBanner", "banner"]]) {
     box.querySelector("#" + id).onchange = async (e) => {

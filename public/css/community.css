@@ -264,3 +264,15 @@
   .pf-cols { grid-template-columns: 1fr; }
   .pf-head { flex-wrap: wrap; }
 }
+
+/* 皮肤选择器：成套预设 → 部位 → 该部位自己的色板，三步都在同一列里 */
+.pf-fit { display: flex; gap: 6px; margin-bottom: 9px; }
+.pf-o { display: flex; flex-direction: column; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line2); background: var(--bg2); cursor: pointer; padding: 0; overflow: hidden; }
+.pf-o:hover { border-color: var(--primary); }
+.pf-o i { flex: 1; display: block; }
+.pf-o.dice { align-items: center; justify-content: center; color: var(--fg2); width: 30px; }
+.pf-o.dice:hover { color: var(--fg); border-color: var(--primary); }
+.pf-o.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.pf-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 6px; }
+.pf-custom { display: inline-flex; margin-top: 7px; overflow: hidden; position: relative; }
+.pf-custom input[type=color] { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); border: 0; padding: 0; background: none; cursor: pointer; }
