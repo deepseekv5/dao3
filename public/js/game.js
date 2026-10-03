@@ -297,6 +297,21 @@ function rgbOf(v) {
   return null;
 }
 
+/** 流体染色：0..1 的浮点三元组 → 0xRRGGBB，并保证黑得不至于什么都看不见。
+    咖啡/酱油那几格的 fluidColor 接近 [0,0,0]，照原样用就等于把玩家眼睛蒙上；
+    水下应该是"浑浊但有光"，不是纯黑。抬亮度而不是改色相，颜色仍然是那格流体自己的。 */
+function liftTint(c) {
+  const f = (v) => Math.max(0, Math.min(1, +v || 0));
+  let r = f(c[0]), g = f(c[1]), b = f(c[2]);
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const MIN = 0.16;
+  if (lum < MIN) {
+    const k = (MIN - lum) / (1 - lum || 1);
+    r += (1 - r) * k; g += (1 - g) * k; b += (1 - b) * k;
+  }
+  return (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
+}
+
 // 官方文档规定录音产物是 audio/wav，而 MediaRecorder 给的是 webm/ogg，这里解码后重封装成 16 位 PCM WAV
 async function toWavBlob(blob) {
   try {
@@ -480,7 +495,7 @@ export class GameRuntime {
             if (p) { p.tx = m.p; p.ry = m.r; }
           },
           chat: (m) => this._chatLine(`${m.name}: ${m.m}`, "#bfe0ff"),
-          throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#ffd9a8"),
+          throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#8fe3ef"),
           rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3"),
           status: (s) => {
             if (s.connected) {
@@ -488,7 +503,7 @@ export class GameRuntime {
               // 连上就先报一次坐标：否则别人在那 16ms 的间隔里看到的是你站在世界原点。
               const me = this.playerEntity;
               if (me) this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
-            } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#ffd9a8");
+            } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#8fe3ef");
           },
         },
       });
@@ -1685,9 +1700,18 @@ const ZERO = new GameVector3();
       const wantY = (this._keys.space ? 1 : 0) - (this._keys.ctrl ? 1 : 0);
       vy += (wantY * speed - vy) * clamp(p.flyAcceleration * 0.25, 0, 1);
     } else if (swimming) {
-      vy += this.gravity * 0.22;
-      if (this._keys.space) vy += p.swimAcceleration * 0.9;
-      vy = clamp(vy, -p.swimSpeed, p.swimSpeed * 1.4);
+      // 水下手感照 Minecraft：按住空格上浮、松手缓沉、头露出水面就漂平。
+      // 这里用"往目标速度收敛"而不是"给一个冲量再靠阻力衰减"：后者松手后会带着
+      // 残余上速继续飘将近一秒，看着像不受控，实测也确实飘过头。
+      // 官方只给了 swimSpeed(0.4)/swimAcceleration(0.1) 两个默认值，没有浮力常数，
+      // 所以比例系数是按手感定的；单位仍是 格/tick，不要当秒用。
+      const headUnder = this._headInFluid(ent, p.scale);
+      const wantVy = this._keys.space ? p.swimSpeed * 0.7
+        : headUnder ? -p.swimSpeed * 0.3 : 0;
+      // 0.3/tick 是"水的竖直阻力"，约 3 帧收敛到目标速度。
+      // 挂在 swimAcceleration 上会太软：松手后带着残余上速还要往上飘半秒多，
+      // 看着像不受控，实测确实会飘过头。
+      vy += (wantVy - vy) * 0.3;
     } else {
       // 官方 gravity=-0.1 全程恒定；jumpAccelerationFactor(0.55) 是跳跃**初速**的系数，不是重力乘数。
       // 之前误用为上升段重力减半，实测跳高 8 格（应为 4.6），且下落突然恢复全重力→飘升砸落。
@@ -1709,7 +1733,10 @@ const ZERO = new GameVector3();
     // 跳跃 / 二段跳
     this._coyote = this._grounded ? 0.12 : Math.max(0, this._coyote - TICK_MS / 1000);
     this._jumpBuf = Math.max(0, this._jumpBuf - TICK_MS / 1000);
-    if (this._jumpBuf > 0 && !flying && p.enableJump) {
+    // 空格在水里是"上浮"，不该同时被当成跳跃/二段跳。二段跳那一支以前没判 swimming，
+    // 而它写的 vy = doubleJumpPower(0.9) 发生在上面那段游泳钳制**之后**，
+    // 于是游着游着按空格会突然弹射出去，完全绕开了 swimSpeed 上限。
+    if (this._jumpBuf > 0 && !flying && !swimming && p.enableJump) {
       if ((this._grounded || this._coyote > 0) && p.jumpPower > 0) {
         // 官方 jumpPower(0.96) 是起跳瞬时的 vy（格/tick），gravity(-0.1) 全程恒定。
         // jumpAccelerationFactor 这个字段在官方 d.ts 里标的"跳跃加速度率"其实没人读，
@@ -1968,9 +1995,20 @@ const ZERO = new GameVector3();
     }
     return out;
   }
+  /** 只采"胸口那一格"的话，水只到腰、或者人正浮在水面那一档，全部判定成"不在水里"——
+      于是浅水区走起来跟岸上一样，跳进去也沉到底。脚 / 身 / 头三处任意一处命中液体就算，
+      这跟 _fluidOverlap 给脚本看的接触列表是同一个口径。 */
   _inFluid(ent, scale) {
     const s = scale || 1;
-    return this._fluidAt(Math.floor(ent.position.x), Math.floor(ent.position.y + 0.9 * s), Math.floor(ent.position.z)) > 0;
+    const x = Math.floor(ent.position.x), z = Math.floor(ent.position.z);
+    const fy = Math.floor(ent.position.y);
+    for (const dy of [0, 0.5 * s, 0.9 * s, 1.5 * s]) if (this._fluidAt(x, fy + Math.floor(dy), z)) return true;
+    return false;
+  }
+  /** 头是否埋进液体：决定相机染色。跟 _inFluid 分开，因为第三人称镜头经常还在水面之上。 */
+  _headInFluid(ent, scale) {
+    const s = scale || 1;
+    return this._fluidAt(Math.floor(ent.position.x), Math.floor(ent.position.y + 1.5 * s), Math.floor(ent.position.z));
   }
   _syncFluidContacts(ent, fluids, player) {
     const prevIds = new Set(ent._prevFluidContacts.map((c) => c.voxel));
@@ -2037,7 +2075,7 @@ const ZERO = new GameVector3();
     ent.hp = ent.maxHp;
     p.dead = false;
     this._playAt(p.spawnSound, ent.position);
-    this._chatLine(reason === "死亡" ? "你倒下了，已回到出生点" : reason === "手动" ? "已回到出生点" : "掉出世界，已回到出生点", "#ffd9a8");
+    this._chatLine(reason === "死亡" ? "你倒下了，已回到出生点" : reason === "手动" ? "已回到出生点" : "掉出世界，已回到出生点", "#8fe3ef");
     const ev = { tick: this.currentTick, entity: ent };
     p._channels.Respawn.fire(ev);
     this._channels.Respawn.fire(ev);
@@ -2102,9 +2140,13 @@ const ZERO = new GameVector3();
     const headId = this._fluidAt(Math.floor(r.camera.position.x), Math.floor(r.camera.position.y), Math.floor(r.camera.position.z));
     this._underWater = !!headId;
     // 官方表现：镜头浸到哪种流体就用哪种颜色染色（岩浆红、水蓝、牛奶白…）
+    // 图集里的 fluidColor 是 0..1 的浮点三元组，不是 0-255 字节。
+    // 以前这里写的是 `c[0] << 16 | c[1] << 8 | c[2]`：位移会先把浮点截成整数，
+    // 于是水的 [0.1,0.8,1] 算出 0x000001——近乎纯黑，而且它是个"真值"，
+    // 后面那个兜底色永远不会生效。水下全黑就是这么来的。
     const fb = headId ? this._block(baseId(headId)) : null;
-    const fc = fb && fb.fluidColor ? (fb.fluidColor[0] << 16 | fb.fluidColor[1] << 8 | fb.fluidColor[2]) : null;
-    r.setUnderwater && r.setUnderwater(this._underWater, fc == null ? 0x1b6f8f : fc);
+    const raw = fb && fb.fluidColor ? fb.fluidColor : null;
+    r.setUnderwater && r.setUnderwater(this._underWater, raw ? liftTint(raw) : 0x1b6f8f);
   }
   raycastFromEyes(maxDist) {
     const r = this.e.renderer;
@@ -2623,7 +2665,7 @@ void main() {
       this._syncEntityVisibility(ent);
       return;
     }
-    const ph = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshBasicMaterial({ color: 0xfc8308, wireframe: true }));
+    const ph = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshBasicMaterial({ color: 0x22c8dd, wireframe: true }));
     ent._meshHolder.add(ph);
     if (!this._warned.has("mesh:" + base)) {
       this._warned.add("mesh:" + base);

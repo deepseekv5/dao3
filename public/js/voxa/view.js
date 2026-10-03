@@ -40,7 +40,7 @@ export class VoxaView {
     this.boxHelpers = new THREE.Group();
     this.scene.add(this.boxHelpers);
     this.hoverMesh = this._marker(0x66ccff, 0.45);
-    this.selMesh = this._marker(0xfc8308, 0.35);
+    this.selMesh = this._marker(0x22c8dd, 0.35);
     this.scene.add(this.hoverMesh, this.selMesh);
     this.raycaster = new THREE.Raycaster();
     this.ortho = false;
@@ -232,7 +232,7 @@ export class VoxaView {
     for (const p of this.doc.parts) {
       const box = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.BoxGeometry(p.size[0], p.size[1], p.size[2])),
-        // 官方部件框是细白线（选中态更亮），不是 Arena 的橙色
+        // 官方部件框是细白线（选中态更亮），不是实心块
         new THREE.LineBasicMaterial({ color: p === this.activePart ? 0xe8e8e8 : 0x565656 }));
       box.position.set(p.pos[0] + p.size[0] / 2, p.pos[1] + p.size[1] / 2, p.pos[2] + p.size[2] / 2);
       box.userData.partId = p.id;

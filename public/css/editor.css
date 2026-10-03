@@ -1,6 +1,7 @@
-/* DAO3 Arena 编辑器复刻 — 像素级还原官方 UI（橙色主题 #fc8308） */
+/* 编辑器 — 布局与控件尺寸对齐官方 Arena，强调色跟产品自己走（青蓝 #22c8dd）。
+   官方那套橙只保留在"这是官方截图对比"的场合；界面语言已经换成我们自己的。 */
 :root{
-  --primary:#fc8308; --primary-hover:#fd9c39; --primary-press:#e38007; --primary-light:rgba(252,131,8,.3);
+  --primary:#22c8dd; --primary-hover:#4ad8ea; --primary-press:#16a9bd; --primary-light:rgba(34, 200, 221,.3);
   --grey1:#121212; --grey2:#343434; --grey3:#565656; --grey4:#787878; --grey6:#c4c4c4; --grey7:#f5f5f5;
   --bar:#1a1a1a; --panel:#2b2b2b; --panel2:#333; --card:rgba(38,38,38,.94);
   --font-black-important:#222; --font-black:#353535; --font-black-minor:#888;
@@ -8,12 +9,12 @@
   --divider:hsla(0,0%,100%,.08);
   --radius:8px;
   --font:MiSans,"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
-  /* 社区层（发布对话框等）用的是工作台那套变量名。编辑器刻意保留官方橙 #fc8308，
-     所以这里只做名字桥接，不共用强调色——否则编辑器一打开就变成另一个产品。 */
+  /* 社区层（发布对话框等）用的是工作台那套变量名。这里做名字桥接，
+     并且两边共用同一个 --primary——同一个产品的两个面，不该有两种颜色。 */
   --bg0:#0d0d0d; --bg1:var(--panel); --bg2:#232323; --bg3:var(--panel2); --bg4:#3d3d3d;
   --line:var(--divider); --line2:hsla(0,0%,100%,.14);
   --fg:var(--font-white); --fg2:var(--font-white-minor); --fg3:hsla(0,0%,100%,.4);
-  --primary-dim:rgba(252,131,8,.16); --on-accent:#1a1206;
+  --primary-dim:rgba(34, 200, 221,.16); --on-accent:#04222a;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -61,7 +62,7 @@ input{font-family:inherit}
 .ztriple input{flex:1;min-width:0;background:#111;border:1px solid var(--grey2);border-radius:6px;color:#fff;font-size:11.5px;padding:3px 4px}
 .zhint{font-size:10px;color:var(--font-black-minor);line-height:1.6;margin-top:4px}
 .tb-right{display:flex;align-items:center;gap:4px;position:relative}
-.play{width:38px;height:38px;border-radius:50%;background:var(--primary);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;margin-left:8px;box-shadow:0 2px 8px rgba(252,131,8,.5)}
+.play{width:38px;height:38px;border-radius:50%;background:var(--primary);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;margin-left:8px;box-shadow:0 2px 8px rgba(34, 200, 221,.5)}
 .play:hover{background:var(--primary-hover)}
 .worldlist{display:none;position:absolute;top:44px;right:0;background:var(--panel);border:1px solid var(--grey2);border-radius:10px;padding:6px;min-width:220px;max-height:320px;overflow:auto;z-index:40;box-shadow:0 10px 30px rgba(0,0,0,.6)}
 .worldlist.show{display:block}
@@ -314,8 +315,8 @@ body.playing .prop-card{display:none !important}
 .code-editor pre,#scriptCode{margin:0;font-family:Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6;padding:12px 14px;white-space:pre;word-wrap:normal;tab-size:2}
 .code-editor pre{position:absolute;inset:0;overflow:hidden;color:#d6e2ff;pointer-events:none}
 .code-editor pre code{font:inherit}
-#scriptCode{position:absolute;inset:0;width:100%;height:100%;background:transparent;border:none;color:transparent;caret-color:#fc8308;resize:none;outline:none;overflow:auto;white-space:pre}
-#scriptCode::selection{background:rgba(252,131,8,.28);color:transparent}
+#scriptCode{position:absolute;inset:0;width:100%;height:100%;background:transparent;border:none;color:transparent;caret-color:#22c8dd;resize:none;outline:none;overflow:auto;white-space:pre}
+#scriptCode::selection{background:rgba(34, 200, 221,.28);color:transparent}
 /* 语法配色（VSCode 暗色系） */
 .tk-com{color:#6a737d;font-style:italic}
 .tk-str{color:#ce9178}
@@ -360,7 +361,7 @@ body.playing .hud-tools{display:flex}
 .pe-store[hidden]{display:none}
 .pe-store:hover{color:#fff;background:rgba(255,255,255,.08)}
 .pe-store.exit{color:#ffd9cf}
-.pe-store.exit:hover{background:var(--primary);color:#1a1206;border-color:var(--primary)}
+.pe-store.exit:hover{background:var(--primary);color:#04222a;border-color:var(--primary)}
 .game-store{position:absolute;right:14px;top:60px;width:296px;max-height:62vh;overflow:auto;border-radius:12px;padding:10px;display:none;pointer-events:auto;
   background:rgba(12,15,20,.94);border:1px solid var(--grey2);box-shadow:0 16px 50px rgba(0,0,0,.6)}
 .game-store.show{display:block}
@@ -371,7 +372,7 @@ body.playing .hud-tools{display:flex}
 .gs-body{flex:1;min-width:0}
 .gs-name{color:#fff;font-size:13px}
 .gs-desc{color:var(--font-black-minor);font-size:11px;margin-top:2px;line-height:1.5}
-.gs-buy{flex:none;align-self:center;background:transparent;color:#ffd9a8;border:1px solid var(--primary);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
+.gs-buy{flex:none;align-self:center;background:transparent;color:#8fe3ef;border:1px solid var(--primary);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;white-space:nowrap}
 .gs-buy:hover{background:var(--primary);color:#fff}
 .gs-buy:disabled{opacity:.4;cursor:default;border-color:var(--grey2);color:var(--font-black-minor)}
 .gs-buy:disabled:hover{background:transparent;color:var(--font-black-minor)}
@@ -415,9 +416,9 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 #gameDialog .d-input{width:100%;padding:9px 12px;border-radius:9px;background:rgba(0,0,0,.4);border:1px solid var(--grey2);color:#fff;font-size:13px;font-family:inherit}
 #gameDialog .d-input:focus{outline:none;border-color:var(--primary)}
 #gameDialog .playbtn{background:var(--grey2);color:#fff;border:1px solid transparent;border-radius:9px;padding:10px 14px;font-size:13px;font-family:inherit;cursor:pointer;text-align:left}
-#gameDialog .playbtn:hover{background:var(--primary);color:#1a1206;border-color:var(--primary)}
+#gameDialog .playbtn:hover{background:var(--primary);color:#04222a;border-color:var(--primary)}
 /* 重生按钮以前挂着 .playbtn 却没有任何裸规则（那条只作用于 #gameDialog 内），等于没样式 */
-.playbtn{background:var(--primary);color:#1a1206;border:none;border-radius:9px;padding:9px 20px;font-size:13px;font-family:inherit;font-weight:600;cursor:pointer}
+.playbtn{background:var(--primary);color:#04222a;border:none;border-radius:9px;padding:9px 20px;font-size:13px;font-family:inherit;font-weight:600;cursor:pointer}
 .playbtn:hover{background:var(--primary-hover)}
 #gameConsole{position:absolute;left:16px;bottom:140px;width:min(520px,46vw);max-height:38vh;overflow-y:auto;background:rgba(5,8,12,.82);border:1px solid var(--grey2);border-radius:10px;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.5;display:none;pointer-events:auto}
 #gameConsole.show{display:block}
@@ -425,7 +426,7 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 #gameConsole::-webkit-scrollbar-thumb{background:var(--grey2);border-radius:3px}
 #gameConsole .c-log{color:#cfe3ff}
 #gameConsole .c-ok{color:#7ee2a8}
-#gameConsole .c-info{color:#ffd9a8}
+#gameConsole .c-info{color:#8fe3ef}
 #gameConsole .c-warn{color:#ffd863}
 #gameConsole .c-err{color:#ff7b7b}
 /* 开场提示：一条会自己消失的说明，不是常驻横幅 */
@@ -443,7 +444,7 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 .gh-row em{width:40px;text-align:right;color:#fff;font-style:normal;font-family:var(--mono);font-size:11px}
 .gh-btns{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 .gh-btns button{background:rgba(255,255,255,.07);color:var(--fg2);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:11px;font-family:inherit;cursor:pointer}
-.gh-btns button:hover{background:var(--primary);border-color:var(--primary);color:#1a1206}
+.gh-btns button:hover{background:var(--primary);border-color:var(--primary);color:#04222a}
 
 /* Esc 游戏内菜单：浮在画面上、不暂停世界。
    这套规则以前住在 player-modal.css 里，而那个文件要等玩家面板第一次打开才注入，
@@ -483,10 +484,10 @@ body.playing.float-ui:not(.touch) #touchUI{opacity:.9}
 body.float-edit #joyBase,body.float-edit #tbtns button{outline:2px dashed var(--primary);outline-offset:3px;cursor:grab}
 body.float-edit #tbtns{cursor:grab}
 #joyBase{position:fixed;left:28px;bottom:56px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);z-index:70;touch-action:none}
-#joyKnob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(252,131,8,.55);transform:translate(-50%,-50%);pointer-events:none}
+#joyKnob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(34, 200, 221,.55);transform:translate(-50%,-50%);pointer-events:none}
 #tbtns{position:fixed;right:26px;bottom:64px;display:flex;flex-direction:column;gap:14px;z-index:70}
 #tbtns button{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.28);color:#fff;font-size:16px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-#tbtns button:active{background:rgba(252,131,8,.5)}
+#tbtns button:active{background:rgba(34, 200, 221,.5)}
 
 /* 脚本独立界面（覆盖全屏，与搭建视图互斥） */
 .script-screen{position:fixed;left:0;right:0;top:48px;bottom:0;z-index:90;display:none;flex-direction:column;background:#101216}
@@ -521,7 +522,7 @@ body.float-edit #tbtns{cursor:grab}
 .uiw-host{position:fixed;inset:0;z-index:65;display:none;pointer-events:none}
 .uiw-host.show{display:block}
 .uiw{position:absolute;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.uiw-button{pointer-events:auto;background:rgba(252,131,8,.85);border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px}
+.uiw-button{pointer-events:auto;background:rgba(34, 200, 221,.85);border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px}
 .uiw-button:active{filter:brightness(.9)}
 .uiw-text{pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.6);white-space:pre-wrap}
 /* 玩家设置面板行 */
@@ -575,12 +576,12 @@ body.playing.float-edit #peRotate{display:none}
 #peRotate{display:none}
 @media (pointer:coarse) and (orientation:portrait){
   body.playing #peRotate{display:block;position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);
-    z-index:30;pointer-events:none;background:rgba(12,15,20,.9);border:1px solid var(--grey2);color:#ffd9a8;
+    z-index:30;pointer-events:none;background:rgba(12,15,20,.9);border:1px solid var(--grey2);color:#8fe3ef;
     font-size:12px;line-height:1.5;padding:7px 12px;border-radius:999px;max-width:82vw;text-align:center}
 }
 #tbtns{position:fixed;right:22px;bottom:54px;display:flex;flex-direction:row-reverse;flex-wrap:wrap;justify-content:flex-start;align-items:flex-end;gap:12px;width:230px;z-index:70}
 #tbtns button{width:58px;height:58px;font-size:15px}
-#tbtns button#tJump{width:78px;height:78px;font-size:17px;background:rgba(252,131,8,.22);border-color:rgba(252,131,8,.55)}
+#tbtns button#tJump{width:78px;height:78px;font-size:17px;background:rgba(34, 200, 221,.22);border-color:rgba(34, 200, 221,.55)}
 
 /* ---------- 代码包面板（仿官方文件管理） ---------- */
 .pk-rail{width:212px;flex:none;display:flex;flex-direction:column;border-right:1px solid var(--grey2);background:#12151b}
@@ -610,7 +611,7 @@ body.playing.float-edit #peRotate{display:none}
 /* 资源表里有、本地没有的行：整行可点去取回，所以要做成"可点"的样子，
    并且和已存在的文件区分开——否则用户分不清哪一行是已有的、哪一行是缺的 */
 .pk-missing{cursor:pointer;opacity:.72}
-.pk-missing:hover{opacity:1;background:rgba(252,131,8,.08)}
+.pk-missing:hover{opacity:1;background:rgba(34, 200, 221,.08)}
 .pk-missing .pk-name b{font-style:italic}
 .pk-thumb{width:32px;height:32px;border-radius:6px;background:#0b0e13;display:grid;place-items:center;overflow:hidden}
 .pk-thumb img{width:100%;height:100%;object-fit:cover}

@@ -146,7 +146,7 @@ const CSS = `
 .ai-state.bad{color:#ff8f8f}.ai-state.ok{color:#6fd08c}
 .ai-acts{display:flex;gap:7px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid #232c39}
 .ai-acts button{background:#222c3a;border:1px solid #33415a;color:#dfe6f0;border-radius:6px;padding:6px 11px;cursor:pointer;font-size:12.5px}
-.ai-acts button.primary{background:#fc8308;border-color:#fc8308;color:#14100a;font-weight:600}
+.ai-acts button.primary{background:#22c8dd;border-color:#22c8dd;color:#14100a;font-weight:600}
 .ai-acts button:disabled{opacity:.45;cursor:default}
 .ai-chips{display:flex;flex-wrap:wrap;gap:5px}
 .ai-chips button{background:#182029;border:1px solid #2a3444;color:#9fb0c6;border-radius:20px;padding:3px 9px;font-size:11.5px;cursor:pointer}

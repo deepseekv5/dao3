@@ -685,6 +685,34 @@ const swim = await page.evaluate(() => ({ ms: window.__game.player.moveState, ev
 ok("水中 moveState 为官方值 swim", swim.ms === "swim", JSON.stringify(swim));
 ok("world.onFluidEnter 已触发", (swim.ev || []).includes("enter"), JSON.stringify(swim.ev));
 
+// 水下不能是黑的。图集里 fluidColor 是 0..1 的浮点三元组，
+// 以前按字节做位移拼色，水的 [0.1,0.8,1] 算成 0x000001——雾和背景一起涂黑，
+// 而且它是个真值所以兜底色永远不生效，潜下去就是全黑。
+const uw = await page.evaluate(() => {
+  const R = window.__editor.renderer;
+  return { under: R._underwater, fog: R.scene.fog.color.getHexString(), bg: R.scene.background ? R.scene.background.getHexString() : null };
+});
+const lum = (hex) => { const n = parseInt(hex, 16); return 0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255); };
+ok("镜头入水后确实切到水下态", uw.under === true, JSON.stringify(uw));
+ok("水下雾色不是黑的（官方水色 0.1,0.8,1 应染成青蓝）", lum(uw.fog) > 40, JSON.stringify(uw));
+ok("水下背景跟雾同色，不会露出黑底", uw.bg === uw.fog, JSON.stringify(uw));
+
+// 按住空格要上浮、松手要缓沉（Minecraft 手感；官方没给浮力常数，判据只取方向）
+const yTop = 24;
+await page.evaluate((y) => { const g = window.__game; g.playerEntity.position.set(12.5, y, 12.5); g._vy = 0; }, yTop);
+await page.waitForTimeout(200);
+await page.evaluate(() => { window.__game._keys.space = true; });
+await page.waitForTimeout(900);
+const yUp = await page.evaluate(() => window.__game.playerEntity.position.y);
+await page.evaluate(() => { window.__game._keys.space = false; });
+await page.waitForTimeout(900);
+const yDown = await page.evaluate(() => window.__game.playerEntity.position.y);
+ok(`按住空格上浮（${yTop}→${yUp.toFixed(2)}）`, yUp > yTop + 0.3, `yUp=${yUp}`);
+ok(`松手后缓沉（${yUp.toFixed(2)}→${yDown.toFixed(2)}）`, yDown < yUp - 0.05, `yDown=${yDown}`);
+// 二段跳以前没判 swimming，且它写的 vy 发生在游泳钳制之后：游着按空格会弹射出去
+const capped = await page.evaluate(() => Math.abs(window.__game._vy) <= window.__game.player.swimSpeed + 1e-6);
+ok("游泳时竖直速度受 swimSpeed 约束（二段跳不能绕开钳制）", capped, "vy=" + await page.evaluate(() => window.__game._vy));
+
 // 空气墙实心
 await page.evaluate(() => { const g = window.__game; g.playerEntity.position.set(34.5, 21, 32.5); g._vy = 0; g.player.walkSpeed = 0.22; });
 await page.keyboard.down("KeyD");

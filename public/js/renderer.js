@@ -264,7 +264,9 @@ export class VoxelRenderer {
     // 与通用透明方块共用 transparentMat 时，水只是"淡了一档的贴图"，
     // 实测整片群岛看着像毛玻璃平台。这里压暗底色 + 降粗糙度，让水面吃高光。
     // 只认 water：图集里 11 个 fluid 有 10 个是牛奶/果汁/酱油，统一染蓝就错了。
-    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false });
+    // DoubleSide 是必须的：水与水之间的面会被剔掉，水面那层法线朝上（+Y），
+    // 单面材质从下往上看是背面 → 直接透明，潜到水下抬头等于没有水面。
+    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false, side: THREE.DoubleSide });
     this.glowMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     // 空气墙材质：编辑器半透明绿罩（运行时整层隐藏，见 setBarriersVisible）
     this.barrierMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.28, color: 0x6fdc7f, depthWrite: false });

@@ -196,7 +196,7 @@ async function boot_() {
           return scene;
         } catch (err) {
           // 空 catch 会把"一个模型都没挂上"变成一句看不见的错误：这里记下最后一个失败原因，
-          // 全部失败时原样打到首屏，而不是让人对着一片橙色线框猜为什么。
+          // 全部失败时原样打到首屏，而不是让人对着一片空白猜为什么。
           meshFails.push(base + ext + ": " + String((err && err.message) || err));
         }
       }

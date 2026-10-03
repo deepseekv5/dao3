@@ -499,9 +499,9 @@ export function addEntityMarker(d) {
   const e = E;
   const group = new THREE.Group();
   const cube = new THREE.Mesh(new THREE.BoxGeometry(d.bounds[0] * 2, d.bounds[1] * 2, d.bounds[2] * 2).translate(0, d.bounds[1], 0),
-    new THREE.MeshBasicMaterial({ color: 0xfc8308, transparent: true, opacity: 0.25 }));
+    new THREE.MeshBasicMaterial({ color: 0x22c8dd, transparent: true, opacity: 0.25 }));
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(d.bounds[0] * 2, d.bounds[1] * 2, d.bounds[2] * 2).translate(0, d.bounds[1], 0)),
-    new THREE.LineBasicMaterial({ color: 0xfc8308 }));
+    new THREE.LineBasicMaterial({ color: 0x22c8dd }));
   group.add(cube, edges);
   const ent = {
     id: "m" + Date.now().toString(36) + Math.floor(Math.random() * 99),
@@ -1602,7 +1602,7 @@ function wireUiEditor() {
     row("高%", mk("number", w.h, (i) => { w.h = Math.max(2, Math.min(100, +i.value || 6)); }));
     row("字号", mk("number", w.size || 14, (i) => { w.size = Math.max(8, Math.min(72, +i.value || 14)); }));
     row("颜色", mk("color", w.color || "#ffffff", (i) => { w.color = i.value; }));
-    if (w.type === "button") row("背景", mk("color", w.bg || "#fc8308", (i) => { w.bg = i.value; }));
+    if (w.type === "button") row("背景", mk("color", w.bg || "#22c8dd", (i) => { w.bg = i.value; }));
   }
   function startDrag(ev, w) {
     ev.preventDefault();
@@ -1633,7 +1633,7 @@ function wireUiEditor() {
   const KIND = {
     box: { w: 26, h: 18 }, scroll: { w: 22, h: 26 }, text: { text: "文本", w: 24, h: 8 },
     input: { w: 24, h: 7, placeholder: "请输入" }, image: { w: 20, h: 16, image: "" },
-    button: { text: "按钮", w: 16, h: 8, bg: "#fc8308" },
+    button: { text: "按钮", w: 16, h: 8, bg: "#22c8dd" },
   };
   const addWidget = (type) => {
     const k = KIND[type] || KIND.text;
