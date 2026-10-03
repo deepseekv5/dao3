@@ -37,6 +37,12 @@ export const dataStorageKey = (ns, scope, name, key, worldId) => dataStoragePref
 
 export * from "./gapi.js";
 
+/* 官方默认 jumpPower=0.96（格/tick）配 gravity=-0.1，直接当起跳速度用会跳到 4.6 格高、
+   滞空 1.2 秒——是角色身高(1.8 格)的 2.5 倍，连按空间就成了月球步。
+   这里按手感折算成约 1.35 格跳高 / 0.66 秒滞空：越过 1 格方块刚好，落回地面干脆。
+   作者面板上的数值仍然线性有效，改 jumpPower 就是改跳多高，只是不再原样当速度用。 */
+const JUMP_V_SCALE = 0.53;
+
 /* ============================ 名牌 / 头顶文字层 ============================ */
 class TagLayer {
   constructor(host) {
@@ -882,7 +888,7 @@ export class GameRuntime {
     p.say = (message, options) => rt._floatSay(ent, message, options);
     p.setCameraYaw = (v) => { rt._tYaw = +v || 0; };
     p.setCameraPitch = (v) => { rt._tPitch = clamp(+v || 0, -1.52, 1.52); };
-    p.teleport = (pos) => { const v = toVec3(pos); ent.position.set(v.x, v.y, v.z); rt._vy = 0; };
+    p.teleport = (pos) => { const v = toVec3(pos); ent.position.set(v.x, v.y, v.z); rt._vy = 0; rt._prevP = null; };
     p.setRespawnPoint = (pos) => { p.spawnPoint = toVec3(pos).clone(); };
     p.animate = (keyframes, playback) => rt._animate(p, keyframes, playback, "player");
     p.getAnimations = () => rt.animations.filter((a) => a.target === p);
@@ -983,6 +989,8 @@ export class GameRuntime {
     this._vy = 0; this._grounded = false; this._coyote = 0; this._jumpBuf = 0;
     this._doubleJumpUsed = false; this._jumpPhase = false; this._bob = 0; this._landShake = 0;
     this._stepAccum = 0;
+    this._prevP = null; this._camDist = null; this._camLift = null; this._camFrameLift = null;
+    this._frameScaleCache = null;
     return ent;
   }
 
@@ -1293,7 +1301,8 @@ export class GameRuntime {
       el.addEventListener("click", cl, true);
       rt._touchBtns.push([el, dn, uf, cl]);
     };
-    hold("tJump", () => { rt._jumpBuf = 0.14; rt._firePress(GameButtonType.JUMP, true); }, () => rt._firePress(GameButtonType.JUMP, false));
+    hold("tJump", () => { rt._touchJump = true; rt._jumpBuf = 0.14; rt._firePress(GameButtonType.JUMP, true); },
+      () => { rt._touchJump = false; rt._firePress(GameButtonType.JUMP, false); });
     hold("tCrouch", () => { rt._keys.ctrl = true; }, () => { rt._keys.ctrl = false; });
     hold("tRun", () => { rt._keys.shift = true; }, () => { rt._keys.shift = false; });
     hold("tFly", () => rt._toggleFly());
@@ -1551,6 +1560,7 @@ export class GameRuntime {
       this._guard("onTick", () => this._channels.Tick.fire(this._tickEvent(prev, skip)));
       skip = false;
     }
+    this._syncRenderPos();
     const dt = clamp(real / 1000, 0, 0.05);
     this._updateCamera(dt);
     this._updateEntitiesVisual(dt);
@@ -1562,6 +1572,23 @@ export class GameRuntime {
   }
   _tickEvent(prevTick, skip) {
     return { tick: this.currentTick, prevTick, skip: !!skip, elapsedTimeMS: this.currentTick * TICK_MS };
+  }
+  /** 本帧玩家该画在哪：在"上一个 tick 的起点"和"当前终点"之间按累加器余量插值。
+   *  物理 15.6Hz、渲染 60Hz，不做这层插值，镜头与角色就按 64ms 一格地跳。 */
+  _syncRenderPos() {
+    const ent = this.playerEntity;
+    const pr = this._prevP;
+    if (!ent) { this._rp = null; return; }
+    const a = clamp(this._acc / TICK_MS, 0, 1);
+    if (!pr || a >= 1) { this._rp = ent.position; return; }
+    const dx = ent.position.x - pr.x, dy = ent.position.y - pr.y, dz = ent.position.z - pr.z;
+    // 单步跨过 2 格判为瞬移（teleport / 击飞 / 掉出世界重生），插值会把镜头拖着一路平移过去
+    this._rp = (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 2)
+      ? ent.position : { x: pr.x + dx * a, y: pr.y + dy * a, z: pr.z + dz * a };
+  }
+  // 供渲染层取用：玩家的显示位置（插值后），其它实体用物理位置。
+  _visualPos(e2) {
+    return (e2.isPlayer && this._rp) ? this._rp : e2.position;
   }
   _guard(label, fn) {
     try { fn(); } catch (err) {
@@ -1692,6 +1719,11 @@ const ZERO = new GameVector3();
     return { x, z, moving: len > 1e-6 };
   }
   _stepPlayer(p, ent) {
+    // 物理是 15.6Hz 的定步 tick，渲染是 rAF 的 ~60Hz。镜头若直接盯 tick 之后的
+    // ent.position，就会以 64ms 为步长一格一格地蹦（跑 0.4 格/tick、跳 0.5 格/tick），
+    // 这正是"走路跑步跳跃都在晃"的主因。这里记下本 tick 的起点，渲染层按
+    // 累加器余量在起点与终点之间插值，画面就跟得上时间而不是节拍。
+    this._prevP = { x: ent.position.x, y: ent.position.y, z: ent.position.z };
     const wish = this._wishVector(p, this._yaw);
     const swimming = this._inFluid(ent, p.scale);
     const flying = !!p.flying && p.canFly && !swimming;
@@ -1718,16 +1750,20 @@ const ZERO = new GameVector3();
       // 看着像不受控，实测确实会飘过头。
       vy += (wantVy - vy) * 0.3;
     } else {
-      // 官方 gravity=-0.1 全程恒定；jumpAccelerationFactor(0.55) 是跳跃**初速**的系数，不是重力乘数。
-      // 之前误用为上升段重力减半，实测跳高 8 格（应为 4.6），且下落突然恢复全重力→飘升砸落。
+      // 重力全程恒定，不对上升段/下落段做区分；跳跃手感只由起跳初速（JUMP_V_SCALE）
+      // 和下面的"松手收速"两处控制。
       vy += this.gravity;
       vy *= 1 - this.airFriction;
     }
     if (vy < -3) vy = -3; // 终端速度
     const blend = clamp(accel, 0, 1);
+    // 腾空后的水平目标按 jumpSpeedFactor(0.85) 略收，而不是在起跳那一 tick 把现有
+    // 速度一刀砍掉 15%——后者会让跑跳在离地瞬间明显一顿。
+    const airborne = !this._grounded && !flying && !swimming;
+    const tgtSpeed = airborne && p.jumpSpeedFactor ? speed * p.jumpSpeedFactor : speed;
     if (wish.moving) {
-      ent.velocity.x += (wish.x * speed - ent.velocity.x) * blend;
-      ent.velocity.z += (wish.z * speed - ent.velocity.z) * blend;
+      ent.velocity.x += (wish.x * tgtSpeed - ent.velocity.x) * blend;
+      ent.velocity.z += (wish.z * tgtSpeed - ent.velocity.z) * blend;
     } else {
       const damp = flying ? 0.85 : swimming ? 0.85 : crouch ? 0.55 : 0.6;
       ent.velocity.x *= damp;
@@ -1743,20 +1779,18 @@ const ZERO = new GameVector3();
     // 于是游着游着按空格会突然弹射出去，完全绕开了 swimSpeed 上限。
     if (this._jumpBuf > 0 && !flying && !swimming && p.enableJump) {
       if ((this._grounded || this._coyote > 0) && p.jumpPower > 0) {
-        // 官方 jumpPower(0.96) 是起跳瞬时的 vy（格/tick），gravity(-0.1) 全程恒定。
-        // jumpAccelerationFactor 这个字段在官方 d.ts 里标的"跳跃加速度率"其实没人读，
-        // 我们曾误用为上升段减重力（实测跳高翻倍到 8 格）和加到初速（过不了 2 格墙），
-        // 现在删掉这条路径，照官方 blob 原样只用 jumpPower 与 gravity。
-        vy = p.jumpPower;
+        // 官方 d.ts 把 jumpPower(0.96) 标成起跳瞬时 vy、gravity(-0.1) 全程恒定，
+        // 照字面用就是 4.6 格跳高 + 1.2 秒滞空（见文件头 JUMP_V_SCALE）。
+        // jumpAccelerationFactor 这个字段曾误用为上升段减重力（实测跳到 8 格）
+        // 和加到初速（过不了 2 格墙），两条路径都已删掉。
+        vy = p.jumpPower * JUMP_V_SCALE;
         this._jumpPhase = true;
         this._jumpBuf = 0;
         this._coyote = 0;
         this._doubleJumpUsed = false;
-        ent.velocity.x *= p.jumpSpeedFactor;
-        ent.velocity.z *= p.jumpSpeedFactor;
         this._fireButtonEvent(GameButtonType.JUMP);
       } else if (this._doubleJumpButton && p.enableDoubleJump && !this._doubleJumpUsed && p.doubleJumpPower > 0) {
-        vy = p.doubleJumpPower;
+        vy = p.doubleJumpPower * JUMP_V_SCALE;
         this._doubleJumpUsed = true;
         this._fireButtonEvent(GameButtonType.DOUBLE_JUMP);
         this._playAt(p.doubleJumpSound, ent.position);
@@ -1772,6 +1806,9 @@ const ZERO = new GameVector3();
       }
     }
     this._doubleJumpButton = false;
+    // 可变跳高：上升途中松开跳跃键就一次砍掉一半上升速度，点按小跳、长按满跳。
+    // 只削一次（随即清掉 _jumpPhase）——每帧都削的话轻点就等于没跳。
+    if (this._jumpPhase && vy > 0 && !this._keys.space && !this._touchJump) { vy *= 0.5; this._jumpPhase = false; }
     if (vy <= 0) this._jumpPhase = false;
     this._vy = vy;
     ent.velocity.y = vy;
@@ -1790,7 +1827,8 @@ const ZERO = new GameVector3();
     }
     ent.velocity.y = this._vy;
     if (this._grounded && !wasGrounded && prevVy < -0.5) {
-      this._landShake = Math.min(0.25, Math.abs(prevVy) * 0.06);
+      this._landShake = Math.min(0.05, Math.abs(prevVy) * 0.035);
+      this._landT = 0;
       this._playAt(p.landSound, ent.position);
     }
     if (flying) p.moveState = GamePlayerMoveState.FLYING;
@@ -2076,6 +2114,7 @@ const ZERO = new GameVector3();
     ent.position.set(sp.x || top[0] + 0.5, sp.y || top[1] + 0.02, sp.z || top[2] + 0.5);
     this._vy = 0;
     this._grounded = false;
+    this._prevP = null;
     ent.velocity.set(0, 0, 0);
     ent.hp = ent.maxHp;
     p.dead = false;
@@ -2098,37 +2137,54 @@ const ZERO = new GameVector3();
     p.cameraYaw = this._yaw;
     p.cameraPitch = this._pitch;
     const eye = EYE_HEIGHT * (p.scale || 1);
-    let cx = ent.position.x, cy = ent.position.y + eye, cz = ent.position.z;
-    if (this._grounded && p.walkState === GamePlayerWalkState.RUN) { this._bob += dt * 11; cy += Math.sin(this._bob) * 0.03; }
-    else if (this._grounded && p.walkState === GamePlayerWalkState.WALK) { this._bob += dt * 8; cy += Math.sin(this._bob) * 0.016; }
-    if (this._landShake > 0.004) {
-      cy += (Math.random() - 0.5) * this._landShake;
-      this._landShake *= Math.pow(0.02, dt);
+    const rp = this._rp || ent.position;
+    let cx = rp.x, cy = rp.y + eye, cz = rp.z;
+    // 起伏按"走过的距离"而不是按时间推进：物理是 15.6Hz，用 dt 累加出来的频率和
+    // 步频不同源，看着就是镜头在原地抖。这里一格算一步，2.4 rad/格 ≈ 跑 2.4Hz、走 1.3Hz。
+    const gait = this._grounded ? Math.hypot(ent.velocity.x, ent.velocity.z) : 0;
+    if (gait > 0.01 && p.walkState !== GamePlayerWalkState.NONE && p.walkState !== GamePlayerWalkState.CROUCH) {
+      const run = p.walkState === GamePlayerWalkState.RUN;
+      this._bob += gait * 1000 / TICK_MS * dt * 2.4;
+      cy += Math.sin(this._bob) * (run ? 0.018 : 0.01);
+    }
+    if (this._landShake > 0.0005) {
+      // 落地震屏用衰减正弦，不用每帧随机数：随机数在 60Hz 下就是白噪声，
+      // 连着跳几下叠起来正是玩家说的"视角极其晃动"。
+      this._landT = (this._landT || 0) + dt;
+      cy += Math.sin(this._landT * 24) * this._landShake;
+      this._landShake *= Math.pow(0.002, dt);
     }
     const mode = p.cameraMode;
     if (mode === GameCameraMode.FOLLOW || mode === GameCameraMode.RELATIVE) {
-      const dir = new THREE.Vector3();
-      r.camera.getWorldDirection(dir);
+      const ease = (cur, want, rate) => (cur == null ? want : cur + (want - cur) * (1 - Math.exp(-dt * rate)));
+      const dir = new THREE.Vector3(0, 0, -1).applyEuler(euler);
+      // 上一条以前取的是 camera.getWorldDirection()：本帧末尾那次为「过肩」而做的
+      // lookAt 会把镜头俯角改写进四元数，下一帧的反向射线于是带着这个俯角，
+      // 命中点变→lift 变→lookAt 变——贴墙和上下车时这条闭环自己就能振荡起来。
+      // 直接用平滑后的 yaw/pitch 取前向，相机摆位就不再回头读自己。
       const tgt = (p.cameraEntity && p.cameraEntity !== ent && p.cameraEntity.position)
         ? p.cameraEntity.position : new GameVector3(cx, cy, cz);
       const frame = this._frameScale(ent);
-      let dist = p.cameraDistance * frame.k;
+      let want = p.cameraDistance * frame.k;
       // 必须忽略玩家自己的实体：官方赛车模板上车后会 entity.mesh = 汽车，
       // 于是这条从眼位往回打的射线第一个命中的就是自己那个盒子（实测 distance 0），
       // dist 被夹到 0.22 的贴身下限，结果 1.3 格长的车壳糊满整屏、什么都看不见。
       // 第三人称相机本来就不该被它正在跟随的那个实体挡住。
       const back = this._raycast(tgt, { x: -dir.x, y: -dir.y, z: -dir.z },
-        { maxDistance: dist + 0.6, ignoreFluid: true, ignoreEntities: [ent] });
+        { maxDistance: want + 0.6, ignoreFluid: true, ignoreEntities: [ent] });
       // 贴墙时把镜头收到墙外：0.8 的硬下限会让镜头留在几何体里（穿模），只保留一个很小的贴身下限。
       // 收得越紧就越往上抬成「过肩」，否则人物会顶满画面、看不见前面的路。
-      let lift = 0;
-      if (back.hit) {
-        dist = Math.min(dist, Math.max(0.22, back.distance - 0.24));
-        lift = clamp((2.4 - dist) * 0.34, 0, 0.85);
-      }
+      if (back.hit) want = Math.min(want, Math.max(0.22, back.distance - 0.24));
+      // 拉近必须当帧到位（否则一整帧穿模），拉远缓手；射线命中点逐帧抖动时，
+      // 只有缓动能让镜头不跟着抽搐。
+      this._camDist = (back.hit && this._camDist != null && want < this._camDist) ? want : ease(this._camDist, want, 7);
+      const wantLift = back.hit ? clamp((2.4 - this._camDist) * 0.34, 0, 0.85) : 0;
+      this._camLift = ease(this._camLift, wantLift, 9);
+      this._camFrameLift = ease(this._camFrameLift, frame.lift || 0, 6);
+      const dist = this._camDist, lift = this._camLift;
       r.camera.position.set(tgt.x - dir.x * dist, tgt.y - dir.y * dist + lift, tgt.z - dir.z * dist);
       if (lift > 0.02) r.camera.lookAt(tgt.x, tgt.y + lift * 0.55, tgt.z);
-      else if (frame.lift > 0.02) r.camera.lookAt(tgt.x, tgt.y + frame.lift, tgt.z);
+      else if (this._camFrameLift > 0.02) r.camera.lookAt(tgt.x, tgt.y + this._camFrameLift, tgt.z);
     } else if (mode === GameCameraMode.FPS) {
       r.camera.position.set(cx, cy, cz);
     } else if (mode === GameCameraMode.FIXED) {
@@ -2164,7 +2220,7 @@ const ZERO = new GameVector3();
     for (const e2 of this.entities) {
       if (e2.destroyed || !e2._obj) continue;
       // 编辑器里的场景模型由编辑器摆位；一旦被运行时驱动（重力/被推动）就跟随实体位置
-      if (!e2._external || e2._driven) e2._obj.position.set(e2.position.x, e2.position.y, e2.position.z);
+      if (!e2._external || e2._driven) { const vp = this._visualPos(e2); e2._obj.position.set(vp.x, vp.y, vp.z); }
       if (e2._mixer) e2._mixer.update(dt);
       else if (e2._motionPlaying && !e2._external) e2._obj.rotation.y += dt * 1.2;
       this._steerVehicleMesh(e2, dt);
@@ -2240,6 +2296,12 @@ const ZERO = new GameVector3();
    *  未缩放的玩家比例正好是 1，所以默认观感不变。 */
   _frameScale(ent) {
     if (this.player.cameraFrameSubject === false) return { k: 1, lift: 0 };
+    // 每帧重算包围盒会把角色迈步时抬腿的摆动也量进去：h 随步频变，k 跟着变，
+    // 镜头距离于是以步频推拉——这就是"走路跑步镜头晃"里最难发现的那一条。
+    // 0.4 秒才量一次，量到的值再由相机那边缓使用完。
+    const c = this._frameScaleCache;
+    const now = performance.now();
+    if (c && c.ent === ent && now - c.t < 400) return c;
     let h = 1.8;
     try {
       const src = (ent._meshHolder && ent._meshHolder.children.length) ? ent._meshHolder
@@ -2249,12 +2311,15 @@ const ZERO = new GameVector3();
         const size = box.getSize(new THREE.Vector3());
         if (size.y > 0.02) {
           h = size.y;
-          const c = box.getCenter(new THREE.Vector3());
-          return { k: clamp(h / 1.8, 0.2, 1), lift: clamp(c.y - ent.position.y - h * 0.45, 0, 1.2) };
+          const ctr = box.getCenter(new THREE.Vector3());
+          const out = { k: clamp(h / 1.8, 0.2, 1), lift: clamp(ctr.y - ent.position.y - h * 0.45, 0, 1.2) };
+          this._frameScaleCache = Object.assign({ ent, t: now }, out);
+          return this._frameScaleCache;
         }
       }
     } catch { /* 量不到就按原样 */ }
-    return { k: 1, lift: 0 };
+    this._frameScaleCache = { ent, t: now, k: 1, lift: 0 };
+    return this._frameScaleCache;
   }
   _updateAvatar(ent, dt) {
     const av = ent._avatar;
@@ -2318,7 +2383,8 @@ const ZERO = new GameVector3();
       const av = ent._avatar ? ent._avatar.visible : false;
       const mh = ent._meshHolder ? ent._meshHolder.visible : false;
       ent._obj.visible = av || mh;
-      ent._obj.position.set(ent.position.x, ent.position.y, ent.position.z);
+      const vp = this._visualPos(ent);
+      ent._obj.position.set(vp.x, vp.y, vp.z);
       return;
     }
     ent._obj.visible = !ent.meshInvisible;
