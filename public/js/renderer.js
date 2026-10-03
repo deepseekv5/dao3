@@ -618,7 +618,7 @@ vec2 fxTileRect(float t){
     fast:   { label: "流畅", ratio: 1,    shadow: false, map: 1024, fog: 0.7,  edge: false },
     balanced: { label: "标准", ratio: 1.5, shadow: true,  map: 1024, fog: 1,    edge: false },
     high:   { label: "精细", ratio: 2,    shadow: true,  map: 2048, fog: 1,    edge: false },
-    ultra:  { label: "极致", ratio: 2,    shadow: true,  map: 4096, fog: 1,    edge: true  },
+    ultra:  { label: "极致", ratio: 3,    shadow: true,  map: 4096, fog: 1,    edge: true  },
   };
   static QUALITY_ORDER = ["eco", "fast", "balanced", "high", "ultra"];
 

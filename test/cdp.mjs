@@ -84,6 +84,10 @@ export class Session {
     const s = new Session(ws, target.targetId, contextId, port);
     await s.send("Page.enable");
     await s.send("Runtime.enable");
+    // 关掉这个会话的 HTTP 缓存。launchChrome 会复用已经在跑的 Chrome，于是上一轮测试
+    // 留下的缓存能让这一轮跑到改之前的模块上——"代码明明改了，断言却说没有"就是这么来的。
+    await s.send("Network.enable");
+    try { await s.send("Network.setCacheDisabled", { cacheDisabled: true }); } catch { /* 老版本没有这个域 */ }
     // 每个会话各自设视口：设备指标是 per-target 的，所以同屏两个尺寸互不干扰。
     await s.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: dsf, mobile: false });
     // 两个会话同时开着时，非前台那个会被 Chrome 判定为"看不见"，于是 rAF 停摆、
@@ -117,6 +121,9 @@ export class Session {
     let loaded = null;
     const fn = (msg) => { if (msg.method === "Page.loadEventFired") { loaded = true; } };
     this._on.add(fn);
+    // 绕开 HTTP 缓存：本仓库的 JS/CSS 是无校验头的 no-cache，而 launchChrome 会复用
+    // 已经在跑的 Chrome —— 上一轮测试留下的缓存会让这一轮跑到改之前的模块上，
+    // 于是"代码明明改了，断言说没有"。
     await this.send("Page.navigate", { url });
     for (let i = 0; i < 60 && !loaded; i++) await wait(50);
     this._on.delete(fn);

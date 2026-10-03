@@ -91,6 +91,6 @@ export function toggle(_rt) { menuOpen ? close() : open(_rt); }
 /** 顶部那条一次性提示：措辞要和"Esc 回编辑器"的旧行为彻底告别。 */
 export function hintText() {
   return isCommunity()
-    ? "WASD 移动 · V 切换视角 · 回车聊天 · Esc 呼出菜单"
-    : "运行模式 · WASD 移动 · V 切换视角 · Esc 呼出菜单（不会退出到编辑器）";
+    ? "WASD 移动 · V 视角 · 回车聊天 · Esc 菜单"
+    : "WASD 移动 · V 视角 · Esc 菜单";
 }

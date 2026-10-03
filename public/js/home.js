@@ -53,13 +53,26 @@ async function loadStats() {
 }
 
 /* ---------------- 起点 ---------------- */
+// 官方模板那一格的名字与数字由 applyTemplateCard() 从 /api/consent 现读填进来：
+// 写死"199 个实体"这类话，模板一改就和实际内容对不上，而卡上的说明越像真话，错了越误导人。
+let TPL_ON = false; // 有没有真的装进本机：没装就不能摆一个点了只会失败的「复制」
 const STARTS = [
-  { key: "template", hot: true, badge: "官方兼容", ico: "◉", name: "赛车模板", desc: "256×128×256 完整赛道：199 个官方实体、报名/检查点/加速道具与可直接跑的竞速脚本。", action: forkTemplate },
-  { key: "flat", ico: "▭", name: "超平坦", desc: "100×32×100 平坦基座，厚 5 格，适合从零搭建建筑或玩法。", action: () => goNew("超平坦世界", "flat") },
-  { key: "demo", ico: "⛰", name: "起伏地形", desc: "带草坡与一间小木屋的示例岛，用来试笔刷和选区变换。", action: () => goNew("起伏地形岛", "demo") },
-  { key: "empty", ico: "◻", name: "空白世界", desc: "完全空的体素容器，尺寸自定义，适合小场景与机制验证。", action: () => goNew("空白世界", "empty") },
-  { key: "import", ico: "↓", name: "导入地图", desc: "官方 .zip 项目包、Unity 侧 .gz 地图、.vox 体素模型。", action: () => $("htFile").click() },
+  { key: "template", hot: true, badge: "官方兼容", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3.5 20.5 8 12 12.5 3.5 8z\"/><path d=\"M3.5 12.5 12 17l8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/></svg>", name: "官方模板", meta: "随包官方地图",
+    action: () => (TPL_ON ? forkTemplate() : $("wbTpl").click()) },
+  { key: "flat", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 5 21 10.5 12 16 3 10.5z\"/></svg>", name: "超平坦", meta: "100 \u00d7 32 \u00d7 100", action: () => goNew("超平坦世界", "flat") },
+  { key: "demo", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 18.5l5.5-8 4 5.5 2.5-3 6 5.5z\"/><circle cx=\"8\" cy=\"6.5\" r=\"1.7\"/></svg>", name: "起伏地形", meta: "48 \u00d7 32 \u00d7 48 \u00b7 含示例小屋", action: () => goNew("起伏地形岛", "demo") },
+  { key: "empty", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2.5\"/></svg>", name: "空白世界", meta: "尺寸自定", action: () => goNew("空白世界", "empty") },
+  { key: "import", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 4v10M8 10.5l4 4 4-4M4.5 19.5h15\"/></svg>", name: "导入地图", meta: ".zip \u00b7 .gz \u00b7 .vox", action: () => $("htFile").click() },
 ];
+
+/** 把随包官方模板的真实情况写进那张卡：名字、尺寸、方块数全部来自 /api/consent。 */
+function applyTemplateCard(s) {
+  const t = STARTS[0], c = s && s.template;
+  if (c && c.name) t.name = c.name;
+  TPL_ON = !!(c && s.installed && s.available);
+  t.meta = !c ? "本包里没有官方模板" : !TPL_ON ? "未装入本机"
+    : `${c.shape.join("\u00d7")} \u00b7 ${fmt(c.blocks)} 方块 \u00b7 ${c.entities} 实体`;
+}
 
 function renderStarts() {
   const grid = $("startGrid");
@@ -67,9 +80,9 @@ function renderStarts() {
   for (const s of STARTS) {
     const b = document.createElement("button");
     b.className = "wb-start" + (s.hot ? " hot" : "");
-    b.innerHTML = `<div class="ico">${s.ico}</div><div><h3>${esc(s.name)}</h3><p>${esc(s.desc)}</p></div><span class="go">→</span>`
+    b.innerHTML = `<div class="ico">${s.ico}</div><div><h3>${esc(s.name)}</h3><small class="m">${esc(s.meta)}</small></div><span class="go">\u2192</span>`
       + (s.badge ? `<span class="wb-badge">${esc(s.badge)}</span>` : "");
-    b.onclick = () => s.action();
+    b.onclick = () => (s.action ? s.action() : null);
     grid.appendChild(b);
   }
 }
@@ -81,10 +94,11 @@ function goNew(name, mode) {
 
 // 复制模板：服务端 fork（避免在浏览器里搬 1.5M 体素），原模板保持不动
 async function forkTemplate() {
-  tip("正在复制「赛车模板」…", 0);
+  const nm = STARTS[0].name;
+  tip("正在复制「" + nm + "」…", 0);
   try {
     const id = newId();
-    const r = await fetch("/api/world/" + TEMPLATE_ID + "/fork?to=" + id + "&name=" + encodeURIComponent("赛车模板 · 副本"), { method: "POST" });
+    const r = await fetch("/api/world/" + TEMPLATE_ID + "/fork?to=" + id + "&name=" + encodeURIComponent(nm + " · 副本"), { method: "POST" });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || "复制失败");
     tip("已复制，正在打开编辑器…", 0);
@@ -408,6 +422,9 @@ $("wbTpl").onclick = async () => {
 (async () => {
   const s = await consentState();
   if (!s) return;
+  // 起点卡上的官方模板：名字与数字都取服务端现读的那份，不在前端打字。
+  applyTemplateCard(s);
+  renderStarts();
   // 只有"从没表过态"且包内确实有东西才打扰一次；已选过的不再弹。
   // 旧的 racingTemplate 决定不沿用给新素材：新内容要重新确认。
   const pending = (s.racingTemplate === "unset" && s.available) || s.racingAssets !== "granted" && s.racingAssets !== "declined";

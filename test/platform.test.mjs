@@ -106,6 +106,16 @@ const roles = await pageFetch(A, "GET", "/api/community/me");
 ok("空库上首个注册账号自动成为管理员", roles.json?.user?.role === "admin", JSON.stringify(roles.json?.user || {}));
 ok("第二个账号只是普通用户", (await pageFetch(B, "GET", "/api/community/me")).json?.user?.role === "user");
 
+/* ---------------- 工作台的起点卡：卡上说的话要跟着服务端走 ---------------- */
+await A.goto(BASE + "/"); await sleep(1200);
+{
+  // 这台实例在 primeConsent 里拒了官方素材，所以卡上不能印着 256×128×256 那串数字，
+  // 也不能摆一个点了只会失败的"复制"。授权之后的另一头在文件末尾。
+  const off = await until(A, `(() => { const el = document.querySelector(".wb-start.hot");
+    return el && el.querySelector(".m") ? { name: el.querySelector("h3").textContent, meta: el.querySelector(".m").textContent } : null; })()`, { tries: 24, ms: 300 });
+  ok("没装官方模板时起点卡不谎称能复制", !!off && off.meta === "未装入本机", JSON.stringify(off));
+}
+
 /* ---------------- 发布：快照 + 上传封面 ---------------- */
 await A.goto(BASE + "/"); await sleep(1200);
 ok("工作台的项目行里有发布入口", await until(A, `!!document.querySelector('tr[data-id="216d665d3ca92bd1b9a2"] [data-act="pub"]')`, { tries: 20 }), await A.text());
@@ -138,6 +148,38 @@ await sleep(150);
 await A.evaluate(`document.querySelector('#eSkin [data-c="#e8604c"]').click()`);
 const doll = await A.evaluate(`(document.querySelector(".pf-doll .d-torso")||{getAttribute:()=>""}).getAttribute("style")`);
 ok("皮肤调色板即时反映到预览人偶", /e8604c/i.test(String(doll)), doll);
+// 每一格给自己的色板：拿挑上衣的十色去挑脸，怎么选都像贴了块塑料。
+const palOf = (p) => A.evaluate(`(() => {
+  const b = document.querySelector('#eSkin [data-p="${p}"]'); b.click();
+  return [...document.querySelectorAll(".pf-pal [data-c]")].map((x) => x.dataset.c).join(",");
+})()`);
+ok("「皮肤」那一格给的是肤色梯度而不是通用色板",
+  (await palOf("skin")).startsWith("#f6d7bd") && !(await palOf("skin")).includes("#5aa8e8"));
+ok("「头发」那一格给的是发色", (await palOf("hair")).includes("#1c1c1e") && !(await palOf("hair")).includes("#4ecb8d"));
+ok("「上衣」那一格回到通用色板", (await palOf("shirt")).includes("#5aa8e8"));
+// 预设：多数人选不出五配色，没有成套预设时这一格等于没做。
+const nPreset = await A.evaluate(`document.querySelectorAll("#eSkin [data-o]").length`);
+ok("皮肤有成套预设可选", nPreset >= 6, String(nPreset));
+await A.evaluate(`document.querySelector('#eSkin [data-o][title="夜行"]').click()`);
+const presetDoll = await A.evaluate(`(() => ({
+  torso: getComputedStyle(document.querySelector(".pf-doll .d-torso")).backgroundColor,
+  chip: getComputedStyle(document.querySelector('#eSkin [data-p="shirt"] span')).backgroundColor,
+  on: !!document.querySelector('#eSkin [data-o].on'),
+}))()`);
+// 夜行的上衣是 #22252c = rgb(34, 37, 44)。浏览器会把 style 属性序列化成 rgb()，比 hex 比不出来。
+ok("点预设会同时改人偶和部位色块",
+  presetDoll.torso === "rgb(34, 37, 44)" && presetDoll.chip === "rgb(34, 37, 44)" && presetDoll.on, presetDoll);
+// 取色器在系统面板里每动一下就触发 input；老写法那时重建宿主，等于把用户正在用的控件销毁掉。
+const kept = await A.evaluate(`(async () => {
+  const el = document.getElementById("eCustom");
+  el.value = "#12b5c9"; el.dispatchEvent(new Event("input", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 60));
+  return { same: el === document.getElementById("eCustom"), torso: getComputedStyle(document.querySelector(".pf-doll .d-torso")).backgroundColor };
+})()`);
+ok("自定义取色器拖动过程中不会被重建", kept.same, JSON.stringify(kept));
+ok("自定义颜色立刻贴到人偶上", kept.torso === "rgb(18, 181, 201)", JSON.stringify(kept));
+await A.evaluate(`document.querySelector('#eSkin [data-p="shirt"]').click()`);
+await A.evaluate(`document.querySelector('#eSkin [data-c="#e8604c"]').click()`);
 await A.setFile("#eAvatar", "/tmp/ly-pixel.png");
 ok("头像上传后不用刷新就生效", await until(A, `!!document.querySelector(".pf-avatar img")`), await A.evaluate(`(document.querySelector(".pf-avatar")||{}).innerHTML?.slice(0,140)`));
 await A.type("#eBio", "造图的人");
@@ -286,6 +328,11 @@ const q = await until(A, `(() => {
     cur: (document.querySelector("#qualityList button.on") || {}).dataset };
 })()`, { tries: 6, ms: 300 });
 ok("画质有专门的按钮和五档", q && q.tiers === 5, JSON.stringify(q));
+// 曾经精细与极致都写着 2×：屏幕只有 2× 时倍率会被夹住，两档看起来一模一样。
+ok("五档的强度标记互不重复", await A.evaluate(`(() => {
+  const n = [...document.querySelectorAll("#qualityList .q-bars")].map((b) => b.children.length);
+  return n.length === 5 && new Set(n).size === 5; })()`),
+  await A.evaluate(`[...document.querySelectorAll("#qualityList .q-bars")].map((b)=>b.children.length).join(",")`));
 await A.evaluate(`document.querySelector('#qualityList button[data-q="eco"]').click()`);
 const eco = await until(A, `(() => { const R = window.__editor.renderer;
   return R.quality === "eco" && R.renderer.getPixelRatio() <= 0.75 && R.renderer.shadowMap.enabled === false; })()`, { tries: 6, ms: 300 });
@@ -296,14 +343,25 @@ ok("档位记在设备上而不是地图数据里", await A.evaluate(`localStora
 await A.evaluate(`document.querySelector('#qualityList button[data-q="balanced"]').click()`);
 await A.evaluate(`document.getElementById("qualityToggle").click()`);
 
+// 先清成真空闲：进图时系统会播一条提示，不清掉就没法判断"空面板"到底空不空
+await A.evaluate(`(() => { const l = document.getElementById("chatLog"); if (l) l.innerHTML = ""; })()`);
 await A.evaluate(`document.getElementById("chatToggle").click()`);
 const opened = await until(A, `getComputedStyle(document.getElementById("chatPanel")).display !== "none"`, { tries: 6, ms: 300 });
 ok("聊天能展开成独立面板", !!opened);
 ok("输入框在面板里", await A.evaluate(`!!document.querySelector("#chatPanel #chatBox")`));
+// 在面板里 ≠ 看得见：#gameChatInput 那条绝对定位 + display:none 的旧规则让输入行整个消失，
+// 而上面这条"在面板里"照样是绿的。量几何，不量存在。
+const cp = await A.evaluate(`(() => { const p = document.getElementById("chatPanel").getBoundingClientRect(),
+  i = document.getElementById("gameChatInput").getBoundingClientRect();
+  return { ph: Math.round(p.height), ih: Math.round(i.height), inside: i.bottom <= p.bottom + 1 && i.top >= p.top - 1 }; })()`);
+ok("输入行真的看得见且落在面板内", cp.ih >= 24 && cp.inside && cp.ph >= 120, JSON.stringify(cp));
+ok("空面板给一行占位而不是留白", await A.evaluate(`(document.querySelector("#chatLog .cp-empty")||{}).textContent`) === "还没有人说话。",
+  await A.evaluate(`document.getElementById("chatLog").innerHTML.slice(0,120)`));
 await A.evaluate(`(() => { const g = window.__game;
   g.sendChat("面板第一条"); g._chatLine("同伴: 第二句", "#bfe0ff"); g._chatLine("系统一条", "#8fe3ef", "sys"); })()`);
 const hist = await until(A, `document.querySelectorAll("#chatLog .cp-line").length`, { tries: 6, ms: 300 });
 ok("面板里留完整历史，说话人各自上色", hist >= 3, "条数 " + hist);
+ok("第一句话进来后占位行撤掉", await A.evaluate(`!document.querySelector("#chatLog .cp-empty")`));
 ok("系统消息不冒充玩家发言", await A.evaluate(`!!document.querySelector("#chatLog .cp-line.sys")`));
 await A.evaluate(`document.getElementById("chatToggle").click()`);
 await sleep(300);
@@ -388,6 +446,19 @@ ok("作者预览的出口写着「返回编辑器」，且第一次按 Esc 就�
 await A.evaluate(`document.querySelector('#playMenu [data-x="leave"]').click()`);
 ok("点出口回到编辑器", await until(A, `!window.__game.running && !document.body.classList.contains("playing")`, { tries: 12, ms: 400 }));
 ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = document.getElementById("playMenu"); return !m || !m.classList.contains("show"); })()`));
+
+/* ---------------- 授权之后同一张卡改口：数字是服务端现读的 ---------------- */
+{
+  // 放在最后：这一步会把示例世界换成随包的真模板，前面的断言都还在用那张小图。
+  await A.evaluate(`fetch("/api/consent",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({racingTemplate:true,racingAssets:true})})`);
+  await sleep(2000);
+  await A.goto(BASE + "/"); await sleep(1500);
+  const c = (await pageFetch(A, "GET", "/api/consent")).json || {};
+  const f = (n) => (n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0));
+  const want = `${c.template.shape.join("×")} · ${f(c.template.blocks)} 方块 · ${c.template.entities} 实体`;
+  const on = await until(A, `(document.querySelector(".wb-start.hot .m")||{}).textContent === ${JSON.stringify(want)} ? ${JSON.stringify(want)} : null`, { tries: 20, ms: 300 });
+  ok("授权之后起点卡改成服务端的尺寸与数量", on === want && c.installed === true, JSON.stringify({ on, want, installed: c.installed }));
+}
 
 /* 全程不许有未捕获异常：上面每一条都可能"看着过了"其实页面早就报错在跑降级路径 */
 const errsA = await A.evaluate(`JSON.stringify((window.__errs || []).slice(0, 5))`);

@@ -49,3 +49,4 @@ start.out
 *.pem
 *.key
 start.err
+server/.trash/

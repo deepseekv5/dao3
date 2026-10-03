@@ -3615,7 +3615,8 @@ void main() {
     const log = this.hud && this.hud.chatLog;
     if (log) {
       const wasBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-      if (!log.children.length) { log.innerHTML = ""; }
+      const hint = log.querySelector(".cp-empty");
+      if (hint) hint.remove();
       const d = document.createElement("div");
       d.className = "cp-line" + (sys ? " sys" : "");
       const i = text.indexOf(": ");
@@ -3982,12 +3983,14 @@ void main() {
     const saved = localStorage.getItem("ly.quality") || "balanced";
     R.setQuality(saved);
     this.hud.qualityList.innerHTML = "";
-    for (const key of R.constructor.QUALITY_ORDER) {
+    R.constructor.QUALITY_ORDER.forEach((key, i) => {
       const q = R.constructor.QUALITY[key];
       const b = document.createElement("button");
       b.dataset.q = key;
       b.className = key === saved ? "on" : "";
-      b.innerHTML = `<span>${q.label}</span><i>${q.ratio}×</i>`;
+      // 档位右边是格数而不是倍率：屏幕本身是 1× 时"2×/3×"是骗人的，
+      // 而两个档位都写着 2× 看起来更像坏了。
+      b.innerHTML = `<span>${q.label}</span><i class="q-bars">${"<s></s>".repeat(i + 1)}</i>`;
       b.onclick = () => {
         R.setQuality(key);
         localStorage.setItem("ly.quality", key);
@@ -3998,7 +4001,7 @@ void main() {
         this.setEdges && this.setEdges(R.quality === "ultra" ? true : this._edges);
       };
       this.hud.qualityList.appendChild(b);
-    }
+    });
     const lab = R.constructor.QUALITY[R.quality];
     if (this.hud.qualityLabel && lab) this.hud.qualityLabel.textContent = lab.label;
   }
@@ -4017,7 +4020,18 @@ void main() {
     if (this.hud.chatBtn) this.hud.chatBtn.classList.toggle("on", !!on);
     if (this.hud.chatBadge) this.hud.chatBadge.hidden = true;
     this._unread = 0;
-    if (on && this.hud.chatLog) { this.hud.chatLog.scrollTop = this.hud.chatLog.scrollHeight; }
+    if (on && this.hud.chatLog) {
+      const log = this.hud.chatLog;
+      // 空面板看着像坏了：给一行占位，第一句话进来时 _chatLine 会把它撤掉
+      if (!log.children.length) {
+        const p = document.createElement("p");
+        p.className = "cp-empty"; p.textContent = "还没有人说话。";
+        log.appendChild(p);
+      }
+      log.scrollTop = log.scrollHeight;
+      const box = this.hud.chatBox;
+      if (box) setTimeout(() => { if (this.hud.chatPanel && this.hud.chatPanel.classList.contains("show")) box.focus(); }, 0);
+    }
   }
   toggleChatPanel() { this.setChatPanel(!(this.hud.chatPanel && this.hud.chatPanel.classList.contains("show"))); }
   _teardownHud() {
@@ -4041,7 +4055,6 @@ void main() {
     if (h.chatBtn) h.chatBtn.classList.remove("on");
     if (h.qualityBtn) h.qualityBtn.classList.remove("on");
     if (h.chatBadge) h.chatBadge.hidden = true;
-    if (h.chatInput) h.chatInput.classList.remove("show");
     if (h.lockHint) h.lockHint.classList.remove("show");
     this._unread = 0;
     document.body.classList.remove("chat-open");

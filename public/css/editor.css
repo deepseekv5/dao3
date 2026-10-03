@@ -395,10 +395,6 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 .vit-name span{color:var(--primary-hover);font-size:11px}
 .vit-bar{width:150px;height:6px;border-radius:99px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.22);overflow:hidden}
 .vit-bar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#ff5b5b,#ff8a5b);transition:width .18s}
-#gameChatInput{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;display:none;width:min(520px,80vw)}
-#gameChatInput.show{display:block}
-#gameChatInput input{width:100%;padding:9px 13px;border-radius:10px;background:rgba(10,12,16,.9);border:1px solid var(--line2);color:#fff;font-size:13px;font-family:inherit}
-#gameChatInput input:focus{outline:none;border-color:var(--primary)}
 #gameDead{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,4,4,.55);pointer-events:auto}
 #gameDead.show{display:flex}
 .dead-card{display:flex;flex-direction:column;align-items:center;gap:14px;padding:26px 40px;border-radius:14px;background:var(--panel);border:1px solid var(--grey2);box-shadow:0 20px 60px rgba(0,0,0,.6)}
@@ -483,7 +479,7 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 body.chat-open .chat-strip{opacity:0}
 /* 血条本来贴在左下角窄条上面，聊天面板一开就会压在它身上 */
 body.chat-open #gameVitals{bottom:auto;top:64px}
-.chat-panel{position:absolute;left:14px;bottom:14px;width:min(340px,42vw);max-height:min(360px,52vh);
+.chat-panel{position:absolute;left:14px;bottom:14px;width:min(340px,42vw);min-height:150px;max-height:min(360px,52vh);
   display:none;flex-direction:column;border-radius:12px;overflow:hidden;z-index:63;pointer-events:auto;
   background:rgba(14,14,16,.9);border:1px solid var(--line);backdrop-filter:blur(10px);box-shadow:0 12px 40px rgba(0,0,0,.5)}
 .chat-panel.show{display:flex}
@@ -516,6 +512,9 @@ body.chat-open #gameVitals{bottom:auto;top:64px}
 .q-list button.on{background:var(--primary-dim);color:var(--primary);font-weight:600}
 .q-list button i{font-style:normal;font-size:10.5px;color:var(--fg3);font-family:var(--mono)}
 .q-list button.on i{color:var(--primary)}
+.q-bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+.q-bars s{display:block;width:3px;height:100%;background:currentColor;opacity:.34;border-radius:1px;text-decoration:none}
+.q-list button.on .q-bars s{opacity:.9}
 .gm-card footer{display:flex;justify-content:space-between;gap:12px;padding:11px 18px;border-top:1px solid var(--line);color:var(--fg3);font-size:11px}
 
 

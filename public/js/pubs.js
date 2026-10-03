@@ -164,14 +164,12 @@ export async function playPub(p) {
 export async function openPublishDialog(world) {
   if (!auth.me) { openAuth("register"); toast("发布要先有个账号"); return; }
   modal(`<h3>发布到社区</h3>
-    <p class="cm-hint">发布的是<b>此刻的快照</b>：体素、脚本、实体与引用的素材会整体复制一份，之后你再改这张图，社区里那份不会跟着变。</p>
     <label>标题<input id="pTitle" maxlength="60" value="${esc(world.name || "")}"/></label>
-    <label>简介<textarea id="pDesc" maxlength="2000" placeholder="这张图玩什么、怎么触发、有什么坑"></textarea></label>
-    <label>标签（逗号分隔，最多 6 个）<input id="pTags" placeholder="竞速, 地图, 教程"/></label>
-    <label>封面（不选就用编辑器截图；都没有就用生成的色块）
-      <input id="pCover" type="file" accept="image/png,image/jpeg,image/webp"/></label>
-    <label>更新说明（再发一次同一张图时写进版本历史）<input id="pNote" maxlength="200" placeholder="加了两个检查点"/></label>
-    <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="pOk">发布</button></div>`,
+    <label>简介<textarea id="pDesc" maxlength="2000" placeholder="这张图玩什么、怎么触发"></textarea></label>
+    <label>标签<input id="pTags" placeholder="竞速, 地图, 教程"/></label>
+    <label>封面<input id="pCover" type="file" accept="image/png,image/jpeg,image/webp" title="不选就用编辑器的截图；一张都没有时用生成的色块"/></label>
+    <label>更新说明<input id="pNote" maxlength="200" placeholder="这次改了什么"/></label>
+    <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="pOk" title="发布的是此刻的快照：体素、脚本、实体与素材整体复制一份，之后再改这张图不会跟着变。">发布</button></div>`,
     async (box, close) => {
       const me = auth.me;
       box.querySelector("#pDesc").placeholder = `作者 ${me.name} · ${world.shape ? world.shape.join("×") : ""}`;

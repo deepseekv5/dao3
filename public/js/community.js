@@ -90,7 +90,7 @@ async function pubView(id) {
         <div class="pic${p.hasCover ? "" : " none"}"${p.hasCover ? "" : ` style="${coverArt(p)}"`}>${coverHtml(p)}<span class="glyph">${esc((p.title || "?").slice(0, 1))}</span></div>
         <div class="meta">
           <h2>${esc(p.title)}</h2>
-          <p class="lead">${esc(p.desc || "作者没写简介。")}</p>
+          ${p.desc ? `<p class="lead">${esc(p.desc)}</p>` : ""}
           ${p.tags.length ? `<div class="cm-tags">${p.tags.map((t) => `<span class="cm-tag">${esc(t)}</span>`).join("")}</div>` : ""}
           <div class="stats" style="margin-top:12px">
             <span>游玩 ${p.plays}</span><span>点赞 ${p.likes}</span><span>评论 <b id="cmCmtN">${p.comments}</b></span>
@@ -117,14 +117,13 @@ async function pubView(id) {
       <div class="cm-panel">
         <h4>这张地图</h4>
         <div class="cm-acts" id="cmPubActs">
-          <button class="cm-btn primary" id="cmPlay">${p.kind === "model" ? "下载模型" : "开始游玩"}</button>
+          <button class="cm-btn primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${p.kind === "model" ? "下载模型" : "开始游玩"}</button>
           <button class="cm-btn ${p.likedByMe ? "on" : ""}" id="cmLike">♥ 点赞 <b>${p.likes}</b></button>
           <button class="cm-btn" id="cmFork">存为我的地图</button>
           ${d.canEdit ? `<button class="cm-btn" id="cmEdit">编辑简介</button><button class="cm-btn" id="cmUnpub">下架</button>` : ""}
           ${d.canEdit ? "" : `<button class="cm-report" id="cmReport">举报这张${p.kind === "model" ? "模型" : "地图"}</button>`}
         </div>
         ${p.version > 1 ? `<div style="margin-top:10px"><h4 style="margin:0 0 4px;font-size:11px;color:var(--fg3)">版本 ${p.version}</h4><div class="cm-ver" id="cmVer"></div></div>` : ""}
-        <p class="cm-hint" style="margin:10px 0 0">游玩会先把这份<b>快照</b>取回本地：作者之后的改动不会跟着进来。</p>
       </div>
     </aside>
   </div>`;
@@ -214,7 +213,7 @@ function renderAuthorActs(a, rel) {
   if (!host) return;
   if (!a) { host.innerHTML = ""; return; }
   const meName = auth.me && auth.me.name;
-  if (meName === a.name) { host.innerHTML = `<span class="cm-hint" style="margin:0">这是你自己的主页。</span>`; return; }
+  if (meName === a.name) { host.innerHTML = ""; return; }
   const r = rel || {};
   host.innerHTML = `
     <button class="cm-btn ${r.following ? "on" : ""}" id="cmFollow">${r.following ? "已关注" : "关注"}</button>
@@ -255,7 +254,7 @@ async function loadComments(pubId) {
           ${c.mine ? '<button data-x="del">删除</button>' : ""}
         </div>
       </div>
-    </div>`).join("") : `<p class="cm-hint">还没有评论。说一句这张图哪里好玩。</p>`;
+    </div>`).join("") : `<p class="cm-hint">还没有评论。</p>`;
   for (const el of list.querySelectorAll(".cm-cmt")) {
     const id = el.dataset.id;
     const like = el.querySelector('[data-x="like"]');
