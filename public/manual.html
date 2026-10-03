@@ -87,11 +87,11 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
   <li><b>本地包</b>：打开工作台 →「打开赛车模板」→ 右上角<b>「运行游戏」</b>。或直接在浏览器进 <a href="/edit/216d665d3ca92bd1b9a2">编辑器</a>。</li>
   <li><b>不想装东西</b>：<a href="https://deepseekv5.github.io/dao3play/">网页体验版</a>，进页面就是运行状态，只能玩，不能编辑与存档。</li>
 </ul>
-<p>进入运行模式后<b>点一下画面</b>会锁定鼠标用来转视角；按 <kbd>Esc</kbd> 解除锁定，再按一次退出运行模式。</p>
+<p>进入运行模式后<b>点一下画面</b>会锁定鼠标用来转视角。按 <kbd>Esc</kbd> 先解除锁定；再按一次呼出<b>游戏内菜单</b>——菜单是浮在画面上的，世界继续跑，出口在菜单里，不会把你丢回编辑器。</p>
 
 <figure class="shot">
-  <img src="/docs/img/editor-run.png" alt="运行模式下的赛车模板：第三人称视角、左上角倒计时与圈数提示、右下虚拟按键"/>
-  <figcaption>运行模式实况：第三人称跟随、提示消息、以及触屏设备的虚拟按键。</figcaption>
+  <img src="/docs/img/editor-run.png" alt="运行模式下的赛车模板：第三人称视角，左上地图名，右上手册/设置/退出，Esc 呼出游戏内菜单"/>
+  <figcaption>运行模式实况：左上地图名、右上手册/设置/退出，中间只留准星；键位收在 Esc 菜单里。</figcaption>
 </figure>
 
 <h2 id="keys">键位</h2>
@@ -110,7 +110,7 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
     <tr><td><kbd>T</kbd> / <kbd>Enter</kbd></td><td colspan="2">聊天输入框</td></tr>
     <tr><td><kbd>H</kbd></td><td colspan="2">运行模式设置面板（画质、音效、灵敏度）</td></tr>
     <tr><td><kbd>`</kbd>（反引号）</td><td colspan="2">脚本控制台（写脚本的人用的，玩不需要）</td></tr>
-    <tr><td><kbd>Esc</kbd></td><td colspan="2">先解锁鼠标 / 关商店，再按一次退出运行模式</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td colspan="2">先解锁鼠标 / 关商店，再按一次呼出游戏内菜单（出口在菜单里）</td></tr>
   </tbody>
 </table>
 
@@ -191,15 +191,16 @@ code{font-family:var(--mono);font-size:13px;background:rgba(255,255,255,.06);pad
 也不会跟着项目包发给别人。</div>
 
 <h2 id="out">掉出世界、卡住与重生</h2>
-<p>坐标掉到世界之外会自动重生回出生点。要是卡在建筑里出不来，按 <kbd>Esc</kbd> 退出运行模式再进一次；<kbd>H</kbd> 打开的设置面板里有<b>立即重生</b>按钮。写脚本的人可以直接调 <code>player.forceRespawn()</code>。</p>
+<p>坐标掉到世界之外会自动重生回出生点。要是卡在建筑里出不来，按 <kbd>H</kbd> 打开设置面板点<b>立即重生</b>；实在不行就按 <kbd>Esc</kbd> 在菜单里<b>退出</b>再重进一次。写脚本的人可以直接调 <code>player.forceRespawn()</code>。</p>
 
 <h2 id="hud">界面与设置</h2>
 <table>
   <thead><tr><th>位置</th><th>内容</th></tr></thead>
   <tbody>
+    <tr><td>左上</td><td>地图名；多人图还会在旁边显示在线人数</td></tr>
     <tr><td>左下</td><td>聊天与系统播报（<kbd>T</kbd> 发言）</td></tr>
-    <tr><td>中下</td><td>准星与交互提示（能互动的东西会显示名字，例如「报名点」）</td></tr>
-    <tr><td>右上</td><td>「商店」入口（地图配了商品表才会出现）与停止按钮</td></tr>
+    <tr><td>正中</td><td>准星；画面中央偏下是交互提示（能互动的东西会显示名字，例如「报名点」）</td></tr>
+    <tr><td>右上</td><td>手册 / 设置 / 退出三个入口；地图配了商品表时再多一个「商店」</td></tr>
     <tr><td><kbd>H</kbd></td><td>设置面板：日照、环境光、曝光、视场角、镜头距离，以及<b>设出生点</b> / <b>立即重生</b> / <b>悬浮按键</b> / 摆放 / 复位 / 白天 / 夜晚 / 重置 / 声音 / 控制台</td></tr>
     <tr><td><kbd>`</kbd></td><td>脚本控制台：地图脚本报错、警告都在这里，玩的时候可以不理会</td></tr>
   </tbody>
