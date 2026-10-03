@@ -262,14 +262,19 @@
   background: #101726 center/cover no-repeat; border: 1px solid var(--line);
 }
 .pf-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.pf-head { display: flex; gap: 14px; align-items: flex-end; margin: -34px 0 0; padding: 0 16px; position: relative; }
+.pf-banner::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 62px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .5)); pointer-events: none; }
+/* 只有头像压在横幅下缘。整行身份信息被拽到横幅上时，名字会落在图里最花的那一块，
+   读不出来——用户横幅是作者放的图，我们不该跟它抢对比度。 */
+.pf-head { display: flex; gap: 14px; align-items: flex-start; margin: 0; padding: 16px 16px 0; position: relative; }
+.pf-avatar { margin-top: -40px; flex: none; }
 .pf-avatar .au-face { width: 68px; height: 68px; border-radius: 18px; font-size: 30px; border: 3px solid var(--bg1); box-shadow: 0 8px 22px rgba(0,0,0,.5); }
 .pf-id { flex: 1; min-width: 0; padding-bottom: 4px; }
 .pf-id h2 { margin: 0; font-size: 19px; display: flex; align-items: center; gap: 8px; }
 .pf-role { font: 10.5px/1 var(--mono); letter-spacing: .4px; color: var(--on-accent); background: var(--primary); padding: 3px 6px; border-radius: 5px; }
 .pf-bio { margin: 5px 0 0; font-size: 12.5px; color: var(--fg2); white-space: pre-wrap; }
 .pf-meta { margin: 4px 0 0; font-size: 11.5px; color: var(--fg3); }
-.pf-acts { display: flex; gap: 8px; padding-bottom: 6px; }
+.pf-acts { display: flex; gap: 8px; padding-top: 4px; flex: none; }
 .pf-head .cm-tabs { margin-top: 14px; }
 .pf-wrap .cm-tabs { margin: 18px 0 14px; }
 
