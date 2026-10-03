@@ -488,22 +488,22 @@ export class GameRuntime {
         pubId: meta.pubId,
         on: {
           welcome: (m) => { for (const p of m.peers || []) this._netSpawn(p); count(); },
-          join: (m) => { this._netSpawn(m.peer); count(); this._chatLine(`${m.peer.name} 进来了`, "#9fd6a0"); },
+          join: (m) => { this._netSpawn(m.peer); count(); this._chatLine(`${m.peer.name} 进来了`, "#9fd6a0", "sys"); },
           leave: (m) => { this._netDespawn(m.id); count(); },
           state: (m) => {
             const p = this._netPeers.get(m.id);
             if (p) { p.tx = m.p; p.ry = m.r; }
           },
           chat: (m) => this._chatLine(`${m.name}: ${m.m}`, "#bfe0ff"),
-          throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#8fe3ef"),
-          rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3"),
+          throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#8fe3ef", "sys"),
+          rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3", "sys"),
           status: (s) => {
             if (s.connected) {
               count();
               // 连上就先报一次坐标：否则别人在那 16ms 的间隔里看到的是你站在世界原点。
               const me = this.playerEntity;
               if (me) this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
-            } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#8fe3ef");
+            } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#8fe3ef", "sys");
           },
         },
       });
@@ -1101,6 +1101,9 @@ export class GameRuntime {
       if (c === "backquote") rt._toggleConsole();
       if (c === "keyh") { const s = document.getElementById("gameHudSettings"); s && s.classList.toggle("show"); }
       if (c === "escape" && rt._storeOpen) { rt._toggleStore(false); return; }
+      // 面板开着时 Esc 先关面板，不会一路穿到游戏菜单
+      if (c === "escape" && rt.hud && rt.hud.chatPanel && rt.hud.chatPanel.classList.contains("show")) { rt.setChatPanel(false); return; }
+      if (c === "escape" && rt.hud && rt.hud.qualityPanel && rt.hud.qualityPanel.classList.contains("show")) { rt.hud.qualityPanel.classList.remove("show"); return; }
       // Esc 开的是游戏内菜单。以前这里直接 stopPlay()，玩家一按退出就被丢回编辑器界面，
       // 对"点开一张图玩"的人来说等于被踢出产品；世界继续跑，出口在菜单里。
       // 菜单模块在进入运行时时就预加载好了（见 _preloadShell）：按下去才开始 import，
@@ -2075,7 +2078,7 @@ const ZERO = new GameVector3();
     ent.hp = ent.maxHp;
     p.dead = false;
     this._playAt(p.spawnSound, ent.position);
-    this._chatLine(reason === "死亡" ? "你倒下了，已回到出生点" : reason === "手动" ? "已回到出生点" : "掉出世界，已回到出生点", "#8fe3ef");
+    this._chatLine(reason === "死亡" ? "你倒下了，已回到出生点" : reason === "手动" ? "已回到出生点" : "掉出世界，已回到出生点", "#8fe3ef", "sys");
     const ev = { tick: this.currentTick, entity: ent };
     p._channels.Respawn.fire(ev);
     this._channels.Respawn.fire(ev);
@@ -3571,17 +3574,17 @@ void main() {
     this._playAt(ent.chatSound, ent.position);
   }
   openChat() {
-    const el = this.hud && this.hud.chatInput, box = this.hud && this.hud.chatBox;
-    if (!el || !box) return;
-    el.classList.add("show");
+    const box = this.hud && this.hud.chatBox;
+    if (!box) return;
+    this.setChatPanel(true);
     this._chatOpen = true;
     setTimeout(() => box.focus(), 0);
   }
   closeChat() {
-    const el = this.hud && this.hud.chatInput, box = this.hud && this.hud.chatBox;
-    if (el) el.classList.remove("show");
+    const box = this.hud && this.hud.chatBox;
     if (box) { box.value = ""; box.blur(); }
     this._chatOpen = false;
+    this.setChatPanel(false);
   }
   // 官方聊天链路：本地发送 → player.onChat + world.onChat → 屏幕回显 → 房间里广播
   sendChat(text) {
@@ -3593,16 +3596,48 @@ void main() {
     // 本地回显先出来，房间那条由服务端审查后再发回给别人；自己不该看到两条。
     if (this._net && this._net.live) this._net.chat(msg);
   }
-  _chatLine(text, color) {
+  /** 一条消息同时进两个地方：左下角的窄条（最近三条，会自己淡掉）
+      和聊天面板里的完整历史（能往上翻，不自动清）。
+      以前只有那三条、还 15 秒清空——联机时别人一说话就把你的顶掉了，
+      想回头看谁说过什么根本做不到。 */
+  _chatLine(text, color, kind) {
     const el = this.hud && this.hud.chat;
-    if (!el) return;
-    const d = document.createElement("div");
-    if (color) d.style.color = color;
-    d.textContent = text;
-    el.appendChild(d);
-    while (el.children.length > 10) el.removeChild(el.firstChild);
-    clearTimeout(this._chatFade);
-    this._chatFade = setTimeout(() => { if (el) el.innerHTML = ""; }, 15000);
+    const sys = kind === "sys";
+    if (el) {
+      const d = document.createElement("div");
+      if (color) d.style.color = color;
+      d.textContent = text;
+      el.appendChild(d);
+      while (el.children.length > 3) el.removeChild(el.firstChild);
+      clearTimeout(this._chatFade);
+      this._chatFade = setTimeout(() => { if (el) el.innerHTML = ""; }, 15000);
+    }
+    const log = this.hud && this.hud.chatLog;
+    if (log) {
+      const wasBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+      if (!log.children.length) { log.innerHTML = ""; }
+      const d = document.createElement("div");
+      d.className = "cp-line" + (sys ? " sys" : "");
+      const i = text.indexOf(": ");
+      if (!sys && i > 0 && i < 40) {
+        const n = document.createElement("span");
+        n.className = "cp-n"; n.style.color = color || "#fff"; n.textContent = text.slice(0, i);
+        d.appendChild(n);
+        d.appendChild(document.createTextNode(text.slice(i + 2)));
+      } else {
+        if (color && !sys) d.style.color = color;
+        d.textContent = text;
+      }
+      log.appendChild(d);
+      while (log.children.length > 200) log.removeChild(log.firstChild);
+      if (wasBottom) log.scrollTop = log.scrollHeight;
+      const open = this.hud.chatPanel && this.hud.chatPanel.classList.contains("show");
+      if (!open && !sys) {
+        this._unread = (this._unread || 0) + 1;
+        if (this.hud.chatBadge) this.hud.chatBadge.hidden = false;
+      }
+      if (this.hud.chatWho) this.hud.chatWho.textContent = log.children.length + " 条";
+    }
   }
   say(message) { this.world.say(message); }
   toast(msg) { this.e.toast && this.e.toast(msg); }
@@ -3903,6 +3938,9 @@ void main() {
       vitals: $("gameVitals"), vitName: $("vitName"), vitHp: $("vitHp"), vitState: $("vitState"),
       chatBox: $("chatBox"), chatInput: $("gameChatInput"), dead: $("gameDead"), respawn: $("btnRespawn"),
       storeBtn: $("gameStoreBtn"), store: $("gameStore"), lockHint: $("gameLockHint"),
+      chatPanel: $("chatPanel"), chatLog: $("chatLog"), chatWho: $("chatWho"), chatBadge: $("chatBadge"),
+      chatBtn: $("chatToggle"), qualityBtn: $("qualityToggle"), qualityPanel: $("qualityPanel"),
+      qualityList: $("qualityList"), qualityLabel: $("qualityLabel"),
     };
     this._storeOpen = false;
     this._purchases = {};
@@ -3914,6 +3952,17 @@ void main() {
         else if (ev.key === "Escape") this.closeChat();
       };
     }
+    if (this.hud.chatBtn) this.hud.chatBtn.onclick = () => this.toggleChatPanel();
+    if (this.hud.chatPanel) {
+      const x = this.hud.chatPanel.querySelector("#chatClose");
+      if (x) x.onclick = () => this.setChatPanel(false);
+    }
+    if (this.hud.qualityBtn) this.hud.qualityBtn.onclick = () => this.toggleQualityPanel();
+    if (this.hud.qualityPanel) {
+      const x = this.hud.qualityPanel.querySelector("#qualityClose");
+      if (x) x.onclick = () => this.hud.qualityPanel.classList.remove("show");
+    }
+    this._bindQuality();
     if (this.hud.entry) this.hud.entry.classList.add("show");
     if (this.hud.cross) this.hud.cross.classList.add("show");
     if (this.hud.console) { this.hud.console.innerHTML = ""; this.hud.console.classList.remove("show"); }
@@ -3925,6 +3974,52 @@ void main() {
     this._renderStore();
     this._bindHudControls();
   }
+  /** 画质档位：一个按钮 + 五档，不解释原理。选中的档位记在设备上，不写进地图数据——
+      它是玩家这台机器的偏好，跟着图走会让别人玩你的图时被你替他们做的决定绑住。 */
+  _bindQuality() {
+    const R = this.e.renderer;
+    if (!R || !R.constructor.QUALITY || !this.hud.qualityList) return;
+    const saved = localStorage.getItem("ly.quality") || "balanced";
+    R.setQuality(saved);
+    this.hud.qualityList.innerHTML = "";
+    for (const key of R.constructor.QUALITY_ORDER) {
+      const q = R.constructor.QUALITY[key];
+      const b = document.createElement("button");
+      b.dataset.q = key;
+      b.className = key === saved ? "on" : "";
+      b.innerHTML = `<span>${q.label}</span><i>${q.ratio}×</i>`;
+      b.onclick = () => {
+        R.setQuality(key);
+        localStorage.setItem("ly.quality", key);
+        for (const x of this.hud.qualityList.children) x.classList.toggle("on", x.dataset.q === key);
+        if (this.hud.qualityLabel) this.hud.qualityLabel.textContent = q.label;
+        // 阴影贴图尺寸变了要重烘焙一次，否则这一档看起来没生效
+        if (R.sun) R.sun.shadow.needsUpdate = true;
+        this.setEdges && this.setEdges(R.quality === "ultra" ? true : this._edges);
+      };
+      this.hud.qualityList.appendChild(b);
+    }
+    const lab = R.constructor.QUALITY[R.quality];
+    if (this.hud.qualityLabel && lab) this.hud.qualityLabel.textContent = lab.label;
+  }
+  toggleQualityPanel() {
+    const p = this.hud.qualityPanel;
+    if (!p) return;
+    const on = !p.classList.contains("show");
+    p.classList.toggle("show", on);
+    if (this.hud.qualityBtn) this.hud.qualityBtn.classList.toggle("on", on);
+  }
+  setChatPanel(on) {
+    const p = this.hud.chatPanel;
+    if (!p) return;
+    p.classList.toggle("show", !!on);
+    document.body.classList.toggle("chat-open", !!on);
+    if (this.hud.chatBtn) this.hud.chatBtn.classList.toggle("on", !!on);
+    if (this.hud.chatBadge) this.hud.chatBadge.hidden = true;
+    this._unread = 0;
+    if (on && this.hud.chatLog) { this.hud.chatLog.scrollTop = this.hud.chatLog.scrollHeight; }
+  }
+  toggleChatPanel() { this.setChatPanel(!(this.hud.chatPanel && this.hud.chatPanel.classList.contains("show"))); }
   _teardownHud() {
     const h = this.hud || {};
     if (h.entry) h.entry.classList.remove("show");
@@ -3939,8 +4034,17 @@ void main() {
     this._storeOpen = false;
     if (h.store) { h.store.classList.remove("show"); h.store.innerHTML = ""; }
     if (h.storeBtn) h.storeBtn.hidden = true;
+    // 聊天输入框现在住在面板里，面板自己管显隐；历史也要一起收掉，
+    // 否则下一局开局就看到上一局别人说的话。
+    if (h.chatPanel) { h.chatPanel.classList.remove("show"); h.chatLog && (h.chatLog.innerHTML = ""); }
+    if (h.qualityPanel) h.qualityPanel.classList.remove("show");
+    if (h.chatBtn) h.chatBtn.classList.remove("on");
+    if (h.qualityBtn) h.qualityBtn.classList.remove("on");
+    if (h.chatBadge) h.chatBadge.hidden = true;
     if (h.chatInput) h.chatInput.classList.remove("show");
-    if (h.lockHint) document.getElementById("gameLockHint")?.classList.remove("show");
+    if (h.lockHint) h.lockHint.classList.remove("show");
+    this._unread = 0;
+    document.body.classList.remove("chat-open");
     this.tags && this.tags.clear();
     document.body.classList.remove("hud-debug");
     const s = document.getElementById("gameHudSettings");

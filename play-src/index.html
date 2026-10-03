@@ -80,7 +80,17 @@
   </div>
   <div class="hud-tools">
     <button id="gameStoreBtn" class="pe-store" title="商品列表（world.products()）" hidden>商店</button>
-    <button id="ghToggle" class="pe-store" title="画面与操作（H）">设置</button>
+    <button id="chatToggle" class="pe-store ico" title="聊天（T）" aria-label="聊天">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+      <i id="chatBadge" class="pe-badge" hidden></i>
+    </button>
+    <button id="qualityToggle" class="pe-store ico" title="画质" aria-label="画质">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="9" cy="7" r="2.1" fill="currentColor"/><circle cx="15" cy="12" r="2.1" fill="currentColor"/><circle cx="8" cy="17" r="2.1" fill="currentColor"/></svg>
+      <b id="qualityLabel" class="pe-tag">标准</b>
+    </button>
+    <button id="ghToggle" class="pe-store ico" title="画面与操作（H）" aria-label="设置">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 4v2.4M12 17.6V20M4 12h2.4M17.6 12H20M6.3 6.3l1.7 1.7M16 16l1.7 1.7M17.7 6.3L16 8M8 16l-1.7 1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
     <button id="gameStop" class="pe-store exit" title="结束本次试跑">退出</button>
   </div>
   <div id="gameStore" class="game-store"></div>
@@ -93,9 +103,21 @@
     <div class="vit-name"><b id="vitName">玩家</b><span id="vitState"></span></div>
     <div class="vit-bar"><i id="vitHp"></i></div>
   </div>
-  <div id="gameChatInput"><input id="chatBox" maxlength="200" placeholder="说点什么…（Enter 发送，Esc 取消）" spellcheck="false"/></div>
+  <div id="chatPanel" class="chat-panel">
+    <header>
+      <b>聊天</b>
+      <span id="chatWho" class="cp-who"></span>
+      <button id="chatClose" class="cp-x" aria-label="关闭">✕</button>
+    </header>
+    <div id="chatLog" class="cp-log" role="log" aria-live="polite"></div>
+    <div id="gameChatInput" class="cp-input"><input id="chatBox" maxlength="200" placeholder="说点什么…" spellcheck="false"/></div>
+  </div>
+  <div id="qualityPanel" class="q-panel">
+    <header><b>画质</b><button id="qualityClose" class="cp-x" aria-label="关闭">✕</button></header>
+    <div id="qualityList" class="q-list"></div>
+  </div>
   <div id="gameDead"><div class="dead-card"><b>你已倒下</b><button id="btnRespawn" class="playbtn">重生</button></div></div>
-  <div id="gameChat"></div>
+  <div id="gameChat" class="chat-strip"></div>
   <div id="gameDialog"></div>
   <div id="gameConsole"></div>
 </div>

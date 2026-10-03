@@ -271,6 +271,44 @@ const styledMenu = await A.evaluate(`(() => {
 })()`);
 ok("内嵌菜单拿到的是真样式，不是裸按钮", styledMenu.el && styledMenu.pos === "fixed"
   && styledMenu.cardBg !== "rgba(0, 0, 0, 0)" && styledMenu.btnFont === "13.5px", JSON.stringify(styledMenu));
+
+/* 聊天面板与画质档位：右上角那两个专门按钮 */
+const panels = await A.evaluate(`(() => {
+  const disp = (s) => { const e = document.querySelector(s); return e ? getComputedStyle(e).display : "缺元素"; };
+  return { chat0: disp("#chatPanel"), q0: disp("#qualityPanel") };
+})()`);
+ok("开局聊天与画质面板都是收着的", panels.chat0 === "none" && panels.q0 === "none", JSON.stringify(panels));
+await A.evaluate(`document.getElementById("qualityToggle").click()`);
+const q = await until(A, `(() => {
+  const p = document.getElementById("qualityPanel");
+  if (!p || getComputedStyle(p).display === "none") return false;
+  return { tiers: document.querySelectorAll("#qualityList button").length,
+    cur: (document.querySelector("#qualityList button.on") || {}).dataset };
+})()`, { tries: 6, ms: 300 });
+ok("画质有专门的按钮和五档", q && q.tiers === 5, JSON.stringify(q));
+await A.evaluate(`document.querySelector('#qualityList button[data-q="eco"]').click()`);
+const eco = await until(A, `(() => { const R = window.__editor.renderer;
+  return R.quality === "eco" && R.renderer.getPixelRatio() <= 0.75 && R.renderer.shadowMap.enabled === false; })()`, { tries: 6, ms: 300 });
+ok("切到省电真的降了像素比并关掉阴影", !!eco,
+  await A.evaluate(`JSON.stringify({q:window.__editor.renderer.quality,r:window.__editor.renderer.renderer.getPixelRatio(),s:window.__editor.renderer.renderer.shadowMap.enabled})`));
+ok("档位记在设备上而不是地图数据里", await A.evaluate(`localStorage.getItem("ly.quality")`) === "eco",
+  await A.evaluate(`localStorage.getItem("ly.quality")`));
+await A.evaluate(`document.querySelector('#qualityList button[data-q="balanced"]').click()`);
+await A.evaluate(`document.getElementById("qualityToggle").click()`);
+
+await A.evaluate(`document.getElementById("chatToggle").click()`);
+const opened = await until(A, `getComputedStyle(document.getElementById("chatPanel")).display !== "none"`, { tries: 6, ms: 300 });
+ok("聊天能展开成独立面板", !!opened);
+ok("输入框在面板里", await A.evaluate(`!!document.querySelector("#chatPanel #chatBox")`));
+await A.evaluate(`(() => { const g = window.__game;
+  g.sendChat("面板第一条"); g._chatLine("同伴: 第二句", "#bfe0ff"); g._chatLine("系统一条", "#8fe3ef", "sys"); })()`);
+const hist = await until(A, `document.querySelectorAll("#chatLog .cp-line").length`, { tries: 6, ms: 300 });
+ok("面板里留完整历史，说话人各自上色", hist >= 3, "条数 " + hist);
+ok("系统消息不冒充玩家发言", await A.evaluate(`!!document.querySelector("#chatLog .cp-line.sys")`));
+await A.evaluate(`document.getElementById("chatToggle").click()`);
+await sleep(300);
+await A.evaluate(`window.__game._chatLine("别人: 收起时来的", "#bfe0ff")`);
+ok("收起时来新消息会亮未读点", await until(A, `!document.getElementById("chatBadge").hidden`, { tries: 5, ms: 300 }));
 await A.shot(path.join(ROOT, "tmp/ui-menu.png"));
 
 /* ---------------- 联机：两个人真的在同一个房间里 ---------------- */

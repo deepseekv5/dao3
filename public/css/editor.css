@@ -466,7 +466,58 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 .gm-list kbd:empty{display:none}
 .gm-list button.danger{color:#ff8a7a}
 .gm-list button.danger:hover{background:rgba(226,112,95,.16)}
+/* 图标按钮：右上角那一组里，纯图标的方块按钮与带文字的按钮同高，
+   免得两种宽度的按钮混在一排里跳来跳去 */
+.pe-store.ico{width:32px;padding:0;justify-content:center;position:relative}
+.pe-store.ico svg{width:16px;height:16px;display:block}
+.pe-store.ico.on{color:var(--primary);background:var(--primary-dim)}
+/* 画质那颗要同时放图标和当前档位名，32px 方块会把"极致"挤成两行竖排 */
+#qualityToggle{width:auto;padding:0 9px;gap:5px}
+.pe-badge{position:absolute;top:4px;right:4px;min-width:8px;height:8px;border-radius:99px;background:var(--primary);box-shadow:0 0 0 2px rgba(14,14,16,.9)}
+.pe-tag{font-size:10.5px;font-weight:600;color:var(--fg3);white-space:nowrap}
+
+/* 聊天：收起时左下角只有最近三条，展开是独立面板，历史能往上翻。
+   以前所有消息都挤在那三条里且 15 秒清空——联机时别人一说话就把你的顶掉了。 */
+.chat-strip{position:absolute;left:16px;bottom:18px;display:flex;flex-direction:column;gap:3px;pointer-events:none;max-width:40vw;transition:opacity .16s}
+.chat-strip div{background:rgba(8,10,14,.62);color:#f2f2f2;font-size:12.5px;padding:4px 10px;border-radius:8px;width:fit-content;max-width:100%}
+body.chat-open .chat-strip{opacity:0}
+/* 血条本来贴在左下角窄条上面，聊天面板一开就会压在它身上 */
+body.chat-open #gameVitals{bottom:auto;top:64px}
+.chat-panel{position:absolute;left:14px;bottom:14px;width:min(340px,42vw);max-height:min(360px,52vh);
+  display:none;flex-direction:column;border-radius:12px;overflow:hidden;z-index:63;pointer-events:auto;
+  background:rgba(14,14,16,.9);border:1px solid var(--line);backdrop-filter:blur(10px);box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.chat-panel.show{display:flex}
+.chat-panel>header{display:flex;align-items:center;gap:8px;padding:9px 11px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.03)}
+.chat-panel>header b{font-size:12.5px;font-weight:600;color:#fff}
+.cp-who{margin-left:auto;font-size:11px;color:var(--fg3);font-family:var(--mono)}
+.cp-x{background:none;border:0;color:var(--fg3);font-size:13px;cursor:pointer;padding:2px 5px;border-radius:5px;line-height:1}
+.cp-x:hover{background:rgba(255,255,255,.09);color:#fff}
+.cp-log{flex:1;min-height:0;overflow-y:auto;padding:9px 11px;display:flex;flex-direction:column;gap:5px;overscroll-behavior:contain}
+.cp-log::-webkit-scrollbar{width:6px}
+.cp-log::-webkit-scrollbar-thumb{background:var(--grey2);border-radius:3px}
+.cp-line{font-size:12.5px;line-height:1.5;word-break:break-word}
+.cp-line .cp-n{font-weight:600;margin-right:5px}
+.cp-line.sys{color:var(--fg3);font-size:11.5px}
+.cp-empty{color:var(--fg3);font-size:12px;padding:14px 2px;text-align:center}
+.cp-input{border-top:1px solid var(--line);padding:8px}
+.cp-input input{width:100%;padding:8px 11px;border-radius:8px;background:rgba(0,0,0,.35);border:1px solid var(--line2);color:#fff;font-size:13px;font-family:inherit}
+.cp-input input:focus{outline:none;border-color:var(--primary)}
+
+/* 画质档位弹层 */
+.q-panel{position:absolute;top:60px;right:14px;width:186px;display:none;flex-direction:column;border-radius:12px;overflow:hidden;z-index:63;
+  pointer-events:auto;background:rgba(14,14,16,.94);border:1px solid var(--line);backdrop-filter:blur(10px);box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.q-panel.show{display:flex}
+.q-panel>header{display:flex;align-items:center;padding:9px 11px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.03)}
+.q-panel>header b{font-size:12.5px;font-weight:600;color:#fff;margin-right:auto}
+.q-list{padding:6px}
+.q-list button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+  background:none;border:0;border-radius:8px;padding:9px 10px;color:var(--fg);font-size:13px;font-family:inherit;cursor:pointer;text-align:left}
+.q-list button:hover{background:rgba(255,255,255,.07)}
+.q-list button.on{background:var(--primary-dim);color:var(--primary);font-weight:600}
+.q-list button i{font-style:normal;font-size:10.5px;color:var(--fg3);font-family:var(--mono)}
+.q-list button.on i{color:var(--primary)}
 .gm-card footer{display:flex;justify-content:space-between;gap:12px;padding:11px 18px;border-top:1px solid var(--line);color:var(--fg3);font-size:11px}
+
 
 /* 触屏操控（运行模式 + 触屏设备）：左摇杆 / 右侧跳跃·交互 / 右半屏拖动转视角 */
 /* 悬浮操作层：容器本身不吃点击，只有里面的控件接事件，

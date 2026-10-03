@@ -605,7 +605,41 @@ vec2 fxTileRect(float t){
     if (c.width !== w || c.height !== h) {
       this.renderer.setSize(w, h, false);
       this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+      this.applyQuality();   // setSize 会把像素比重置回当前值，缩放窗口后档位要重新落一次
     }
+  }
+
+  /** 画质档位。玩家要的是"卡了就降一档"这一个动作，所以把互相纠缠的开关打包：
+      像素比、阴影开关与阴影贴图尺寸、雾的可视距离、体素边缘线。
+      antialias 不能事后改（要重建 WebGLRenderer），所以它不参与档位，
+      真正省得多的是像素比和阴影。 */
+  static QUALITY = {
+    eco:    { label: "省电", ratio: 0.7,  shadow: false, map: 1024, fog: 0.45, edge: false },
+    fast:   { label: "流畅", ratio: 1,    shadow: false, map: 1024, fog: 0.7,  edge: false },
+    balanced: { label: "标准", ratio: 1.5, shadow: true,  map: 1024, fog: 1,    edge: false },
+    high:   { label: "精细", ratio: 2,    shadow: true,  map: 2048, fog: 1,    edge: false },
+    ultra:  { label: "极致", ratio: 2,    shadow: true,  map: 4096, fog: 1,    edge: true  },
+  };
+  static QUALITY_ORDER = ["eco", "fast", "balanced", "high", "ultra"];
+
+  setQuality(key) {
+    if (!VoxelRenderer.QUALITY[key]) return false;
+    this._quality = key;
+    this.applyQuality();
+    return true;
+  }
+  get quality() { return this._quality || "balanced"; }
+  applyQuality() {
+    const q = VoxelRenderer.QUALITY[this.quality] || VoxelRenderer.QUALITY.balanced;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.ratio));
+    this.renderer.shadowMap.enabled = q.shadow;
+    this.sun.castShadow = q.shadow;
+    if (this.sun.shadow.mapSize.x !== q.map) {
+      this.sun.shadow.mapSize.set(q.map, q.map);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+    this._qFogCap = q.fog;
+    if (this.onQuality) this.onQuality(q);
   }
 
   setOrtho(on) {
@@ -929,7 +963,10 @@ vec2 fxTileRect(float t){
       // 编辑器留下的残留值（赤碧城存的是 12.596），拿它当生效起点会把整张图糊成
       // 一片亮青——这就是"运行之后光影不对"的第二处。
       const near = d || cap ? (this._fogNear == null ? span * 1.2 : Math.max(0, this._fogNear)) : span * 1.2;
-      const far = near + Math.max(4, span * 4 * (1 - d) * (1 - cap * 0.85));
+      let far = near + Math.max(4, span * 4 * (1 - d) * (1 - cap * 0.85));
+      // 低画质档收可视距离：远处体素本来就不用画。地图自己开了雾的时候才乘，
+      // 否则等于把作者的雾效改掉。
+      if (this._qFogCap && this._qFogCap < 1) far = near + (far - near) * this._qFogCap;
       this.scene.fog.near = Math.max(0.5, Math.min(near, far - 1));
       this.scene.fog.far = far;
     }
