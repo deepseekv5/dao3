@@ -63,11 +63,16 @@ const MAX_READ = 6000;          // readScript 回喂上限
  * 白烧一轮。别名表就是为这件事留的兜底，不是兼容包袱。
  */
 export const TOOLS = [
+  // 命名沿用 engine-openapi-mcp 风格（project.* / storage.* / script.*），不是 apc CLI 那套。
+  // apc 顶层只有 create / login / info / list / set / preview / resource / upload / npmlist 9 条，
+  // **没有** project.* / game.* 这种嵌套动词——所以"统一改成 apc project info"这种动作别做：
+  // Agent 是浏览器内自动写手，apc 是终端脚手架，两条流水线的物理边界不同。
+  // community.* 是仓库自建后端（/api/community/*），不是官方动作；标了"本地"以防误用。
   { name: "project.info", desc: "看当前地图工程现状：世界尺寸、方块数、模型与实体数、玩家位置、脚本清单。无参数。" },
   { name: "project.create", desc: "新建一张空图并切过去（会丢掉当前未保存的编辑，谨慎用）。",
     args: { name: "地图名", size: "[X,Y,Z] 三个整数，各轴 8..256", terrain: `可选地貌，只能是：${PRESETS.map((p) => p.id).join(" / ")}；省略就是平地` } },
   { name: "map.save", desc: "把当前地图保存到本地世界库（Agent 做完一批改动就该存一次，别等收尾）。" },
-  { name: "map.blocks", desc: "列出可用方块名与分类，供 blocks.edit 与 model.build 选材质。（官方没有这个动词，纯粹是本实现的地编能力）" },
+  { name: "map.resource", desc: "列出可用方块名与分类，供 blocks.edit 与 model.build 选材质。（官方没有这个动词，纯粹是本实现的地编能力）" },
 
   { name: "script.list", desc: "列出本工程所有脚本（文件名、端、行数）。无参数。" },
   { name: "script.get", desc: "读一个脚本的全文。", args: { entry: "脚本文件名，如 index.js", side: "可选 server|client；同名脚本分端时用它区分" } },
@@ -108,12 +113,12 @@ export const TOOLS = [
     args: { gameRules: "可选对象，写进 meta.gameRules", worldSettings: "可选对象，写进 meta.worldSettings" } },
   { name: "project.export", desc: "把整个工程导出成官方同构的项目包 .zip —— 这就是交付物。",
     args: { name: "可选导出名" } },
-  { name: "community.who", desc: "看当前登录的是谁。社区的发布与评论都要先登录。无参数。" },
-  { name: "community.feed", desc: "读本地社区广场：pubId、标题、作者、赞、评论、游玩数。想知道有什么图、或要找某条发布的 pubId 用它。",
+  { name: "community.who", desc: "（本地）看当前登录的是谁。社区的发布与评论都要先登录。无参数。" },
+  { name: "community.feed", desc: "（本地）读本地社区广场：pubId、标题、作者、赞、评论、游玩数。想知道有什么图、或要找某条发布的 pubId 用它。",
     args: { kind: "可选 map|model", sort: "可选 new|hot，默认 new", limit: "可选 1..20，默认 8" } },
-  { name: "community.publish", desc: "把**当前这张图**发布到本地社区广场。会先自动 map.save，发的是那一刻的快照（之后再改这张图不会跟着变）。对外可见，必须显式 confirm:true。",
+  { name: "community.publish", desc: "（本地）把**当前这张图**发布到本地社区广场。会先自动 map.save，发的是那一刻的快照（之后再改这张图不会跟着变）。对外可见，必须显式 confirm:true。",
     args: { title: "标题，至少 2 个字", desc: "可选简介", tags: "可选字符串数组，最多 6 个", confirm: "必须传 true" } },
-  { name: "community.comment", desc: "给某条发布（地图或模型）写一条评论。对外可见，必须显式 confirm:true。",
+  { name: "community.comment", desc: "（本地）给某条发布（地图或模型）写一条评论。对外可见，必须显式 confirm:true。",
     args: { pubId: "发布 id（community.feed 第一列那个）", body: "评论内容，500 字内", confirm: "必须传 true" } },
   { name: "plan.set", desc: "登记或更新你的计划清单（会显示在小窗顶部）。开工前先发一次；每完成一项就再发一次把状态改成 done。",
     args: { items: `[{text, status}]，status 只能是 todo / doing / done / skip，最多 12 项` } },
@@ -131,7 +136,7 @@ const ALIAS = {
   runSandbox: "blocks.edit", sandbox: "blocks.edit", buildModel: "model.build", model: "model.build",
   checkScripts: "build.check", validate: "build.check", playtest: "runtime.start", "package.export": "project.export",
   "storage.page": "storage.list", "storage.delete": "storage.remove", "storage.del": "storage.remove",
-  save: "map.save", "map.saveWorld": "map.save", finishTask: "finish", done: "finish",
+  save: "map.save", "map.saveWorld": "map.save", "map.blocks": "map.resource", finishTask: "finish", done: "finish",
 };
 
 /** 把任意写法归一到正式动作名；认不出来返回 null。 */
