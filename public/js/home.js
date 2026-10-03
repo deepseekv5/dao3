@@ -277,7 +277,7 @@ function importFile(file) {
     const atlas = new BlockAtlas();
     await atlas.load("/data");
     let res;
-    if (ext === "zip") res = await io.importProjectZip(file);
+    if (ext === "zip") res = await io.completeMissingFromBlock(await io.importProjectZip(file));
     else if (ext === "vox") res = { world: await io.importVox(file, atlas), name: file.name.replace(/\.vox$/i, ""), scripts: [], entities: [], meshNames: [], meshes: {}, warnings: [] };
     else res = { world: await io.importGz(file, atlas), name: file.name.replace(/\.(gz|json)$/i, ""), scripts: [], entities: [], meshNames: [], meshes: {}, warnings: [] };
     if (!res || !res.world) throw new Error("未能解析文件");

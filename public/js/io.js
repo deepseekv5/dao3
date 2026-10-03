@@ -318,6 +318,33 @@ export async function fetchBlockCid(hash) {
   return await r.json();
 }
 
+/** 包里缺、block.json 又点名的那几块：问一句再联网补齐，补齐结果直接写回 res。
+ *
+ *  编辑器与工作台两条导入路径都必须走这里。工作台以前直接调 importProjectZip，
+ *  于是官方清单式导出（神岛世界大厅那种：实体表只剩一个 CID）永远是
+ *  "导入成功、0 个实体"，连一次询问都不出现——用户只会以为我们的导入器坏了。 */
+export async function completeMissingFromBlock(res, { ask = true, onProgress } = {}) {
+  if (!res || !res.block) return res;
+  const have = {
+    entitiesTree: res.entities && res.entities.length, environment: !!res.projectCfg.environment,
+    physics: !!res.projectCfg.physics, player: !!res.projectCfg.player,
+    zones: !!res.projectCfg.zones, info: !!res.projectCfg.displayName, assets: !!res.assets,
+  };
+  const miss = missingFromBlock(res.block, have);
+  if (!miss.length) return res;
+  if (ask && !confirm(`这个包只带了部分配置。\n\nblock.json 里还点名了 ${miss.length} 项没在包里：\n${miss.join("、")}\n\n要按内容地址（CID）从 static.dao3.fun 取回吗？\n不取的话这张图大概率没有实体、没有界面。`)) {
+    res.warnings.push(`包里缺 ${miss.length} 项配置且未取回：${miss.join("、")}`);
+    return res;
+  }
+  const { got, missed } = await completeFromBlock(res.block, have, onProgress);
+  const { applied, deferred } = applyCompletion(res, got);
+  if (applied.length) res.warnings.push("已补齐：" + applied.join("、"));
+  // 取回来但没映射的东西也要说：不然过两天谁都不记得 uiTree 其实还没生效
+  if (deferred.length) res.warnings.push(`已取回但暂未映射：${deferred.join("、")}`);
+  if (missed.length) res.warnings.push("取回失败：" + missed.join("、"));
+  return res;
+}
+
 /** block.json 里点名了、但本次导入没从包里读到的键。 */
 export function missingFromBlock(block, have = {}) {
   if (!block || typeof block !== "object") return [];

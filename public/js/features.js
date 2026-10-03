@@ -1089,30 +1089,10 @@ export async function importProject(file) {
   const e = E;
   const res = await io.importProjectZip(file);
   if (!res.world) { e.toast("导入失败：" + res.warnings.join("；")); return false; }
-  // block.json 点名了、但包里没带的配置：问一句再联网取。
-  // 官方较新的导出（实测 0.3.31 的异界之岛）把实体表、界面树、资源表、手柄布局
-  // 只留成 CID，zip 里一个字节都没有——不取的话就是"导入成功、0 个实体"，
-  // 而这看起来完全像是我们解析不出来。联网必须用户点头，本项目默认不联网。
-  const have = {
-    entitiesTree: res.entities.length, environment: !!res.projectCfg.environment,
-    physics: !!res.projectCfg.physics, player: !!res.projectCfg.player,
-    zones: !!res.projectCfg.zones, info: !!res.projectCfg.displayName, assets: !!res.assets,
-  };
-  const miss = io.missingFromBlock(res.block, have);
-  if (miss.length) {
-    const go = confirm(`这个包只带了部分配置。\n\nblock.json 里还点名了 ${miss.length} 项没在包里：\n${miss.join("、")}\n\n要按内容地址（CID）从 static.dao3.fun 取回吗？\n不取的话这张图大概率没有实体、没有界面。`);
-    if (go) {
-      e.toast("正在按 CID 补齐配置…");
-      const { got, missed } = await io.completeFromBlock(res.block, have);
-      const { applied, deferred } = io.applyCompletion(res, got);
-      if (applied.length) res.warnings.push("已补齐：" + applied.join("、"));
-      // 取回来但没映射的东西也要说：不然过两天谁都不记得 uiTree 其实还没生效
-      if (deferred.length) res.warnings.push(`已取回但暂未映射：${deferred.join("、")}`);
-      if (missed.length) res.warnings.push("取回失败：" + missed.join("、"));
-    } else {
-      res.warnings.push(`包里缺 ${miss.length} 项配置且未取回：${miss.join("、")}`);
-    }
-  }
+  // block.json 点名了、但包里没带的配置：问一句再联网取。逻辑在 io.completeMissingFromBlock，
+  // 工作台那条导入路径共用同一段——以前两边各写一份，工作台那份干脆没问，
+  // 于是官方清单式导出永远是"导入成功、0 个实体"。
+  await io.completeMissingFromBlock(res, { onProgress: (k) => e.toast("正在取回 " + k + "…") });
   const prev = e.state.meta || {};
   const cfg = res.projectCfg || {};
   const meta = Object.assign(prev, {
