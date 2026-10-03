@@ -209,7 +209,9 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
   </div>
 </div>
 
-<input id="vxFile" type="file" accept=".voxa,.json,.glb,.gltf,.vox" hidden/>
+<!-- 只声明真能解析的格式：VOXA 这边有 GLB **导出**（toGLB），但没有 GLB 导入器，
+     以前 accept 里挂着 .glb/.gltf，选中文件后只会弹"文件解析失败"。 -->
+<input id="vxFile" type="file" accept=".voxa,.json,.vox" hidden/>
 <div id="vxToast"></div>
 <script type="module" src="/js/disclaimer.js"></script>
 <script type="module" src="/js/voxa/app.js"></script>

@@ -5,8 +5,8 @@ import { VoxaView } from "./view.js";
 import {
   newDoc, newPart, newBone, newAnim, addPart, clonePart, serialize, deserialize, stats,
   setVoxel, eraseVoxel, getVoxel, ensureColor, colorOf, removeUnusedColors, autoCrop, transformVoxels,
-  floodSelect, fillRange, eraseRange, linePoints, extrude, addBone, childBones, removeBone, bindPart,
-  groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, hexToRgb, rgbToHex, toGLB, importVox,
+  floodSelect, fillRange, eraseRange, linePoints, faceCells, ensureRoom, extrude, addBone, childBones, removeBone, bindPart,
+  groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, MAX_BOX, EASINGS, hexToRgb, rgbToHex, toGLB, importVox,
   parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc,
 } from "./model.js";
 
@@ -37,6 +37,8 @@ const TOOLS = {
 // 官方编辑工具栏是**左侧竖排纯图标**，且内容随模式变化（部件 6 个 / 体素 11 个 / 动画 3 个）。
 // 这里用内联 SVG 而不是位图切图：矢量在任意 DPR 下都不糊，也不必带一堆小 png。
 const VICO = {
+  build: '<path d="M12 3.6l7 4v8.8l-7 4-7-4V7.6l7-4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 3.6v4.2M12 20.4v-4.2M5 7.6l3.6 2.1M19 7.6l-3.6 2.1M5 16.4l3.6-2.1M19 16.4l-3.6-2.1" stroke="currentColor" stroke-width="1.2" opacity=".55"/><path d="M12 12.2l2.6 1.5-2.6 1.5-2.6-1.5 2.6-1.5z" fill="currentColor"/>',
+  erase: '<path d="M4 16.5L12.5 8l5.5 5.5L13.5 18H6l-2-1.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 20h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12.5 8l3-3 5.5 5.5-3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
   move: '<path d="M12 3v18M3 12h18M12 3l-2.6 2.6M12 3l2.6 2.6M12 21l-2.6-2.6M12 21l2.6-2.6M3 12l2.6-2.6M3 12l2.6 2.6M21 12l-2.6-2.6M21 12l-2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
   select: '<path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2.4"/><path d="M8 11l2.4 2.4L15 8.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   wand: '<path d="M5 19L16 8M14 4l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2zM19 12l.7 1.4 1.4.7-1.4.7-.7 1.4-.7-1.4-1.4-.7 1.4-.7.7-1.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
@@ -74,7 +76,17 @@ const svgIco = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true">${VICO[k] || 
 
 class VoxaApp {
   constructor() {
-    this.doc = this.loadLocal() || newDoc();
+    // 社区作品页的「在 VOXA 里打开」把模型 JSON 暂存到 sessionStorage 再跳过来。
+    // 这条交接以前只有写、没有读：跳过来看到的还是自己上一份作品，
+    // 用户以为"打不开别人的模型"。读一次就立刻清掉，免得刷新时又盖回来。
+    const handoff = sessionStorage.getItem("ly_voxa_import");
+    if (handoff) {
+      sessionStorage.removeItem("ly_voxa_import");
+      try { this.doc = deserialize(JSON.parse(handoff)); }
+      catch { this.doc = this.loadLocal() || newDoc(); this.toast("社区模型读不进来，已打开本地作品"); }
+    } else {
+      this.doc = this.loadLocal() || newDoc();
+    }
     this.doc.parts.forEach((p) => bindDoc(p, this.doc));
     if (!this.doc.parts.length) this.seedStarterPart();
     this.view = new VoxaView($("vxCanvas"), this.doc);
@@ -86,6 +98,7 @@ class VoxaApp {
     this.activeBone = this.doc.bones[0] || null;
     this.color = this.doc.palette[0];
     this.selection = [];
+    this.picked = new Set();   // Cmd/Ctrl 挑中的部件，编组用
     this.frame = 0;
     this.playing = 0;
     this.speed = 1;
@@ -160,23 +173,46 @@ class VoxaApp {
     };
     $("vxSave").onclick = () => this.save();
     $("vxPublish").onclick = () => this.publish();
-    $("vxAddPart").onclick = () => { this.snapshot("新建部件"); addPart(this.doc, newPart("Object" + (this.doc.parts.length + 1), [8, 8, 8])); this.activePart = this.doc.parts[this.doc.parts.length - 1]; this.view.rebuild(); this.renderAll(); };
-    $("vxDupPart").onclick = () => { if (!this.activePart) return; this.snapshot("复制部件"); const c = clonePart(this.doc, this.activePart); this.activePart = c; this.view.rebuild(); this.renderAll(); };
+    $("vxAddPart").onclick = () => {
+      if (this.doc.parts.length >= MAX_PARTS) return this.tip(`部件已到 ${MAX_PARTS} 个上限，先删掉一些`);
+      this.snapshot("新建部件");
+      addPart(this.doc, newPart("Object" + (this.doc.parts.length + 1), [8, 8, 8]));
+      this.activePart = this.doc.parts[this.doc.parts.length - 1];
+      this.view.rebuild(); this.renderAll();
+    };
+    $("vxDupPart").onclick = () => {
+      if (!this.activePart) return;
+      if (this.doc.parts.length >= MAX_PARTS) return this.tip(`部件已到 ${MAX_PARTS} 个上限，先删掉一些`);
+      this.snapshot("复制部件");
+      const c = clonePart(this.doc, this.activePart);
+      // 副本原来与原件 pos 完全相同：叠在一起，看不见、也选不中，只得多出一个同名部件
+      c.pos = [c.pos[0] + c.size[0], c.pos[1], c.pos[2]];
+      this.activePart = c;
+      this.view.rebuild(); this.renderAll(); this.syncSizeBoxes();
+    };
     $("vxGroup").onclick = () => {
-      if (!this.selection.length || !this.activePart) return this.tip("先框选要编组的部件");
+      const picked = [...this.picked];
+      if (picked.length < 2) return this.tip("先按住 ⌘/Ctrl 点选两个以上部件再编组");
       this.snapshot("编组");
-      groupParts(this.doc, [this.activePart], "Group" + ((this.doc.groups || []).length + 1));
-      this.tip("已编组，可整体绑定到骨骼节点");
+      groupParts(this.doc, picked, "Group" + ((this.doc.groups || []).length + 1));
+      this.picked.clear();
+      this.tip(`已把 ${picked.length} 个部件编为一组`);
+      this.renderParts();
     };
     $("vxAddBone").onclick = () => { this.snapshot("新建骨骼"); const b = addBone(this.doc, "Bone", this.activeBone); this.activeBone = b; this.view.buildBones(); this.renderAll(); };
     $("vxSkinTemplate").onclick = () => this.loadSkinTemplate();
-    $("vxAddColor").onclick = () => { this.doc.palette.push({ i: "c" + Date.now().toString(36), hex: "#88aaff", emissive: 0 }); this.renderPalette(); };
+    $("vxAddColor").onclick = () => { this.snapshot("增加颜色"); this.doc.palette.push({ i: "c" + Date.now().toString(36), hex: "#88aaff", emissive: 0 }); this.renderPalette(); };
     $("vxCleanColors").onclick = () => { this.snapshot("清除未用颜色"); removeUnusedColors(this.doc); this.renderPalette(); this.view.rebuild(); };
     $("phMode").onchange = () => { this.doc.physics.mode = $("phMode").value; refreshPhysics(this.doc); this.renderPhysics(); };
     $("phPos").onchange = () => { this.doc.physics.center = parseVec($("phPos").value, this.doc.physics.center); this.dirty(); };
     $("phSize").onchange = () => { this.doc.physics.size = parseVec($("phSize").value, this.doc.physics.size); this.dirty(); };
-    $("vxAnimNew").onclick = () => { this.doc.anims.push(newAnim("anim" + (this.doc.anims.length + 1))); this.doc.curAnim = this.doc.anims.length - 1; this.renderTimeline(); this.dirty(); };
-    $("vxAnimDel").onclick = () => { if (this.doc.anims.length <= 1) return; this.doc.anims.splice(this.doc.curAnim, 1); this.doc.curAnim = 0; this.renderTimeline(); this.dirty(); };
+    $("vxAnimNew").onclick = () => { this.snapshot("新建动画"); this.doc.anims.push(newAnim("anim" + (this.doc.anims.length + 1))); this.doc.curAnim = this.doc.anims.length - 1; this.renderTimeline(); this.dirty(); };
+    $("vxAnimDel").onclick = () => {
+      if (this.doc.anims.length <= 1) return;
+      if (!confirm(`删除动画「${curAnim(this.doc).name}」？它的全部关键帧都会没了。`)) return;
+      this.snapshot("删除动画");
+      this.doc.anims.splice(this.doc.curAnim, 1); this.doc.curAnim = 0; this.renderTimeline(); this.dirty();
+    };
     $("vxPlay").onclick = () => { this.playing = 1; };
     $("vxPlayRev").onclick = () => { this.playing = -1; };
     $("vxToStart").onclick = () => { this.playing = 0; this.setFrame(0); };
@@ -186,13 +222,19 @@ class VoxaApp {
     $("vxScrub").oninput = () => { this.setFrame(Number($("vxScrub").value)); };
     this.wireChrome();
     window.addEventListener("keydown", (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      // 部件/骨骼/动画改名走的是 contentEditable 的 <span>，它不是 INPUT。
+      // 只挡 INPUT/TEXTAREA/SELECT 的话，给部件起名打到 "b" 就顺手把工具切成了点建造，
+      // 打个 "s" 变框选，按 Delete 还会把选区删掉——名字改一半，模型也坏一半。
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); e.shiftKey ? this.redo() : this.undo(); return; }
       if ((e.ctrlKey || e.metaKey) && k === "s") { e.preventDefault(); this.save(); return; }
-      const map = { b: "build", e: "erase", l: "line", f: "face", g: "paint", k: "bucket", w: "wand", s: "select", x: "extrude", m: "move", r: "rot" };
+      if ((e.ctrlKey || e.metaKey) && k === "d") { e.preventDefault(); $("vxDupPart").click(); return; }
+      const map = { b: "build", e: "erase", l: "line", f: "face", g: "paint", k: "bucket", w: "wand", s: "select", x: "extrude", m: "move", r: "rot", t: "scale", i: "eyedropper" };
       if (map[k] && !e.ctrlKey && !e.metaKey) { this.setTool(map[k]); }
       if (k === "delete" && this.selection.length) this.applySelectionOp("erase");
+      if (k === "escape") { if (this.inPart) this.setInPart(false); else if (this.selection.length) { this.selection = []; this.view.showSelection([]); } }
     });
     window.addEventListener("resize", () => this.view.resize());
   }
@@ -217,9 +259,11 @@ class VoxaApp {
     for (const [id, i] of [["boxX", 0], ["boxY", 1], ["boxZ", 2]]) {
       $(id).onchange = () => {
         const p = this.activePart; if (!p) return;
+        const want = Math.round(Number($(id).value) || 1);
+        if (want > MAX_BOX) { this.tip(`部件框单边最多 ${MAX_BOX}`); this.syncSizeBoxes(); return; }
         this.snapshot("部件框大小");
-        p.size[i] = Math.max(1, Math.min(128, Math.round(Number($(id).value) || 1)));
-        this.view.rebuildBoxes(); this.syncSizeBoxes(); this.renderProps();
+        p.size[i] = Math.max(1, want);
+        this.view.rebuild(); this.syncSizeBoxes(); this.renderProps(); this.renderStat();
       };
     }
     $("vxCrop").onclick = () => {
@@ -308,9 +352,22 @@ class VoxaApp {
       knob.style.left = (x * 100) + "%"; knob.style.top = (y * 100) + "%";
       this.applyColorEdit();
     };
-    cv.addEventListener("pointerdown", (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); at(e); });
+    cv.addEventListener("pointerdown", (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); this.snapshot("改色"); at(e); });
     cv.addEventListener("pointermove", (e) => { if (e.buttons === 1) at(e); });
-    $("vxHue").oninput = () => { paint(Number($("vxHue").value)); this.syncColorFields(); };
+    $("vxHue").addEventListener("pointerdown", () => { this.snapshot("改色"); }, true);
+    $("vxHue").oninput = () => {
+      const hue = Number($("vxHue").value);
+      paint(hue);
+      // 以前这条只重画了色相条自己的渐变，顺手 syncColorFields() 又把滑块拽回
+      // 当前颜色的色相上——于是色相条根本改不了颜色，拖着它只是在原地抖动。
+      const c = this.color;
+      if (c) {
+        const [R, G, B] = hexTo255(c.hex);
+        const [s, y] = rgbToSv(R, G, B);
+        c.hex = rgb255ToHex(...hsvToRgb(hue / 360, s, 1 - y));
+        this.applyColorEdit();
+      } else this.syncColorFields();
+    };
     for (const id of ["cHex", "cR", "cG", "cB"]) {
       $(id).onchange = () => {
         const c = this.color; if (!c) return;
@@ -324,12 +381,16 @@ class VoxaApp {
         this.applyColorEdit();
       };
     }
+    // 发光滑块：以前每滑一格都"先改值、后拍快照"，一次拖动烧掉几十上百个撤销位，
+    // 而且拍的是改完的状态，按一次 Ctrl+Z 撤回来的还是刚设的值——等于没有撤销。
+    // 现在按下时拍一次，拖动过程中只改值。
+    $("vxGlow").addEventListener("pointerdown", () => { this.snapshot("发光"); }, true);
+    $("vxGlow").addEventListener("keydown", () => { this.snapshot("发光"); }, true);
     $("vxGlow").oninput = (e) => {
       const c = this.color; if (!c) return;
       c.emissive = Number(e.target.value) / 100;
       $("vxGlowVal").textContent = Math.round(c.emissive * 100) + "%";
       this.view.rebuildPart && this.view.rebuildPart(this.activePart);
-      this.snapshot("发光");
       this.renderPalette(true);
     };
     this._paintHsv = paint;
@@ -438,6 +499,23 @@ class VoxaApp {
     if (!p) return;
     $("boxX").value = p.size[0]; $("boxY").value = p.size[1]; $("boxZ").value = p.size[2];
   }
+  /** 拖动中只改数值，不重建面板；正在输入的那个框不碰，免得把玩家打到一半的字吞掉 */
+  syncPropVecs() {
+    if (!this._vecSrc) return;
+    for (const inp of document.querySelectorAll("#vxProps .vx-vec[data-vec]")) {
+      if (inp === document.activeElement) continue;
+      const arr = this._vecSrc[inp.dataset.vec];
+      if (arr) inp.value = arr().map((v) => +v.toFixed(2)).join(", ");
+    }
+  }
+  syncPhysicsFields() {
+    if (!this._phFields) return;
+    for (const inp of document.querySelectorAll("#vxProps input[data-ph]")) {
+      if (inp === document.activeElement) continue;
+      const arr = this._phFields[inp.dataset.ph];
+      if (arr) inp.value = +arr()[Number(inp.dataset.i) ?? 0].toFixed(2);
+    }
+  }
 
   /* ---------------- 编辑工具栏（左侧竖排图标） ---------------- */
   // 官方三套竖栏内容不同：部件层 6 个、体素层 11 个、动画层 3 个，
@@ -446,7 +524,11 @@ class VoxaApp {
     ["move", "move"], ["rot", "rot"], ["scale", "scale"], ["-", "-"],
     ["partNew", "newPart"], ["partDup", "dupPart"], ["bone", "addBone"], ["enter", "enterPart"],
   ];
+  // 点建造 / 点删除是体素编辑最常用的两个工具，却只挂在 B 与 E 键上没有按钮：
+  // 而默认工具恰好就是 build，于是第一次进体素层时左栏一个都不高亮，
+  // 看起来就像"没有选中的工具，那左键该干什么？"
   static RAIL_VOXEL = [
+    ["build", "build"], ["erase", "erase"], ["-", "-"],
     ["move", "move"], ["select", "select"], ["wand", "wand"], ["line", "line"], ["lineDel", "lineDel"],
     ["face", "face"], ["faceDel", "faceDel"], ["extrude", "extrude"], ["bucket", "bucket"],
     ["paint", "paint"], ["eyedropper", "eyedropper"],
@@ -493,23 +575,37 @@ class VoxaApp {
   }
   setTool(id) { this.tool = id; this.buildTools(); this.tip(TOOLS[id] ? TOOLS[id].hint : id); }
   setEdges(on) {
-    this._edges = !!on;
+    // 状态记在 view 上：rebuildPart 每次都会新建材质，只往旧节点上写一遍是留不住的
+    this.view._edges = !!on;
     for (const n of this.view.partNodes.values()) {
       if (!n.mesh) continue;
-      n.mesh.material.wireframe = this._edges;
-      if (n.emissive) n.emissive.material.wireframe = this._edges;
+      n.mesh.material.wireframe = this.view._edges;
+      if (n.emissive) n.emissive.material.wireframe = this.view._edges;
     }
   }
-  toggleEdges() { this.setEdges(!this._edges); }
+  toggleEdges() { this.setEdges(!this.view._edges); }
   /** 底栏的发光开关：隐藏 emissive 层即可实时看到关掉自发光的效果 */
   setGlow(on) {
-    for (const n of this.view.partNodes.values()) if (n.emissive) n.emissive.visible = !!on;
+    this.view._glowOn = !!on;
+    for (const n of this.view.partNodes.values()) if (n.emissive) n.emissive.visible = this.view._glowOn;
   }
 
   /* ---------------- 指针交互 ---------------- */
   onDown(e) {
     if (e.button !== 0) return;
-    if (this.mode === "physics") return;
+    if (this.mode === "physics") {
+      // 物理模式下左栏给的是移动/缩放两个图标，以前 onDown 第一行就 return，
+      // 于是那两颗按钮点了什么也不发生。碰撞盒的 center/size 本来就在右侧面板里，
+      // 这里让拖动直接改它们。
+      const ph = refreshPhysics(this.doc);
+      if (this.tool !== "scale") {
+        this.drag = { kind: "phbox", x: e.clientX, y: e.clientY, c: ph.center.slice() };
+      } else {
+        this.drag = { kind: "phboxScale", x: e.clientX, y: e.clientY, s: ph.size.slice() };
+      }
+      this.snapshot("碰撞盒");
+      return;
+    }
     const hit = this.view.pickVoxel(e);
     const bone = this.mode === "anim" ? this.view.pickBone(e) : null;
     if (bone) { this.activeBone = bone; this.drag = { kind: "bone", bone, x: e.clientX, y: e.clientY }; this.renderBones(); this.renderProps(); return; }
@@ -537,6 +633,19 @@ class VoxaApp {
       return;
     }
     const d = this.drag;
+    if (d.kind === "phbox" || d.kind === "phboxScale") {
+      const ph = this.doc.physics;
+      const dx = (e.clientX - d.x) * 0.06, dy = (e.clientY - d.y) * 0.06;
+      if (d.kind === "phbox") {
+        ph.center = [+(d.c[0] + dx).toFixed(2), +(d.c[1] - dy).toFixed(2), d.c[2]];
+      } else {
+        ph.size = [Math.max(0.05, +(d.s[0] + dx).toFixed(2)), Math.max(0.05, +(d.s[1] + dy).toFixed(2)), d.s[2]];
+      }
+      ph.mode = "custom";
+      refreshPhysics(this.doc);
+      this.renderPhysics(); this.syncPhysicsFields(); this.view.rebuild();
+      return;
+    }
     if (d.kind === "bone") {
       const dx = (e.clientX - d.x) * 0.06, dy = (e.clientY - d.y) * 0.06;
       d.bone.position[0] = +(d.bone.position[0] + dx).toFixed(2);
@@ -557,20 +666,20 @@ class VoxaApp {
       d.part.pos = [+(d.pos[0] + dx).toFixed(2), +(d.pos[1] - dy).toFixed(2), d.pos[2]];
       this.view.applyPartTransform(d.part);
       this.view.rebuildBoxes();
-      this.renderProps();
+      this.syncPropVecs();
       return;
     }
     if (d.kind === "rot") {
       d.part.rot = [d.rot[0], +(d.rot[1] + (e.clientX - d.x) * 0.6).toFixed(1), d.rot[2]];
       this.view.applyPartTransform(d.part);
-      this.renderProps();
+      this.syncPropVecs();
       return;
     }
     if (d.kind === "scale") {
       const s = clamp(d.scale[0] * (1 + (e.clientX - d.x) * 0.004), 0.05, 20);
       d.part.scale = [s, s, s];
       this.view.applyPartTransform(d.part);
-      this.renderProps();
+      this.syncPropVecs();
       return;
     }
     if (d.kind === "voxel" && this.activePart) {
@@ -578,7 +687,7 @@ class VoxaApp {
       if (!hit) return;
       d.end = hit.cell.slice();
       if (["line", "lineDel", "face", "faceDel"].includes(this.tool)) {
-        const cells = this.tool.startsWith("line") ? linePoints(d.start, d.end) : rangeCells(d.start, d.end);
+        const cells = this.tool.startsWith("line") ? linePoints(d.start, d.end) : faceCells(d.start, d.end);
         this.view.showSelection(cells);
       }
     }
@@ -592,36 +701,57 @@ class VoxaApp {
         const cells = linePoints(d.start, d.end);
         for (const c of cells) this.placeOrErase(c, this.tool === "line");
       } else if (this.tool === "face" || this.tool === "faceDel") {
-        const cells = rangeCells(d.start, d.end);
+        const cells = faceCells(d.start, d.end);
         for (const c of cells) this.placeOrErase(c, this.tool === "face");
       }
       this.view.rebuildPart(this.activePart);
       this.renderStat();
+      this.syncSizeBoxes();
     }
     if (d.kind === "select") this.renderProps();
     if (["move", "rot", "scale"].includes(d.kind)) { this.snapshot(d.kind); this.dirty(); }
     this.view.showSelection(this.selection);
   }
   applyVoxelTool(hit) {
-    const p = this.activePart || hit.part;
+    // 落在谁身上就写进谁。以前写死 this.activePart，而坐标是从 hit.part 表面采的：
+    // 两个部件叠着放时，体素会进到 activePart 的局部空间里那个坐标，
+    // 也就是"点 A 的屋顶，方块长进了 B 的墙里"。
+    const p = hit.part || this.activePart;
     this.activePart = p;
+    const put = (cell) => {
+      if (!ensureRoom(p, cell[0], cell[1], cell[2])) {
+        this.tip("部件框已经到 128 上限，放不下了");
+        return false;
+      }
+      return setVoxel(this.doc, p, cell[0], cell[1], cell[2], this.color.hex, this.color.emissive);
+    };
     switch (this.tool) {
-      case "build": setVoxel(this.doc, p, hit.adjacent[0], hit.adjacent[1], hit.adjacent[2], this.color.hex, this.color.emissive); break;
+      case "build": put(hit.adjacent); break;
       case "erase": eraseVoxel(p, hit.cell[0], hit.cell[1], hit.cell[2]); break;
       case "paint": { const v = getVoxel(p, ...hit.cell); if (v) { v.c = ensureColor(this.doc, this.color.hex, this.color.emissive); } break; }
       case "bucket": { const cells = floodSelect(p, hit.cell, true); for (const c of cells) { const v = getVoxel(p, ...c); if (v) v.c = ensureColor(this.doc, this.color.hex, this.color.emissive); } break; }
-      case "wand": this.selection = floodSelect(p, hit.cell, true); this.view.showSelection(this.selection); this.tip(`魔棒选中 ${this.selection.length} 个体素`); return;
+      case "wand": this.selection = floodSelect(p, hit.cell, true); this.view.showSelection(this.selection); this.tip(`魔棒选中 ${this.selection.length} 个体素`); this.renderVoxOps(); return;
       case "eyedropper": { const v = getVoxel(p, ...hit.cell); if (v) { this.color = colorOf(this.doc, v.c); this.renderPalette(); this.tip("已取色 " + this.color.hex); } return; }
-      case "extrude": { const h = this._extrudeH || 1; extrude(this.doc, p, [hit.cell], dominantAxis(hit.normal), h); this.view.rebuildPart(p); this.tip(`挤出 ${h} 格`); break; }
+      // 提示语写的是"把选区沿轴挤出"，实现却只传了点击的那一格。
+      // 框选一片再挤是建模里最常用的一步，这里按提示语来。
+      case "extrude": {
+        const h = this._extrudeH || 1;
+        const cells = this.selection.length ? this.selection : [hit.cell];
+        extrude(this.doc, p, cells, dominantAxis(hit.normal), h);
+        this.view.rebuildPart(p);
+        this.tip(`挤出 ${cells.length} 格 × ${h}`);
+        break;
+      }
       default: return;
     }
     this.view.rebuildPart(p);
     this.renderStat();
+    this.syncSizeBoxes();
   }
   placeOrErase(cell, place) {
     const p = this.activePart;
     if (!p) return;
-    if (place) setVoxel(this.doc, p, cell[0], cell[1], cell[2], this.color.hex, this.color.emissive);
+    if (place) { if (!ensureRoom(p, cell[0], cell[1], cell[2])) return; setVoxel(this.doc, p, cell[0], cell[1], cell[2], this.color.hex, this.color.emissive); }
     else eraseVoxel(p, cell[0], cell[1], cell[2]);
   }
   applySelectionOp(kind) {
@@ -651,24 +781,46 @@ class VoxaApp {
     host.innerHTML = "";
     for (const p of this.doc.parts) {
       const row = document.createElement("div");
-      row.className = "vx-item" + (p === this.activePart ? " active" : "");
+      row.className = "vx-item" + (p === this.activePart ? " active" : "") + (this.picked.has(p) ? " picked" : "");
       const bone = this.doc.bones.find((b) => b.id === p.bone);
+      // 编组结果以前只写进 doc.groups、界面上没有任何地方读它，所以"编组成功"之后
+      // 用户看不出发生了什么。把组名回显到行上，这一步才算看得见。
+      const grp = p.group && (this.doc.groups || []).find((g) => g.id === p.group);
       row.innerHTML = `<span class="vi-eye">${p.visible === false ? "▫" : "◼"}</span>
         <span class="vi-name">${esc(p.name)}</span>
-        <span class="vi-meta">${p.voxels.length} · ${bone ? bone.name : "未绑定"}</span>
+        <span class="vi-meta">${p.voxels.length} · ${bone ? bone.name : "未绑定"}${grp ? " · " + esc(grp.name) : ""}</span>
         <button class="vi-del">✕</button>`;
       row.onclick = (e) => {
         if (e.target.classList.contains("vi-eye")) { this.snapshot("可见性"); p.visible = p.visible === false; this.view.rebuildPart(p); this.renderParts(); return; }
-        if (e.target.classList.contains("vi-del")) { this.snapshot("删除部件"); this.doc.parts = this.doc.parts.filter((x) => x !== p); this.activePart = this.doc.parts[0] || null; this.view.rebuild(); this.renderAll(); return; }
+        if (e.target.classList.contains("vi-del")) {
+          if (!confirm(`删除部件「${p.name}」？它身上的 ${p.voxels.length} 个体素会一起没。`)) return;
+          this.snapshot("删除部件");
+          this.picked.delete(p);
+          this.doc.parts = this.doc.parts.filter((x) => x !== p);
+          this.activePart = this.doc.parts[0] || null;
+          this.view.rebuild(); this.renderAll();
+          return;
+        }
+        // Cmd/Ctrl 点选是把多个部件挑进"待编组"集合的唯一入口——
+        // 编组按钮以前只看 this.selection（那是体素选区），所以永远只能组一个部件。
+        if (e.metaKey || e.ctrlKey) {
+          this.picked.has(p) ? this.picked.delete(p) : this.picked.add(p);
+          this.renderParts();
+          this.tip(this.picked.size ? `已挑 ${this.picked.size} 个部件` : "");
+          return;
+        }
         this.activePart = p;
+        this.picked.clear();
         this.view.setActivePart(p);
         this.renderParts(); this.renderProps();
       };
       row.ondblclick = () => {
         const inp = row.querySelector(".vi-name");
+        // 撤销要拍在改名**之前**：先改再拍，按一次 Ctrl+Z 撤回来的已经是改完的名字了
+        this.snapshot("重命名");
         inp.contentEditable = "true";
         inp.focus();
-        inp.onblur = () => { p.name = inp.textContent.trim() || p.name; inp.contentEditable = "false"; this.snapshot("重命名"); this.renderParts(); };
+        inp.onblur = () => { p.name = inp.textContent.trim() || p.name; inp.contentEditable = "false"; this.renderParts(); };
       };
       host.appendChild(row);
     }
@@ -716,7 +868,16 @@ class VoxaApp {
         e.preventDefault();
         const inp = document.createElement("input");
         inp.type = "color"; inp.value = c.hex;
-        inp.oninput = () => { c.hex = inp.value; el.style.background = c.hex; this.view.rebuild(); this.syncColorFields(); };
+        // 系统取色器每动一下都触发 input。以前既不拍快照、又整场景 rebuild，
+        // 于是一次改色既撤不回来、又要重算所有部件；这里改成"进面板拍一次 + 只重绘用到的部件"
+        let touched = false;
+        inp.oninput = () => {
+          if (!touched) { this.snapshot("改色"); touched = true; }
+          c.hex = inp.value;
+          el.style.background = c.hex;
+          this.view.rebuild();
+          if (this.color === c) this.syncColorFields();
+        };
         inp.click();
       };
       host.appendChild(el);
@@ -726,9 +887,14 @@ class VoxaApp {
   renderProps() {
     const host = $("vxProps");
     host.innerHTML = "";
+    // 两个"就地刷新数值"的钩子都指向本回合建出来的输入框，
+    // 面板一重建就必须作废，否则 sync* 会往已经脱离文档的节点上写字
+    this._phFields = null;
+    this._vecSrc = null;
     // 官方物理界面的右侧只有「参数」：位置 + 尺寸两行，各自 X/Y/Z
     if (this.mode === "physics") {
       const ph = this.doc.physics;
+      this._phFields = { center: () => ph.center, size: () => ph.size };
       const row = (label, arr, key) => {
         const r = document.createElement("div");
         r.className = "vx-axisrow";
@@ -737,6 +903,9 @@ class VoxaApp {
           const inp = document.createElement("input");
           inp.type = "number"; inp.step = "0.1"; inp.value = +(arr[i] ?? 0).toFixed(2);
           inp.title = `${key} ${ax}`;
+          inp.dataset.ph = key; inp.dataset.i = i;
+          // 数字框改碰撞盒以前完全进不了撤销栈——手滑打错一个数就只能自己再打回去
+          inp.onfocus = () => this.snapshot("碰撞盒");
           inp.onchange = () => {
             const next = arr.slice(); next[i] = Number(inp.value) || 0;
             if (key === "center") ph.center = next; else ph.size = next.map((v) => Math.max(0.05, v));
@@ -769,12 +938,19 @@ class VoxaApp {
       return;
     }
     const p = this.activePart;
-    if (!p) { host.innerHTML = '<div class="vx-empty">未选中部件</div>'; return; }
+    if (!p) { host.innerHTML = '<div class="vx-empty">未选中部件</div>'; this._vecSrc = null; return; }
+    // 拖动部件时只想把三个数字刷一下，不想把整块面板拆了重建：
+    // 以前 pointermove 每次都调 renderProps()，等于 60fps 拆 DOM，
+    // 而且玩家正在输入的那个数字框会被半路销毁。
+    this._vecSrc = { pos: () => p.pos, rot: () => p.rot, scale: () => p.scale, size: () => p.size };
     host.appendChild(section("部件 " + p.name, [
-      vecRow("位置", p.pos, (v) => { p.pos = v; this.view.applyPartTransform(p); this.view.rebuildBoxes(); }),
-      vecRow("旋转", p.rot, (v) => { p.rot = v; this.view.applyPartTransform(p); }),
-      vecRow("缩放", p.scale, (v) => { p.scale = v; this.view.applyPartTransform(p); }),
-      vecRow("部件框", p.size, (v) => { p.size = v.map((x) => Math.max(1, Math.round(x))); this.view.rebuildBoxes(); }),
+      vecRow("位置", p.pos, (v) => { p.pos = v; this.view.applyPartTransform(p); this.view.rebuildBoxes(); }, "pos"),
+      vecRow("旋转", p.rot, (v) => { p.rot = v; this.view.applyPartTransform(p); }, "rot"),
+      vecRow("缩放", p.scale, (v) => { p.scale = v; this.view.applyPartTransform(p); }, "scale"),
+      vecRow("部件框", p.size, (v) => {
+        p.size = v.map((x) => clamp(Math.round(x) || 1, 1, MAX_BOX));
+        this.view.rebuildBoxes(); this.syncSizeBoxes(); this.renderStat();
+      }, "size"),
       selectRow("绑定骨骼", ["", ...this.doc.bones.map((b) => b.id)], ["未绑定", ...this.doc.bones.map((b) => b.name)], p.bone || "", (val) => {
         this.snapshot("绑定");
         bindPart(this.doc, p, val || null);
@@ -783,8 +959,14 @@ class VoxaApp {
       }),
     ]));
     host.appendChild(btnRow([
-      ["自动裁剪", () => { this.snapshot("裁剪"); autoCrop(p); this.view.rebuild(); this.renderProps(); }],
-      ["清空部件", () => { this.snapshot("清空"); p.voxels = []; invalidateIndex(p); this.view.rebuildPart(p); this.renderStat(); }],
+      ["自动裁剪", () => { this.snapshot("裁剪"); autoCrop(p); this.view.rebuild(); this.renderProps(); this.syncSizeBoxes(); }],
+      ["清空部件", () => {
+        if (!p.voxels.length) return this.tip("这个部件本来就是空的");
+        if (!confirm(`清空部件「${p.name}」？${p.voxels.length} 个体素会被抹掉。`)) return;
+        this.snapshot("清空");
+        p.voxels = []; invalidateIndex(p);
+        this.view.rebuildPart(p); this.renderStat();
+      }],
     ]));
   }
   renderVoxOps() {
@@ -801,9 +983,12 @@ class VoxaApp {
   voxOp(fn) {
     if (!this.activePart) return this.tip("请先选中部件");
     this.snapshot("体素变换");
-    fn(this.activePart);
+    // 变换函数返回 false 表示"这一步装不下"（比如镜像要把框长到 128 以上）。
+    // 以前返回值没人看，于是顶栏按下去既不变、也不说为什么。
+    if (fn(this.activePart) === false) { this.undo(); return this.tip("这一步会超出 128 的部件框上限"); }
     this.view.rebuild();
     this.renderStat();
+    this.syncSizeBoxes();
   }
   renderPhysics() {
     const ph = this.doc.physics;
@@ -1145,16 +1330,31 @@ class VoxaApp {
     } catch { this.toast("已存到本地"); }
     this.renderAll();
   }
+  /** 整份换掉当前作品。以前 openFile 直接 this.doc = ...，既不拍快照也不问一句，
+      于是"打开一个文件"会把没保存的作品原地抹掉，连撤销都撤不回来。 */
+  loadDoc(doc, label) {
+    this.snapshot(label);
+    this.doc = doc;
+    this.doc.parts.forEach((p) => bindDoc(p, this.doc));
+    this.activePart = this.doc.parts[0] || null;
+    this.activeBone = this.doc.bones[0] || null;
+    this.color = this.doc.palette[0] || this.color;
+    this.picked.clear();
+    this.selection = [];
+    this.view.setDoc(this.doc);
+    $("vxName").value = this.doc.name;
+    this.renderAll();
+    this.applyDocType();
+    this.view.focus();
+  }
   async openFile(f) {
     const text = await f.text();
     try {
-      this.doc = deserialize(JSON.parse(text));
-      this.activePart = this.doc.parts[0] || null;
-      this.view.setDoc(this.doc);
-      $("vxName").value = this.doc.name;
-      this.renderAll();
-      this.view.focus();
-      this.toast("已打开 " + f.name);
+      const next = deserialize(JSON.parse(text));
+      // 换文档先拍快照，所以"手滑打开了别的文件"是一次 Ctrl+Z 就能撤回去的事，
+      // 不需要再拿一个确认框拦所有人。
+      this.loadDoc(next, "打开文件");
+      this.toast(`已打开 ${f.name} · 按 Ctrl+Z 可退回上一份`);
     } catch (e) { this.toast("文件解析失败：" + e.message); }
   }
   async importVoxFile(f) {
@@ -1193,7 +1393,9 @@ class VoxaApp {
       const r = await fetch(`/api/world/${worldId}/asset?path=${encodeURIComponent("models/" + base)}.glb`, { method: "POST", body: buf });
       if (!r.ok) throw new Error("HTTP " + r.status);
       await fetch(`/api/world/${worldId}/asset?path=${encodeURIComponent("models/" + base)}.voxa.json`, { method: "POST", body: JSON.stringify(serialize(this.doc)) });
-      this.toast(`已导出到世界素材库：mesh/${base}.vb`);
+      // 提示语以前说"已导出 mesh/xxx.vb"，但这里实际上传的是 .glb + .voxa.json，
+      // 玩家按那句话去素材列表找 .vb 是找不到的
+      this.toast(`已进世界素材库：models/${base}.glb`);
     } catch (e) { this.toast("导出失败：" + e.message); }
   }
   tip(msg) { const el = $("vxTip"); el.textContent = msg; el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1400); }
@@ -1235,12 +1437,13 @@ function section(title, rows) {
   for (const r of rows) d.appendChild(r);
   return d;
 }
-function vecRow(label, value, set) {
+function vecRow(label, value, set, key) {
   const row = document.createElement("div");
   row.className = "vx-row";
   row.innerHTML = `<label>${label}</label>`;
   const inp = document.createElement("input");
   inp.className = "vx-vec";
+  if (key) inp.dataset.vec = key;
   inp.value = value.map((v) => +v.toFixed(2)).join(", ");
   inp.onchange = () => set(parseVec(inp.value, value));
   row.appendChild(inp);
@@ -1306,7 +1509,10 @@ function rgbHue(r, g, b) {
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
   if (!d) return 0;
   const h = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return Math.round(h / 6) % 60;
+  // h 到这里是 0..6 段号，色相条的量程是 0..360（voxa.html 的 max="360"）。
+  // 以前写成 Math.round(h / 6) % 60：既把段号又除了一次 6，又对 60 取模，
+  // 于是滑块永远停在 0~1 附近，色相条上六分之五的颜色点不到。
+  return Math.round(h * 60) % 360;
 }
 /** 反解取色块上的圆点位置：x = 饱和度，y = 1 − 明度 */
 function rgbToSv(r, g, b) {

@@ -6,6 +6,8 @@ import { readVox } from "../world.js";
 
 export const VOXA_VERSION = 1;
 export const MAX_PARTS = 128;
+// 单个部件框的边长上限。镜像增补与自动扩框都要撞这条线，写在一处才不会再各 clamp 各的。
+export const MAX_BOX = 128;
 export const ANIM_FPS = 24; // editor/animation/animationPanel.md：默认速率 24 帧/秒（不可更改）
 export const EASINGS = ["normal", "step", "in", "out", "inout"]; // 正常/打断/缓入/缓出/缓入缓出
 // 换肤模板的 18 个可绑定骨骼节点（editor/skinningMode.md）
@@ -154,24 +156,39 @@ export function autoCrop(part) {
   part.pos = [part.pos[0] + off[0], part.pos[1] + off[1], part.pos[2] + off[2]];
   invalidateIndex(part);
 }
-// 体素级几何变换：mirror / flip / rotate 90°（axis: 0=X 1=Y 2=Z）
+// 体素级几何变换：mirror（镜像增补）/ flip（原地翻面）/ rotate 90°（axis: 0=X 1=Y 2=Z）
+// 官方顶栏那三颗按钮里，"镜像"是**镜像增加体素**（editor/voxels/globalToolbar.md:7）：
+// 保留原样，在轴的另一侧再补一份对称的，框随之长大——这才是做对称角色要的东西。
+// 以前 mirror 与 flip 的函数体逐字相同，于是顶栏给了用户两个一样的按钮，
+// 而且"镜像"会把原件删掉，做一半的角色一按就没了。
 export function transformVoxels(part, kind, axis) {
   const [X, Y, Z] = part.size;
+  const a = "xyz"[axis];
+  const flipOne = (v) => {
+    const o = { ...v };
+    if (axis === 0) o.x = X - 1 - v.x; else if (axis === 1) o.y = Y - 1 - v.y; else o.z = Z - 1 - v.z;
+    return o;
+  };
+  if (kind === "mirror") {
+    const grown = [X, Y, Z];
+    if (grown[axis] * 2 > MAX_BOX) return false;
+    grown[axis] *= 2;
+    const moved = part.voxels.map((v) => ({ ...v }));
+    const mirrored = part.voxels.map((v) => { const o = flipOne(v); o[a] += grown[axis] / 2; return o; });
+    part.voxels = moved.concat(mirrored);
+    part.size = grown;
+    invalidateIndex(part);
+    return true;
+  }
   const out = [];
   let nsize = [X, Y, Z];
   for (const v of part.voxels) {
+    if (kind === "flip") { out.push(flipOne(v)); continue; }
     let { x, y, z } = v;
-    if (kind === "mirror") {
-      if (axis === 0) x = X - 1 - x; else if (axis === 1) y = Y - 1 - y; else z = Z - 1 - z;
-    } else if (kind === "flip") {
-      if (axis === 0) x = X - 1 - x; else if (axis === 1) y = Y - 1 - y; else z = Z - 1 - z;
-    } else if (kind === "rot") {
-      // 绕给定轴顺时针 90°，另外两轴互换并调整框尺寸
-      if (axis === 1) { const nx = Z - 1 - z; out.push({ x: nx, y, z: x, c: v.c }); continue; }
-      if (axis === 0) { const ny = Z - 1 - z; out.push({ x, y: ny, z: y, c: v.c }); continue; }
-      const nx = Y - 1 - y; out.push({ x: nx, y: x, z, c: v.c }); continue;
-    }
-    out.push({ x, y, z, c: v.c });
+    // 绕给定轴顺时针 90°，另外两轴互换并调整框尺寸
+    if (axis === 1) { out.push({ x: Z - 1 - z, y, z: x, c: v.c }); continue; }
+    if (axis === 0) { out.push({ x, y: Z - 1 - z, z: y, c: v.c }); continue; }
+    out.push({ x: Y - 1 - y, y: x, z, c: v.c });
   }
   if (kind === "rot") {
     if (axis === 1) nsize = [Z, Y, X];
@@ -181,6 +198,48 @@ export function transformVoxels(part, kind, axis) {
   part.voxels = out;
   part.size = nsize;
   invalidateIndex(part);
+  return true;
+}
+/** 把部件框扩到能装下这个格子：只在正方向长，负方向整体平移并补偿 pos。
+    以前越界就 setVoxel 静默 return false，玩家只知道"点了没反应"，
+    还得自己猜该把 boxX/boxY/boxZ 里哪一个调大。 */
+export function ensureRoom(part, x, y, z, max = MAX_BOX) {
+  const size = part.size.slice();
+  let shift = [0, 0, 0], grew = false;
+  for (let a = 0; a < 3; a++) {
+    const v = [x, y, z][a];
+    if (v < 0) { shift[a] = -v; grew = true; }
+    if (v >= size[a]) {
+      const want = v + 1;
+      if (want > max) return false;
+      size[a] = want; grew = true;
+    }
+  }
+  if (shift.some((s) => s > 0)) {
+    for (const v of part.voxels) { v.x += shift[0]; v.y += shift[1]; v.z += shift[2]; }
+    part.pos = [part.pos[0] - shift[0], part.pos[1] - shift[1], part.pos[2] - shift[2]];
+    size[0] += shift[0]; size[1] += shift[1]; size[2] += shift[2];
+  }
+  if (!grew) return false;
+  part.size = size.map((n) => Math.min(max, n));
+  invalidateIndex(part);
+  return true;
+}
+/** 拖拽两点确定的"面"：只在与拖动方向垂直的那根轴上留一层，不是实心盒子。
+    rangeCells 给的是整个 AABB，用它当"面建造"会拿 20 倍体素才能砌出一堵墙。 */
+export function faceCells(from, to) {
+  const lo = [Math.min(from[0], to[0]), Math.min(from[1], to[1]), Math.min(from[2], to[2])];
+  const hi = [Math.max(from[0], to[0]), Math.max(from[1], to[1]), Math.max(from[2], to[2])];
+  const span = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+  const flat = span.indexOf(Math.min(...span));
+  const out = [];
+  for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
+    if (flat === 0 && x !== lo[0]) continue;
+    if (flat === 1 && y !== lo[1]) continue;
+    if (flat === 2 && z !== lo[2]) continue;
+    out.push([x, y, z]);
+  }
+  return out;
 }
 // 洪泛填充（油漆桶）/ 魔棒：在同色相邻连通块上工作
 export function floodSelect(part, start, sameColor = true) {
@@ -378,6 +437,10 @@ export function serialize(doc) {
   const { parts, bones, anims, palette, physics, name, version, groups } = doc;
   return {
     version: version || VOXA_VERSION, name,
+    // type（换肤 / 自由）在新建时就定死、之后不可改，所以必须跟着序列化走。
+    // 以前它不在这里，于是 deserialize 落到 newDoc 的默认值 "free"：
+    // 换肤作品存一次盘、撤销一次、或走一次 V 口令，就悄悄变成自由模式。
+    type: doc.type || "free",
     palette: palette.map((c) => ({ i: c.i, hex: c.hex, emissive: c.emissive || 0 })),
     parts: parts.map((p) => ({
       id: p.id, name: p.name, size: p.size, pos: p.pos, rot: p.rot, scale: p.scale,
@@ -393,6 +456,7 @@ export function serialize(doc) {
 }
 export function deserialize(raw) {
   const doc = newDoc(raw.name || "未命名模型");
+  if (raw.type) doc.type = raw.type;
   doc.palette = (raw.palette && raw.palette.length) ? raw.palette : doc.palette;
   doc.parts = (raw.parts || []).map((p) => Object.assign({ visible: true, voxels: [] }, p));
   doc.parts.forEach((p) => bindDoc(p, doc));

@@ -167,9 +167,19 @@ export class VoxaView {
     };
     const mesh = mk(solid, 1);
     const emissive = mk(glow, 1.9);
-    if (emissive) emissive.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // 自发光那层不吃光照，所以材质要换成 MeshBasicMaterial，但必须留着 mk() 里
+    // 按色相算好的 instanceColor——换材质可以，把颜色换成白色那笔是多余的。
+    if (emissive) {
+      const lit = emissive.material;
+      emissive.material = new THREE.MeshBasicMaterial({ vertexColors: false });
+      lit.dispose();
+    }
     n = { group, mesh, emissive, part };
     this.partNodes.set(part.id, n);
+    // 边缘线 / 发光显隐是视口级偏好，而这里每次都新建材质，
+    // 所以必须把当前开关重新贴上去——否则放一个体素就把用户设的边缘线悄悄关掉了
+    if (mesh) mesh.material.wireframe = !!this._edges;
+    if (emissive) { emissive.material.wireframe = !!this._edges; emissive.visible = this._glowOn !== false; }
     this.applyPartTransform(part);
     group.visible = part.visible !== false;
   }
