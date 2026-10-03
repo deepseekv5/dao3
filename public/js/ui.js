@@ -50,6 +50,7 @@ const I = window.__icons = {
   caret: '<svg viewBox="0 0 12 12" class="caret-svg"><path d="M2.5 4.5l3.5 3.5 3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   treeArrow: '<svg viewBox="0 0 10 10" class="tw-svg"><path d="M2.5 1.5v7l5.5-3.5-5.5-3.5z" fill="currentColor"/></svg>',
   treeArrowOpen: '<svg viewBox="0 0 10 10" class="tw-svg"><path d="M1.5 2.5h7l-3.5 5.5-3.5-5.5z" fill="currentColor"/></svg>',
+  people: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.6 19c0-3 2.4-5 5.4-5s5.4 2 5.4 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M15.6 14.3c2.5.3 4.6 2 4.6 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   cubeDot: '<svg viewBox="0 0 14 14"><rect x="2.5" y="2.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" transform="rotate(20 7 7)"/></svg>',
 };
 // 静态按钮直接由 data-ico 填充

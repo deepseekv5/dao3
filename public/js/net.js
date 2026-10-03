@@ -6,9 +6,13 @@
 const backoff = [0, 1200, 2500, 5000, 10000];
 
 export function connect(opts) {
-  const { pubId, on } = opts;
+  const { on } = opts;
+  // 两种房间：play:<发布 id> 是"一起玩这张图"，edit:<世界 id> 是"一起改这张图"。
+  // 之前只有 play 一条路，编辑器想协作就只能假装自己在玩。
+  const kind = opts.kind === "edit" ? "edit" : "play";
+  const roomId = String(opts.roomId || opts.pubId || "");
   let ws = null, tries = 0, closedByUs = false, hb = null;
-  const url = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/play/${encodeURIComponent(pubId)}`;
+  const url = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/${kind}/${encodeURIComponent(roomId)}`;
 
   function emit(kind, msg) { const f = on[kind]; if (f) f(msg); }
 

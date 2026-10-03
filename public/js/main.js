@@ -624,6 +624,12 @@ async function boot() {
   }
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
   window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles };
+  // 协作要改 history.commit、读 state.scripts，所以必须等 __editor 赋完再挂：
+  // 挂早一行就是 mountCollab(undefined)，异常被 catch 咽掉，按钮点了没反应。
+  import("./collab.js").then(({ mountCollab }) => {
+    const collab = mountCollab(window.__editor);
+    window.__editor.collab = collab;
+  }).catch((err) => console.warn("协作模块加载失败:", err));
   // 代码包面板按 CID 取回并建模一个网格后要重摆场景：引用它的实体得从标记框换成真模型。
   // 没有这个钩子，"取回"就只改了磁盘上的字节，画面上什么都不会变。
   window.__editor.replaceSceneModels = () => applySceneModels(state.meta);

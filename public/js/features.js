@@ -1,6 +1,7 @@
 // features.js — 地图尺寸、多文件脚本、实体生成、模型库、zip 项目包导入、运行接线。
 import * as THREE from "../vendor/three/three.module.js";
 import { VoxelWorld } from "./world.js";
+import { authorColor } from "./diff.js";
 import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
@@ -329,6 +330,9 @@ function wireScript() {
     if (on) { renderCodeEditor(); syncCodeScroll(); }
   }
   e.showScriptScreen = showScriptScreen;
+  // 只能在 wire 之后挂：模块顶层的 E 还是 undefined，那时赋值会直接抛错，
+  // 整个编辑器脚本就废了（实测 boot 不起来）。
+  e.refreshScriptView = refreshScriptView;
   // 运行游戏 = 进入完整运行模式（官方 GameAPI）
   document.getElementById("scriptPlay").onclick = () => { showScriptScreen(false); window.__play && window.__play(); };
   ta.addEventListener("keydown", (ev) => {
@@ -348,6 +352,8 @@ function wireScript() {
   ta.addEventListener("input", () => {
     const cur = curScript();
     if (cur) cur.code = ta.value;
+    // 协作：改动 1.2 秒后整份发出去（见 collab.js），并告诉别人"我在写这个文件"
+    if (cur && E.collab && E.collab.notifyEdit) E.collab.notifyEdit(cur.name);
     if (_errLine >= 0) { _errLine = -1; } // 编辑即清除错误标记
     renderCodeEditor(); // 同步渲染（脚本文件都不大，且后台标签页 rAF 会被节流）
     syncCodeScroll();
@@ -467,9 +473,32 @@ function renderCodeEditor() {
     hiPre.appendChild(mark);
   }
   const lines = ta.value.split("\n").length;
+  // 行号按作者上色：一眼看出"这行是谁写的"。作者表由服务端算（LCS 保留未改动行的
+  // 原作者），客户端只画，不参与判定——否则谁都能把改动写成别人的。
+  const authors = (E.collab && E.collab.authors && curScriptName()) ? E.collab.authors.get(curScriptName()) : null;
   let g = "";
-  for (let i = 1; i <= lines; i++) g += (i - 1 === _errLine ? "▶" : i) + "\n";
-  gutter.textContent = g;
+  for (let i = 1; i <= lines; i++) {
+    const label = (i - 1 === _errLine ? "▶" : i);
+    const who = authors && authors[i - 1];
+    g += who ? `<span class="bl" data-by="${escAttr(who)}" style="color:${blameColor(who)}">${label}</span>` : `${label}\n`;
+  }
+  gutter.innerHTML = g;
+}
+function curScriptName() {
+  const c = curScript();
+  return c ? c.name : null;
+}
+const escAttr = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// 颜色与在线列表/改动流共用 diff.js 里的同一个函数，否则"甲的行"和"甲的名字"
+// 在屏幕上会成两种颜色，标注等于没标。
+const blameColor = authorColor;
+/** 远端把当前打开的这个文件改了：把新内容搬到屏幕上，不然用户看到的还是旧版。 */
+function refreshScriptView(name) {
+  const idx = (E.state.scripts || []).findIndex((f) => f.name === name);
+  if (idx < 0) return;
+  const ta = document.getElementById("scriptCode");
+  if (E.__scriptIdx === idx && ta) ta.value = E.state.scripts[idx].code || "";
+  renderCodeEditor(); syncCodeScroll();
 }
 function syncCodeScroll() {
   const ta = document.getElementById("scriptCode");

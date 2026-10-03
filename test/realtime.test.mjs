@@ -329,5 +329,53 @@ c1.close(); c2.close();
   a.close(); b.close(); c.close();
 }
 
+/* ---------------- 编辑协作房：脚本归属由服务端判 ---------------- */
+{
+  const W = "216d665d3ca92bd1b9a2";
+  const P = await account("协作甲" + Date.now().toString(36).slice(-4));
+  const Q = await account("协作乙" + Date.now().toString(36).slice(-5));
+  const a = await wsConnect(`/ws/edit/${W}`, P.cookie);
+  const b = await wsConnect(`/ws/edit/${W}`, Q.cookie);
+  const wa = await a.until((x) => x.t === "welcome");
+  await b.until((x) => x.t === "welcome");
+  ok("编辑协作房能开（edit:<世界 id>）", !!wa && !!wa.world && Array.isArray(wa.feed), JSON.stringify(wa && { room: wa.room, feed: (wa.feed || []).length }));
+
+  const three = "line1\nline2\nline3";
+  a.send({ t: "op", s: [["index.js", three]] });
+  const sa = await b.until((x) => x.t === "world" && x.s && x.s.length);
+  ok("脚本改动转发给了同伴，并带服务端作者戳", !!sa && sa.s[0][0] === "index.js" && !!sa.by && !!sa.by.name, JSON.stringify(sa && sa.by));
+  ok("首发时三行都记在写的人头上", !!sa && JSON.stringify(sa.s[0][2]) === JSON.stringify([[sa.by.id, 3]]), JSON.stringify(sa && sa.s[0][2]));
+
+  // 乙只改中间那一行：归属必须保留甲的第一、三行
+  await sleep(150);
+  b.send({ t: "op", s: [["index.js", "line1\nLINE2-BY-B\nline3"]] });
+  // 必须等"乙署名的那一条"：a 自己第一次发的改动也会被广播回来（含自己），
+  // 只按 t==="world" 取到的是自己那条旧包，测出来永远是"三行都是我的"。
+  const sb = await a.until((x) => x.t === "world" && x.s && x.s.length && x.by && x.by.name === Q.name);
+  const rows = sb && sb.s[0][2];
+  const byA = wa.you && rows && rows.length;
+  ok("改一行不会把整份文件算成改的人写的", !!sb && Array.isArray(rows) && rows.length === 3,
+    JSON.stringify(rows) + " / by=" + (sb && sb.by && sb.by.name));
+  ok("改动流记下谁改了哪个文件与行数", !!sb && sb.s[0][1].includes("LINE2-BY-B")
+    && (await b.until((x) => x.t === "world" && x.s && x.s.length)) && true);
+
+  // "谁在写哪个文件"的提示只发给别人，不回流给自己
+  await sleep(150);
+  a.send({ t: "note", file: "index.js" });
+  const nb = await b.until((x) => x.t === "note" && x.file === "index.js");
+  ok("正在编辑哪个文件会告诉同伴", !!nb && nb.name === P.name, JSON.stringify(nb));
+  ok("note 不回流给发送者自己", !a.msgs.some((x) => x.t === "note"), JSON.stringify(a.msgs.filter((x) => x.t === "note")));
+
+  // 客户端自报的作者不算数：广播里的 by 只能是服务端会话里的人
+  await sleep(150);
+  a.send({ t: "op", by: { id: "ghost", name: "幽灵" }, s: [["index.js", "line1\nLINE2\nline3\nextra"]] });
+  const sg = await b.until((x) => x.t === "world" && x.s && x.s[0][1].includes("extra"));
+  ok("广播里的作者来自会话而不是客户端自报", !!sg && sg.by && sg.by.name === P.name, JSON.stringify(sg && sg.by));
+
+  a.close(); b.close();
+  const bad = await wsConnect("/ws/edit/does-not-exist-0000", P.cookie).then(() => null, (e) => e);
+  ok("没有这份世界存档就开不了协作房", !!bad && String(bad.status) === "404", String(bad && bad.status));
+}
+
 console.log(`\nrealtime: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

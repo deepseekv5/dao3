@@ -9,6 +9,7 @@
  * 房间 key 必须是一件还在架上的作品 id，凭空开的频道一律拒。
  */
 import crypto from "node:crypto";
+import { reblame, rle, diffStats } from "../public/js/diff.js";
 
 const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const MAX_FRAME = 32 * 1024;          // 一条状态帧几十字节；给到 32 KB 已经宽到可以当攻击面用
@@ -23,6 +24,9 @@ const IDLE_MS = 45_000;               // 这么久没有任何动静就踢掉
 const MAX_OP_CELLS = 1000;
 const MAX_OP_ENTS = 500;
 const WORLD_OP_HZ = 8;                // 世界改动转发节流：方块不需要跟到 60Hz
+const MAX_OP_SCRIPTS = 8;             // 一条包最多带几个脚本
+const MAX_SCRIPT_BYTES = 200_000;     // 单文件上限：再大的脚本文件本身就该拆
+const FEED_KEEP = 80;                 // 改动流留多少条给协作面板
 
 const now = () => Date.now();
 
@@ -103,7 +107,7 @@ class Peer {
   }
 }
 
-export function createRealtime({ community } = {}) {
+export function createRealtime({ community, worldExists } = {}) {
   const rooms = new Map();               // "pub:<id>" -> Set<Peer>
   const stats = { joins: 0, chat: 0, frames: 0, rejected: 0 };
 
@@ -120,6 +124,11 @@ export function createRealtime({ community } = {}) {
       // 记的是增量叠加（last write wins），不是重跑模拟——模拟仍在各端跑。
       r.voxels = new Map();   // "x,y,z" -> [id, rot]，id=0 表示这格被挖掉
       r.entities = new Map(); // 实体键 -> [x, y, z, ry, scale]
+      // 脚本内容也走同一条权威流：协作编辑时"谁的版本覆盖谁的"必须有服务端说了算的顺序，
+      // 否则两个人同时保存就是后保存的悄悄把前一个人的改动抹了。
+      r.scripts = new Map();  // 文件名 -> 代码
+      r.lineAuthors = new Map(); // 文件名 -> 每行的作者（"这行是谁写的"就靠它）
+      r.feed = [];            // 改动流：{ts, by, kind, what}，给协作面板与"这行是谁写的"用
       r.seq = 0;
       rooms.set(key, r);
     }
@@ -127,8 +136,20 @@ export function createRealtime({ community } = {}) {
   }
 
   /** 收一条世界改动。所有字段都当不可信输入：越界、非整数、超量的直接丢。 */
-  function applyWorldOp(room, m) {
-    const changedV = [], changedE = [];
+  /** 给一条改动署名。名字只认服务端会话里的那个人——客户端自报的 by 一律不信，
+   *  否则谁都能把改动写成别人的。 */
+  function stamp(peer, kind, what) {
+    const entry = { ts: now(), by: { id: peer.user.id, name: peer.user.name }, kind, what };
+    return entry;
+  }
+
+  function pushFeed(room, entry) {
+    room.feed.push(entry);
+    if (room.feed.length > FEED_KEEP) room.feed.shift();
+  }
+
+  function applyWorldOp(room, m, peer) {
+    const changedV = [], changedE = [], changedS = [];
     if (Array.isArray(m.v)) {
       for (const cell of m.v.slice(0, MAX_OP_CELLS)) {
         if (!Array.isArray(cell) || cell.length < 5) continue;
@@ -154,14 +175,40 @@ export function createRealtime({ community } = {}) {
         changedE.push([key, ...room.entities.get(key)]);
       }
     }
-    if (!changedV.length && !changedE.length) return;
+    if (Array.isArray(m.s)) {
+      for (const pair of m.s.slice(0, MAX_OP_SCRIPTS)) {
+        if (!Array.isArray(pair) || pair.length < 2) continue;
+        const name = String(pair[0]).slice(0, 96);
+        const code = String(pair[1]);
+        if (!/^[^/\\]+\.js$/i.test(name) || code.length > MAX_SCRIPT_BYTES) continue;
+        const prev = room.scripts.get(name) || "";
+        if (prev === code) continue;
+        room.scripts.set(name, code);
+        // 归属在服务端算：客户端自报的"这行是我写的"一律不信。没动的行沿用原作者，
+        // 只有这次真的新增/改写的行才记到这次改动的人头上。
+        const authors = reblame(prev.split("\n"), room.lineAuthors.get(name), code.split("\n"), peer.user.id);
+        room.lineAuthors.set(name, authors);
+        // 改动流里只记"动了多少行"，不把整份代码塞进历史：feed 要发给每个人看，
+        // 而代码本身已经在 scripts 里了，重复存一遍只是把房间内存翻倍。
+        const stat = diffStats(prev, code);
+        changedS.push([name, code, rle(authors), stat]);
+        pushFeed(room, Object.assign(stamp(peer, "script", name), stat));
+      }
+    }
+    if (!changedV.length && !changedE.length && !changedS.length) return;
     room.seq++;
-    broadcast(room, { t: "world", seq: room.seq, v: changedV, e: changedE });
+    if (changedV.length) pushFeed(room, stamp(peer, "voxel", changedV.length + " 格"));
+    if (changedE.length) pushFeed(room, stamp(peer, "entity", changedE.length + " 个实体"));
+    // by 一起广播：客户端要靠它标"这一格是谁放的"，而 by 是服务端盖的，伪造不了
+    broadcast(room, { t: "world", seq: room.seq, v: changedV, e: changedE, s: changedS,
+      by: { id: peer.user.id, name: peer.user.name } });
   }
 
   function worldSnapshot(room) {
     return { seq: room.seq, v: [...room.voxels.entries()].map(([k, val]) => [...k.split(",").map(Number), val[0], val[1]]),
-      e: [...room.entities.entries()].map(([k, val]) => [k, ...val]) };
+      e: [...room.entities.entries()].map(([k, val]) => [k, ...val]),
+      s: [...room.scripts.entries()].map(([name, code]) => [name, code]),
+      authors: [...room.lineAuthors.entries()].map(([name, rows]) => [name, rows]) };
   }
 
   function broadcast(room, msg, except) {
@@ -232,7 +279,17 @@ export function createRealtime({ community } = {}) {
       const dt = now() - peer.lastOp;
       if (dt < 1000 / WORLD_OP_HZ) return;
       peer.lastOp = now();
-      applyWorldOp(room, m);
+      applyWorldOp(room, m, peer);
+      return;
+    }
+
+    if (m.t === "note") {
+      // "甲 正在写 index.js" 这类提示：只转一个文件名，不传内容。
+      // 协作时知道谁在动哪个文件，比事后发现被覆盖了要有用得多。
+      if (room.key.startsWith("edit:")) {
+        const file = typeof m.file === "string" ? m.file.replace(/[^\w.\-]/g, "").slice(0, 64) : "";
+        broadcast(room, { t: "note", id: peer.id, name: peer.user.name, file }, peer);
+      }
       return;
     }
 
@@ -269,6 +326,7 @@ export function createRealtime({ community } = {}) {
     peer.send({
       t: "welcome", you: peer.id, room: key, t0: room.start, now: Date.now(),
       world: worldSnapshot(room),
+      feed: room.feed.slice(-40),
       peers: [...room].filter((p) => p !== peer).map((p) => ({ id: p.id, name: p.user.name, skin: p.user.skin,
         p: p.pos, r: p.yaw, a: p.anim, m: p.mesh, s: p.meshScale, h: p.hidden ? 1 : 0 })),
     });
@@ -304,18 +362,28 @@ export function createRealtime({ community } = {}) {
   function handleUpgrade(req, socket, head) {
     let url;
     try { url = new URL(req.url, "http://localhost"); } catch { socket.destroy(); return; }
-    const seg = url.pathname.split("/").filter(Boolean);       // ["ws","play","<pubId>"]
-    if (seg[0] !== "ws" || seg[1] !== "play" || seg.length !== 3) { socket.destroy(); return; }
+    const seg = url.pathname.split("/").filter(Boolean);       // ["ws","play"|"edit","<id>"]
+    // 两种房间：play:<发布 id> 是"一起玩这张图"，edit:<世界 id> 是"一起改这张图"。
+    // 协作编辑要的是后者——所有人共用一份世界改动流，而不是各自本地改完再靠保存覆盖。
+    if (seg[0] !== "ws" || (seg[1] !== "play" && seg[1] !== "edit") || seg.length !== 3) { socket.destroy(); return; }
     const up = String(req.headers.upgrade || "").toLowerCase();
     const conn = String(req.headers.connection || "").toLowerCase();
     const key = req.headers["sec-websocket-key"];
     if (up !== "websocket" || !conn.includes("upgrade") || !key) {
       socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); return;
     }
-    const pubId = seg[2];
-    if (!/^[0-9a-f]{12,24}$/.test(pubId)) { socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); return; }
-    const pub = community && community.livePub(pubId);
-    if (!pub) { stats.rejected++; socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"); return; }
+    const kind = seg[1];
+    const roomId = seg[2];
+    const idOk = kind === "play" ? /^[0-9a-f]{12,24}$/.test(roomId) : /^[A-Za-z0-9_-]{4,32}$/.test(roomId);
+    if (!idOk) { socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); return; }
+    if (kind === "play") {
+      const pub = community && community.livePub(roomId);
+      if (!pub) { stats.rejected++; socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"); return; }
+    } else if (typeof worldExists === "function" && !worldExists(roomId)) {
+      // 编辑房要有这张世界存档才开：否则第二个人进来的是一个空世界，
+      // 两个人的"同一张图"根本是两张图。
+      stats.rejected++; socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"); return;
+    }
     const user = community && community.sessionUser(req);
     if (!user) { stats.rejected++; socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); return; }
 
@@ -326,7 +394,7 @@ export function createRealtime({ community } = {}) {
       `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
     );
     socket.setNoDelay(true);
-    attach(socket, user, "pub:" + pubId, head);
+    attach(socket, user, (kind === "play" ? "pub:" : "edit:") + roomId, head);
   }
 
   // 空闲连接靠对端自己报活；45 秒没数据就单方面关掉，房间不会攒僵尸。
