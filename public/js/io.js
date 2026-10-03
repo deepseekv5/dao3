@@ -652,6 +652,7 @@ export async function importProjectZip(file) {
   const audio = {}, meshNames = [], pictureNames = [];
   const voxMeshes = [];  // .vox 解码结果（{name, voxels, bytes}）
   const vbMeshes = [];   // .vb 原始 JSON（{name, json}），建网格留给 features.js（要 atlas）
+  const pointerMeshes = []; // 只有 dataHash 的官方指针 .vox：本体不在包里
   await Promise.all(entries.map(async (e) => {
     if (/(^|\/)(audio|sound)\/.*\.(mp3|wav|ogg|m4a|aac)$/i.test(e.name)) {
       try { audio[e.name.split("/").pop()] = await extract(e); } catch {}
@@ -665,10 +666,14 @@ export async function importProjectZip(file) {
       if (/\.vox$/i.test(fn)) {
         try {
           const bytes = await extract(e);
-          const vs = decodeVox(bytes);
-          // bytes 也要带上：只解不存的话，这次会话里看得到，一存盘重开就又只剩名字了
-          if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs, bytes });
-          else rawMeshes++;
+          const stub = pointerMesh(bytes);
+          if (stub) { pointerMeshes.push({ name: base, ...stub }); }
+          else {
+            const vs = decodeVox(bytes);
+            // bytes 也要带上：只解不存的话，这次会话里看得到，一存盘重开就又只剩名字了
+            if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs, bytes });
+            else rawMeshes++;
+          }
         } catch { rawMeshes++; }
       } else if (/\.vb$/i.test(fn)) {
         // .vb 是 JSON，不是二进制；体素流是「0 基游程 + 色号」的 LEB128 对。
@@ -686,7 +691,20 @@ export async function importProjectZip(file) {
   }));
   // 报出来而不是默默变成占位盒：这条决定"导入后画面是空的"到底该怪包还是怪我们。
   // 必须排在上面这次扫描之后——它曾排在前面，于是永远读到 0，警告一次都没出现过。
-  if (rawMeshes) warnings.push(`${rawMeshes} 个 .vb/.vox 网格解不出体素，只登记了名字；引用它们的实体会以标记框显示`);
+  // 两类"没有体素"要分开说：指针包是官方导出的形状（本体压根不在 zip 里），
+  // 解不出体素才是我们的解码器不认识这个文件。混成一句，用户会去改包或改代码，
+  // 而真正的问题是没有内容寻址存储的访问。
+  const badMeshes = rawMeshes - pointerMeshes.length;
+  if (badMeshes > 0) warnings.push(`${badMeshes} 个 .vb/.vox 网格解不出体素，只登记了名字；引用它们的实体会以标记框显示`);
+  if (pointerMeshes.length) {
+    warnings.push(`${pointerMeshes.length} 个 .vox 是指针而不是模型：包里只有 bounds + dataHash，体素本体在官方内容存储里（按 CID 才取到）。画面里它们不会有形状，这不是解码失败`);
+  }
+  // 有网格名却一个实体都没有：官方清单式导出连 entitiesTree 都是 CID（block.json 里能看到），
+  // 于是"模型不加载"其实是"没有任何摆位信息"。这条必须单独报，否则用户只会盯着 meshes/ 看。
+  if (meshNames.length && !entities.length) {
+    const cid = block && typeof block.entitiesTree === "string" ? block.entitiesTree : "";
+    warnings.push(`包里没有实体清单（entities/models.json 或 entitiesTree），所以 ${meshNames.length} 个网格没有摆放位置${cid ? `；官方包里 entitiesTree 只是一个 CID：${cid}` : ""}`);
+  }
 
   // 5b) 官方资源表 project/assets.json：路径 → {animated,bounds,contentId,hash,ownerId,previewImage,size,type}
   let assets = null;
@@ -734,8 +752,22 @@ export async function importProjectZip(file) {
   const oddJson = entries.filter((e) => /\.json$/i.test(e.name) && !consumed.has(e.name));
   if (oddJson.length) warnings.push(`未识别 ${oddJson.length} 个配置文件（${oddJson.slice(0, 3).map((x) => x.name.split("/").slice(-2).join("/")).join("、")}${oddJson.length > 3 ? " 等" : ""}），已跳过`);
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, meshFiles, assets, assetNames, block, voxMeshes, vbMeshes, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, meshFiles, assets, assetNames, block, voxMeshes, vbMeshes, pointerMeshes, warnings };
 }
+
+// 官方"清单式导出"里的 .vox 不是模型本体，而是 120~300 字节的指针：
+//   {"version":5,"bounds":[x,y,z],"dataHash":"<32 字节 sha256 摘要的 base64url>"}
+// 体素流在内容寻址存储里（dataHash 补上 multihash 头 0x12 0x20 再 base58btc 就是 Qm… CID），
+// zip 里一个字都没带。images/*.png 与 terrain/raw/*.bin 同理（前者是 {"data":"Qm…"}，
+// 后者是 2 个空字节）。认不出这个形状的话，decodeVox 只会抛 "bad vox"，
+// 报出来的原因就是假的——用户会以为是我们的解码器坏了。
+const pointerMesh = (bytes) => {
+  if (!bytes || bytes.length > 4096) return null;
+  let j = null;
+  try { j = JSON.parse(new TextDecoder().decode(bytes)); } catch { return null; }
+  if (!j || typeof j !== "object" || typeof j.dataHash !== "string") return null;
+  return { dataHash: j.dataHash, bounds: Array.isArray(j.bounds) ? j.bounds : null };
+};
 
 // 从导入脚本里识别出引用的实体选择器（#id / .tag），用于自动生成实体标记。
 // 注意：querySelector / querySelectorAll 两种形态都要匹配（'All?' 写法匹配不到 'querySelector'）。
