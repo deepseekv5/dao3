@@ -256,3 +256,109 @@ export function renderCover({ indices, data, shape, colors, width = 480, height 
   }
   return encodePng(width, height, rgba);
 }
+
+/* ---------------- 模型预览 ---------------- */
+
+const hex2rgb = (h) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(h || ""));
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+/**
+ * 给 VOXA 模型画一张预览图：纯黑底 + 等距体素，跟官方模型展厅一个口径。
+ * 官方那张展厅里每张卡都是模型自己的 3D 渲染居中放在黑底上——那才是"预览"，
+ * 一个写着文件名的灰框不是。颜色取模型自己的调色板，跟地图封面用方块图集一个道理：
+ * 预览里的颜色是内容给的。
+ */
+export function renderModelPreview(doc, { width = 320, height = 320 } = {}) {
+  const parts = (doc && doc.parts) || [];
+  if (!parts.length) return null;
+  const pal = new Map();
+  for (const c of (doc.palette || [])) {
+    const rgb = hex2rgb(c.hex);
+    if (rgb) pal.set(String(c.i), rgb);
+  }
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < width * height; i++) { rgba[i * 4] = 8; rgba[i * 4 + 1] = 8; rgba[i * 4 + 2] = 9; rgba[i * 4 + 3] = 255; }
+  const set = (x, y, r, g, b) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const o = (y * width + x) * 4;
+    rgba[o] = r < 0 ? 0 : r > 255 ? 255 : r; rgba[o + 1] = g < 0 ? 0 : g > 255 ? 255 : g; rgba[o + 2] = b < 0 ? 0 : b > 255 ? 255 : b; rgba[o + 3] = 255;
+  };
+  // 顶面 / 两侧的明暗，和地图封面用同一套，让两种缩略图看起来是一个系统
+  const TOP = 1.0, LEFT = 0.62, RIGHT = 0.82;
+
+  // 先算出所有方块的世界格位置（部件的 pos/rot/scale 折叠进来），再定 scale 把整体居中
+  const cubes = [];
+  for (const p of parts) {
+    if (p.visible === false) continue;
+    const sz = p.size || [1, 1, 1];
+    const pos = p.pos || [0, 0, 0];
+    const rot = (p.rot || [0, 0, 0]).map((r) => (Number(r) || 0) * Math.PI / 180);
+    const sc = p.scale || [1, 1, 1];
+    // 绕 Y/X/Z 依次旋转（VOXA 的欧拉序），再缩放再平移
+    const rotPt = (v) => {
+      let [x, y, z] = v;
+      let c = Math.cos(rot[0]), s = Math.sin(rot[0]);
+      let y1 = y * c - z * s, z1 = y * s + z * c; y = y1; z = z1;
+      c = Math.cos(rot[1]); s = Math.sin(rot[1]);
+      let x1 = x * c + z * s, z2 = -x * s + z * c; x = x1; z = z2;
+      c = Math.cos(rot[2]); s = Math.sin(rot[2]);
+      x1 = x * c - y * s; y1 = x * s + y * c; x = x1; y = y1;
+      return [x * (sc[0] ?? 1), y * (sc[1] ?? 1), z * (sc[2] ?? 1)];
+    };
+    const pivot = [sz[0] / 2, sz[1] / 2, sz[2] / 2];
+    for (const v of p.voxels || []) {
+      const rgb = pal.get(String(v.c)) || [190, 190, 195];
+      const local = [v.x - pivot[0] + 0.5, v.y - pivot[1] + 0.5, v.z - pivot[2] + 0.5];
+      const w = rotPt(local);
+      cubes.push({ x: w[0] + pos[0], y: w[1] + pos[1], z: w[2] + pos[2], rgb });
+    }
+  }
+  if (!cubes.length) return null;
+
+  const HW = 0.5, HH = 0.25, VH = 0.55;   // 半宽 / 半高 / 立面高（像素单位，乘 tw）
+  // 先把每个方块在等距投影下的包围盒算出来，得到真正的二维范围；
+  // 直接拿体素跨度去估缩放，斜投影下会算出一个比模型大一圈的框，图就顶满画布。
+  const proj = (x, y, z) => [(x - z) * HW, (x + z) * HH - y * VH];
+  let bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
+  for (const c of cubes) {
+    for (const dx of [0, 1]) for (const dy of [0, 1]) for (const dz of [0, 1]) {
+      const [px, py] = proj(c.x + dx, c.y + dy, c.z + dz);
+      if (px < bx0) bx0 = px; if (px > bx1) bx1 = px;
+      if (py < by0) by0 = py; if (py > by1) by1 = py;
+    }
+  }
+  const pw = Math.max(0.001, bx1 - bx0), ph = Math.max(0.001, by1 - by0);
+  const pad = 0.86;                          // 留白占的比例：图是展品，四周要空一点
+  const tw = Math.min(width / pw, height / ph) * pad;
+  const ox = width / 2 - ((bx0 + bx1) / 2) * tw;
+  const oy = height / 2 - ((by0 + by1) / 2) * tw;
+
+  const cubesSorted = cubes.slice().sort((a, b) => (a.x + a.z + a.y) - (b.x + b.z + b.y));
+  for (const c of cubesSorted) {
+    const [pcx, pcy] = proj(c.x + 0.5, c.y, c.z + 0.5);
+    const sx = ox + pcx * tw;
+    const sy = oy + pcy * tw;
+    const r = c.rgb[0], g = c.rgb[1], b = c.rgb[2];
+    const hw = HW * tw, hh = HH * tw;
+    // 顶面菱形
+    for (let y = Math.max(0, Math.floor(sy - hh)); y <= Math.min(height - 1, Math.ceil(sy + hh)); y++) {
+      const t = hh > 0 ? Math.abs(y - sy) / hh : 0;
+      if (t > 1) continue;
+      const half = hw * (1 - t);
+      for (let x = Math.round(sx - half); x <= Math.round(sx + half); x++) set(x, y, r * TOP, g * TOP, b * TOP);
+    }
+    // 两侧立面（让立方体有厚度，不是薄片）
+    const vh = Math.max(2, VH * tw);
+    for (let y = Math.max(0, Math.round(sy)); y <= Math.min(height - 1, Math.round(sy + vh)); y++) {
+      const k = 1 - Math.min(1, Math.abs(y - sy) / (hh || 1)) * 0.0;
+      const half = hw * k;
+      for (let x = Math.round(sx - half); x <= Math.round(sx); x++) set(x, y, r * LEFT, g * LEFT, b * LEFT);
+      for (let x = Math.round(sx); x <= Math.round(sx + half); x++) set(x, y, r * RIGHT, g * RIGHT, b * RIGHT);
+    }
+  }
+  return encodePng(width, height, rgba);
+}

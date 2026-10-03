@@ -72,7 +72,9 @@ export const coverArt = () => "background-color:#161616;"
   + "background-size:22px 22px";
 export const coverHtml = (p) => p.hasCover
   ? `<img src="/api/community/pubs/${p.id}/cover" alt="" loading="lazy" onerror="this.remove()"/>`
-  : "";
+  : p.kind === "model"
+    ? `<img src="/api/community/pubs/${p.id}/preview" alt="" loading="lazy" onerror="this.remove()"/>`
+    : "";
 /** 一个作品卡。
     骨架照 dao3.fun 的展厅抄：一张纯黑底图 + 三行字（标题 / 作者 / 浏览量）。
     之前这张卡是「小地图 + 简介两行 + 标签 + 三个计数挤一行」，信息量一样，

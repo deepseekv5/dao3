@@ -18,7 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
-import { blockColors, renderCover } from "./covers.mjs";
+import { blockColors, renderCover, renderModelPreview } from "./covers.mjs";
 
 const PUB_ID_RE = /^[a-f0-9]{12,24}$/;
 const WORLD_ID_RE = /^[a-zA-Z0-9_-]{1,80}$/;
@@ -98,6 +98,7 @@ function createStore(root) {
     pubFile: (id) => path.join(pubs, `${id}.json.gz`),
     verFile: (pubId, v) => path.join(pubs, `${pubId}.v${v}.json.gz`),
     pubCover: (id) => path.join(pubs, `${id}.cover.png`),
+    pubPreview: (id) => path.join(pubs, `${id}.preview.png`),
     pubModelFile: (id) => path.join(pubs, `${id}.voxa.json`),
     pubAssets: (id) => path.join(pubs, `${id}.assets`),
   };
@@ -646,7 +647,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         if (json.length > 8 * 1024 * 1024) { reply.fail(413, "模型太大（8 MB 上限）"); return true; }
         key = "model:" + String(body.slug || body.name || title).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40);
         bytes = Buffer.byteLength(json);
-        srcFile = { text: json };
+        srcFile = { text: json, doc };
       }
       const flagged = t.flagged || d.flagged || tags.some((x) => screen(x, { field: "标签", max: 16 }).flagged);
 
@@ -680,6 +681,12 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         bytes = fs.statSync(store.pubFile(id)).size;
       } else {
         fs.writeFileSync(store.pubModelFile(id), srcFile.text);
+        // 模型也要有预览：官方模型展厅里每张卡都是模型自己的 3D 渲染居中放在黑底上，
+        // 没有预览的模型卡在展厅里就是一个写着文件名的灰框，根本不算"展品"。
+        try {
+          const preview = renderModelPreview(srcFile.doc, { width: 320, height: 320 });
+          if (preview) fs.writeFileSync(store.pubPreview(id), preview);
+        } catch { /* 画不出来就退回占位，不影响发布 */ }
       }
       // 上传过的图可以直接当封面：一步到位，不用先发布再编辑
       const up = safeAssetPath(body.coverUrl);
@@ -796,6 +803,12 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         if (!viewerId) { reply.fail(401, "举报要先登录"); return true; }
         addReport("pub", p.id, p.authorId, body.reason, viewerId);
         reply.json(200, { ok: true });
+        return true;
+      }
+      if (sub === "preview" && method === "GET") {
+        const f = store.pubPreview(p.id);
+        if (!fs.existsSync(f)) { reply.fail(404, "这张还没有预览"); return true; }
+        reply.raw(200, fs.readFileSync(f), { "Content-Type": "image/png", "Cache-Control": "no-store" });
         return true;
       }
       if (sub === "model" && method === "GET") {

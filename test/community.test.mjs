@@ -382,6 +382,12 @@ try {
   ok("模型内容能取回", gotModel.status === 200 && jm && jm.parts[0].voxels.length === 1, JSON.stringify(jm).slice(0, 120));
   const feedModel = await (await fetch(BASE + "/api/community/feed?sort=new")).json();
   ok("广场里模型和地图一起出现", feedModel.rows.some((r) => r.kind === "model" && r.id === modelId));
+  // 模型也要有预览：官方模型展厅里每张卡都是模型自己的 3D 渲染居中放在黑底上，
+  // 没有预览的模型卡在展厅里就只是一个写着文件名的灰框。
+  const prev = await fetch(BASE + "/api/community/pubs/" + modelId + "/preview");
+  const prevBuf = Buffer.from(await prev.arrayBuffer());
+  ok("模型发布会自绘一张预览", prev.status === 200 && prev.headers.get("content-type") === "image/png"
+    && prevBuf.subarray(0, 4).toString("hex") === "89504e47", prev.status + " " + prev.headers.get("content-type"));
 
   // 版本回滚：把 v1 换回来，当前版进归档
   const rb = await A.call("POST", `/api/community/pubs/${pubId}/rollback`, { v: 1 });
