@@ -48,7 +48,16 @@ export function connect(opts) {
 
   return {
     send,
-    state(p, r, a) { return send({ t: "state", p, r, ...(a ? { a } : {}) }); },
+    // a=动作码，m=当前网格名，s=网格缩放，h=本体是否隐藏。
+    // 后三个是赛车这类"把玩家换成载具"的地图能不能联机的前提。
+    state(p, r, a, look) {
+      const extra = {};
+      if (a) extra.a = a;
+      if (look && look.m) extra.m = look.m;
+      if (look && Number.isFinite(look.s)) extra.s = look.s;
+      if (look && look.h) extra.h = 1;
+      return send({ t: "state", p, r, ...extra });
+    },
     chat(m) { return send({ t: "chat", m }); },
     get live() { return !!ws && ws.readyState === 1; },
     close() { closedByUs = true; clearInterval(hb); try { ws && ws.close(); } catch { /* 已经关了 */ } },

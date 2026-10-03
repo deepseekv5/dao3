@@ -499,7 +499,16 @@ export class GameRuntime {
           leave: (m) => { this._netDespawn(m.id); count(); },
           state: (m) => {
             const p = this._netPeers.get(m.id);
-            if (p) { p.tx = m.p; p.ry = m.r; }
+            if (p) {
+              p.tx = m.p; p.ry = m.r;
+              if (typeof m.a === "string" && m.a) { p.anim = m.a; p.ent._netAnim = m.a; }
+              const mesh = typeof m.m === "string" ? m.m : "";
+              const sc = Number(m.s); const hid = !!m.h;
+              if (mesh !== p.mesh || sc !== p.meshScale || hid !== p.hidden) {
+                p.mesh = mesh; p.meshScale = Number.isFinite(sc) ? sc : 1; p.hidden = hid;
+                this._netApplyLook(p);
+              }
+            }
           },
           chat: (m) => this._chatLine(`${m.name}: ${m.m}`, "#bfe0ff"),
           throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#8fe3ef", "sys"),
@@ -509,7 +518,7 @@ export class GameRuntime {
               count();
               // 连上就先报一次坐标：否则别人在那 16ms 的间隔里看到的是你站在世界原点。
               const me = this.playerEntity;
-              if (me) this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
+              if (me) { const lk = this._lookCode(); this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y, lk.a, lk); }
             } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#8fe3ef", "sys");
           },
         },
@@ -535,8 +544,16 @@ export class GameRuntime {
     avatar.rotation.y = Math.PI;
     avatar.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     ent._obj.add(avatar);
+    // 必须挂到 ent._avatar：_updateAvatar 是按这个字段找骨架的。以前只 add 进 _obj
+    // 就完事，于是别人的分身从头到尾一根手指都没动过——联机时"我走路他站着"就是这么来的。
+    ent._avatar = avatar;
+    ent._netAnim = typeof p.a === "string" && p.a ? p.a : "idle";
     ent._obj.rotation.y = Number(p.r) || 0;
-    this._netPeers.set(p.id, { ent, tx: at.slice(), ry: 0 });
+    const peer = { ent, tx: at.slice(), ry: 0, anim: ent._netAnim,
+      mesh: typeof p.m === "string" ? p.m : "", meshScale: Number(p.s) || 1, hidden: !!p.h };
+    this._netPeers.set(p.id, peer);
+    // 同伴可能一进来就在开车（后加入的人）：外观要照抄，不能先给他一具人偶再等下一条包
+    if (peer.mesh || peer.hidden) this._netApplyLook(peer);
   }
 
   _netDespawn(id) {
@@ -546,6 +563,55 @@ export class GameRuntime {
     p.ent.destroy();
   }
 
+  /** 我这会儿在做什么动作：联机时跟坐标一起报出去。
+   *  值直接用官方那两个枚举的字符串（walk / run / crouch / fly / swim / jump /
+   *  jump2 / fall），最长 5 个字符，服务端那 12 字符的截断够用，也不另造一套词表。
+   *  不报就等于让别人看见一个"在平移但四肢不动"的假人。 */
+  _animCode() {
+    const p = this.player;
+    if (!p) return "idle";
+    if (p.moveState === GamePlayerMoveState.FLYING || p.moveState === GamePlayerMoveState.SWIM) return p.moveState;
+    return (this._grounded ? p.walkState : p.moveState) || "idle";
+  }
+  /** 我这会儿长什么样：动作码 + 当前网格 + 网格缩放 + 本体是否隐藏。
+   *  赛车模板会把 entity.mesh 换成汽车、player.invisible 设成 true、meshScale 调到 1/16。
+   *  这三样全是本地状态，不报出去的话同伴看到的不是你的车，而是一具悬在车位置上的
+   *  裸人偶——"两个人进赛车图就崩坏"崩的是这个，不是物理。 */
+  _lookCode() {
+    const ent = this.playerEntity, p = this.player;
+    if (!ent || !p) return { a: "idle", m: "", s: 1, h: false };
+    const mesh = String(ent._meshName || "").replace(/^.*[\\/]/, "").replace(/\.(vb|vox|glb|gltf|fbx|obj)$/i, "");
+    const raw = ent._meshScaleV ? Number(ent._meshScaleV.x) : 1;
+    return {
+      a: this._animCode(),
+      m: mesh.slice(0, 48),
+      s: Number.isFinite(raw) ? Math.round(Math.min(20, Math.max(0.01, raw)) * 1000) / 1000 : 1,
+      h: !!p.invisible,
+    };
+  }
+  /** 把同伴报来的外观套到他那个分身上。只在真的变了时才重建网格：
+   *  每条状态包（约 80ms 一条）都 clone 一次车壳会把主线程吃光。 */
+  _netApplyLook(peer) {
+    const ent = peer.ent;
+    if (!ent || !ent._obj) return;
+    const want = peer.mesh || "";
+    if (ent._netLook !== want) {
+      ent._netLook = want;
+      this._setMesh(ent, want ? "mesh/" + want + ".vb" : "");
+    }
+    const sc = peer.meshScale || 1;
+    if (!ent._meshScaleV || Math.abs(ent._meshScaleV.x - sc) > 1e-4) {
+      ent._meshScaleV = new GameVector3(sc, sc, sc);
+      this._applyMeshTransform(ent);
+    }
+    const hide = !!peer.hidden;
+    if (ent._netHide !== hide) {
+      // 本体隐藏只看 player.invisible：赛车那种"上车即隐身"就是要让人偶消失、只剩车壳。
+      // 之前写成 !hide || !!mesh，等于"有载具就偏要把人偶也摆出来"，正好反了。
+      ent._netHide = hide;
+      if (ent._avatar) ent._avatar.visible = !hide;
+    }
+  }
   _netStep(dt) {
     if (!this._net) return;
     const k = Math.min(1, dt * 12);
@@ -566,7 +632,8 @@ export class GameRuntime {
     const me = this.playerEntity;
     if (me && performance.now() - (this._netSentAt || 0) > 80) {
       this._netSentAt = performance.now();
-      this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y);
+      const look = this._lookCode();
+      this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y, look.a, look);
     }
   }
 
@@ -2333,25 +2400,49 @@ const ZERO = new GameVector3();
     const rig = av.userData.rig || {};
     const base = rig.base || {};
     const p = ent.player;
-    const st = p ? p.walkState : "";
-    this._animT = (this._animT || 0) + dt * (st === GamePlayerWalkState.RUN ? 11 : 7);
-    const amp = st === GamePlayerWalkState.RUN ? 0.78 : st === GamePlayerWalkState.WALK ? 0.52 : 0;
-    const t = this._animT;
+    // 本地看自己的 walkState/moveState，别人的分身看网线带过来的动作码（_netAnim）。
+    // 节拍必须挂在每个角色自己身上：以前共用 this._animT，两个人并排走时腿是同一个
+    // 相位，看着像照镜子，不像两个独立的人。
+    const st = p ? this._animCode() : (ent._netAnim || "idle");
+    const run = st === GamePlayerWalkState.RUN;
+    const walk = st === GamePlayerWalkState.WALK;
+    const crouch = st === GamePlayerWalkState.CROUCH;
+    const swim = st === GamePlayerMoveState.SWIM;
+    const flying = st === GamePlayerMoveState.FLYING;
+    const air = st === GamePlayerMoveState.JUMP || st === GamePlayerMoveState.DOUBLE_JUMP
+      || st === GamePlayerMoveState.FALL;
+    if (typeof ent._animT !== "number") ent._animT = p ? 0 : Math.random() * 6;
+    ent._animT += dt * (run ? 11 : (walk || swim) ? 7 : crouch ? 4.5 : 0);
+    const amp = run ? 0.78 : walk ? 0.52 : swim ? 0.42 : crouch ? 0.3 : 0;
+    const t = ent._animT;
     const s = Math.sin(t) * amp;
-    parts.legL.rotation.x = s;
-    parts.legR.rotation.x = -s;
+    if (air) {
+      // 腾空那一档不能当成"站着"：腿分开放下、手抬起来，否则在别人眼里
+      // 跳一下就是一具假人贴着地面平移过去。
+      parts.legL.rotation.x = -0.3;
+      parts.legR.rotation.x = 0.18;
+      parts.armL.rotation.x = -0.75;
+      parts.armR.rotation.x = -0.75;
+    } else if (swim) {
+      parts.legL.rotation.x = s * 0.5;
+      parts.legR.rotation.x = -s * 0.5;
+      parts.armL.rotation.x = -1.25 + s * 0.35;
+      parts.armR.rotation.x = -1.25 - s * 0.35;
+    } else {
+      parts.legL.rotation.x = s;
+      parts.legR.rotation.x = -s;
+      parts.armL.rotation.x = -s * 0.85;
+      parts.armR.rotation.x = s * 0.85;
+    }
     // 膝盖只在腿往后蹬的那半拍里弯，往前摆时基本伸直。
     // 有髋无膝是"人偶在滑冰"这种廉价感的第二来源（第一是直角盒子）。
-    if (rig.kneeL) rig.kneeL.rotation.x = Math.max(0, s) * 0.95;
-    if (rig.kneeR) rig.kneeR.rotation.x = Math.max(0, -s) * 0.95;
-    parts.armL.rotation.x = -s * 0.85;
-    parts.armR.rotation.x = s * 0.85;
+    if (rig.kneeL) rig.kneeL.rotation.x = air ? 0.55 : Math.max(0, parts.legL.rotation.x) * 0.95;
+    if (rig.kneeR) rig.kneeR.rotation.x = air ? 0.2 : Math.max(0, -parts.legR.rotation.x) * 0.95;
     // 肘永远带一点弯（直挺挺垂着的手臂像两根棍），摆到身前时更弯。
     // 绕 +x 是往后，所以手臂角度取负才是"往前"。
     const elbowOf = (a) => -(0.2 + 0.5 * Math.max(0, -a));
     if (rig.elbowL) rig.elbowL.rotation.x = elbowOf(parts.armL.rotation.x);
     if (rig.elbowR) rig.elbowR.rotation.x = elbowOf(parts.armR.rotation.x);
-    const flying = p && p.moveState === GamePlayerMoveState.FLYING;
     parts.armL.rotation.z = flying ? -1.35 : -0.05;
     parts.armR.rotation.z = flying ? 1.35 : 0.05;
     // 躯干前倾 + 上半身起伏（脚仍踏着地）：让重量落在动作里，

@@ -185,11 +185,28 @@ ok("后来的人能看到已在场的人", !!w2 && w2.peers.length === 1 && w2.p
 c1.send({ t: "state", p: [12.5, 3, -7.25], r: 1.5, a: "run" });
 const st = await c2.until((m) => m.t === "state" && m.id === w1.you);
 ok("位置与朝向转发给了同伴", !!st && st.p[0] === 12.5 && st.p[2] === -7.25 && st.r === 1.5, JSON.stringify(st));
+// 动作状态必须跟着走：只有坐标的话，同伴看见的是一个"在平移但四肢不动"的假人。
+ok("动作状态也跟着转发", !!st && st.a === "run", JSON.stringify(st));
+
 
 c1.send({ t: "state", p: [1, 1, 1] });
 c1.send({ t: "state", p: [2, 2, 2] });
 const burst = (c2.msgs.filter((m) => m.t === "state").length);
 ok("状态转发有节流（连发不会全转）", burst === 1, "got " + burst);
+
+// 载具/隐身也要转发：赛车图把玩家换成汽车并把自己藏起来，这三样不转的话
+// 同伴看到的是一具悬在车位置上的裸人偶——就是"两个人进图就崩坏"的那个崩。
+await sleep(150); // 转发有 10Hz 节流：上一条测试刚把窗口用掉，不等就只会测到"没收到"
+c1.send({ t: "state", p: [13, 3, -8], r: 0.4, a: "idle", m: "汽车模板-1", s: 0.0625, h: 1 });
+const st2 = await c2.until((x) => x.t === "state" && x.id === w1.you && x.m === "汽车模板-1");
+ok("网格名、缩放与隐身一起转发", !!st2 && st2.s === 0.0625 && st2.h === 1, JSON.stringify(st2));
+// 网格名是从网络来的字符串：路径分隔符必须被削掉，否则它就是一个穿越载体
+await sleep(150);
+c1.send({ t: "state", p: [13, 3, -8], r: 0.4, m: "../../etc/passwd\u0000" });
+// 只认"以点开头"的那一条：前面几条状态里的 m 要么是空、要么是"汽车模板-1"，
+// 用它当选择条件才能证明我们等到的是这条被削过名字的包。
+const st3 = await c2.until((x) => x.t === "state" && x.id === w1.you && typeof x.m === "string" && x.m.startsWith(".."));
+ok("网格名里的路径分隔符被削掉", !!st3 && st3.m === "....etcpasswd", st3 && JSON.stringify(st3.m));
 
 await sleep(1100);
 c1.send({ t: "state", p: ["x", null, {}], r: "转" });

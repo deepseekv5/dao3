@@ -74,6 +74,9 @@ class Peer {
     this.lastSeen = now();
     this.dead = false;
     this.pos = [0, 0, 0]; this.yaw = 0; this.anim = "idle";
+    // 载具与换肤：赛车那类地图会把玩家本体换成 mesh 并把自己藏起来。这三样是本地状态，
+    // 服务端不记不转，同伴看见的就是一具悬在车位置上的裸人偶。
+    this.mesh = ""; this.meshScale = 1; this.hidden = false;
     this.pub = null;
   }
 
@@ -151,8 +154,14 @@ export function createRealtime({ community } = {}) {
       if (p.length !== 3 || p.some((v) => !Number.isFinite(v) || Math.abs(v) > 1e5)) return;
       const yaw = Number(m.r); peer.yaw = Number.isFinite(yaw) ? yaw : 0;
       peer.anim = typeof m.a === "string" ? m.a.slice(0, 12) : "idle";
+      // 网格名只用来查本图已有的资产，去掉路径分隔符就没有别的作用；长度照截。
+      peer.mesh = typeof m.m === "string" ? m.m.replace(/[\\/:*?<>|\u0000-\u001f\u007f]/g, "").slice(0, 48) : "";
+      const ms = Number(m.s);
+      peer.meshScale = Number.isFinite(ms) ? Math.min(20, Math.max(0.01, ms)) : 1;
+      peer.hidden = !!m.h;
       peer.pos = p;
-      broadcast(room, { t: "state", id: peer.id, p, r: peer.yaw, a: peer.anim }, peer);
+      broadcast(room, { t: "state", id: peer.id, p, r: peer.yaw, a: peer.anim,
+        m: peer.mesh, s: peer.meshScale, h: peer.hidden ? 1 : 0 }, peer);
       return;
     }
 
@@ -188,9 +197,10 @@ export function createRealtime({ community } = {}) {
 
     peer.send({
       t: "welcome", you: peer.id, room: key,
-      peers: [...room].filter((p) => p !== peer).map((p) => ({ id: p.id, name: p.user.name, skin: p.user.skin, p: p.pos, r: p.yaw, a: p.anim })),
+      peers: [...room].filter((p) => p !== peer).map((p) => ({ id: p.id, name: p.user.name, skin: p.user.skin,
+        p: p.pos, r: p.yaw, a: p.anim, m: p.mesh, s: p.meshScale, h: p.hidden ? 1 : 0 })),
     });
-    broadcast(room, { t: "join", peer: { id: peer.id, name: user.name, skin: user.skin, p: peer.pos, r: 0, a: "idle" } }, peer);
+    broadcast(room, { t: "join", peer: { id: peer.id, name: user.name, skin: user.skin, p: peer.pos, r: 0, a: "idle", m: "", s: 1, h: 0 } }, peer);
 
     // 握手响应后面可能紧跟着客户端已经发出的帧，Node 把它们放在 head 里交给我们；
     // 不先喂进去就是"第一句话永远丢"。
