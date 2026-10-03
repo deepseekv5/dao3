@@ -515,9 +515,10 @@ const server = http.createServer((req, res) => {
       if (req.method === "GET") {
         const c = readConsent();
         const dst = worldPath(SEED_ID);
-        // 别拿文件大小猜是不是模板：改一次图就可能同宽。直接看 meta 里的来源标记。
-        const isTemplate = fs.existsSync(dst) && !isUntouchedProceduralDemo(dst)
-          && fs.statSync(dst).size === (fs.existsSync(TEMPLATE_PAYLOAD) ? fs.statSync(TEMPLATE_PAYLOAD).size : -1);
+        // 库里那张到底是不是官方模板：只看来源标记。
+        // 以前比的是文件字节数，可作者只要在编辑器里动一次图，存档大小就变了，
+        // 于是"未装入本机"贴在一张明明躺在列表里的图上——那是撒谎，不是保守。
+        const isTemplate = fs.existsSync(dst) && !isUntouchedProceduralDemo(dst);
         const bundle = bundleStat();
         return json(res, 200, {
           racingTemplate: c.racingTemplate || "unset",

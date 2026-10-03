@@ -13,7 +13,8 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------------- 广场 ---------------- */
 const FEED_TABS = [["new", "最新"], ["hot", "最热"], ["following", "关注"]];
-const FEED_KINDS = [["", "全部"], ["map", "地图"], ["model", "模型"]];
+// 不写"全部"那一格：上面那行分类已经有一个"全部"了，同一屏出现两个同义词的开关，谁都要想一下。
+const FEED_KINDS = [["map", "地图"], ["model", "模型"]];
 let feed = { sort: "new", cat: "", kind: "", q: "", offset: 0, total: 0, rows: [], cats: [] };
 
 async function feedView() {
@@ -49,7 +50,8 @@ function drawTabs() {
       `<button class="cm-kind ${feed.kind === k ? "on" : ""}" data-k="${k}">${label}</button>`).join("")}</span>`
     + `<span class="spacer"></span><span class="cm-count" id="cmCount"></span>`;
   for (const b of el.querySelectorAll("[data-s]")) b.onclick = () => { feed.sort = b.dataset.s; reload(); };
-  for (const b of el.querySelectorAll("[data-k]")) b.onclick = () => { feed.kind = b.dataset.k; reload(); };
+  // 再点一次当前那一类就是取消筛选，回到"都看"
+  for (const b of el.querySelectorAll("[data-k]")) b.onclick = () => { feed.kind = feed.kind === b.dataset.k ? "" : b.dataset.k; reload(); };
 }
 
 async function reload() { feed = { ...feed, offset: 0, rows: [] }; drawCats(); drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }

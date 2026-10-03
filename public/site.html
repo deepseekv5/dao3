@@ -135,13 +135,17 @@
 <script type="module" src="/js/disclaimer.js"></script>
 <script type="module" src="/js/site-showcase.js"></script>
 <script type="module">
-const links = [...document.querySelectorAll(".sp-nav a")];
-const secs = links.map((a) => document.querySelector(a.getAttribute("href"))).filter(Boolean);
+// 导航里既有 #锚点 也有 /docs/ 这种真链接：把后者当选择器喂给 querySelector
+// 会直接抛 SyntaxError（整段高亮逻辑从此不跑）；而先 filter 再按原下标取 links[i]
+// 会让高亮跳到错误的项上。所以先把链接和它指向的小节配成对，再筛。
+const pairs = [...document.querySelectorAll(".sp-nav a")]
+  .map((a) => { const h = a.getAttribute("href") || ""; return { a, sec: h.startsWith("#") ? document.querySelector(h) : null }; })
+  .filter((p) => p.sec);
 addEventListener("scroll", () => {
   const y = scrollY + innerHeight * .32;
   let cur = null;
-  secs.forEach((s, i) => { if (s.offsetTop <= y) cur = links[i]; });
-  links.forEach((l) => l.classList.toggle("on", l === cur));
+  pairs.forEach((p) => { if (p.sec.offsetTop <= y) cur = p.a; });
+  pairs.forEach((p) => p.a.classList.toggle("on", p.a === cur));
 }, { passive: true });
 </script>
 </body>

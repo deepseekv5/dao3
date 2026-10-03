@@ -92,7 +92,7 @@ ok("VOXA 那类模型能发布到社区", made.status === 200 && made.kind === "
 /* ---------------- 广场：类型分得开，卡片看得出能评论 ---------------- */
 await S.goto(BASE + "/community", { settleMs: 1800 });
 const kinds = await until(`[...document.querySelectorAll(".cm-kind")].map(b=>b.textContent)`);
-ok("广场有地图/模型两种流的开关", JSON.stringify(kinds) === JSON.stringify(["全部", "地图", "模型"]), JSON.stringify(kinds));
+ok("广场有地图/模型两种流的开关", JSON.stringify(kinds) === JSON.stringify(["地图", "模型"]), JSON.stringify(kinds));
 const chips = await until(`(() => { const s = document.querySelectorAll(".cm-card .cm-views span");
   return s.length === 3 ? [...s].map(x => ({ t: x.getAttribute("title"), n: x.textContent.trim(), svg: !!x.querySelector("svg") })) : null; })()`);
 ok("卡片上把浏览、点赞、评论三个数都摆出来", Array.isArray(chips) && chips.length === 3
