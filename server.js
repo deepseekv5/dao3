@@ -485,7 +485,10 @@ const community = createCommunity({
 });
 
 // 联机通道：升级请求由它自己判会话 cookie，路径不是 /ws/play/<pub> 的原样放回去。
-const realtime = createRealtime({ community });
+// 编辑协作房间要求世界存档真的存在，否则第二个人进来是空世界——两个人的"同一张图"
+// 就成了两张图。存档目录只有这里知道，所以以回调形式注入。
+const realtime = createRealtime({ community, worldExists: (id) => /^[A-Za-z0-9_-]{4,32}$/.test(id)
+  && fs.existsSync(path.join(WORLDS, id + ".json.gz")) });
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
