@@ -32,34 +32,87 @@
 .cm-cat:hover { color: var(--fg); }
 .cm-cat.on { color: var(--fg); border-bottom-color: var(--primary); font-weight: 600; }
 
+/* ---------- 广场：精选位 / 导轨 / 分区 ---------- */
+/* 展厅的读法是"先有一张大的，再有一排排的"，不是一屏平铺到底。
+   精选位用当前列表里游玩最多的一张；导轨只在没筛选的那一屏出现。 */
+.cm-feature {
+  display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr); gap: 0;
+  border: 1px solid var(--line); border-radius: 16px; overflow: hidden; margin-bottom: 20px; background: var(--bg1);
+}
+.cm-feature-art { position: relative; min-height: 268px; cursor: pointer; background: #05070c center/contain no-repeat; }
+.cm-feature-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cm-feature-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, transparent 45%, rgba(8, 10, 16, .85)); }
+.cm-feature-body { padding: 22px 22px 20px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.cm-feature-kicker { font: 600 10.5px/1 var(--mono); letter-spacing: 1.2px; color: var(--primary); text-transform: uppercase; }
+.cm-feature-body h2 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: .2px; }
+.cm-feature-body p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--fg2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cm-feature-stats { display: flex; flex-wrap: wrap; gap: 14px; font: 11.5px/1 var(--mono); color: var(--fg3); }
+.cm-feature-stats span { display: inline-flex; align-items: center; gap: 5px; }
+.cm-feature-stats svg { width: 13px; height: 13px; opacity: .8; }
+.cm-feature-acts { display: flex; gap: 9px; margin-top: auto; padding-top: 6px; flex-wrap: wrap; }
+.cm-feature-acts .cm-btn.primary svg { fill: currentColor; stroke: none; }
+.cm-feature-body .cm-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.cm-btn.lg { height: 38px; padding: 0 18px; font-size: 13.5px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.cm-btn.lg svg { width: 15px; height: 15px; flex: none; }
+.cm-feature .cm-author { margin-bottom: 2px; }
+.cm-feature .cm-author em { font-style: normal; color: var(--fg3); font-size: 11.5px; }
+
+.cm-rail { margin-bottom: 22px; }
+.cm-rail > header, .cm-sect > header {
+  display: flex; align-items: baseline; gap: 10px; margin: 0 0 11px; padding-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+}
+.cm-rail > header h3, .cm-sect > header h3 { margin: 0; font-size: 14.5px; font-weight: 700; letter-spacing: .3px; }
+.cm-rail > header a { margin-left: auto; font-size: 12px; color: var(--fg3); text-decoration: none; }
+.cm-rail > header a:hover { color: var(--primary); }
+.cm-rail-row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 226px; gap: 20px;
+  overflow-x: auto; padding: 2px 2px 12px; scrollbar-width: thin;
+}
+
 /* ---------- 广场卡片 ---------- */
-/* 照 dao3.fun 展厅：图占绝对主导，字只做索引。
-   格子是纯黑的（不是深灰）——深灰底 + 描边的卡片会互相"吵"，
-   而纯黑让每张图自己变成一个展品。hover 才亮起 2px 强调色边框。 */
-.cm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(186px, 1fr)); gap: 30px 26px; }
-.cm-card { display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+/* 照 dao3.fun 展厅：图占绝对主导，标题压在图下缘的暗色渐变上。
+   相框 16:10 + contain：这些封面是体素小地图，cover 会裁掉一圈看不出是什么，
+   而 1:1 的方框配 16:9 的原图只剩上下两道大黑带。 */
+.cm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 26px 20px; }
+.cm-card { display: flex; flex-direction: column; gap: 7px; cursor: pointer; }
 .cm-thumb {
-  position: relative; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden;
-  background: #000 center/cover no-repeat; border: 2px solid transparent; transition: border-color .15s;
+  position: relative; aspect-ratio: 16 / 10; border-radius: 11px; overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 0%, #12151d, #05070c) center/contain no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); transition: transform .16s, box-shadow .16s;
 }
-.cm-card:hover .cm-thumb { border-color: var(--primary); }
+.cm-card:hover .cm-thumb { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--primary), 0 10px 22px rgba(0, 0, 0, .45); }
 .cm-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.cm-glyph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 44px; font-weight: 700; color: rgba(255,255,255,.1); }
+.cm-glyph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 40px; font-weight: 700; color: rgba(255,255,255,.1); }
 .cm-thumb:has(img) .cm-glyph { display: none; }
-.cm-shape {
-  position: absolute; right: 8px; bottom: 8px; font: 10.5px/1 var(--mono);
-  color: var(--fg2); background: rgba(0,0,0,.72); padding: 4px 7px; border-radius: 6px;
+.cm-scrim {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 8px;
+  background: linear-gradient(transparent, rgba(4, 6, 10, .88));
 }
+.cm-scrim .cm-t { display: block; font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cm-play {
+  position: absolute; left: 50%; top: 46%; width: 42px; height: 42px; margin: -21px 0 0 -21px;
+  display: grid; place-items: center; border-radius: 50%; background: rgba(8, 10, 16, .62);
+  color: #fff; opacity: 0; transform: scale(.86); transition: .16s; backdrop-filter: blur(2px);
+}
+.cm-play svg { width: 19px; height: 19px; fill: currentColor; stroke: none; }
+.cm-card:hover .cm-play { opacity: 1; transform: scale(1); }
+.cm-shape {
+  position: absolute; right: 8px; top: 8px; font: 10px/1 var(--mono);
+  color: var(--fg2); background: rgba(0,0,0,.66); padding: 4px 6px; border-radius: 6px; opacity: 0; transition: .16s;
+}
+.cm-card:hover .cm-shape { opacity: 1; }
 .cm-badge {
   position: absolute; left: 8px; top: 8px; font: 10.5px/1 var(--mono);
   color: var(--fg2); background: rgba(0,0,0,.72); padding: 4px 7px; border-radius: 6px;
 }
-.cm-lines { min-width: 0; }
+.cm-lines { min-width: 0; padding: 0 2px; }
 .cm-title { margin: 0 0 5px; font-size: 14px; font-weight: 700; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cm-author { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg3); margin-bottom: 3px; min-width: 0; }
 .cm-author span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cm-author .au-face { width: 18px; height: 18px; border-radius: 5px; font-size: 10px; flex: none; }
-.cm-views { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--fg3); }
+.cm-views { display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: var(--fg3); }
 .cm-views span { display: inline-flex; align-items: center; gap: 4px; }
 .cm-views svg { width: 13px; height: 13px; flex: none; opacity: .8; }
 .cm-eye { width: 13px; height: 13px; flex: none; }
@@ -94,7 +147,10 @@
 .cm-author b { font-size: 13.5px; display: block; }
 .cm-author i { font-style: normal; font-size: 11px; color: var(--fg3); }
 .cm-acts { display: flex; flex-direction: column; gap: 7px; }
-.cm-acts .cm-btn { width: 100%; height: 34px; }
+.cm-acts .cm-btn { width: 100%; height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.cm-acts .cm-btn svg { width: 14px; height: 14px; flex: none; }
+.cm-acts .cm-btn.primary svg { fill: currentColor; stroke: none; }
+.cm-cmts h3 .cm-cmt-n { color: var(--fg3); font-weight: 400; font: 11.5px/1 var(--mono); }
 
 /* ---------- 评论 ---------- */
 .cm-cmts { margin-top: 20px; }

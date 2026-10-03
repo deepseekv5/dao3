@@ -75,12 +75,21 @@ export const coverHtml = (p) => p.hasCover
   : p.kind === "model"
     ? `<img src="/api/community/pubs/${p.id}/preview" alt="" loading="lazy" onerror="this.remove()"/>`
     : "";
-/** 一个作品卡。
-    骨架照 dao3.fun 的展厅抄：一张纯黑底图 + 三行字（标题 / 作者 / 浏览量）。
-    之前这张卡是「小地图 + 简介两行 + 标签 + 三个计数挤一行」，信息量一样，
-    但五样东西分摊不出一条视觉重心，看起来就是一堆生成的卡片；
-    而官方的做法是图占绝对主导，字只做索引——眼睛先看到图，再决定点不点。
-    浏览量要按人读：41234 → 41.2K。 */
+/** 卡片底部那一行计数。图标自己画：字体里的 ★ ♥ 💬 在不同系统上会漂成 emoji，
+ *  而漂不漂只有用户看得到，测试抓不到。 */
+const ico = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const EYE = ico('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>');
+const HEART = ico('<path d="M12 20s-7.4-4.6-7.4-9.4A4.1 4.1 0 0 1 12 8.2a4.1 4.1 0 0 1 7.4 2.4C19.4 15.4 12 20 12 20z"/>');
+const CHAT = ico('<path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-4 3.5V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5z"/>');
+const PLAY = ico('<path d="M8 5.5 19 12 8 18.5z"/>');
+const DOWN = ico('<path d="M12 4v11M7.5 11 12 15.5 16.5 11M5 19h14"/>');
+export const icons = { EYE, HEART, CHAT, PLAY, DOWN };
+/** 一张作品卡。
+ *    骨架照 dao3.fun 的展厅：图占绝对主导，标题压在图下缘的暗色渐变上，
+ *    图下面只留作者与计数——眼睛先看到图，再决定点不点。
+ *    封面用 contain 而不是 cover：这些图是体素小地图，裁掉一圈就看不出是什么图了；
+ *    相框改成 16:10，16:9 的原图放进去只剩一条很窄的边，不再是上下两道大黑带。
+ *    浏览量要按人读：41234 → 41.2K。 */
 const kfmt = (n) => {
   const v = Number(n) || 0;
   if (v >= 1e8) return (v / 1e8).toFixed(1) + "亿";
@@ -88,34 +97,77 @@ const kfmt = (n) => {
   if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
   return String(v);
 };
-/** 卡片底部那一行计数。图标自己画：字体里的 ★ ♥ 💬 在不同系统上会漂成 emoji，
- *  而漂不漂只有用户看得到，测试抓不到。 */
-const ico = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
-const EYE = ico('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>');
-const HEART = ico('<path d="M12 20s-7.4-4.6-7.4-9.4A4.1 4.1 0 0 1 12 8.2a4.1 4.1 0 0 1 7.4 2.4C19.4 15.4 12 20 12 20z"/>');
-const CHAT = ico('<path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H8l-4 3.5V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5z"/>');
 export function cardHtml(p) {
   const isModel = p.kind === "model";
   return `<article class="cm-card" data-id="${esc(p.id)}">
-    <div class="cm-thumb" ${p.hasCover ? "" : `style="${coverArt()}"`}>
+    <div class="cm-thumb" ${p.hasCover || isModel ? "" : `style="${coverArt()}"`}>
       ${coverHtml(p)}
       <span class="cm-glyph">${esc((p.title || "?").slice(0, 1))}</span>
       ${isModel ? `<span class="cm-badge">模型</span>` : ""}
       ${p.shape && !isModel ? `<span class="cm-shape">${esc(p.shape.join("×"))}</span>` : ""}
+      <span class="cm-play">${PLAY}</span>
+      <span class="cm-scrim"><span class="cm-t">${esc(p.title)}</span></span>
     </div>
     <div class="cm-lines">
-      <h4 class="cm-title">${esc(p.title)}</h4>
       <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span></div>
       <div class="cm-views">
-        <span title="浏览">${EYE}${kfmt(p.plays)}</span>
+        <span title="游玩">${EYE}${kfmt(p.plays)}</span>
         <span title="点赞">${HEART}${kfmt(p.likes)}</span>
         <span title="评论">${CHAT}${kfmt(p.comments)}</span>
       </div>
     </div>
   </article>`;
 }
-export function bindCards(scope) {
+
+/** 一条横向导轨：标题 + 一行卡片。广场要"逛"起来靠分区，不是一屏平铺到底。 */
+export function railHtml(title, rows, { more = "" } = {}) {
+  if (!rows || !rows.length) return "";
+  return `<section class="cm-rail">
+    <header><h3>${esc(title)}</h3>${more ? `<a href="${esc(more.href || "/community")}">${esc(more.label || "查看全部")}</a>` : ""}</header>
+    <div class="cm-rail-row">${rows.map(cardHtml).join("")}</div>
+  </section>`;
+}
+
+/** 精选位：整屏最大的一块，给当前列表里最热的那张。
+ *  没有它，广场就是一张只有三格内容的空桌子。 */
+export function heroHtml(p) {
+  if (!p) return "";
+  const isModel = p.kind === "model";
+  return `<section class="cm-feature" data-id="${esc(p.id)}">
+    <div class="cm-feature-art" ${p.hasCover || isModel ? "" : `style="${coverArt()}"`}>
+      ${coverHtml(p)}
+      <span class="cm-feature-scrim"></span>
+    </div>
+    <div class="cm-feature-body">
+      <span class="cm-feature-kicker">${isModel ? "精选模型" : "精选地图"}</span>
+      <h2>${esc(p.title)}</h2>
+      ${p.desc ? `<p>${esc(p.desc).slice(0, 150)}</p>` : ""}
+      <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span>
+        <em>· ${esc(timeAgo(p.updated || p.created))}发布</em></div>
+      <div class="cm-feature-stats">
+        <span>${EYE}${kfmt(p.plays)} 次游玩</span><span>${HEART}${kfmt(p.likes)}</span><span>${CHAT}${kfmt(p.comments)}</span>
+        ${p.shape ? `<span>${esc(p.shape.join("×"))}</span>` : ""}
+      </div>
+      <div class="cm-feature-acts">
+        <button class="cm-btn primary lg" data-play="${esc(p.id)}">${PLAY}${isModel ? "查看模型" : "开始游玩"}</button>
+        <a class="cm-btn lg" href="/p/${esc(p.id)}">详情与评论</a>
+      </div>
+    </div>
+  </section>`;
+}
+/** 卡片与精选位接线。
+ *  onPlay 可选：给了就直接开跑（广场的精选位要这样），没给就退回详情页——
+ *  主页/工作台那边只有卡片，没有手边的作品对象。 */
+export function bindCards(scope, { onPlay } = {}) {
   for (const c of scope.querySelectorAll(".cm-card")) c.onclick = () => (location.href = "/p/" + c.dataset.id);
+  const art = scope.querySelector(".cm-feature-art");
+  const feat = scope.querySelector(".cm-feature");
+  if (art && feat) art.onclick = () => (location.href = "/p/" + feat.dataset.id);
+  for (const b of scope.querySelectorAll("[data-play]")) b.onclick = (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    if (onPlay) onPlay(b.dataset.play, b);
+    else location.href = "/p/" + b.dataset.play;
+  };
 }
 /* ---------------- 游玩 / 取回本地 ---------------- */
 /** 把社区里的模型取回本机 VOXA 库。

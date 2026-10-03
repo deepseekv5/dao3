@@ -1,7 +1,7 @@
 // community.js — 社区页：广场、地图详情、用户主页、好友与关注。
 // 一个 HTML 壳 + 按路径分派，因为这几屏共用同一条数据管线（发布卡片、关注按钮、头像）。
 import * as auth from "/js/auth.js";
-import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, cardHtml, bindCards, playPub, materialize, pullModel, openPublishDialog } from "/js/pubs.js";
+import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, cardHtml, railHtml, heroHtml, bindCards, playPub, materialize, pullModel, openPublishDialog, icons } from "/js/pubs.js";
 import { profileView } from "/js/profile.js";
 const { api, esc, mountAuth, onLogin, openAuth } = auth;
 
@@ -21,8 +21,12 @@ async function feedView() {
   pageTitle.textContent = "地图展厅";
   pageSub.textContent = "别人发布的世界，点进去就能跑一圈";
   qBox.closest(".wb-search").hidden = false;
-  root.innerHTML = `<div class="cm-cats" id="cmCats"></div>
-    <div class="cm-tabs" id="cmTabs"></div><div class="cm-grid" id="cmGrid"></div>
+  root.innerHTML = `<div id="cmFeature"></div>
+    <div class="cm-cats" id="cmCats"></div>
+    <div class="cm-tabs" id="cmTabs"></div>
+    <div id="cmRails"></div>
+    <section class="cm-sect"><header><h3 id="cmSectTitle">全部作品</h3><span class="cm-count" id="cmCount"></span></header>
+      <div class="cm-grid" id="cmGrid"></div></section>
     <div id="cmMore" style="text-align:center"></div>`;
   drawTabs();
   await loadFeed(true);
@@ -48,7 +52,7 @@ function drawTabs() {
     // 混在一条流里模型永远沉底，所以给一条按类型切的开关。
     + `<span class="cm-kinds">${FEED_KINDS.map(([k, label]) =>
       `<button class="cm-kind ${feed.kind === k ? "on" : ""}" data-k="${k}">${label}</button>`).join("")}</span>`
-    + `<span class="spacer"></span><span class="cm-count" id="cmCount"></span>`;
+    + `<span class="spacer"></span>`;
   for (const b of el.querySelectorAll("[data-s]")) b.onclick = () => { feed.sort = b.dataset.s; reload(); };
   // 再点一次当前那一类就是取消筛选，回到"都看"
   for (const b of el.querySelectorAll("[data-k]")) b.onclick = () => { feed.kind = feed.kind === b.dataset.k ? "" : b.dataset.k; reload(); };
@@ -73,12 +77,26 @@ async function loadFeed(reset) {
   feed.rows = feed.rows.concat(r.rows);
   feed.offset = r.rows.length;
   const noun = feed.kind === "model" ? "模型" : feed.kind === "map" ? "地图" : "作品";
-  grid.innerHTML = feed.rows.length ? feed.rows.map(cardHtml).join("") : `<div class="cm-empty" style="grid-column:1/-1"><b>这里还空着</b>还没有${noun}发布。</div>`;
+  const title = $("cmSectTitle");
+  if (title) title.textContent = feed.cat ? `${feed.cat} · ${noun}` : (feed.q ? `“${feed.q}”的搜索结果` : `全部${noun}`);
+  grid.innerHTML = feed.rows.length ? feed.rows.map(cardHtml).join("") : `<div class="cm-empty" style="grid-column:1/-1">
+    <b>${feed.q ? "没找到匹配的作品" : `这里还空着`}</b>
+    ${feed.q ? "换个词，或者回广场看看全部。" : `还没有${noun}发布。${auth.me ? "打开工作台，把第一张图发出来。" : "登录后就能发布你的第一张图。"}`}
+    ${feed.q ? `<a class="cm-btn" href="/community">看全部${noun}</a>` : `<a class="cm-btn primary" href="/">去工作台</a>`}
+  </div>`;
+  // 精选位与导轨只在"没在筛选"的那一屏出现：搜索结果里放"大家都在玩"是答非所问。
+  const plain = !feed.cat && !feed.kind && !feed.q && feed.sort !== "following";
+  const featHost = $("cmFeature"), railHost = $("cmRails");
+  const byPlays = [...feed.rows].sort((a, b) => (b.plays || 0) - (a.plays || 0) || (b.updated || 0) - (a.updated || 0));
+  featHost.innerHTML = plain && byPlays.length ? heroHtml(byPlays[0]) : "";
+  // 导轨要在内容够多的时候才有意义：一共三张图还分"大家都在玩"和"全部作品"两遍，是凑版式。
+  const rest = plain && byPlays.length > 7 ? byPlays.slice(1, 7) : [];
+  railHost.innerHTML = rest.length ? railHtml("大家都在玩", rest, { href: "/community?sort=hot", label: "按热度看" }) : "";
   $("cmCount").textContent = `${feed.rows.length} / ${r.total}`;
   $("cmMore").innerHTML = feed.rows.length < r.total ? `<button class="cm-btn" id="cmMoreBtn">再看 24 张</button>` : "";
   const more = $("cmMoreBtn");
   if (more) more.onclick = () => loadFeed(false);
-  bindCards(grid);
+  bindCards(root, { onPlay: (id, btn) => { const p = feed.rows.find((x) => x.id === id); if (p) playPub(p, btn); } });
 }
 
 
@@ -114,6 +132,7 @@ async function pubView(id) {
         <div id="cmCmtList"></div>
         <div id="cmCompose"></div>
       </section>
+      <div id="cmAlso"></div>
     </div>
     <aside class="cm-side">
       <div class="cm-panel">
@@ -126,11 +145,11 @@ async function pubView(id) {
       <div class="cm-panel">
         <h4>这张地图</h4>
         <div class="cm-acts" id="cmPubActs">
-          <button class="cm-btn primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${p.kind === "model" ? "下载模型" : "开始游玩"}</button>
-          <button class="cm-btn ${p.likedByMe ? "on" : ""}" id="cmLike">♥ 点赞 <b>${p.likes}</b></button>
+          <button class="cm-btn primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>
+          <button class="cm-btn ${p.likedByMe ? "on" : ""}" id="cmLike">${icons.HEART}点赞 <b>${p.likes}</b></button>
           ${p.kind === "model"
-            ? `<button class="cm-btn" id="cmPull">取回到模型库</button>`
-            : `<button class="cm-btn" id="cmFork">存为我的地图</button>`}
+            ? `<button class="cm-btn" id="cmPull">${icons.DOWN}取回到模型库</button>`
+            : `<button class="cm-btn" id="cmFork">${icons.DOWN}存为我的地图</button>`}
           ${d.canEdit ? `<button class="cm-btn" id="cmEdit">编辑简介</button><button class="cm-btn" id="cmUnpub">下架</button>` : ""}
           ${d.canEdit ? "" : `<button class="cm-report" id="cmReport">举报这张${p.kind === "model" ? "模型" : "地图"}</button>`}
         </div>
@@ -140,6 +159,12 @@ async function pubView(id) {
   </div>`;
 
   if (a) renderAuthorActs(a, rel);
+  // 详情页最容易空：看完这张就该有下一张。取热门，排掉自己。
+  api("GET", "/api/community/feed?sort=hot&limit=8").then((r) => {
+    const rows = (r.rows || []).filter((x) => x.id !== p.id).slice(0, 6);
+    const host = $("cmAlso");
+    if (host && rows.length) { host.innerHTML = railHtml("接下来试试", rows); bindCards(host); }
+  }).catch(() => { });
   $("cmPlay").onclick = () => playPub(p);
   const fork = $("cmFork");
   if (fork) fork.onclick = () => materialize(p, { keep: true });
