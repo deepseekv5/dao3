@@ -187,6 +187,27 @@ function avatarPalette(override) {
   return C;
 }
 
+/** 接触阴影（blob shadow）：一张贴着地面跟脚走的软边椭圆。
+ *  太阳的阴影贴图只覆盖投影那一片，夜里/洞里还会整块关掉，于是角色"飘在半空"。
+ *  脚下那点永远存在的暗，是体素游戏里最便宜也最有效的接地手段。 */
+let _blobGeo = null, _blobTex = null;
+function blobShadowMesh() {
+  if (!_blobTex) {
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const g = c.getContext("2d");
+    const rad = g.createRadialGradient(32, 32, 3, 32, 32, 31);
+    rad.addColorStop(0, "rgba(0,0,0,.5)"); rad.addColorStop(.55, "rgba(0,0,0,.24)"); rad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = rad; g.fillRect(0, 0, 64, 64);
+    _blobTex = new THREE.CanvasTexture(c);
+    _blobGeo = new THREE.PlaneGeometry(1, 1);
+  }
+  const m = new THREE.Mesh(_blobGeo, new THREE.MeshBasicMaterial({ map: _blobTex, transparent: true, depthWrite: false, opacity: .9 }));
+  m.rotation.x = -Math.PI / 2;
+  m.renderOrder = 2;
+  m.visible = false;
+  return m;
+}
+
 function makeAvatar(skinOverride) {
   // 带 MC 皮肤贴图时走经典六面体：把苦力怕的脸贴到 0.46×0.50 的圆角头上，
   // 脸会被挤变形，认不出是谁。没有贴图才走下面那套细节人偶。
@@ -2377,8 +2398,36 @@ const ZERO = new GameVector3();
       this._stepParticles(e2, dt);
       this._syncEntityVisibility(e2);
       this._updateAvatar(e2, dt);
+      this._updateBlobShadow(e2);
     }
   }
+  /** 脚下那点暗：只给玩家、联机分身和真正会动的实体。
+   *  一张图里 170 个静态场景件全挂就是 170 个额外 draw call，不值。 */
+  _updateBlobShadow(e2) {
+    const isMe = e2 === this.playerEntity;
+    const moving = e2.gravity && !e2.fixed;
+    const isPeer = !isMe && !e2.player && e2._netAnim != null;
+    if (!isMe && !isPeer && !moving) return;
+    if (!e2._blob) { e2._blob = blobShadowMesh(); e2._obj.add(e2._blob); }
+    const b = e2._blob;
+    const p = this.player;
+    const hide = isMe && (p.invisible || p.spectator
+      || p.cameraMode === GameCameraMode.FPS || (e2._meshHolder && e2._meshHolder.children.length));
+    if (hide) { b.visible = false; return; }
+    const vp = this._visualPos(e2);
+    const hit = this._raycast({ x: vp.x, y: vp.y + 0.12, z: vp.z }, { x: 0, y: -1, z: 0 },
+      { maxDistance: 3.4, ignoreFluid: true, ignoreEntities: [e2] });
+    if (!hit || !hit.hit) { b.visible = false; return; }      // 悬空/跳起来了：没有落脚面就别硬画
+    const gap = Math.max(0, Math.min(3.4, vp.y - hit.hitPosition.y));
+    const fade = 1 - gap / 3.4;
+    const foot = Math.max(0.3, Math.max(e2.bounds?.[0] || .5, e2.bounds?.[2] || .5));
+    const size = (isMe ? 1.15 : foot * 2.3) * (1 + gap * 0.16);
+    b.visible = fade > 0.06;
+    b.position.set(0, hit.hitPosition.y - e2.position.y + 0.02, 0);
+    b.scale.set(size, size, 1);
+    b.material.opacity = 0.9 * fade * fade;
+  }
+
   /** 车辆网格跟着行进方向转。
    *
    * 官方 .vb → glTF 的转换没有保留动画轨道，而官方恰恰是靠 motion 轨道驱动车头朝向的——
@@ -2388,6 +2437,33 @@ const ZERO = new GameVector3();
    * 轴向不写死在代码里，按几何量：水平方向上的长轴＝车长，靠近模型枢轴的那一端算车头
    * （官方导出把枢轴放在车头，所以包围盒中心相对 holder 原点偏哪边，车头就朝反边）。
    * 中心几乎与枢轴重合时判不出方向，宁可不转也不要瞎转。 */
+  /** 脚下那点暗：只给玩家、联机分身和真正会动的实体。
+   *  一张图里 170 个静态场景件全挂就是 170 个额外 draw call，不值。 */
+  _updateBlobShadow(e2) {
+    const isMe = e2 === this.playerEntity;
+    const moving = e2.gravity && !e2.fixed;
+    const isPeer = !isMe && !e2.player && e2._netAnim != null;
+    if (!isMe && !isPeer && !moving) return;
+    if (!e2._blob) { e2._blob = blobShadowMesh(); e2._obj.add(e2._blob); }
+    const b = e2._blob;
+    const p = this.player;
+    const hide = isMe && (p.invisible || p.spectator
+      || p.cameraMode === GameCameraMode.FPS || (e2._meshHolder && e2._meshHolder.children.length));
+    if (hide) { b.visible = false; return; }
+    const vp = this._visualPos(e2);
+    const hit = this._raycast({ x: vp.x, y: vp.y + 0.12, z: vp.z }, { x: 0, y: -1, z: 0 },
+      { maxDistance: 3.4, ignoreFluid: true, ignoreEntities: [e2] });
+    if (!hit || !hit.hit) { b.visible = false; return; }      // 悬空/跳起来了：没有落脚面就别硬画
+    const gap = Math.max(0, Math.min(3.4, vp.y - hit.hitPosition.y));
+    const fade = 1 - gap / 3.4;
+    const foot = Math.max(0.3, Math.max(e2.bounds?.[0] || .5, e2.bounds?.[2] || .5));
+    const size = (isMe ? 1.15 : foot * 2.3) * (1 + gap * 0.16);
+    b.visible = fade > 0.06;
+    b.position.set(0, hit.hitPosition.y - e2.position.y + 0.02, 0);
+    b.scale.set(size, size, 1);
+    b.material.opacity = 0.9 * fade * fade;
+  }
+
   /** 车辆网格跟着行进方向转。
    *
    * 官方 .vb → glTF 的转换没有保留动画轨道，而官方恰恰是靠 motion 轨道驱动车头朝向的——

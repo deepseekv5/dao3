@@ -83,6 +83,15 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); transition: transform .16s, box-shadow .16s;
 }
 .cm-card:hover .cm-thumb { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--primary), 0 10px 22px rgba(0, 0, 0, .45); }
+.cm-card:focus-visible { outline: none; }
+.cm-card:focus-visible .cm-thumb { box-shadow: inset 0 0 0 2px var(--primary), 0 10px 22px rgba(0, 0, 0, .45); }
+/* 骨架屏：只有明暗在呼吸，不上彩色渐变——彩色的 shimmer 一眼就是生成页 */
+.cm-skel { pointer-events: none; }
+.cm-skel .sk-img { display: block; aspect-ratio: 16 / 10; border-radius: 11px; background: var(--bg2); animation: skpulse 1.5s ease-in-out infinite; }
+.cm-skel .sk-line { display: block; height: 11px; margin-top: 9px; border-radius: 5px; background: var(--bg2); animation: skpulse 1.5s ease-in-out infinite; }
+.cm-skel .sk-line.sm { width: 55%; height: 9px; }
+@keyframes skpulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .cm-skel .sk-img, .cm-skel .sk-line { animation: none; } }
 .cm-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .cm-glyph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 40px; font-weight: 700; color: rgba(255,255,255,.1); }
 .cm-thumb:has(img) .cm-glyph { display: none; }
@@ -151,6 +160,10 @@
 .cm-acts .cm-btn svg { width: 14px; height: 14px; flex: none; }
 .cm-acts .cm-btn.primary svg { fill: currentColor; stroke: none; }
 .cm-cmts h3 .cm-cmt-n { color: var(--fg3); font-weight: 400; font: 11.5px/1 var(--mono); }
+
+.cm-coverbox { display: flex; align-items: center; gap: 10px; margin: -2px 0 10px; }
+.cm-coverbox img { width: 132px; height: 74px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line2); background: #05070c; }
+.cm-coverbox[hidden] { display: none; }
 
 /* ---------- 评论 ---------- */
 .cm-cmts { margin-top: 20px; }
@@ -328,9 +341,22 @@
 .cm-report { font-size: 11.5px; color: var(--fg3); background: none; border: 0; cursor: pointer; padding: 0; }
 .cm-report:hover { color: var(--bad); }
 
+@media (max-width: 1080px) {
+  .cm-feature { grid-template-columns: 1fr; }
+  .cm-feature-art { min-height: 200px; }
+  .cm-feature-body { padding: 16px 16px 18px; }
+  .cm-feature-body h2 { font-size: 20px; }
+}
+@media (max-width: 900px) {
+  .cm-detail { grid-template-columns: 1fr; }
+  .cm-side { position: static; }
+}
 @media (max-width: 760px) {
   .pf-cols { grid-template-columns: 1fr; }
   .pf-head { flex-wrap: wrap; }
+  .cm-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px 14px; }
+  .cm-rail-row { grid-auto-columns: 168px; }
+  .cm-cats { gap: 2px 10px; }
 }
 
 /* 皮肤选择器：成套预设 → 部位 → 该部位自己的色板，三步都在同一列里 */

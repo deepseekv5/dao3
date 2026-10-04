@@ -99,7 +99,8 @@ const kfmt = (n) => {
 };
 export function cardHtml(p) {
   const isModel = p.kind === "model";
-  return `<article class="cm-card" data-id="${esc(p.id)}">
+  // 卡片是可点的东西，就得能用键盘点到：role/tabindex + Enter，焦点环交给 CSS。
+  return `<article class="cm-card" data-id="${esc(p.id)}" role="link" tabindex="0" aria-label="${esc(p.title)}">
     <div class="cm-thumb" ${p.hasCover || isModel ? "" : `style="${coverArt()}"`}>
       ${coverHtml(p)}
       <span class="cm-glyph">${esc((p.title || "?").slice(0, 1))}</span>
@@ -159,7 +160,12 @@ export function heroHtml(p) {
  *  onPlay 可选：给了就直接开跑（广场的精选位要这样），没给就退回详情页——
  *  主页/工作台那边只有卡片，没有手边的作品对象。 */
 export function bindCards(scope, { onPlay } = {}) {
-  for (const c of scope.querySelectorAll(".cm-card")) c.onclick = () => (location.href = "/p/" + c.dataset.id);
+  for (const c of scope.querySelectorAll(".cm-card")) {
+    c.onclick = () => (location.href = "/p/" + c.dataset.id);
+    c.onkeydown = (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); location.href = "/p/" + c.dataset.id; }
+    };
+  }
   const art = scope.querySelector(".cm-feature-art");
   const feat = scope.querySelector(".cm-feature");
   if (art && feat) art.onclick = () => (location.href = "/p/" + feat.dataset.id);
@@ -257,12 +263,37 @@ export async function openPublishDialog(world) {
     <label>标题<input id="pTitle" maxlength="60" value="${esc(world.name || "")}"/></label>
     <label>简介<textarea id="pDesc" maxlength="2000" placeholder="这张图玩什么、怎么触发"></textarea></label>
     <label>标签<input id="pTags" placeholder="竞速, 地图, 教程"/></label>
-    <label>封面<input id="pCover" type="file" accept="image/png,image/jpeg,image/webp" title="不选就用编辑器的截图；一张都没有时用生成的色块"/></label>
+    <label>封面<input id="pCover" type="file" accept="image/png,image/jpeg,image/webp" title="不选就用下面这张按地图全貌渲染的图"/></label>
+    <div class="cm-coverbox" id="pCoverBox" hidden>
+      <img id="pCoverPrev" alt="封面预览"/>
+      <button type="button" class="cm-btn sm" id="pCoverGen">按地图全貌重画一张</button>
+    </div>
     <label>更新说明<input id="pNote" maxlength="200" placeholder="这次改了什么"/></label>
     <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="pOk" title="发布的是此刻的快照：体素、脚本、实体与素材整体复制一份，之后再改这张图不会跟着变。">发布</button></div>`,
     async (box, close) => {
       const me = auth.me;
       box.querySelector("#pDesc").placeholder = `作者 ${me.name} · ${world.shape ? world.shape.join("×") : ""}`;
+      // 发布这一步是"这张图长什么样"唯一被大量看见的地方。默认不能再交给
+      // 服务端那张 2D 小地图（黑底 + 一小块内容），而是当场按全貌渲一张产品照。
+      const shot = () => {
+        const r = typeof window.__editor?.renderer?.coverShot === "function" ? window.__editor.renderer : null;
+        if (!r) return null;
+        try { const c = r.coverShot(640, 360); return c ? c.toDataURL("image/png") : null; } catch { return null; }
+      };
+      let gen = null;
+      const coverBox = box.querySelector("#pCoverBox"), prev = box.querySelector("#pCoverPrev");
+      const setGen = (url) => { gen = url; prev.src = url; coverBox.hidden = false; };
+      const first = shot();
+      if (first) setGen(first);
+      box.querySelector("#pCoverGen").onclick = () => {
+        const url = shot();
+        if (url) { setGen(url); toast("已按地图全貌重画"); } else toast("现在这个画面渲不出封面", true);
+      };
+      // 自己选了图就以选的为准，预览让给用户选的那张
+      box.querySelector("#pCover").onchange = (ev) => {
+        const f = ev.target.files && ev.target.files[0];
+        if (f) { const fr = new FileReader(); fr.onload = () => { gen = null; prev.src = String(fr.result); coverBox.hidden = false; }; fr.readAsDataURL(f); }
+      };
       box.querySelector("#pOk").onclick = async () => {
         const title = box.querySelector("#pTitle").value.trim();
         if (title.length < 2) return toast("标题至少 2 个字", true);
@@ -279,6 +310,14 @@ export async function openPublishDialog(world) {
             const uj = await up.json().catch(() => null);
             if (!up.ok) throw new Error((uj && uj.error) || "封面上传失败");
             coverUrl = uj.url;
+          }
+          if (!coverUrl && gen) {
+            const blob = await (await fetch(gen)).blob();
+            const up = await fetch("/api/community/upload?kind=cover", {
+              method: "POST", headers: { "Content-Type": "image/png", "X-CSRF-Token": csrfToken() }, body: blob,
+            });
+            const uj = await up.json().catch(() => null);
+            if (up.ok) coverUrl = uj.url;
           }
           const r = await api("POST", "/api/community/publish", {
             worldId: world.id, title, coverUrl,

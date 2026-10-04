@@ -63,7 +63,9 @@ async function reload() { feed = { ...feed, offset: 0, rows: [] }; drawCats(); d
 async function loadFeed(reset) {
   const grid = $("cmGrid");
   if (!grid) return;
-  if (reset) grid.innerHTML = `<div class="cm-empty">正在读取广场…</div>`;
+  // 读的时候给一排骨架，不给一行字：一屏空白 + 一句话，看起来像坏了而不是在加载
+  if (reset) grid.innerHTML = `<div class="cm-card cm-skel" style="grid-column:1/-1;display:none"></div>`
+    + Array.from({ length: 8 }, () => `<div class="cm-skel"><span class="sk-img"></span><span class="sk-line"></span><span class="sk-line sm"></span></div>`).join("");
   let r;
   try {
     r = await api("GET", `/api/community/feed?sort=${feed.sort}&cat=${encodeURIComponent(feed.cat)}&kind=${feed.kind}&q=${encodeURIComponent(feed.q)}&offset=${feed.offset}&limit=24`);
