@@ -18,8 +18,6 @@ const I = window.__icons = {
   food: '<svg viewBox="0 0 24 24"><path d="M7 3v6a2.5 2.5 0 0 1-5 0V3M4.5 9v12M16 3c0 3 1.6 4.5 2 5.5V21M12 3v18M15 21H9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   recent: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5V12l3 2.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.2 15.2L20 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  collab: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 19c.8-3.2 2.8-4.8 5.5-4.8s4.7 1.6 5.5 4.8M16.5 5.6a3.2 3.2 0 0 1 0 5.8M18.6 14.4c1 .8 1.7 2 1.9 3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
-  feedback: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
   settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5l1 2.2 2.4-.5 1 2.1 2.3.8-.3 2.4 1.8 1.6-1.8 1.6.3 2.4-2.3.8-1 2.1-2.4-.5-1 2.2-1-2.2-2.4.5-1-2.1-2.3-.8.3-2.4L3.8 12l1.8-1.6-.3-2.4 2.3-.8 1-2.1 2.4.5 1-2.2z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M4 10.5V20h5.5v-5.5h5V20H20v-9.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M2.8 11L12 3.5 21.2 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5v-15z" fill="currentColor"/></svg>',
@@ -907,11 +905,6 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     document.querySelector('.pp-ico[data-tab="world"]')?.click();
     toast("世界设置：右侧 属性 → 世界（名字/出生点/时间/规则）");
   };
-  // 协作 / 反馈（本地单机版如实提示，不再无响应）
-  document.querySelectorAll("#topbar .tb-ico").forEach((b) => {
-    const t = b.title || "";
-    if (t === "协作" || t === "反馈") b.onclick = () => toast(t + "：本地单机版暂未开放");
-  });
   // 左上「＋ 添加」→ 聚焦搜索
   const lcAddBtn = $("lcAdd");
   if (lcAddBtn) lcAddBtn.onclick = () => { search.focus(); toast("点击下方方块即可选中建造"); };

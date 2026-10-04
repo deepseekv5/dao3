@@ -88,8 +88,8 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 
   <div class="tour">
     <figure class="wide">
-      <img src="img/editor-build.png" alt="编辑器搭建模式：官方赛车模板赛道，左侧方块库与分类栏，顶部工具条" width="1440" height="900" loading="lazy"/>
-      <figcaption><b>搭建</b> 383 种方块、选区镜像/旋转、体素笔刷、模型摆放与拖拽</figcaption>
+      <img src="img/editor-build.png" alt="编辑器搭建模式：官方赛车模板赛道，左侧方块库与分类栏，顶部工具条，底部状态栏报当前工具/坐标/体素数/诊断" width="1440" height="900" loading="eager"/>
+      <figcaption><b>搭建</b> 383 种方块、选区镜像/旋转、体素笔刷、模型摆放与拖拽；底部一条状态栏常驻读数</figcaption>
     </figure>
 
     <figure>
@@ -101,6 +101,10 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
       <figcaption><b>脚本</b> 多文件；服务端 GameAPI、客户端 ClientAPI，沙箱按端裁剪</figcaption>
     </figure>
 
+    <figure>
+      <img src="img/editor-palette.png" alt="命令面板：F1 呼出，输入「球」过滤出用球体笔刷，右侧显示快捷键" width="1440" height="900" loading="lazy"/>
+      <figcaption><b>命令面板</b> 49 条命令、9 组，子序列匹配；折叠掉的工具也调得到</figcaption>
+    </figure>
     <figure>
       <img src="img/editor-ui.png" alt="界面编辑器：控件拖放与属性面板" width="1440" height="900" loading="lazy"/>
       <figcaption><b>界面编辑器</b> 拖放按钮/文本/图片，运行时由 <code>world.onUIPress</code> 响应</figcaption>
@@ -195,6 +199,7 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
   <p class="sub">与仓库 <code>docs/</code> 同源，共 {{DOCS_N}} 篇。<b>依赖清单</b>与<b>致谢</b>是必读：前者说明哪些第三方代码真的在跑，后者划清与官方的授权边界。</p>
   <div class="docs">
     <a class="dc" href="architecture.html"><b>架构与数据流</b><span>编辑器与运行时如何共享一份世界状态；实体为什么只有一张表；模型拾取为何要退化成包围盒</span></a>
+    <a class="dc" href="editor.html"><b>编辑器界面与命令</b><span>五个区加一条读数带；状态栏为什么用轮询而不是埋点；命令面板只转调现有按钮，不重写第二份行为</span></a>
     <a class="dc" href="api-compat.html"><b>官方 API 兼容层</b><span>329 个成员怎么对账；静态审计为什么会误报；15 条"看着实现了"的假接口清单</span></a>
     <a class="dc" href="api-reference.html"><b>API 参考</b><span>逐个成员的签名、官方中文说明与单位；本地实现到位还是缺口，一眼可查（生成物）</span></a>
     <a class="dc" href="community.html"><b>社区层</b><span>账号与会话、发布快照与版本、广场/详情/主页、评论与审查、联机与聊天，以及这台单机服务器的边界在哪</span></a>

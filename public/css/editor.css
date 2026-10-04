@@ -85,8 +85,9 @@ input{font-family:inherit}
 .witem b{color:#fff}.witem span{color:var(--font-black-minor);font-size:11px}
 .witem:hover{background:var(--grey2)}
 
-/* stage */
-#stage{position:absolute;top:48px;left:0;right:0;bottom:0}
+/* stage：底部让出 24px 给状态栏。画布被盖住一角比状态栏浮在画布上更难读，
+   而且浮着的那粒药丸以前正好压在坐标上——它就是被压在下面的。 */
+#stage{position:absolute;top:48px;left:0;right:0;bottom:24px}
 #viewport{position:absolute;inset:0;width:100%;height:100%;display:block;outline:none}
 
 /* left floating library card */
@@ -126,7 +127,10 @@ input{font-family:inherit}
 .global-toolbar button:hover{background:var(--primary);border-color:var(--primary)}
 
 /* center floating edit toolbar */
-.float-toolbar{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;background:rgba(20,20,20,.92);border:1px solid var(--grey2);border-radius:12px;padding:6px;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 28px);overflow-x:auto;scrollbar-width:none}
+/* left 不是 50%：#stage 是整幅宽，右边 300px 被场景/属性面板占着，
+   居中就会压在面板的 tab 行上（实拍里"预览/界面"两个 tab 被吃掉一半）。
+   左卡 244px + 右面板 300px，两者之间的中心 = 50% - 28px。 */
+.float-toolbar{position:absolute;top:14px;left:calc(50% - 28px);transform:translateX(-50%);display:flex;align-items:center;gap:2px;background:rgba(20,20,20,.92);border:1px solid var(--grey2);border-radius:12px;padding:6px;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 28px);overflow-x:auto;scrollbar-width:none}
 .float-toolbar::-webkit-scrollbar{display:none}
 .float-toolbar .ft{flex:0 0 auto}
 .ft{width:34px;height:34px;border-radius:8px;font-size:16px;color:var(--font-white-minor);display:flex;align-items:center;justify-content:center}
@@ -218,9 +222,22 @@ input{font-family:inherit}
 .trow input[type=color]{width:100%;height:22px;border:1px solid var(--grey2);border-radius:4px;background:var(--grey1);padding:1px;cursor:pointer}
 .trow input[type=checkbox]{width:15px;height:15px;accent-color:var(--primary);justify-self:start}
 
-/* hud */
-#hud{position:absolute;left:14px;bottom:12px;display:flex;gap:8px;font-size:11px;color:var(--font-white-minor);background:rgba(0,0,0,.4);padding:4px 10px;border-radius:6px;z-index:10}
-#hud b{color:#fff}.hud-sep{opacity:.4}
+/* 状态栏：通栏一条，左边读"现在能干什么"，右边读"有什么问题、存没存、怎么调面板"。
+   分隔点用 .sb-seg + .sb-seg::before 画：写成 <span>·</span> 时，中间任何一段
+   hidden 掉都会留下一个孤立的点。 */
+#hud{position:fixed;left:0;right:0;bottom:0;height:24px;display:flex;align-items:center;gap:10px;
+  padding:0 10px;font-size:11px;line-height:1;color:var(--font-white-minor);
+  background:var(--bar);border-top:1px solid var(--divider);z-index:70;box-sizing:border-box}
+#hud b{color:#fff;font-weight:600}
+.sb-seg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.sb-seg + .sb-seg::before{content:"·";margin-right:10px;opacity:.35}
+.sb-spacer{flex:1 1 auto}
+button.sb-btn{font-size:11px;line-height:1;color:var(--font-white-minor);padding:4px 8px;
+  border-radius:var(--radius-sm);border:1px solid transparent;white-space:nowrap}
+button.sb-btn:hover{color:#fff;border-color:var(--primary);background:var(--primary-dim)}
+#sbDiag.err{color:var(--bad)}
+#sbDiag.warn{color:var(--warn)}
+#sbSave.dirty{color:var(--accent2)}
 
 /* context menu */
 #ctxmenu{position:fixed;display:none;background:var(--panel2);border:1px solid var(--grey3);border-radius:8px;padding:4px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.6)}
@@ -372,7 +389,7 @@ body.playing .prop-card{display:none !important}
    · 键位说明收进 Esc 菜单和开场提示，不再拿一条铺满宽度的顶栏常驻挡着 */
 #playEntry{position:fixed;inset:0;pointer-events:none;z-index:60;display:none}
 #playEntry.show{display:block}
-body.playing #stage{top:0}
+body.playing #stage{top:0;bottom:0}
 body.playing #topbar,body.playing #libCard,body.playing #editToolbar,body.playing #rightPanel,body.playing #hud,body.playing #ctxmenu{display:none !important}
 body.playing canvas{cursor:crosshair}
 /* HUD 通用外壳：半透石墨底 + 发丝描边，所有浮层共用，避免每块各调各的 */
@@ -570,7 +587,10 @@ body.float-edit #tbtns{cursor:grab}
 #tbtns button:active{background:rgba(0, 229, 255,.5)}
 
 /* 脚本独立界面（覆盖全屏，与搭建视图互斥） */
-.script-screen{position:fixed;left:0;right:0;top:48px;bottom:0;z-index:90;display:none;flex-direction:column;background:#101216}
+/* 全屏工作区（脚本/界面/商城/代码包）是 fixed，不跟着 #stage 缩，
+   所以底部也得自己让出状态栏那 24px——不然 z-index:90 直接压在状态栏上，
+   表现为"状态栏在脚本页里点不动"。 */
+.script-screen{position:fixed;left:0;right:0;top:48px;bottom:24px;z-index:90;display:none;flex-direction:column;background:#101216}
 .script-screen.show{display:flex}
 .ss-head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--divider);background:#16181d;flex:0 0 auto}
 .ss-head b{font-size:14px}
@@ -845,3 +865,23 @@ body.playing.float-edit #peRotate{display:none}
 .dg-where{font-size:10px;color:#4b5563;font-family:Menlo,Consolas,monospace}
 .dg-msg{font-size:11px;color:#cfd3dc;line-height:1.5;word-break:break-word}
 .dg-empty{padding:12px;font-size:11px;color:#4b5563;margin:0}
+
+/* ---- 命令面板（F1）：所有动作的第二条通路 ---- */
+.pl-mask{position:fixed;inset:0;z-index:400;display:flex;align-items:flex-start;justify-content:center;
+  padding:11vh 16px 16px;background:rgba(5,5,16,.6);backdrop-filter:blur(3px)}
+.pl-box{width:min(580px,100%);max-height:64vh;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--panel);border:1px solid var(--glass-border-hover);border-radius:var(--radius);
+  box-shadow:0 24px 70px rgba(0,0,0,.75),var(--glow)}
+.pl-in{width:100%;background:transparent;border:none;border-bottom:1px solid var(--divider);
+  color:var(--font-white);padding:13px 15px;font-size:14px;outline:none}
+.pl-in::placeholder{color:var(--font-white-disabled)}
+.pl-list{overflow:auto;padding:5px}
+.pl-grp{font-size:10px;letter-spacing:.08em;color:var(--primary);padding:9px 10px 4px;opacity:.75}
+.pl-row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;width:100%;text-align:left;
+  padding:7px 10px;border-radius:var(--radius-sm);font-size:12.5px;color:var(--font-white)}
+.pl-row em{font-style:normal;font-size:11px;color:var(--font-white-disabled);white-space:nowrap}
+.pl-row:hover{background:rgba(255,255,255,.05)}
+/* .on 必须排在 :hover 之后：两条同为 (0,2,0)，靠顺序决胜，反过来的话
+   鼠标扫过时选中行会掉回 hover 底色，看不出光标在哪一行。 */
+.pl-row.on{background:var(--primary-dim);box-shadow:inset 2px 0 0 var(--primary)}
+.pl-none{padding:20px;text-align:center;font-size:12px;color:var(--font-white-disabled);margin:0}

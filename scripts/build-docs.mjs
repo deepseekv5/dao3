@@ -16,6 +16,7 @@ const DOCS = path.join(ROOT, "docs");
 // 每篇的一句话摘要不在这里，它在介绍站首页的 .dc 卡片里（见 readDocCards）。
 const DOCS_LIST = [
   ["architecture", "架构与数据流", "入门"],
+  ["editor", "编辑器界面与命令", "入门"],
   ["testing", "测试与验证", "入门"],
   ["community", "社区层", "社区"],
   ["api-compat", "官方 API 兼容层", "内核"],

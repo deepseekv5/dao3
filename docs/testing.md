@@ -7,6 +7,7 @@
 npm start &                      # 起本地服务
 npm test                         # test/runtime_parity.mjs · 77 条断言
 npm run test:e2e                 # test/e2e.mjs · 39 条端到端断言（截图落在 test/out/）
+npm run test:ide                 # test/ide.test.mjs · 编辑器外壳 22 条（走 test/cdp.mjs，不需要 playwright）
 ```
 
 套件需要 `playwright-core` + 一个 Chromium。它**不是**项目依赖

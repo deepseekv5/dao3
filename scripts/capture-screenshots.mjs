@@ -119,6 +119,17 @@ console.log("▸ 编辑器 · 脚本");
 await click('.mtab[data-menu="script"]', 1200);
 await shot("editor-script");
 
+console.log("▸ 编辑器 · 命令面板（F1）");
+// 打一个字再拍：面板的价值就在"不用找图标"，空面板看起来像个搜索框。
+await page.keyboard.press("F1");
+await page.waitForTimeout(500);
+await page.fill(".pl-in", "球").catch(() => {});
+await page.waitForTimeout(400);
+await shot("editor-palette");
+await page.keyboard.press("Escape");
+await page.waitForTimeout(400);
+await click('.mtab[data-menu="build"]', 700);
+
 console.log("▸ 编辑器 · 界面编辑器");
 await click('.mtab[data-menu="ui"]', 1200);
 await shot("editor-ui");

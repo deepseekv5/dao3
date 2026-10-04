@@ -6,6 +6,7 @@ import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
 import { wireScriptIde } from "./script-ide.js";
+import { wirePalette } from "./palette.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
@@ -24,12 +25,60 @@ export function initFeatures(editor) {
   wireScript();
   wireScriptAi(editor);
   wireScriptIde(editor);
+  wirePalette(editor);
+  wireStatusBar();
   wireAgentBtn(editor);
   wireModels();
   wirePlayer();
   wireUiEditor();
   initPack(E);                      // 代码包 tab
   wireStore();
+}
+
+/* ------------------------------ 状态栏 ------------------------------ */
+const MODE_ZH = { build: "搭建", model: "模型", script: "脚本", ui: "界面", store: "商城", pack: "代码包" };
+
+/** 底部那条读数带。
+ *  刷新走轮询而不是在每个改动点补一次 update()：改动点会随功能一起长，
+ *  逐个埋点必然漏掉后来新增的那个，而漏掉的表征恰好就是这条要修的 bug 本身
+ *  ——读数停在旧值，看起来像"状态栏坏了"。250ms 读现值，代价是最坏晚半拍。
+ *  set() 只在值真的变了才写 DOM，所以这个轮询不会引起重排。 */
+function wireStatusBar() {
+  const el = (id) => document.getElementById(id);
+  const nodes = { tool: el("sbTool"), mode: el("sbMode"), sel: el("sbSel"), world: el("sbWorld"), diag: el("sbDiag"), save: el("sbSave") };
+  if (!nodes.tool) return;
+  const last = {};
+  const set = (k, v) => { if (last[k] !== v) { last[k] = v; nodes[k].textContent = v; } };
+  const flag = (k, cls, on) => { if (nodes[k].classList.contains(cls) !== on) nodes[k].classList.toggle(cls, on); };
+  nodes.diag.onclick = () => E.ideStep?.(1);
+  setInterval(() => {
+    if (document.body.classList.contains("playing")) return;   // 运行时整条收起，没必要算
+    // 必须限定 [data-tool]：网格/边缘线这些视图开关也是 .ft.active，
+    // 不限定的话"当前工具"会在没选中工具时显示成"网格"。
+    const ft = document.querySelector("#editToolbar .ft[data-tool].active");
+    set("tool", ft ? (ft.title || "").replace(/\s*\([^)]*\)\s*$/, "") : "未选工具");
+    set("mode", MODE_ZH[(E.ctx || {}).mode] || "—");
+    const s = E.state.selection;
+    nodes.sel.hidden = !s;
+    if (s) set("sel", `选区 ${s.max.x - s.min.x + 1}×${s.max.y - s.min.y + 1}×${s.max.z - s.min.z + 1}`);
+    set("world", (E.state.meta || {}).name || "未命名");
+    const d = E.ideDiags ? E.ideDiags() : [];
+    const n = (sev) => d.filter((x) => x.sev === sev).length;
+    const err = n("error"), warn = n("warn");
+    set("diag", d.length ? [err && `${err} 错误`, warn && `${warn} 警告`, n("info") && `${n("info")} 提示`].filter(Boolean).join(" · ") : "无问题");
+    flag("diag", "err", !!err); flag("diag", "warn", !err && !!warn);
+    if (last.diagTitle !== d.length) {
+      last.diagTitle = d.length;
+      nodes.diag.title = d.length
+        ? d.slice(0, 5).map((x) => `第 ${x.line >= 1 ? x.line : "—"} 行 · ${x.rule}：${x.msg}`).join("\n") + (d.length > 5 ? `\n…共 ${d.length} 条` : "")
+        : "脚本没有发现问题";
+    }
+    // 存盘状态以顶栏那个节点为准：写它的地方有手动保存、自动保存、加载世界三处，
+    // 这里再自己判一次 dirty 就会和顶栏对不上。
+    const sv = el("saveState");
+    if (sv) set("save", sv.textContent || "");
+    nodes.save.hidden = !(E.state.dirty || (sv && sv.textContent));
+  }, 250);
 }
 
 /* ------------------------------ 顶部菜单模式 ------------------------------ */

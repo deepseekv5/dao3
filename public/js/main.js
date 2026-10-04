@@ -629,7 +629,9 @@ async function boot() {
     viewport.addEventListener("contextmenu", (e) => e.preventDefault());
   }
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
-  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles };
+  // selOps 单独一组：命令面板要能调到剪贴板这几个动作。它们原本只有键盘快捷键，
+  // 而快捷键藏在按钮之外的动作，正是面板最容易漏掉的一类（漏了就等于"面板不全"）。
+  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel } };
   // 协作要改 history.commit、读 state.scripts，所以必须等 __editor 赋完再挂：
   // 挂早一行就是 mountCollab(undefined)，异常被 catch 咽掉，按钮点了没反应。
   import("./collab.js").then(({ mountCollab }) => {

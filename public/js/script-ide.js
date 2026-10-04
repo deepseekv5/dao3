@@ -274,6 +274,20 @@ export function wireScriptIde(E) {
   const origView = E.refreshScriptView;
   E.refreshScriptView = (name) => { if (origView) origView(name); recheck(); };
   E.ideRecheck = recheck;
+  // 命令面板和状态栏要能复用同一套跳转，不在那边重写一遍。
+  // 包一层"先切到脚本页"：人可能在搭建页点诊断，而 gotoLine 是对 textarea 调 focus()——
+  // 页面没打开时那个 textarea 是 display:none，focus 不报错也不动，症状正是"点了没反应"。
+  E.ideStep = (dir) => {
+    if (E.ctx && E.ctx.mode !== "script") document.querySelector('.mtab[data-menu="script"]')?.click();
+    step(dir);
+  };
+  E.ideGoto = (n) => {
+    if (E.ctx && E.ctx.mode !== "script") document.querySelector('.mtab[data-menu="script"]')?.click();
+    gotoLine(n);
+  };
+  // 状态栏只读这一个口子，不去各自数 diags：数法一多就会出现"面板说有 2 个、
+  // 底栏说 3 个"，而两处都"没错"（一处按筛选、一处按全量）。
+  E.ideDiags = () => diags;
   // 给测试用：断言"屏幕上的诊断"必须能拿到这一层的真实输入，
   // 否则探针只能猜（第一次就误判成 lint 读错了文件）。
   E.ideState = () => ({ code: editingCode().slice(0, 40), lines: editingCode().split("\n").length, diags, lens: cursorLine });

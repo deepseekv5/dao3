@@ -46,11 +46,12 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   </div>
   <div class="tb-right">
     <button id="btnWorlds" class="tb-ico" title="世界库" data-ico="doc"></button>
-    <button class="tb-ico" title="协作" data-ico="collab"></button>
-    <button class="tb-ico" title="反馈" data-ico="feedback"></button>
     <button id="btnManual" class="tb-ico" title="游玩手册" data-ico="manual"></button>
     <button id="btnSettings" class="tb-ico" title="设置" data-ico="settings"></button>
     <button id="btnHome" class="tb-ico" title="返回主界面（未保存的改动会先存下来）" data-ico="home"></button>
+    <!-- 这里原本还躺着两个没接线的图标：一个 title="协作"、一个 title="反馈"，
+         点上去 toast「本地单机版暂未开放」。协作是真的能开（就是右边那个 btnCollab），
+         所以那颗假按钮不只是没用，它还在否认一个已经做好的功能。 -->
     <button id="btnCollab" class="tb-ico" title="协作：和别人一起改这张图，每处改动都记作者" data-ico="people"></button>
     <button id="btnPublish" class="play" title="运行游戏（玩家将出现在地图中心，脚本全量执行）" data-ico="play"></button>
     <button id="btnShare" class="tb-ico" title="发布到社区：把此刻的图发出去，别人点进去就能玩" data-ico="publish"></button>
@@ -168,7 +169,22 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
 </div>
 </main>
 
-<div id="hud"><span id="coords">—</span><span class="hud-sep">·</span><span>体素 <b id="blockCount">0</b></span></div>
+<!-- 状态栏：IDE 那一排底部读数。#coords / #blockCount 的 id 不能改，
+     main.js 的 updateCoords 与体素计数是照着它们写的。
+     分隔点用 CSS 的 .sb-seg + .sb-seg::before 画，不写成一堆 <span>·</span>：
+     隐藏的段落在中间时会留下孤儿分隔符。 -->
+<div id="hud">
+  <span id="sbTool" class="sb-seg">—</span>
+  <span id="sbMode" class="sb-seg">—</span>
+  <span id="coords" class="sb-seg">—</span>
+  <span id="sbSel" class="sb-seg" hidden></span>
+  <span class="sb-seg">体素 <b id="blockCount">0</b></span>
+  <span id="sbWorld" class="sb-seg">—</span>
+  <span class="sb-spacer"></span>
+  <button id="sbDiag" class="sb-btn" title="脚本诊断：点一下跳到下一个问题">无问题</button>
+  <span id="sbSave" class="sb-seg"></span>
+  <button id="sbPalette" class="sb-btn" title="命令面板：所有动作都能敲两个字出来 (F1)">F1 命令</button>
+</div>
 <div id="ctxmenu"><button data-c="rename">重命名</button><button data-c="copy">复制</button><button data-c="delete">删除</button></div>
 
 <!-- 运行模式 HUD：浮在游戏画面上的四角控件，不是网页顶栏。

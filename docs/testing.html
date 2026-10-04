@@ -39,7 +39,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 </script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a class="on" href="testing.html">测试与验证</a><b class="grp">社区</b><a href="community.html">社区层</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="editor.html">编辑器界面与命令</a><a class="on" href="testing.html">测试与验证</a><b class="grp">社区</b><a href="community.html">社区层</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
     <nav class="toc"><b>本页内容</b><a class="t2" href="#关键技巧一后台标签页没有-raf必须手动推-tick">关键技巧一：后台标签页没有 rAF，必须手动推 tick</a><a class="t2" href="#关键技巧二夹具不能依赖地图内容">关键技巧二：夹具不能依赖地图内容</a><a class="t2" href="#关键技巧三渲染要可证伪不能只看没报错">关键技巧三：渲染要可证伪，不能只看&quot;没报错&quot;</a><a class="t2" href="#关键技巧四全新上下文会撞上首启门禁要走过去而不是绕过去">关键技巧四：全新上下文会撞上首启门禁，要走过去而不是绕过去</a><a class="t2" href="#77-+-35-条断言覆盖什么">77 + 35 条断言覆盖什么</a><a class="t2" href="#一条硬规矩测试绝不能写进默认地图">一条硬规矩：测试绝不能写进默认地图</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/testing.md">在 GitHub 编辑原文</a>
   </aside>
@@ -49,7 +49,8 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>判断标准只有一条：<b>在真实浏览器里把功能跑出来</b>，而不是类型检查通过。 所以本项目的回归套件是驱动真页面的，截图和断言同源。</p>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm start &amp;                      # 起本地服务
 npm test                         # test/runtime_parity.mjs · 77 条断言
-npm run test:e2e                 # test/e2e.mjs · 39 条端到端断言（截图落在 test/out/）</code></pre></div>
+npm run test:e2e                 # test/e2e.mjs · 39 条端到端断言（截图落在 test/out/）
+npm run test:ide                 # test/ide.test.mjs · 编辑器外壳 22 条（走 test/cdp.mjs，不需要 playwright）</code></pre></div>
 <p>套件需要 <code>playwright-core</code> + 一个 Chromium。它<b>不是</b>项目依赖 （运行时零依赖是硬要求），测试自己可移植地找：</p>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm i -D playwright-core &amp;&amp; npx playwright install chromium
 # 或指向已有安装：
@@ -83,7 +84,7 @@ CHROME=/path/to/chrome PLAYWRIGHT_MODULE=/path/to/playwright-core node test/runt
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>node -e &quot;const z=require('zlib'),f=require('fs');const j=JSON.parse(z.gunzipSync(f.readFileSync('server/data/worlds/216d665d3ca92bd1b9a2.json.gz')));
 const m=j.meta;console.log({entities:(m.entities||[]).length,collision:(m.entities||[]).filter(e=&gt;e.collision).length,gameRules:m.gameRules,products:(m.products||[]).length})&quot;
 # 期望：199 / 0 / undefined / 0</code></pre></div>
-    <nav class="pager"><a href="architecture.html"><small>上一篇</small><b>架构与数据流</b></a><a class="next" href="community.html"><small>下一篇</small><b>社区层</b></a></nav>
+    <nav class="pager"><a href="editor.html"><small>上一篇</small><b>编辑器界面与命令</b></a><a class="next" href="community.html"><small>下一篇</small><b>社区层</b></a></nav>
   </article>
 </main>
 <footer class="foot">
