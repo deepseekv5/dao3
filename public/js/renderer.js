@@ -718,6 +718,20 @@ vec2 fxTileRect(float t){
     for (const [key, [cx, cy, cz]] of this._build) this.buildChunk(cx, cy, cz, key);
     this._build.clear();
   }
+  /** 编辑器的实体标记盒在运行模式里没有意义：一个半透明盒加一圈描边，
+   *  模型没加载上的图里就是几十个额外绘制与透明覆盖，还会把相机的回拉射线
+   *  挡在贴脸处（表现为"视角卡"）。作者手动关掉的盒子在退出后不能被点亮，
+   *  所以逐个记原值再还原。 */
+  setMarkersVisible(v) {
+    const list = [];
+    this.models.traverse((o) => { if (o.userData && o.userData.marker) list.push(o); });
+    for (const m of list) {
+      if (v) { if (m._edVisible != null) { m.visible = m._edVisible; m._edVisible = null; } }
+      else if (m.visible) { m._edVisible = true; m.visible = false; }
+    }
+    return list.length;
+  }
+
   /** 封面产品照：独立相机把内容包围盒框满，并把昼夜拨回白天、主光抬到 45°。
    *  为什么不用编辑器当前视口：那出来的是"作者此刻看到的半张图 + 黑底"，
    *  而社区卡片要的是这张世界的卖点。夜里存的图也不能是一张黑封面。

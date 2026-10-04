@@ -470,6 +470,7 @@ export class GameRuntime {
     r.setFirstPerson(false);
     r.controls.enabled = false;
     r.setBarriersVisible && r.setBarriersVisible(false);
+    r.setMarkersVisible && r.setMarkersVisible(false);   // 编辑器的标记盒不进运行模式，见 stop()
     r.pushEnvironmentState && r.pushEnvironmentState();   // 退出时要还回去，见 renderer 里那段注释
     this._buildRegistry();
     this._client().attach();
@@ -730,6 +731,7 @@ export class GameRuntime {
     document.body.classList.remove("playing");
     r.controls.enabled = true;
     r.setBarriersVisible && r.setBarriersVisible(true);
+    r.setMarkersVisible && r.setMarkersVisible(true);
     r.setUnderwater && r.setUnderwater(false);
     this._stopAmbient();
     if (r._zoneGroup) r._zoneGroup.visible = true;
