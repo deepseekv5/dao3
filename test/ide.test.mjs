@@ -211,12 +211,22 @@ const scrub = await s.evaluate(`(async () => {
   await new Promise(r2 => setTimeout(r2, 400));
   out.after = Number(num.value);
   out.objAfter = m ? +m.object.position.x.toFixed(2) : null;
-  out.cursor = getComputedStyle(lb).cursor;
+  // 滚轮：指针停在数值框上才改值
+  const v1 = Number(num.value);
+  num.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+  await new Promise(r2 => setTimeout(r2, 250));
+  out.wheel = Number(num.value) - v1;
+  // 停在列表上滚就是正常滚动，不能顺手改掉一个参数
+  const list = document.getElementById("modelList");
+  list.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+  await new Promise(r2 => setTimeout(r2, 250));
+  out.listNoChange = Number(num.value) === out.wheel + v1;
   while (window.__editor.history.canUndo()) window.__editor.history.undo();   // 测试改动退回
   document.querySelector('.mtab[data-menu="build"]').click();
   return out;
 })()`);
 ok("拖属性名改数值，并且实时作用到模型上", scrub.after >= scrub.before + 40 && scrub.objAfter >= scrub.objBefore + 40, JSON.stringify(scrub));
+ok("滚轮在数值框上改值、在列表上只是滚动", scrub.wheel === 1 && scrub.listNoChange, JSON.stringify({ wheel: scrub.wheel, listNoChange: scrub.listNoChange }));
 
 // F1 命令面板
 await s.evaluate(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "F1", bubbles: true, cancelable: true })); return true; })()`);

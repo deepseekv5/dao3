@@ -40,6 +40,25 @@ export function wireScrub() {
     if (lb && lb.style.cursor) lb.style.cursor = "";
   });
 
+  /** 滚轮改值：指针停在**数值框上**才生效，停在列表里就是正常滚动。
+   *  不做成"停在标签上也滚"——那会让人翻文件列表时突然改掉一个参数。 */
+  document.body.addEventListener("wheel", (ev) => {
+    const t = ev.target;
+    if (!t || !t.closest) return;
+    const cell = t.closest(".pp-cell, .frow, .poscol, .zrow, .ztriple");
+    const input = t.matches && t.matches(NUMISH) ? t : (cell && cell.querySelector(NUMISH));
+    if (!input || input.disabled) return;
+    ev.preventDefault();
+    const step = Number(input.step) || 1;
+    const min = input.min !== "" ? Number(input.min) : -Infinity;
+    const max = input.max !== "" ? Number(input.max) : Infinity;
+    const k = (ev.shiftKey ? 0.1 : 1) * step * (ev.deltaY < 0 ? 1 : -1);
+    const v = Math.max(min, Math.min(max, (Number(input.value) || 0) + k));
+    input.value = FMT(input, v);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, { passive: false });
+
   document.body.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;
     const lb = ev.target.closest && ev.target.closest("label, .poslbl");
