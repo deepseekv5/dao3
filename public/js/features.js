@@ -12,6 +12,8 @@ import { vbToVoxList } from "./vb.js";
 import { applyDefaultPlayerSounds } from "./gapi.js";
 
 let E; // window.__editor 引用
+// 实体标记盒的共享资源（见 addEntityMarker）
+let MARKER_GEO = null, MARKER_EDGE = null, MARKER_FILL = null, MARKER_FILL_FAINT = null, MARKER_LINE = null;
 
 export function initFeatures(editor) {
   E = editor;
@@ -539,11 +541,25 @@ function genEntitiesFromScript() {
 // 生成/添加一个实体标记模型（编辑器里可视化，运行时可查询/交互）
 export function addEntityMarker(d) {
   const e = E;
+  // 几何与材质全图共用一份：一张 68 个实体的图以前是 68 套 BoxGeometry + EdgesGeometry
+  // + 136 个材质，光状态切换就把编辑器画慢了。尺寸改走 group.scale，视觉与原来逐格一致。
+  if (!MARKER_GEO) {
+    MARKER_GEO = new THREE.BoxGeometry(2, 1, 2).translate(0, 0.5, 0);   // x/z ∈ [-1,1]，y ∈ [0,1]
+    MARKER_EDGE = new THREE.EdgesGeometry(MARKER_GEO);
+    MARKER_FILL = new THREE.MeshBasicMaterial({ color: 0x22c8dd, transparent: true, opacity: 0.25 });
+    // 逻辑触发器（本来就没有模型）只留描边：填充面关掉颜色写入但保留网格，
+    // 视口里照样点得中，画面不再被几十个半透明大盒子糊住。
+    MARKER_FILL_FAINT = new THREE.MeshBasicMaterial({ color: 0x22c8dd, transparent: true, opacity: 0.25, colorWrite: false, depthWrite: false });
+    MARKER_LINE = new THREE.LineBasicMaterial({ color: 0x22c8dd });
+  }
   const group = new THREE.Group();
-  const cube = new THREE.Mesh(new THREE.BoxGeometry(d.bounds[0] * 2, d.bounds[1] * 2, d.bounds[2] * 2).translate(0, d.bounds[1], 0),
-    new THREE.MeshBasicMaterial({ color: 0x22c8dd, transparent: true, opacity: 0.25 }));
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(d.bounds[0] * 2, d.bounds[1] * 2, d.bounds[2] * 2).translate(0, d.bounds[1], 0)),
-    new THREE.LineBasicMaterial({ color: 0x22c8dd }));
+  const cube = new THREE.Mesh(MARKER_GEO, d.mesh ? MARKER_FILL : MARKER_FILL_FAINT);
+  const edges = new THREE.LineSegments(MARKER_EDGE, MARKER_LINE);
+  // 尺寸落在子网格上而不是 group.scale：属性卡的「缩放」条驱动的是 group.scale
+  // （基线是 1），要是这里先占了 group.scale，一拖滑杆标记盒就塌成单位立方体。
+  const b = d.bounds || [1.5, 1.5, 1.5];
+  cube.scale.set(b[0], b[1] * 2, b[2]);
+  edges.scale.copy(cube.scale);
   group.add(cube, edges);
   group.userData.marker = true;      // 封面渲染要跳过它：这是编辑器的标记盒，不是地图内容
   const ent = {

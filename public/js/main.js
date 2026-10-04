@@ -335,9 +335,17 @@ async function applySceneModels(meta) {
   // 于是"导入成功、433 个实体"在画面上一片空白——用户只能理解成"没解析出来"。
   // 标记也从这里统一出：以前另有一个人在切世界时补一遍标记，但紧接着
   // 下面那句 state.models = [] 就把它们抹掉了，等于白做还多一处真相。
+  let noAsset = 0;
   for (const d of state.entities) {
     addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || d.position || [4, 4, 4],
-      bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys });
+      bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys, mesh: d.mesh });
+    if (d.mesh) noAsset++;
+  }
+  // 模型没带进来的图必须说清楚，而不是默默画几十个框让人以为"编辑器坏了"。
+  if (noAsset) {
+    const why = state.meta && state.meta.assetRoot ? "对应的 .gltf 不在这个目录里" : "这张图没有记录素材目录（导入时没带模型字节）";
+    toast(`${noAsset} 个实体引用的模型加载不出来（${why}）`, true, 6000);
+    console.warn(`[models] ${noAsset} 个实体的模型没加载：${why}`);
   }
   suspendModelList(false);
   refreshModelList();
