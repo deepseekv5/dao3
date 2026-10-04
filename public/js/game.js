@@ -2641,7 +2641,10 @@ const ZERO = new GameVector3();
       ent._obj.position.set(vp.x, vp.y, vp.z);
       return;
     }
-    ent._obj.visible = !ent.meshInvisible;
+    // 编辑器的实体标记盒在运行模式里没有意义，start() 里已经关掉了。
+    // 这一句是它复活的地方：标记盒的 group 就是外部实体的 _obj，
+    // 无条件 ent._obj.visible = !ent.meshInvisible 等于每帧把关掉的框全部打开。
+    ent._obj.visible = ent._obj.userData && ent._obj.userData.marker ? false : !ent.meshInvisible;
     if (!ent._external) ent._obj.position.set(ent.position.x, ent.position.y, ent.position.z);
     if (ent._obj.visible && !ent._external && ent._lookYaw != null) ent._obj.rotation.y = ent._lookYaw;
   }
