@@ -29,7 +29,7 @@ const HAIRS = ["#1c1c1e", "#3b2a1c", "#6b4630", "#a86a2f", "#c9a227", "#8c8c90",
 const OUTFITS = [
   { name: "水手", shirt: "#2f5fd0", pants: "#e8e6e1", shoe: "#2b2f38", hair: "#3b2a1c" },
   { name: "工装", shirt: "#c8792f", pants: "#3f4a3b", shoe: "#241f1a", hair: "#1c1c1e" },
-  { name: "运动", shirt: "#e8443c", pants: "#f2f2f2", shoe: "#2b2f38", hair: "#6b4630" },
+  { name: "运动", shirt: "#e8443c", pants: "#e8e8ff", shoe: "#2b2f38", hair: "#6b4630" },
   { name: "夜行", shirt: "#22252c", pants: "#2f3b52", shoe: "#12b5c9", hair: "#1c1c1e" },
   { name: "学院", shirt: "#f2c14e", pants: "#2b3550", shoe: "#3b2a1c", hair: "#a86a2f" },
   { name: "森系", shirt: "#4ecb8d", pants: "#5b4a32", shoe: "#2f3b2a", hair: "#6b4630" },

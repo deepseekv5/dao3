@@ -1,13 +1,13 @@
 /* player-modal.css — 「玩家 → 项目皮肤库 / 虚拟按键」弹窗。
-   尺寸按官方截图：居中约 1180×760、深色 #1b1f27、左栏 240 导航 + 右栏内容。
-   颜色尽量走 editor.css 的变量，取不到就退回同一个强调色 #22c8dd —— 这个文件要能脱离
+   尺寸按官方截图：居中约 1180×760、深色 #161a2a、左栏 240 导航 + 右栏内容。
+   颜色尽量走 editor.css 的变量，取不到就退回同一个强调色 #00e5ff —— 这个文件要能脱离
    接线顺序独立生效（面板模块自己注入样式）。 */
 
 .pm-mask{position:fixed;inset:0;z-index:320;display:none;align-items:center;justify-content:center;
   background:rgba(0,0,0,.62);backdrop-filter:blur(2px)}
 .pm-mask.show{display:flex}
 .pm-box{position:relative;display:flex;width:min(1180px,94vw);height:min(760px,92vh);
-  background:#1b1f27;border:1px solid rgba(255,255,255,.07);border-radius:16px;overflow:hidden;
+  background:#161a2a;border:1px solid rgba(255,255,255,.07);border-radius:16px;overflow:hidden;
   box-shadow:0 26px 70px rgba(0,0,0,.66);color:#fff;font-size:13px}
 
 /* 关闭按钮：官方是右上角一个细线 ✕，hover 才提亮 */
@@ -23,7 +23,7 @@
   font-size:13.5px;color:rgba(255,255,255,.62);background:none;border:none;text-align:left;position:relative;
   border-left:2px solid transparent}
 .pm-nav-item:hover{color:#fff;background:rgba(255,255,255,.03)}
-.pm-nav-item.active{color:#fff;font-weight:600;background:rgba(34, 200, 221,.08);border-left-color:var(--primary,#22c8dd)}
+.pm-nav-item.active{color:#fff;font-weight:600;background:rgba(0, 229, 255,.08);border-left-color:var(--primary,#00e5ff)}
 .pm-nav-item svg{flex:0 0 auto;opacity:.85}
 
 /* ---------------- 右栏 ---------------- */
@@ -35,40 +35,40 @@
 .pm-info{width:17px;height:17px;border-radius:50%;border:1px solid rgba(255,255,255,.4);
   color:rgba(255,255,255,.6);font-size:11px;font-style:normal;line-height:1;display:inline-flex;
   align-items:center;justify-content:center;background:none;padding:0}
-.pm-info:hover{border-color:var(--primary,#22c8dd);color:var(--primary,#22c8dd)}
+.pm-info:hover{border-color:var(--primary,#00e5ff);color:var(--primary,#00e5ff)}
 .pm-hint{font-size:11.5px;color:rgba(255,255,255,.42)}
 .pm-empty{padding:40px 10px;text-align:center;color:rgba(255,255,255,.4);font-size:12.5px}
 
 /* 工具条：强调色描边按钮 + 图标按钮 + 下拉 + 搜索（搜索吃掉剩余宽度，和官方一致） */
 .pm-toolbar{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .pm-btn{padding:6px 14px;border-radius:6px;font-size:12.5px;color:#fff;
-  background:transparent;border:1px solid var(--primary,#22c8dd);line-height:1.4}
-.pm-btn:hover{background:rgba(34, 200, 221,.14)}
-.pm-btn.primary{background:var(--primary,#22c8dd);border-color:var(--primary,#22c8dd)}
-.pm-btn.primary:hover{background:var(--primary-hover,#4ad8ea)}
+  background:transparent;border:1px solid var(--primary,#00e5ff);line-height:1.4}
+.pm-btn:hover{background:rgba(0, 229, 255,.14)}
+.pm-btn.primary{background:var(--primary,#00e5ff);border-color:var(--primary,#00e5ff)}
+.pm-btn.primary:hover{background:var(--primary-hover,#7df9ff)}
 .pm-iconbtn{width:30px;height:28px;border-radius:6px;border:1px solid rgba(255,255,255,.14);
   background:rgba(255,255,255,.04);color:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center}
-.pm-iconbtn:hover{border-color:var(--primary,#22c8dd);color:#fff}
+.pm-iconbtn:hover{border-color:var(--primary,#00e5ff);color:#fff}
 .pm-select,.pm-search{height:28px;background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);
   border-radius:6px;color:#fff;font-size:12px;padding:0 8px;outline:none}
 .pm-select{flex:0 0 auto}
 .pm-search{flex:1;min-width:80px}
-.pm-search:focus,.pm-select:focus{border-color:var(--primary,#22c8dd)}
+.pm-search:focus,.pm-select:focus{border-color:var(--primary,#00e5ff)}
 
 /* ---------------- 皮肤卡片 ---------------- */
 .pm-grid{flex:1;min-height:0;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
   gap:14px;align-content:start;padding:2px 2px 8px}
 .pm-card{position:relative;width:100%;min-height:230px;border-radius:12px;background:#05070c;
   border:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;overflow:hidden}
-.pm-card:hover{border-color:rgba(34, 200, 221,.55)}
+.pm-card:hover{border-color:rgba(0, 229, 255,.55)}
 .pm-card-preview{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;user-select:none}
 /* 贴图皮肤卡：预览是展开图的正脸，放大时不能平滑，否则脸糊成一片色块 */
 .pm-card-preview.is-mc{image-rendering:pixelated;background:#0f1420}
 .pm-card-badge{position:absolute;left:8px;top:8px;padding:2px 7px;border-radius:5px;font-size:10.5px;
-  background:rgba(0,0,0,.66);border:1px solid rgba(34, 200, 221,.6);color:var(--primary,#22c8dd)}
+  background:rgba(0,0,0,.66);border:1px solid rgba(0, 229, 255,.6);color:var(--primary,#00e5ff)}
 .pm-card-more{position:absolute;right:6px;top:6px;width:24px;height:24px;border-radius:6px;font-size:15px;
   color:rgba(255,255,255,.7);background:rgba(0,0,0,.4);border:none;line-height:1}
-.pm-card-more:hover{background:rgba(34, 200, 221,.85);color:#fff}
+.pm-card-more:hover{background:rgba(0, 229, 255,.85);color:#fff}
 .pm-card-name{position:absolute;left:10px;bottom:9px;right:34px;font-size:13px;color:#fff;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 3px rgba(0,0,0,.9)}
 
@@ -79,7 +79,7 @@
 .pm-seg-item{position:relative;padding:5px 4px;font-size:12.5px;color:rgba(255,255,255,.6);background:none;border:none}
 .pm-seg-item.active{color:#fff;font-weight:600}
 .pm-seg-item.active::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:-7px;
-  width:26px;height:2px;border-radius:2px;background:var(--primary,#22c8dd)}
+  width:26px;height:2px;border-radius:2px;background:var(--primary,#00e5ff)}
 
 /* 16:9 预览区：底图是抓下来的一帧真实画面 */
 .pm-stage{position:relative;align-self:center;width:min(100%,880px);aspect-ratio:16/9;border-radius:12px;
@@ -93,8 +93,8 @@
 .pm-pad-btn{position:absolute;aspect-ratio:1/1;border-radius:50%;background:rgba(255,255,255,.1);
   border:2px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;
   color:#fff;cursor:grab;touch-action:none;transform:translateZ(0);backdrop-filter:blur(1px)}
-.pm-pad-btn:hover{border-color:rgba(34, 200, 221,.7)}
-.pm-pad-btn.dragging{cursor:grabbing;border-color:var(--primary,#22c8dd);background:rgba(34, 200, 221,.22)}
+.pm-pad-btn:hover{border-color:rgba(0, 229, 255,.7)}
+.pm-pad-btn.dragging{cursor:grabbing;border-color:var(--primary,#00e5ff);background:rgba(0, 229, 255,.22)}
 .pm-pad-text{font-size:clamp(11px,2.1cqw,20px);font-weight:600}
 .pm-pad-btn.is-joy{background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14),rgba(255,255,255,.06));
   border-style:solid}
@@ -112,7 +112,7 @@
 
 /* ---------------- 提示条 / 二级弹窗 / 菜单 ---------------- */
 .pm-notice{position:absolute;left:50%;bottom:20px;transform:translate(-50%,14px);opacity:0;pointer-events:none;
-  padding:8px 16px;border-radius:8px;background:rgba(20,23,29,.96);border:1px solid var(--primary,#22c8dd);
+  padding:8px 16px;border-radius:8px;background:rgba(20,23,29,.96);border:1px solid var(--primary,#00e5ff);
   color:#fff;font-size:12.5px;transition:.22s;max-width:70%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:5}
 .pm-notice.show{opacity:1;transform:translate(-50%,0)}
 
@@ -126,7 +126,7 @@
 .pm-field:first-child{grid-column:1/-1}
 .pm-input{flex:1;min-width:0;height:28px;background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.12);
   border-radius:6px;color:#fff;font-size:12px;padding:0 7px;outline:none}
-.pm-input:focus{border-color:var(--primary,#22c8dd)}
+.pm-input:focus{border-color:var(--primary,#00e5ff)}
 .pm-input[type=color]{width:38px;flex:0 0 38px;padding:1px;height:28px;background:rgba(0,0,0,.34)}
 .pm-form-live{display:flex;justify-content:center;margin-bottom:14px}
 .pm-form-live:empty{display:none}
@@ -135,7 +135,7 @@
 .pm-list{display:flex;flex-direction:column;gap:6px;margin-top:14px;max-height:52vh;overflow:auto}
 .pm-list-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;
   border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#fff;font-size:12.5px;text-align:left}
-.pm-list-item:hover{border-color:var(--primary,#22c8dd);background:rgba(34, 200, 221,.12)}
+.pm-list-item:hover{border-color:var(--primary,#00e5ff);background:rgba(0, 229, 255,.12)}
 .pm-list-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pm-list-hint{flex:0 0 auto;font-size:11px;color:rgba(255,255,255,.42)}
 
@@ -145,7 +145,7 @@
 .pm-pop.wide p{margin:0;padding:4px 8px;font-size:12px;color:rgba(255,255,255,.72)}
 .pm-pop-item{display:block;width:100%;text-align:left;padding:7px 12px;border-radius:6px;font-size:12.5px;
   color:#fff;background:none;border:none}
-.pm-pop-item:hover{background:var(--primary,#22c8dd)}
+.pm-pop-item:hover{background:var(--primary,#00e5ff)}
 .pm-pop-item.danger:hover{background:#c8452f}
 
 /* ---- 玩家属性：原 #playerPanel .modal-box 整体搬进弹窗右栏 ---- */
@@ -176,8 +176,8 @@
   position:relative;cursor:pointer;transition:.16s}
 .pm-attrs .frow input[type=checkbox]::after{content:"";position:absolute;left:2px;top:1px;width:14px;height:14px;
   border-radius:50%;background:rgba(255,255,255,.7);transition:.16s}
-.pm-attrs .frow input[type=checkbox]:checked{background:rgba(34,200,221,.26);border-color:var(--primary,#22c8dd)}
-.pm-attrs .frow input[type=checkbox]:checked::after{left:16px;background:var(--primary,#22c8dd)}
+.pm-attrs .frow input[type=checkbox]:checked{background:rgba(0, 229, 255,.26);border-color:var(--primary,#00e5ff)}
+.pm-attrs .frow input[type=checkbox]:checked::after{left:16px;background:var(--primary,#00e5ff)}
 
 /* 游戏内 Esc 菜单（.gm-menu）的样式在 editor.css 里。
    它以前写在这份文件里，而这份文件要等玩家面板第一次打开才注入，

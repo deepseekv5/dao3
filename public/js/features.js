@@ -546,11 +546,11 @@ export function addEntityMarker(d) {
   if (!MARKER_GEO) {
     MARKER_GEO = new THREE.BoxGeometry(2, 1, 2).translate(0, 0.5, 0);   // x/z ∈ [-1,1]，y ∈ [0,1]
     MARKER_EDGE = new THREE.EdgesGeometry(MARKER_GEO);
-    MARKER_FILL = new THREE.MeshBasicMaterial({ color: 0x22c8dd, transparent: true, opacity: 0.25 });
+    MARKER_FILL = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.25 });
     // 逻辑触发器（本来就没有模型）只留描边：填充面关掉颜色写入但保留网格，
     // 视口里照样点得中，画面不再被几十个半透明大盒子糊住。
-    MARKER_FILL_FAINT = new THREE.MeshBasicMaterial({ color: 0x22c8dd, transparent: true, opacity: 0.25, colorWrite: false, depthWrite: false });
-    MARKER_LINE = new THREE.LineBasicMaterial({ color: 0x22c8dd });
+    MARKER_FILL_FAINT = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.25, colorWrite: false, depthWrite: false });
+    MARKER_LINE = new THREE.LineBasicMaterial({ color: 0x00e5ff });
   }
   const group = new THREE.Group();
   const cube = new THREE.Mesh(MARKER_GEO, d.mesh ? MARKER_FILL : MARKER_FILL_FAINT);
@@ -1645,7 +1645,7 @@ function wireUiEditor() {
     row("高%", mk("number", w.h, (i) => { w.h = Math.max(2, Math.min(100, +i.value || 6)); }));
     row("字号", mk("number", w.size || 14, (i) => { w.size = Math.max(8, Math.min(72, +i.value || 14)); }));
     row("颜色", mk("color", w.color || "#ffffff", (i) => { w.color = i.value; }));
-    if (w.type === "button") row("背景", mk("color", w.bg || "#22c8dd", (i) => { w.bg = i.value; }));
+    if (w.type === "button") row("背景", mk("color", w.bg || "#00e5ff", (i) => { w.bg = i.value; }));
   }
   function startDrag(ev, w) {
     ev.preventDefault();
@@ -1676,7 +1676,7 @@ function wireUiEditor() {
   const KIND = {
     box: { w: 26, h: 18 }, scroll: { w: 22, h: 26 }, text: { text: "文本", w: 24, h: 8 },
     input: { w: 24, h: 7, placeholder: "请输入" }, image: { w: 20, h: 16, image: "" },
-    button: { text: "按钮", w: 16, h: 8, bg: "#22c8dd" },
+    button: { text: "按钮", w: 16, h: 8, bg: "#00e5ff" },
   };
   const addWidget = (type) => {
     const k = KIND[type] || KIND.text;

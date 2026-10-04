@@ -15,10 +15,10 @@ body.sp { margin: 0; background: var(--bg); color: var(--ink); font-family: var(
 .sp h3 { font-size: 15.5px; font-weight: 700; margin: 26px 0 6px; }
 .sp h3:first-child { margin-top: 0; }
 .sp p { margin: 0 0 16px; color: var(--mut); }
-.sp .say { font-size: 16.5px; color: #e8e8e8; }
+.sp .say { font-size: 16.5px; color: #e0e2f2; }
 .sp b { font-weight: 700; color: var(--ink); }
-.sp code { font-family: var(--mono); font-size: .86em; background: rgba(255, 255, 255, .07); padding: 1.5px 6px; border-radius: 5px; color: #f0e4e0; }
-.sp pre { font-family: var(--mono); font-size: 13px; line-height: 1.75; background: var(--code); border: 1px solid var(--line); color: #e8e6e3; border-radius: 10px; padding: 15px 17px; overflow: auto; margin: 0 0 20px; }
+.sp code { font-family: var(--mono); font-size: .86em; background: rgba(255, 255, 255, .07); padding: 1.5px 6px; border-radius: 5px; color: #dfe4ff; }
+.sp pre { font-family: var(--mono); font-size: 13px; line-height: 1.75; background: var(--code); border: 1px solid var(--line); color: #dfe3f5; border-radius: 10px; padding: 15px 17px; overflow: auto; margin: 0 0 20px; }
 .sp pre code { background: none; padding: 0; color: inherit; }
 .note { font-size: 14.5px; color: var(--mut); border-left: 2px solid var(--p); padding-left: 14px; margin-bottom: 22px; }
 

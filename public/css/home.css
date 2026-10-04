@@ -16,7 +16,7 @@ body.wb {
 body.wb a { color: inherit; text-decoration: none; }
 body.wb button { font-family: inherit; color: inherit; border: none; background: none; cursor: pointer; }
 body.wb input, body.wb select { font-family: inherit; color: inherit; }
-body.wb ::selection { background: rgba(34, 200, 221, .32); }
+body.wb ::selection { background: rgba(0, 229, 255, .32); }
 
 /* ---------------- shell ---------------- */
 /* 行高必须一起钉死：只写 height:100vh 时网格行仍会按内容长高，
@@ -26,10 +26,10 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
 
 .wb-rail {
   display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 0 10px;
-  background: linear-gradient(180deg, #131315, #0e0e10); border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, #101024, #08081a); border-right: 1px solid var(--line);
 }
 .wb-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--primary-dim); margin-bottom: 12px; }
-.wb-mark:hover { background: rgba(34, 200, 221, .24); }
+.wb-mark:hover { background: rgba(0, 229, 255, .24); }
 .wb-railnav { display: flex; flex-direction: column; gap: 3px; width: 100%; align-items: center; }
 .wb-railnav a {
   width: 48px; padding: 8px 0 6px; border-radius: 9px; display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -52,7 +52,8 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
 /* ---------------- 顶栏 ---------------- */
 .wb-top {
   display: flex; align-items: center; gap: 16px; padding: 0 18px; height: 56px; flex: 0 0 auto;
-  background: rgba(12, 12, 13, .86); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line);
+  background: var(--glass-nav-bg); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border-bottom: 1px solid var(--glass-border); box-shadow: 0 1px 0 rgba(0, 229, 255, .06);
 }
 .wb-crumb { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .wb-crumb h1 { margin: 0; font-size: 15.5px; font-weight: 700; letter-spacing: .2px; }
@@ -63,7 +64,7 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
   display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 9px; border-radius: 8px;
   background: var(--bg2); border: 1px solid var(--line); width: 246px; transition: .15s;
 }
-.wb-search:focus-within { border-color: rgba(34, 200, 221, .5); background: var(--bg3); width: 300px; }
+.wb-search:focus-within { border-color: rgba(0, 229, 255, .5); background: var(--bg3); width: 300px; }
 .wb-search span { color: var(--fg3); display: grid; place-items: center; }
 .wb-search span svg { width: 14px; height: 14px; display: block; }
 .wb-search input { flex: 1; min-width: 0; background: none; border: none; outline: none; font-size: 12.5px; }
@@ -78,7 +79,7 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
 .wb-seg button { width: 32px; height: 28px; display: grid; place-items: center; color: var(--fg3); background: var(--bg2); }
 .wb-seg button svg { width: 15px; height: 15px; display: block; }
 .wb-seg button:hover { color: var(--fg); }
-.wb-seg button.on { color: #04222a; background: var(--primary); }
+.wb-seg button.on { color: #042027; background: var(--primary); }
 .wb-ico { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--fg2); border: 1px solid var(--line); background: var(--bg2); }
 .wb-ico svg { width: 15px; height: 15px; display: block; }
 .wb-ico:hover { color: var(--fg); background: var(--bg4); }
@@ -89,7 +90,7 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
   background: var(--bg2); border: 1px solid var(--line); transition: .13s; white-space: nowrap;
 }
 .wb-btn:hover { color: var(--fg); background: var(--bg4); border-color: var(--line2); }
-.wb-btn.primary { background: var(--primary); border-color: transparent; color: #04222a; font-weight: 700; }
+.wb-btn.primary { background: var(--primary); border-color: transparent; color: #042027; font-weight: 700; }
 .wb-btn.primary:hover { background: var(--primary-hover); }
 
 .wb-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px 60px; }
@@ -122,7 +123,7 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
   border: 1px solid transparent; background: rgba(255, 255, 255, .035);
 }
 .wb-filters button:hover { color: var(--fg2); background: rgba(255, 255, 255, .07); }
-.wb-filters button.on { color: var(--primary); background: var(--primary-dim); border-color: rgba(34, 200, 221, .3); }
+.wb-filters button.on { color: var(--primary); background: var(--primary-dim); border-color: rgba(0, 229, 255, .3); }
 .wb-sortlb { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--fg3); }
 .wb-sortlb select { background: var(--bg2); border: 1px solid var(--line); border-radius: 7px; height: 26px; padding: 0 6px; font-size: 12px; outline: none; }
 
@@ -132,20 +133,20 @@ body.wb ::selection { background: rgba(34, 200, 221, .32); }
   position: relative; text-align: left; padding: 13px 14px; border-radius: 11px; background: var(--bg1);
   border: 1px solid var(--line); transition: .15s; display: flex; gap: 12px; align-items: flex-start; min-height: 76px;
 }
-.wb-start:hover { border-color: rgba(34, 200, 221, .42); background: var(--bg3); transform: translateY(-1px); }
+.wb-start:hover { border-color: rgba(0, 229, 255, .42); background: var(--bg3); transform: translateY(-1px); }
 .wb-start .ico {
   flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
   background: rgba(255, 255, 255, .05); border: 1px solid var(--line); color: var(--fg2);
 }
 .wb-start .ico svg { width: 18px; height: 18px; display: block; }
-.wb-start.hot .ico { background: var(--primary-dim); border-color: rgba(34, 200, 221, .34); color: var(--primary); }
+.wb-start.hot .ico { background: var(--primary-dim); border-color: rgba(0, 229, 255, .34); color: var(--primary); }
 .wb-start h3 { margin: 0 0 3px; font-size: 13.5px; font-weight: 600; }
 .wb-start .m { display: block; margin: 0; font-size: 11px; line-height: 1.5; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wb-start .go { position: absolute; right: 12px; top: 12px; font-size: 11px; color: var(--fg3); opacity: 0; transition: .15s; }
 .wb-start:hover .go { opacity: 1; color: var(--primary); }
 .wb-badge {
   display: inline-block; vertical-align: 2px; font-size: 9.5px; font-weight: 500; letter-spacing: .3px; padding: 1.5px 5px;
-  border-radius: 4px; background: var(--primary-dim); color: var(--primary); border: 1px solid rgba(34, 200, 221, .22);
+  border-radius: 4px; background: var(--primary-dim); color: var(--primary); border: 1px solid rgba(0, 229, 255, .22);
 }
 
 /* ---------------- 表格 ---------------- */
@@ -160,7 +161,7 @@ table.wb-t { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .wb-t th.num, .wb-t td.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .wb-t tbody tr { border-bottom: 1px solid rgba(255, 255, 255, .045); transition: background .12s; }
 .wb-t tbody tr:last-child { border-bottom: none; }
-.wb-t tbody tr:hover { background: rgba(34, 200, 221, .05); }
+.wb-t tbody tr:hover { background: rgba(0, 229, 255, .05); }
 .wb-t td { padding: 8px 12px; font-size: 12.5px; color: var(--fg2); vertical-align: middle; }
 .wb-t td.num { font-size: 12px; }
 .wb-t td.dim { color: var(--fg3); }
@@ -168,7 +169,7 @@ table.wb-t { width: 100%; border-collapse: collapse; table-layout: fixed; }
 
 .wb-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .wb-thumb {
-  flex: 0 0 auto; width: 46px; height: 30px; border-radius: 6px; overflow: hidden; background: #0a0a0b;
+  flex: 0 0 auto; width: 46px; height: 30px; border-radius: 6px; overflow: hidden; background: #070714;
   border: 1px solid var(--line); display: grid; place-items: center; font-family: var(--mono); font-size: 12px; color: var(--fg3);
 }
 .wb-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -188,20 +189,20 @@ tr:hover .wb-acts, td:hover .wb-acts { opacity: 1; }
 }
 .wb-acts button.ib { width: 24px; padding: 0; text-align: center; font-size: 12px; }
 .wb-acts button:hover { color: var(--fg); background: rgba(255, 255, 255, .1); }
-.wb-acts button.p { color: var(--primary); border-color: rgba(34, 200, 221, .3); background: var(--primary-dim); }
-.wb-acts button.p:hover { background: rgba(34, 200, 221, .26); }
+.wb-acts button.p { color: var(--primary); border-color: rgba(0, 229, 255, .3); background: var(--primary-dim); }
+.wb-acts button.p:hover { background: rgba(0, 229, 255, .26); }
 .wb-acts button.del:hover { color: #fff; background: rgba(239, 90, 90, .22); border-color: rgba(239, 90, 90, .4); }
 
 /* 卡片视图 */
 .wb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 10px; border: none; background: none; }
 .wb-card { border: 1px solid var(--line); border-radius: 12px; background: var(--bg1); overflow: hidden; transition: .15s; }
 .wb-card:hover { border-color: var(--line2); transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0, 0, 0, .4); }
-.wb-card .shot { position: relative; aspect-ratio: 16 / 10; background: radial-gradient(120% 100% at 50% 0%, #1b1b1f, #0a0a0b); display: grid; place-items: center; }
+.wb-card .shot { position: relative; aspect-ratio: 16 / 10; background: radial-gradient(120% 100% at 50% 0%, #1b1b1f, #070714); display: grid; place-items: center; }
 .wb-card .shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .wb-card .shot .glyph { font-family: var(--mono); font-size: 30px; color: rgba(255, 255, 255, .12); }
 .wb-card .shot .open {
   position: absolute; inset: auto 8px 8px auto; height: 24px; padding: 0 10px; border-radius: 6px; font-size: 11.5px;
-  background: var(--primary); color: #04222a; font-weight: 700; opacity: 0; transition: .15s;
+  background: var(--primary); color: #042027; font-weight: 700; opacity: 0; transition: .15s;
 }
 .wb-card:hover .shot .open { opacity: 1; }
 .wb-card .cbody { padding: 9px 11px 11px; }
@@ -233,7 +234,7 @@ tr:hover .wb-acts, td:hover .wb-acts { opacity: 1; }
 .wb-mgrid input, .wb-mgrid select {
   height: 32px; padding: 0 9px; border-radius: 8px; background: var(--bg1); border: 1px solid var(--line); font-size: 13px; outline: none; color: var(--fg);
 }
-.wb-mgrid input:focus, .wb-mgrid select:focus { border-color: rgba(34, 200, 221, .55); }
+.wb-mgrid input:focus, .wb-mgrid select:focus { border-color: rgba(0, 229, 255, .55); }
 .wb-mhint { margin: 12px 0 14px; font-size: 11px; line-height: 1.65; color: var(--fg3); }
 .wb-mbtns { display: flex; justify-content: flex-end; gap: 8px; }
 /* 授权范围清单：三项各自成行，体积现场填。放在响应式块之前——

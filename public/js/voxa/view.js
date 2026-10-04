@@ -40,7 +40,7 @@ export class VoxaView {
     this.boxHelpers = new THREE.Group();
     this.scene.add(this.boxHelpers);
     this.hoverMesh = this._marker(0x66ccff, 0.45);
-    this.selMesh = this._marker(0x22c8dd, 0.35);
+    this.selMesh = this._marker(0x00e5ff, 0.35);
     this.scene.add(this.hoverMesh, this.selMesh);
     this.raycaster = new THREE.Raycaster();
     this.ortho = false;

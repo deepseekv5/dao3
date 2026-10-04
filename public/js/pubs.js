@@ -63,7 +63,7 @@ export function hue(s) { let h = 0; for (const c of String(s || "?")) h = (h * 3
 /** 没有头像就是 initials：一块中性石墨 + 首字。
     以前这里按名字取一段青→紫渐变，于是每个默认头像都是"同一种不同深浅的品牌色"，
     一眼就是生成的。真人论坛的默认头像从来不做渐变。 */
-export const avatarBg = () => "#2a2a2a";
+export const avatarBg = () => "#16162e";
 /** 缺封面时不再画渐变——服务端已经会用这张图自己的体素画一张小地图，
     走到这里说明那张图真的是空的。空的就该看起来是空的：一张没落笔的方格纸。 */
 export const coverArt = () => "background-color:#161616;"

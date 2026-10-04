@@ -1,0 +1,109 @@
+/* arcadia.css — 从 arcadia-base 移植的质感层。
+ *
+ * 只放"看得出处方"的东西：网格底纹 + 顶部辉光、玻璃导航、卡片发光描边、
+ * 骨架屏微光、统一缓动与滚动条。颜色一律走 tokens.css，这里不写死任何一个。
+ *
+ * 为什么不直接引 Tailwind：本工程运行时零依赖，浏览器直读源码，
+ * 没有构建步骤。arcadia-base 的样式本来就是纯 CSS 变量 + 类名，抄类名即可。
+ */
+
+/* 底纹只给文档级页面；编辑器/VOXA 是 WebGL 画布打底，加网格会透出脏纹 */
+body.lm-page {
+  background-color: var(--bg0);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, var(--primary-dim), transparent 70%),
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
+  background-attachment: fixed;
+}
+
+::selection { background: rgba(0, 229, 255, .3); color: var(--fg); }
+* { scrollbar-width: thin; scrollbar-color: rgba(0, 229, 255, .25) transparent; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, .25); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, .45); }
+
+/* 顶栏：半透明 + 模糊，滚动时内容从下面穿过去而不是被切断 */
+.lm-nav {
+  background: var(--glass-nav-bg);
+  border-bottom: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+
+/* 卡片：arcadia 的 hover 不是把边框刷亮，而是"抬起来 + 外发光 + 内描边淡入"。
+   ::before 单独一层描边，避免改 border 宽度导致内容位移 1px。 */
+.lm-card {
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: border-color .25s var(--ease), box-shadow .3s var(--ease), transform .2s var(--ease), background .25s var(--ease);
+}
+.lm-card::before {
+  content: "";
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  opacity: 0; transition: opacity .25s var(--ease);
+}
+.lm-card:hover { border-color: var(--glass-border-hover); box-shadow: var(--shadow-card-hover), var(--glow); transform: translateY(-2px); background: var(--glass-bg-hover); }
+.lm-card:hover::before { opacity: 1; }
+.lm-card:active { transform: translateY(0) scale(.985); transition-duration: .08s; }
+
+.lm-panel {
+  background: var(--elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+/* 主标题带一点霓虹：只在暗底大字上用，正文用了会糊 */
+.lm-glow-title { letter-spacing: .04em; text-shadow: var(--text-glow); }
+.lm-accent2 { color: var(--accent2); }
+
+.lm-divider {
+  height: 1px; margin: 12px 0;
+  background: linear-gradient(90deg, transparent, var(--line) 20%, var(--line) 80%, transparent);
+}
+
+.lm-skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--skeleton-from) 25%, var(--skeleton-via) 50%, var(--skeleton-from) 75%);
+  background-size: 200% 100%;
+  animation: lmShimmer 1.5s infinite;
+}
+@keyframes lmShimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+
+.lm-fade { animation: lmFade .3s var(--ease) both; }
+.lm-up { animation: lmUp .35s var(--ease) both; }
+.lm-scale { animation: lmScale .3s var(--ease) both; }
+@keyframes lmFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes lmUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+@keyframes lmScale { from { opacity: 0; transform: scale(.96) } to { opacity: 1; transform: none } }
+
+/* 主按钮扫一道高光：arcadia 里"这是主动作"就靠这一下 */
+.lm-btn-primary {
+  background: var(--primary); color: var(--on-accent); border: 1px solid var(--primary);
+  box-shadow: var(--glow);
+  transition: background .3s var(--ease), box-shadow .3s var(--ease), transform .1s;
+}
+.lm-btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.lm-btn-primary:active { transform: scale(.98); }
+
+/* 返回/次级小按钮 */
+.lm-back {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; font-size: 12px; color: var(--fg2);
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md); cursor: pointer; transition: all .15s;
+}
+.lm-back:hover { border-color: var(--glass-border-hover); color: var(--fg); background: var(--glass-bg-hover); }
+.lm-back:active { transform: scale(.96); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lm-card, .lm-btn-primary, .lm-back { transition-duration: .01ms; }
+  .lm-fade, .lm-up, .lm-scale, .lm-skeleton { animation: none; }
+}

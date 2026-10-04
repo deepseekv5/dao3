@@ -10,8 +10,9 @@
   background: var(--bg3); color: var(--fg); border: 1px solid var(--line2); transition: .13s;
 }
 .cm-btn:hover { border-color: var(--primary); color: var(--primary); }
-.cm-btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-accent); font-weight: 600; }
+.cm-btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-accent); font-weight: 600; box-shadow: var(--glow); transition: background .3s var(--ease), box-shadow .3s var(--ease), transform .1s; }
 .cm-btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); color: var(--on-accent); }
+.cm-btn.primary:active { transform: scale(.98); }
 .cm-btn.ghost { background: transparent; }
 .cm-btn.on { background: var(--primary-dim); border-color: var(--primary); color: var(--primary); }
 .cm-btn[disabled] { opacity: .45; cursor: not-allowed; }
@@ -37,9 +38,10 @@
    精选位用当前列表里游玩最多的一张；导轨只在没筛选的那一屏出现。 */
 .cm-feature {
   display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr); gap: 0;
-  border: 1px solid var(--line); border-radius: 16px; overflow: hidden; margin-bottom: 20px; background: var(--bg1);
+  border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; margin-bottom: 20px;
+  background: var(--elevated); box-shadow: var(--shadow-card);
 }
-.cm-feature-art { position: relative; min-height: 268px; cursor: pointer; background: #05070c center/contain no-repeat; }
+.cm-feature-art { position: relative; min-height: 268px; cursor: pointer; background: #050510 center/contain no-repeat; }
 .cm-feature-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cm-feature-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, transparent 45%, rgba(8, 10, 16, .85)); }
 .cm-feature-body { padding: 22px 22px 20px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
@@ -82,7 +84,7 @@
   background: radial-gradient(120% 90% at 50% 0%, #12151d, #05070c) center/contain no-repeat;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); transition: transform .16s, box-shadow .16s;
 }
-.cm-card:hover .cm-thumb { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--primary), 0 10px 22px rgba(0, 0, 0, .45); }
+.cm-card:hover .cm-thumb { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--primary), 0 10px 22px rgba(0, 0, 0, .45), var(--glow); }
 .cm-card:focus-visible { outline: none; }
 .cm-card:focus-visible .cm-thumb { box-shadow: inset 0 0 0 2px var(--primary), 0 10px 22px rgba(0, 0, 0, .45); }
 /* 骨架屏：只有明暗在呼吸，不上彩色渐变——彩色的 shimmer 一眼就是生成页 */
@@ -134,12 +136,12 @@
 
 /* ---------- 小头像 ---------- */
 .au-face { width: 22px; height: 22px; border-radius: 7px; object-fit: cover; flex: none; display: grid; place-items: center; }
-.au-init { color: #141414; font-weight: 700; font-size: 12px; }
+.au-init { color: #08081a; font-weight: 700; font-size: 12px; }
 .au-face.lg { width: 54px; height: 54px; border-radius: 15px; font-size: 26px; }
 
 /* ---------- 详情页 ---------- */
 .cm-detail { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 18px; align-items: start; }
-.cm-hero { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg1); }
+.cm-hero { border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; background: var(--elevated); box-shadow: var(--shadow-card); }
 .cm-hero .pic { aspect-ratio: 16 / 9; background: #10131c center/cover no-repeat; position: relative; display: grid; place-items: center; }
 .cm-hero .pic .glyph { font-size: 96px; font-weight: 700; color: rgba(255, 255, 255, .13); }
 .cm-hero .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -150,7 +152,7 @@
 .cm-tag { font-size: 11.5px; color: var(--fg2); background: var(--bg3); border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; }
 .cm-hero .stats { display: flex; gap: 18px; color: var(--fg3); font-size: 12px; font-family: var(--mono); flex-wrap: wrap; }
 .cm-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; }
-.cm-panel { background: var(--bg1); border: 1px solid var(--line); border-radius: 12px; padding: 13px; }
+.cm-panel { background: var(--elevated); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); padding: 13px; box-shadow: var(--shadow-card); }
 .cm-panel h4 { margin: 0 0 10px; font-size: 12px; color: var(--fg3); font-weight: 600; letter-spacing: .4px; }
 .cm-author { display: flex; gap: 10px; align-items: center; margin-bottom: 11px; }
 .cm-author b { font-size: 13.5px; display: block; }
@@ -296,7 +298,7 @@
   display: flex; align-items: center; gap: 12px; padding: 11px 13px; text-decoration: none; color: inherit;
   background: var(--bg1); border: 1px solid var(--line); border-radius: 11px; transition: .13s;
 }
-.pf-rrow:hover { border-color: rgba(34, 200, 221,.5); background: var(--bg2); }
+.pf-rrow:hover { border-color: rgba(0, 229, 255,.5); background: var(--bg2); }
 .pf-rtitle { font-size: 13px; font-weight: 600; }
 .pf-rmeta { margin-left: auto; font-size: 11.5px; color: var(--fg3); font-family: var(--mono); }
 

@@ -1,24 +1,39 @@
-/* 编辑器 — 布局与控件尺寸对齐官方 Arena，强调色跟产品自己走（青蓝 #22c8dd）。
+/* 编辑器 — 布局与控件尺寸对齐官方 Arena，配色跟 arcadia-base 的 cyberpunk 暗档同源。
    官方那套橙只保留在"这是官方截图对比"的场合；界面语言已经换成我们自己的。 */
 :root{
-  --primary:#22c8dd; --primary-hover:#4ad8ea; --primary-press:#16a9bd; --primary-light:rgba(34, 200, 221,.3);
-  --grey1:#121212; --grey2:#343434; --grey3:#565656; --grey4:#787878; --grey6:#c4c4c4; --grey7:#f5f5f5;
-  --bar:#1a1a1a; --panel:#2b2b2b; --panel2:#333; --card:rgba(38,38,38,.94);
-  --font-black-important:#222; --font-black:#353535; --font-black-minor:#888;
+  --primary:#00e5ff; --primary-hover:#7df9ff; --primary-press:#00b8cc; --primary-light:rgba(0, 229, 255,.3);
+  --accent2:#ff2a8a; --accent2-dim:rgba(255, 42, 138,.12);
+  --grey1:#0c0c20; --grey2:#1e1e3c; --grey3:#4a4a6a; --grey4:#6a6a86; --grey6:#b8bcd8; --grey7:#eef0fa;
+  --bar:#0a0a1a; --panel:#11112a; --panel2:#232345; --card:rgba(17,17,42,.94);
+  --font-black-important:#1a1a30; --font-black:#28284a; --font-black-minor:#7a7a96;
   --font-white:#fff; --font-white-minor:hsla(0,0%,100%,.6); --font-white-disabled:hsla(0,0%,100%,.3);
-  --divider:hsla(0,0%,100%,.08);
-  --radius:8px;
+  --divider:#1e1e3c;
+  --radius:6px;
   --font:MiSans,"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
   /* 社区层（发布对话框等）用的是工作台那套变量名。这里做名字桥接，
      并且两边共用同一个 --primary——同一个产品的两个面，不该有两种颜色。 */
-  --bg0:#0d0d0d; --bg1:var(--panel); --bg2:#232323; --bg3:var(--panel2); --bg4:#3d3d3d;
-  --line:var(--divider); --line2:hsla(0,0%,100%,.14);
-  --fg:var(--font-white); --fg2:var(--font-white-minor); --fg3:hsla(0,0%,100%,.4);
-  --primary-dim:rgba(34, 200, 221,.16); --on-accent:#04222a;
+  --bg0:#050510; --bg1:var(--panel); --bg2:#191932; --bg3:var(--panel2); --bg4:#2c2c52;
+  --line:var(--divider); --line2:#2a2a52;
+  --fg:var(--font-white); --fg2:var(--font-white-minor); --fg3:#9090b8;
+  --primary-dim:rgba(0, 229, 255,.16); --on-accent:#042027;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  /* arcadia.css 那层质感变量：编辑器不引 tokens.css，所以这里自带一份同值的 */
+  --elevated:#11112a;
+  --glass-bg:#11112a; --glass-bg-hover:#16162e; --glass-border:#1e1e3c;
+  --glass-border-hover:rgba(0, 229, 255,.45); --glass-nav-bg:rgba(5, 5, 16,.88);
+  --shadow-card:0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.3);
+  --shadow-card-hover:0 4px 14px rgba(0,229,255,.2), 0 1px 3px rgba(0,0,0,.5);
+  --glow:0 0 14px rgba(0,229,255,.45), 0 0 28px rgba(0,229,255,.18);
+  --glow-2:0 0 14px rgba(255,42,138,.45), 0 0 28px rgba(255,42,138,.18);
+  --text-glow:0 0 10px rgba(0,229,255,.55);
+  --grid-color:rgba(0,229,255,.045);
+  --skeleton-from:rgba(255,255,255,.04); --skeleton-via:rgba(255,255,255,.09);
+  --radius-sm:2px; --radius-md:4px; --radius-lg:6px;
+  --ease:cubic-bezier(0.16, 1, 0.3, 1);
+  --ok:#39ff14; --warn:#e0a63c; --bad:#ff2a8a;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:#0d0d0d;color:var(--font-white);font-family:var(--font);overflow:hidden;font-size:13px;-webkit-font-smoothing:antialiased}
+html,body{height:100%;background:#050510;color:var(--font-white);font-family:var(--font);overflow:hidden;font-size:13px;-webkit-font-smoothing:antialiased}
 button{font-family:inherit;cursor:pointer;color:inherit;border:none;background:none}
 input{font-family:inherit}
 
@@ -62,7 +77,7 @@ input{font-family:inherit}
 .ztriple input{flex:1;min-width:0;background:#111;border:1px solid var(--grey2);border-radius:6px;color:#fff;font-size:11.5px;padding:3px 4px}
 .zhint{font-size:10px;color:var(--font-black-minor);line-height:1.6;margin-top:4px}
 .tb-right{display:flex;align-items:center;gap:4px;position:relative}
-.play{width:38px;height:38px;border-radius:50%;background:var(--primary);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;margin-left:8px;box-shadow:0 2px 8px rgba(34, 200, 221,.5)}
+.play{width:38px;height:38px;border-radius:50%;background:var(--primary);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;margin-left:8px;box-shadow:0 2px 8px rgba(0, 229, 255,.5)}
 .play:hover{background:var(--primary-hover)}
 .worldlist{display:none;position:absolute;top:44px;right:0;background:var(--panel);border:1px solid var(--grey2);border-radius:10px;padding:6px;min-width:220px;max-height:320px;overflow:auto;z-index:40;box-shadow:0 10px 30px rgba(0,0,0,.6)}
 .worldlist.show{display:block}
@@ -93,7 +108,7 @@ input{font-family:inherit}
 .lc-rail button:hover{background:var(--grey2);color:#fff}
 .lc-rail button.active{background:var(--primary-light);color:var(--primary)}
 .lc-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;overflow-y:auto;align-content:start}
-.block{position:relative;background:#1b1f27;border:1px solid #23282f;border-radius:9px;padding:8px 5px 6px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.block{position:relative;background:#161a2a;border:1px solid #23282f;border-radius:9px;padding:8px 5px 6px;display:flex;flex-direction:column;align-items:center;gap:2px}
 .block img{width:100%;max-width:56px;height:56px;image-rendering:pixelated;object-fit:contain}
 .block .nm{font-size:11px;color:var(--font-white-major);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .block .rot{position:absolute;top:3px;right:4px;font-size:9px;color:var(--font-black-minor)}
@@ -120,8 +135,8 @@ input{font-family:inherit}
 .ft-sep{width:1px;flex:0 0 auto;height:22px;background:var(--divider);margin:0 4px}
 /* 编辑视角分段：全局轨道 / 角色（可飞行） */
 .mode-seg{display:inline-flex;border:1px solid var(--grey2);border-radius:6px;overflow:hidden;margin-right:2px}
-.mode-seg .msb{padding:0 11px;height:24px;font-size:11.5px;color:var(--font-white-minor);background:#232323}
-.mode-seg .msb:hover{color:#fff;background:#2e2e2e}
+.mode-seg .msb{padding:0 11px;height:24px;font-size:11.5px;color:var(--font-white-minor);background:#191932}
+.mode-seg .msb:hover{color:#fff;background:#232345}
 .mode-seg .msb.active{background:var(--primary);color:#180d00;font-weight:700}
 
 /* right panel */
@@ -311,7 +326,7 @@ body.playing .prop-card{display:none !important}
 .sfile:hover{background:var(--grey2)}
 .sfile.active{background:var(--primary-light);color:var(--primary);border-color:var(--primary)}
 .sfile .sdot{width:7px;height:7px;border-radius:50%;background:var(--primary);flex:none}
-.sfile:not(.active) .sdot{background:var(--grey4,#787878)}
+.sfile:not(.active) .sdot{background:var(--grey4,#6a6a86)}
 .drawer-act{width:26px;height:26px;border-radius:6px;color:var(--font-white-minor);display:flex;align-items:center;justify-content:center}
 .drawer-act:hover{background:var(--grey2);color:#fff}
 .drawer-head .drawer-act{margin-left:auto}
@@ -323,8 +338,8 @@ body.playing .prop-card{display:none !important}
 .code-editor pre,#scriptCode{margin:0;font-family:Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6;padding:12px 14px;white-space:pre;word-wrap:normal;tab-size:2}
 .code-editor pre{position:absolute;inset:0;overflow:hidden;color:#d6e2ff;pointer-events:none}
 .code-editor pre code{font:inherit}
-#scriptCode{position:absolute;inset:0;width:100%;height:100%;background:transparent;border:none;color:transparent;caret-color:#22c8dd;resize:none;outline:none;overflow:auto;white-space:pre}
-#scriptCode::selection{background:rgba(34, 200, 221,.28);color:transparent}
+#scriptCode{position:absolute;inset:0;width:100%;height:100%;background:transparent;border:none;color:transparent;caret-color:#00e5ff;resize:none;outline:none;overflow:auto;white-space:pre}
+#scriptCode::selection{background:rgba(0, 229, 255,.28);color:transparent}
 /* 语法配色（VSCode 暗色系） */
 .tk-com{color:#6a737d;font-style:italic}
 .tk-str{color:#ce9178}
@@ -369,7 +384,7 @@ body.playing .hud-tools{display:flex}
 .pe-store[hidden]{display:none}
 .pe-store:hover{color:#fff;background:rgba(255,255,255,.08)}
 .pe-store.exit{color:#ffd9cf}
-.pe-store.exit:hover{background:var(--primary);color:#04222a;border-color:var(--primary)}
+.pe-store.exit:hover{background:var(--primary);color:#042027;border-color:var(--primary)}
 .game-store{position:absolute;right:14px;top:60px;width:296px;max-height:62vh;overflow:auto;border-radius:12px;padding:10px;display:none;pointer-events:auto;
   background:rgba(12,15,20,.94);border:1px solid var(--grey2);box-shadow:0 16px 50px rgba(0,0,0,.6)}
 .game-store.show{display:block}
@@ -410,7 +425,7 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 #gameLockHint{position:absolute;left:50%;top:68%;transform:translateX(-50%);display:none;padding:7px 16px;border-radius:99px;color:var(--fg2);font-size:12.5px;pointer-events:none}
 #gameLockHint.show{display:block}
 #gameChat{position:absolute;left:16px;bottom:18px;display:flex;flex-direction:column;gap:3px;pointer-events:none;max-width:46vw}
-#gameChat div{background:rgba(8,10,14,.62);color:#f2f2f2;font-size:12.5px;padding:4px 10px;border-radius:8px;width:fit-content;max-width:100%}
+#gameChat div{background:rgba(8,10,14,.62);color:#e8e8ff;font-size:12.5px;padding:4px 10px;border-radius:8px;width:fit-content;max-width:100%}
 #gameDialog{position:absolute;left:50%;top:38%;transform:translateX(-50%);background:rgba(16,16,18,.94);border:1px solid var(--line2);border-radius:14px;
   padding:18px 20px;min-width:280px;max-width:70vw;display:none;box-shadow:0 20px 60px rgba(0,0,0,.6);pointer-events:auto;backdrop-filter:blur(10px)}
 #gameDialog.show{display:block}
@@ -420,9 +435,9 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 #gameDialog .d-input{width:100%;padding:9px 12px;border-radius:9px;background:rgba(0,0,0,.4);border:1px solid var(--grey2);color:#fff;font-size:13px;font-family:inherit}
 #gameDialog .d-input:focus{outline:none;border-color:var(--primary)}
 #gameDialog .playbtn{background:var(--grey2);color:#fff;border:1px solid transparent;border-radius:9px;padding:10px 14px;font-size:13px;font-family:inherit;cursor:pointer;text-align:left}
-#gameDialog .playbtn:hover{background:var(--primary);color:#04222a;border-color:var(--primary)}
+#gameDialog .playbtn:hover{background:var(--primary);color:#042027;border-color:var(--primary)}
 /* 重生按钮以前挂着 .playbtn 却没有任何裸规则（那条只作用于 #gameDialog 内），等于没样式 */
-.playbtn{background:var(--primary);color:#04222a;border:none;border-radius:9px;padding:9px 20px;font-size:13px;font-family:inherit;font-weight:600;cursor:pointer}
+.playbtn{background:var(--primary);color:#042027;border:none;border-radius:9px;padding:9px 20px;font-size:13px;font-family:inherit;font-weight:600;cursor:pointer}
 .playbtn:hover{background:var(--primary-hover)}
 #gameConsole{position:absolute;left:16px;bottom:140px;width:min(520px,46vw);max-height:38vh;overflow-y:auto;background:rgba(5,8,12,.82);border:1px solid var(--grey2);border-radius:10px;padding:8px 10px;font-family:var(--mono);font-size:11.5px;line-height:1.5;display:none;pointer-events:auto}
 #gameConsole.show{display:block}
@@ -448,7 +463,7 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 .gh-row em{width:40px;text-align:right;color:#fff;font-style:normal;font-family:var(--mono);font-size:11px}
 .gh-btns{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 .gh-btns button{background:rgba(255,255,255,.07);color:var(--fg2);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:11px;font-family:inherit;cursor:pointer}
-.gh-btns button:hover{background:var(--primary);border-color:var(--primary);color:#04222a}
+.gh-btns button:hover{background:var(--primary);border-color:var(--primary);color:#042027}
 
 /* Esc 游戏内菜单：浮在画面上、不暂停世界。
    这套规则以前住在 player-modal.css 里，而那个文件要等玩家面板第一次打开才注入，
@@ -483,7 +498,7 @@ html:not(.touch-capable) body.playing.float-ui #gameVitals{bottom:204px}
 /* 聊天：收起时左下角只有最近三条，展开是独立面板，历史能往上翻。
    以前所有消息都挤在那三条里且 15 秒清空——联机时别人一说话就把你的顶掉了。 */
 .chat-strip{position:absolute;left:16px;bottom:18px;display:flex;flex-direction:column;gap:3px;pointer-events:none;max-width:40vw;transition:opacity .16s}
-.chat-strip div{background:rgba(8,10,14,.62);color:#f2f2f2;font-size:12.5px;padding:4px 10px;border-radius:8px;width:fit-content;max-width:100%}
+.chat-strip div{background:rgba(8,10,14,.62);color:#e8e8ff;font-size:12.5px;padding:4px 10px;border-radius:8px;width:fit-content;max-width:100%}
 body.chat-open .chat-strip{opacity:0}
 /* 血条本来贴在左下角窄条上面，聊天面板一开就会压在它身上 */
 body.chat-open #gameVitals{bottom:auto;top:64px}
@@ -542,10 +557,10 @@ body.playing.float-ui:not(.touch) #touchUI{opacity:.9}
 body.float-edit #joyBase,body.float-edit #tbtns button{outline:2px dashed var(--primary);outline-offset:3px;cursor:grab}
 body.float-edit #tbtns{cursor:grab}
 #joyBase{position:fixed;left:28px;bottom:56px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.25);z-index:70;touch-action:none}
-#joyKnob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(34, 200, 221,.55);transform:translate(-50%,-50%);pointer-events:none}
+#joyKnob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(0, 229, 255,.55);transform:translate(-50%,-50%);pointer-events:none}
 #tbtns{position:fixed;right:26px;bottom:64px;display:flex;flex-direction:column;gap:14px;z-index:70}
 #tbtns button{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.1);border:2px solid rgba(255,255,255,.28);color:#fff;font-size:16px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-#tbtns button:active{background:rgba(34, 200, 221,.5)}
+#tbtns button:active{background:rgba(0, 229, 255,.5)}
 
 /* 脚本独立界面（覆盖全屏，与搭建视图互斥） */
 .script-screen{position:fixed;left:0;right:0;top:48px;bottom:0;z-index:90;display:none;flex-direction:column;background:#101216}
@@ -593,7 +608,7 @@ body.float-edit #tbtns{cursor:grab}
 .uiw-host{position:fixed;inset:0;z-index:65;display:none;pointer-events:none}
 .uiw-host.show{display:block}
 .uiw{position:absolute;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.uiw-button{pointer-events:auto;background:rgba(34, 200, 221,.85);border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px}
+.uiw-button{pointer-events:auto;background:rgba(0, 229, 255,.85);border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px}
 .uiw-button:active{filter:brightness(.9)}
 .uiw-text{pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.6);white-space:pre-wrap}
 /* 玩家设置面板行 */
@@ -638,7 +653,7 @@ body.playing .name-tags{display:block}
 .ntag-hp{display:none;height:3px;border-radius:2px;background:#5be07a;box-shadow:0 0 0 1px rgba(0,0,0,.5)}
 .ntag i.ntag-hp{position:relative;width:100%;max-width:44px;background:rgba(255,255,255,.18)}
 .ntag i.ntag-hp::after{content:"";position:absolute;left:0;top:0;height:100%;width:inherit;background:#5be07a;border-radius:2px}
-.ntag-float{display:none;padding:4px 9px;border-radius:9px;background:rgba(255,255,255,.94);color:#1b1b1b;font-size:12.5px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.ntag-float{display:none;padding:4px 9px;border-radius:9px;background:rgba(255,255,255,.94);color:#131328;font-size:12.5px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 
 /* 触屏 Gamepad：官方图槽（跳 / 蹲 / 跑 / 飞 / A / B / 交互） */
 body.touch.playing #touchUI{display:block}
@@ -652,7 +667,7 @@ body.playing.float-edit #peRotate{display:none}
 }
 #tbtns{position:fixed;right:22px;bottom:54px;display:flex;flex-direction:row-reverse;flex-wrap:wrap;justify-content:flex-start;align-items:flex-end;gap:12px;width:230px;z-index:70}
 #tbtns button{width:58px;height:58px;font-size:15px}
-#tbtns button#tJump{width:78px;height:78px;font-size:17px;background:rgba(34, 200, 221,.22);border-color:rgba(34, 200, 221,.55)}
+#tbtns button#tJump{width:78px;height:78px;font-size:17px;background:rgba(0, 229, 255,.22);border-color:rgba(0, 229, 255,.55)}
 
 /* ---------- 代码包面板（仿官方文件管理） ---------- */
 .pk-rail{width:212px;flex:none;display:flex;flex-direction:column;border-right:1px solid var(--grey2);background:#12151b}
@@ -682,7 +697,7 @@ body.playing.float-edit #peRotate{display:none}
 /* 资源表里有、本地没有的行：整行可点去取回，所以要做成"可点"的样子，
    并且和已存在的文件区分开——否则用户分不清哪一行是已有的、哪一行是缺的 */
 .pk-missing{cursor:pointer;opacity:.72}
-.pk-missing:hover{opacity:1;background:rgba(34, 200, 221,.08)}
+.pk-missing:hover{opacity:1;background:rgba(0, 229, 255,.08)}
 .pk-missing .pk-name b{font-style:italic}
 .pk-thumb{width:32px;height:32px;border-radius:6px;background:#0b0e13;display:grid;place-items:center;overflow:hidden}
 .pk-thumb img{width:100%;height:100%;object-fit:cover}
