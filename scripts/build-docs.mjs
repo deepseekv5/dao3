@@ -17,6 +17,7 @@ const DOCS = path.join(ROOT, "docs");
 const DOCS_LIST = [
   ["architecture", "架构与数据流", "入门"],
   ["testing", "测试与验证", "入门"],
+  ["community", "社区层", "社区"],
   ["api-compat", "官方 API 兼容层", "内核"],
   ["api-reference", "API 参考", "内核"],
   ["data-format", "数据格式", "内核"],
@@ -35,6 +36,7 @@ const DOCS_LIST = [
 // 文档中心的分组小标题（id 用作锚点，note 是分组导读）。
 const DOC_GROUPS = [
   ["start", "入门", "先看清整体结构，再学会怎么在真实浏览器里验证自己拿到的一切。"],
+  ["social", "社区", "发布是快照不是引用；账号、评论、联机都跑在同一台本机进程里——边界写清楚。"],
   ["core", "内核", "接口、数据、物理三块——「兼容」具体落在这些判据上。"],
   ["ship", "交付", "打包、依赖、授权与平台边界：能拿走什么，拿不走什么。"],
 ];
@@ -150,6 +152,16 @@ function parse(md) {
     }
 
     if (/^\s*$/.test(line)) {
+      i++;
+      continue;
+    }
+
+    // 手写锚点行（<a id="chunks"></a>）要当原样 HTML 发出去。
+    // 解析器整体 esc 正文，所以以前这些行会在页面上显示成一串可见的标签文字——
+    // 每篇文档的每个小节标题上面都挂着一行，是全站性的排版事故。
+    const anchor = line.match(/^\s*<a id="([^"]+)"><\/a>\s*$/);
+    if (anchor) {
+      html.push(`<span id="${esc(anchor[1])}" class="anchor"></span>`);
       i++;
       continue;
     }

@@ -39,8 +39,8 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 </script>
 <main class="doc">
   <aside class="doc-side">
-    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a class="on" href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#一张地图分三层">一张地图分三层</a><a class="t2" href="#第-1-层世界-payload">第 1 层：世界 payload</a><a class="t3" href="#线性索引的算法">线性索引的算法</a><a class="t3" href="#rot-与16384的关系">rot 与&quot;16384&quot;的关系</a><a class="t3" href="#不支持的键">不支持的键</a><a class="t2" href="#meta18-个键">meta：18 个键</a><a class="t2" href="#实体表官方树形-vs-本地扁平">实体表：官方树形 vs 本地扁平</a><a class="t3" href="#官方-entities-entitiestree.json">官方 entities/entitiesTree.json</a><a class="t3" href="#本地-meta.entities">本地 meta.entities</a><a class="t3" href="#⚠-id-与-name-的语义陷阱">⚠ id 与 name 的语义陷阱</a><a class="t2" href="#第-2-层项目包">第 2 层：项目包</a><a class="t3" href="#project.json恰好-21-键按字母序">project.json：恰好 21 键、按字母序</a><a class="t3" href="#各-blob-的字段域">各 blob 的字段域</a><a class="t3" href="#assets-的-type-数字枚举">assets 的 type 数字枚举</a><a class="t3" href="#map.json">map.json</a><a class="t2" href="#内容寻址cidv0">内容寻址：CIDv0</a><a class="t2" href="#第-3-层方块表与图集">第 3 层：方块表与图集</a><a class="t2" href="#本地存档的实际布局">本地存档的实际布局</a><a class="t2" href="#官方-chunks-<cid>.bin-解不出方块表">官方 chunks/&lt;CID&gt;.bin 解不出方块表</a><a class="t2" href="#往返一致性什么会丢">往返一致性：什么会丢</a><a class="t2" href="#自己验证一份地图">自己验证一份地图</a><a class="t2" href="#与其他文档的分工">与其他文档的分工</a></nav>
+    <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="testing.html">测试与验证</a><b class="grp">社区</b><a href="community.html">社区层</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a class="on" href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#一张地图分三层">一张地图分三层</a><a class="t2" href="#第-1-层世界-payload">第 1 层：世界 payload</a><a class="t3" href="#线性索引的算法">线性索引的算法</a><a class="t3" href="#rot-与16384的关系">rot 与&quot;16384&quot;的关系</a><a class="t3" href="#不支持的键">不支持的键</a><a class="t2" href="#meta18-个键">meta：18 个键</a><a class="t2" href="#实体表官方树形-vs-本地扁平">实体表：官方树形 vs 本地扁平</a><a class="t3" href="#官方-entities-entitiestree.json">官方 entities/entitiesTree.json</a><a class="t3" href="#本地-meta.entities">本地 meta.entities</a><a class="t3" href="#⚠-id-与-name-的语义陷阱">⚠ id 与 name 的语义陷阱</a><a class="t2" href="#第-2-层项目包">第 2 层：项目包</a><a class="t3" href="#project.json恰好-21-键按字母序">project.json：恰好 21 键、按字母序</a><a class="t3" href="#各-blob-的字段域">各 blob 的字段域</a><a class="t3" href="#assets-的-type-数字枚举">assets 的 type 数字枚举</a><a class="t3" href="#map.json">map.json</a><a class="t2" href="#内容寻址cidv0">内容寻址：CIDv0</a><a class="t2" href="#第-3-层方块表与图集">第 3 层：方块表与图集</a><a class="t2" href="#本地存档的实际布局">本地存档的实际布局</a><a class="t2" href="#官方-chunks-<cid>-的编码长方体游程-+-坐标位交错">官方 chunks/&lt;CID&gt; 的编码：长方体游程 + 坐标位交错</a><a class="t3" href="#为什么63.5-格-字节当年被当成不可能">为什么&quot;63.5 格/字节&quot;当年被当成不可能</a><a class="t3" href="#实测">实测</a><a class="t2" href="#往返一致性什么会丢">往返一致性：什么会丢</a><a class="t2" href="#自己验证一份地图">自己验证一份地图</a><a class="t2" href="#与其他文档的分工">与其他文档的分工</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/map-format.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -89,7 +89,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
     <span class="c-kw">const</span> index = parseInt(entity.id.match(/\d+/)[<span class="c-nu">0</span>]);   <span class="c-cm">// ← 取的是 id</span></code></pre></div>
 <p>这行能成立，是因为<b>官方运行期把 <code>name</code> 当 <code>id</code> 暴露</b>给脚本。本实现照此办理： <code>game.js</code> 里 <code>id: d.name || d.id</code>。后果是——任何依赖&quot;从 id 里抠数字&quot;的官方脚本， 在本地必须保持 <code>name</code> 里带序号（<code>检查点-0…4</code>）才能拿到同样的顺序。 <b>新建地图时给实体起名要带序号</b>，否则这类脚本会静默拿到同一个 index。</p>
 <hr/>
-<p>&lt;a id=&quot;project-json&quot;&gt;&lt;/a&gt;</p>
+<span id="project-json" class="anchor"></span>
 <h2 id="第-2-层项目包">第 2 层：项目包</h2>
 <h3 id="project.json恰好-21-键按字母序"><code>project.json</code>：恰好 21 键、按字母序</h3>
 <div class="code"><pre><code>ambientSound assets collisionFilter committerId deleteAssets entitiesTree
@@ -127,25 +127,40 @@ public/assets/worlds/&lt;id&gt;/             同一批文件的仓库内位置</
 <p>前端 URL 始终是 <code>/assets/worlds/&lt;id&gt;/…</code>，所以服务端要在<b>两个根目录</b>里都解析这个前缀 ——安装到只读卷（<code>.dmg</code>）时数据会落到 <code>~/.dao3-editor</code>，URL 却不能变。</p>
 <p>保存链：<code>main.js save() → world.toPayload({...meta, terrain, scripts, entities: collectEntities(), models: [], meshNames}) → POST /api/world</code>，gzip level 6。</p>
 <hr/>
-<p>&lt;a id=&quot;chunks&quot;&gt;&lt;/a&gt;</p>
-<h2 id="官方-chunks-<cid>.bin-解不出方块表">官方 <code>chunks/&lt;CID&gt;.bin</code> 解不出方块表</h2>
-<p><b>这是本实现不采用官方分块的根本原因，别再试。</b></p>
-<p>判据（<code>node scripts/decode-official-chunks.mjs</code> 可复现）：</p>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>量</th><th>实测</th></tr></thead><tbody><tr><td>chunk 文件数</td><td>73（其中 72 个非空，空块固定 2 字节）</td></tr><tr><td>72 个非空块总字节</td><td><b>23,997</b></td></tr><tr><td>地图非空格数</td><td><b>1,523,592</b></td></tr><tr><td>比值</td><td>约 <b>63.5 格 / 字节</b></td></tr></tbody></table></div>
-<p>任何 <code>(index, id)</code> 类编码至少要 4–8 字节<b>每格</b>，而这里是 63 格每字节—— 信息量差一个数量级以上，<b>物理上不可能</b>是逐格列表。</p>
-<p>脚本试了 5 种假设，全部失败，且失败得很干净：</p>
-<div class="code"><pre><code>(id,index) / (index,id) / delta-zigzag / id→0 终止 / depth-5 稀疏八叉树
-   → 精确耗尽的文件数：0 / 72
-   首个反证：QmcmVeMaGj(403B) @offset 1 → 非法 id 4</code></pre></div>
-<p>剩下的字节特征（含 <code>5f 59 00</code> 标记）指向&quot;烘焙后的合并网格容器&quot;。 <b>注意</b>：protobuf 只是证据指向，未被证明，本文不把它当结论写。</p>
-<p><code>voxels.raw</code> 里另有 <code>chunks[256]</code> 的槽位表。<b>槽位与坐标的映射关系仓库里没有任何证据</b>， 所以本文不给&quot;16×16 列&quot;之类的猜测——写错比不写更糟。</p>
+<span id="chunks" class="anchor"></span>
+<h2 id="官方-chunks-<cid>-的编码长方体游程-+-坐标位交错">官方 <code>chunks/&lt;CID&gt;</code> 的编码：长方体游程 + 坐标位交错</h2>
+<blockquote><p><b>本篇此前写的是&quot;解不出方块表、别再试&quot;。那个结论是错的，已作废。</b></p><p>错的不是判据而是假设：把&quot;不是逐格列表&quot;当成了&quot;不是方块表&quot;。</p></blockquote>
+<p>分块尺寸是 <b>32×32×32</b>（<code>chunkShift = 5</code>），不是 16×128×16。 清单 <code>voxels</code> 的 <code>chunks[]</code> 按 <code>idx = cx + dimX * (cy + dimY * cz)</code> 排， <code>dimA = ceil(shapeA / 32)</code>。恒光学院 256×64×256 → 8×2×8 = <b>128 个槽位</b>，与清单长度精确相等。</p>
+<p>单个 chunk 的字节流：</p>
+<div class="code"><pre><code>varint n            调色板长度
+varint c            长方体块数
+varint × n          调色板：blockId 表
+然后 c 组：
+  varint s          起点，x/y/z 三个 10 位字段位交错进一个 30 位整数
+  varint e          终点，同样位交错
+  varint p          调色板下标</code></pre></div>
+<p>三个容易踩的点：</p>
+<ol class="lv-0"><li><b>起点是差分的</b>：相对上一个块的起点做 zigzag 差分，解出后要 <code>&amp; 31</code> 折回 chunk 内。 不解差分，第一个块之后坐标全部溢出。</li><li><b>终点不是差分的</b>：<code>max = deinterleave(e) + min</code>，是相对本块起点的偏移。</li><li><b>每格是 Uint16</b>：低 12 位是 <code>blockId</code>（掩码 <code>0xFFF</code>），<code>&gt;&gt;&gt; 14</code> 取 2 位是 rotation。 中间 13 位空着。</li></ol>
+<p>位交错的标准拆法（<code>deinterleave3</code>）：</p>
+<div class="code code-js"><span class="code-lang">js</span><pre><code><span class="c-kw">let</span> e = a &amp; <span class="c-nu">1227133513</span>;                       <span class="c-cm">// 0b1001001001001001001001001001</span>
+e = (e | (e &gt;&gt;&gt; <span class="c-nu">2</span>)) &amp; <span class="c-nu">3272356035</span>;
+e = (e | (e &gt;&gt;&gt; <span class="c-nu">4</span>)) &amp; <span class="c-nu">251719695</span>;
+e = (e | (e &gt;&gt;&gt; <span class="c-nu">8</span>)) &amp; <span class="c-nu">4278190335</span>;
+e = (e | (e &gt;&gt;&gt; <span class="c-nu">16</span>)) &amp; <span class="c-nu">1023</span>;                  <span class="c-cm">// 10 位一条通道</span>
+<span class="c-kw">return</span> (e &lt;&lt; <span class="c-nu">22</span>) &gt;&gt;&gt; <span class="c-nu">22</span>;</code></pre></div>
+<h3 id="为什么63.5-格-字节当年被当成不可能">为什么&quot;63.5 格/字节&quot;当年被当成不可能</h3>
+<p>那张表本身是对的（73 个文件、23,997 字节、1,523,592 个非空格）。错在推理： 它假设了编码必须为<b>每一格</b>付出字节。而长方体游程不是——一个 16×16×16 的实心块 只花 3 个 varint（约 10 字节）就表达 4096 格，摊下来正是几十格每字节。 平坦地形占绝对多数的地图，这个比值是<b>必然</b>的，不是反证。</p>
+<p>判据写错比没判据更糟：它会让后面的人直接绕开这条正确路线。</p>
+<h3 id="实测">实测</h3>
+<p><code>~/Desktop/恒光学院-100020690/pack-importable.mjs</code> 里有这套解码的完整实现（Node，零依赖）。 恒光学院 128 个 chunk 全部解开，得到 <b>735,770 个实心格</b>，打成 <code>build/voxel-sparse.gz</code> 后从编辑器 UI 导入成功，尺寸、实体（1027）、脚本（33）与封面全部到位。</p>
+<p>方块 id 的稀疏分布在 <code>0..767</code>（383 块 + air），用「&gt;383 即非法」判解码失败同样是误判。</p>
 <hr/>
-<p>&lt;a id=&quot;roundtrip&quot;&gt;&lt;/a&gt;</p>
+<span id="roundtrip" class="anchor"></span>
 <h2 id="往返一致性什么会丢">往返一致性：什么会丢</h2>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>方向</th><th>状态</th></tr></thead><tbody><tr><td>官方 <code>.zip</code> → 导入 → 导出 <code>.zip</code></td><td>✅ <code>player</code> 不超 41 键、14 个音效槽齐全、<code>color</code> 是数组、<code>compat</code> 带回 <code>skin/gamepad</code></td></tr><tr><td>官方 <code>.gz</code> → 导入 → 保存</td><td>✅ 体素逐格一致</td></tr><tr><td>光照六数组</td><td>❌ 读不懂也不写回，<b>会丢</b></td></tr><tr><td>官方 <code>chunks/</code> 分块布局</td><td>❌ 只写单文件 <code>build/voxel-sparse.gz</code>，不还原分块</td></tr><tr><td><code>assets.hash</code> 对 <code>lut/</code> <code>part/</code></td><td>⚠️ 留空串（只有音频算真 CID），官方编辑器可能据此判&quot;内容变化&quot;</td></tr><tr><td><code>map.json.projectHash</code></td><td>⚠️ 写空串</td></tr><tr><td>官方 <code>.vb</code> 网格容器</td><td>❌ 不解析，模型走 `mesh/*.gltf</td><td>glb`</td></tr><tr><td><code>meshId</code> 大整数</td><td>⚠️ 原样保存，但语义未使用</td></tr></tbody></table></div>
 <p>把守这些的是 <code>test/runtime_parity.mjs</code> 的导出→导入回环断言，不是人工检查。</p>
 <hr/>
-<p>&lt;a id=&quot;verify&quot;&gt;&lt;/a&gt;</p>
+<span id="verify" class="anchor"></span>
 <h2 id="自己验证一份地图">自己验证一份地图</h2>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code># 顶层键、三个数组是否等长、rot 取值域、id 种类数
 node -e 'const fs=require(&quot;fs&quot;),z=require(&quot;zlib&quot;);

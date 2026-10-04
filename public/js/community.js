@@ -116,17 +116,12 @@ async function pubView(id) {
   root.innerHTML = `<div class="cm-detail">
     <div>
       <section class="cm-hero">
-        <div class="pic${p.hasCover ? "" : " none"}"${p.hasCover ? "" : ` style="${coverArt(p)}"`}>${coverHtml(p)}<span class="glyph">${esc((p.title || "?").slice(0, 1))}</span></div>
+        <div class="pic${p.hasCover ? "" : " none"}"${p.hasCover ? "" : ` style="${coverArt(p)}"`}>${coverHtml(p)}<span class="glyph">${esc((p.title || "?").slice(0, 1))}</span>
+          <div class="cap"><h2>${esc(p.title)}</h2><div class="kind">${p.kind === "model" ? "模型" : "地图"} · ${esc(timeAgo(p.created))}发布</div></div>
+        </div>
         <div class="meta">
-          <h2>${esc(p.title)}</h2>
-          ${p.desc ? `<p class="lead">${esc(p.desc)}</p>` : ""}
+          ${p.desc ? `<p class="lead">${esc(p.desc)}</p>` : `<p class="lead none">作者没写简介。进去跑一圈比看文字快。</p>`}
           ${p.tags.length ? `<div class="cm-tags">${p.tags.map((t) => `<span class="cm-tag">${esc(t)}</span>`).join("")}</div>` : ""}
-          <div class="stats" style="margin-top:12px">
-            <span>游玩 ${p.plays}</span><span>点赞 ${p.likes}</span><span>评论 <b id="cmCmtN">${p.comments}</b></span>
-            <span>存档 ${kb(p.bytes)}</span>${p.shape ? `<span>尺寸 ${esc(p.shape.join("×"))}</span>` : ""}
-            ${p.assets ? `<span>素材 ${p.assets} 个文件</span>` : ""}
-            <span>发布 ${esc(timeAgo(p.created))}</span>
-          </div>
         </div>
       </section>
       <section class="cm-cmts">
@@ -156,6 +151,19 @@ async function pubView(id) {
           ${d.canEdit ? "" : `<button class="cm-report" id="cmReport">举报这张${p.kind === "model" ? "模型" : "地图"}</button>`}
         </div>
         ${p.version > 1 ? `<div style="margin-top:10px"><h4 style="margin:0 0 4px;font-size:11px;color:var(--fg3)">版本 ${p.version}</h4><div class="cm-ver" id="cmVer"></div></div>` : ""}
+      </div>
+      <div class="cm-panel">
+        <h4>这张地图的信息</h4>
+        <dl class="cm-info">
+          <div><dt>游玩</dt><dd>${p.plays}</dd></div>
+          <div><dt>点赞</dt><dd>${p.likes}</dd></div>
+          <div><dt>评论</dt><dd><b id="cmCmtN">${p.comments}</b></dd></div>
+          <div><dt>存档</dt><dd>${kb(p.bytes)}</dd></div>
+          ${p.shape ? `<div><dt>尺寸</dt><dd>${esc(p.shape.join(" × "))}</dd></div>` : ""}
+          ${p.assets ? `<div><dt>素材</dt><dd>${p.assets} 个文件</dd></div>` : ""}
+          <div><dt>版本</dt><dd>v${p.version}</dd></div>
+          <div><dt>发布</dt><dd>${esc(timeAgo(p.created))}</dd></div>
+        </dl>
       </div>
     </aside>
   </div>`;
@@ -316,7 +324,8 @@ async function loadComments(pubId) {
   compose.innerHTML = auth.me
     ? `<div class="cm-compose"><textarea id="cBody" maxlength="500" placeholder="说点什么（最多 500 字）"></textarea>
         <button class="cm-btn primary" id="cSend">发送</button></div>`
-    : `<p class="cm-hint"><a href="#" id="cLogin">登录</a>后才能评论。</p>`;
+    : `<div class="cm-compose is-guest"><textarea disabled placeholder="登录后就能评论这张地图"></textarea>
+        <button class="cm-btn primary" id="cLogin">登录</button></div>`;
   const login = $("cLogin");
   if (login) login.onclick = (e) => { e.preventDefault(); openAuth("login"); };
   const send = $("cSend");

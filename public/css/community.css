@@ -142,15 +142,26 @@
 /* ---------- 详情页 ---------- */
 .cm-detail { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 18px; align-items: start; }
 .cm-hero { border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; background: var(--elevated); box-shadow: var(--shadow-card); }
-.cm-hero .pic { aspect-ratio: 16 / 9; background: #10131c center/cover no-repeat; position: relative; display: grid; place-items: center; }
+/* 封面高度要压住：16:9 在 1000px 宽的左栏里会长到 560px 高，
+   标题被推到首屏之外，整页看着就是"一张大图 + 一堆空白"。 */
+.cm-hero .pic { position: relative; aspect-ratio: 16 / 7; max-height: 380px; background: #050510 center/cover no-repeat; display: grid; place-items: center; overflow: hidden; }
 .cm-hero .pic .glyph { font-size: 96px; font-weight: 700; color: rgba(255, 255, 255, .13); }
 .cm-hero .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.cm-hero .meta { padding: 14px 16px 16px; }
-.cm-hero h2 { margin: 0 0 6px; font-size: 19px; letter-spacing: .2px; }
-.cm-hero .lead { margin: 0 0 12px; color: var(--fg2); font-size: 13px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
-.cm-hero .cm-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+/* 标题压在封面下缘的暗带上，和广场卡片一个读法 */
+.cm-hero .pic .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 46px 20px 14px; background: linear-gradient(transparent, rgba(4, 5, 14, .9)); pointer-events: none; }
+.cm-hero .pic .cap h2 { margin: 0; font-size: 22px; letter-spacing: .2px; text-shadow: 0 2px 12px rgba(0, 0, 0, .8); }
+.cm-hero .pic .cap .kind { margin-top: 4px; font: 11.5px/1 var(--mono); color: var(--fg2); }
+.cm-hero .meta { padding: 14px 18px 16px; }
+.cm-hero .lead { margin: 0; color: var(--fg2); font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.cm-hero .lead.none { color: var(--fg3); font-style: normal; }
+.cm-hero .meta .cm-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .cm-tag { font-size: 11.5px; color: var(--fg2); background: var(--bg3); border: 1px solid var(--line); padding: 3px 8px; border-radius: 6px; }
-.cm-hero .stats { display: flex; gap: 18px; color: var(--fg3); font-size: 12px; font-family: var(--mono); flex-wrap: wrap; }
+/* 右栏的信息表：原来这些数字挤在封面下面一行小字里，谁都不会去读 */
+.cm-info { margin: 0; display: grid; gap: 0; }
+.cm-info > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.cm-info > div:last-child { border-bottom: 0; }
+.cm-info dt { font-size: 12px; color: var(--fg3); }
+.cm-info dd { margin: 0; font: 12px/1.4 var(--mono); color: var(--fg); }
 .cm-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; }
 .cm-panel { background: var(--elevated); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); padding: 13px; box-shadow: var(--shadow-card); }
 .cm-panel h4 { margin: 0 0 10px; font-size: 12px; color: var(--fg3); font-weight: 600; letter-spacing: .4px; }
@@ -185,6 +196,10 @@
   border-radius: 9px; color: var(--fg); font: inherit; font-size: 12.5px; padding: 9px 10px;
 }
 .cm-compose textarea:focus { outline: none; border-color: var(--primary); }
+/* 未登录也给出一个真的输入框（禁用态）而不是一句话：
+   位置先占住，用户知道"这里能写"，点了登录回来就接着写 */
+.cm-compose.is-guest textarea { color: var(--fg3); cursor: not-allowed; }
+.cm-compose.is-guest textarea::placeholder { color: var(--fg3); }
 
 /* ---------- 用户主页 / 好友 ---------- */
 .cm-profile { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; }

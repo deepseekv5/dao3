@@ -14,7 +14,12 @@ body.wb {
   -webkit-font-smoothing: antialiased; overflow: hidden;
 }
 body.wb a { color: inherit; text-decoration: none; }
-body.wb button { font-family: inherit; color: inherit; border: none; background: none; cursor: pointer; }
+/* 重置要用裸 button 选择器（0,0,1），不能写成 body.wb button（0,1,2）。
+   后者会盖过一切带 class 的按钮：.cm-btn 只有 0,1,0，于是社区页所有次级按钮
+   的底色与描边被抹成透明，渲染成一排裸文本，看着像这页没做完。
+   重置的职责是"清掉 UA 默认外观"，它必须是整个层叠里最弱的一条。 */
+button { border: none; background: none; }
+body.wb button { font-family: inherit; color: inherit; cursor: pointer; }
 body.wb input, body.wb select { font-family: inherit; color: inherit; }
 body.wb ::selection { background: rgba(0, 229, 255, .32); }
 
