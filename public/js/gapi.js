@@ -512,6 +512,48 @@ export function fmt(v) {
 
 /* ------------------------------ Sound ------------------------------ */
 // 官方 Sound：创建即播放，提供 pause/resume/stop/setCurrentTime。
+/** 官方玩家音效的默认档。
+ *
+ *  空白图和我们自己生成的图以前是彻底静音的：跑起来没脚步、下水没声音，
+ *  而官方每张图都带这一套。作者明确设过的槽以图里的值为准，这里只补空槽。
+ *  值写成 "audio/xxx.mp3"：与官方模板、编辑器下拉的口径完全一致，
+ *  运行时再按 assets.audioBase（/data/assets/audio/，随包官方素材，
+ *  需在应用内确认授权才放行）解析成 URL。
+ *
+ *  只给有对应文件的槽：包里既没有下蹲也没有飞行音，硬挑一个只会"听着不像"。
+ *  enterWater/leaveWater 官方模板指的是 dive.mp3，而随包音频里没有这个文件，
+ *  所以用水声 swim.mp3 顶——比沉默好，也比"缺文件"诚实。
+ */
+export const DEFAULT_PLAYER_SOUNDS = {
+  step: "audio/step.mp3", jump: "audio/jump.mp3", doubleJump: "audio/double_jump.mp3",
+  land: "audio/land.mp3", swim: "audio/swim.mp3", enterWater: "audio/swim.mp3",
+  leaveWater: "audio/swim.mp3", spawn: "audio/spawn.mp3",
+};
+/** 世界级（受击/死亡/发言/交互）默认档，官方存在 player.sounds 里。 */
+export const DEFAULT_WORLD_SOUNDS = {
+  hurt: "audio/hurt.mp3", die: "audio/die.mp3", chat: "audio/chat.mp3", interact: "audio/punch.mp3",
+};
+/** 官方"空槽"的写法是 { sample: "audio/.mp3" }——文件名以点开头就是没设。 */
+export function soundSlotEmpty(v) {
+  const spec = typeof v === "string" ? { sample: v } : (v || {});
+  const base = String(spec.sample || "").replace(/.*[\\/]/, "");
+  return !base || base.startsWith(".");
+}
+/** 把默认档补进一份 player 配置的 playerSounds / sounds 两组官方槽。 */
+export function applyDefaultPlayerSounds(p) {
+  if (!p || typeof p !== "object") return p;
+  const fill = (group, table) => {
+    const g = (p[group] = p[group] || {});
+    for (const [slot, sample] of Object.entries(table)) {
+      if (!soundSlotEmpty(g[slot])) continue;
+      g[slot] = { sample, gain: 1, gainRange: 0, pitch: 1, pitchRange: 0, radius: 32 };
+    }
+  };
+  fill("playerSounds", DEFAULT_PLAYER_SOUNDS);
+  fill("sounds", DEFAULT_WORLD_SOUNDS);
+  return p;
+}
+
 export class Sound {
   constructor(runtime, spec, origin) {
     const s = typeof spec === "string" ? { sample: spec } : (spec || {});

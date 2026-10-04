@@ -9,6 +9,7 @@ import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
 import { vbToVoxList } from "./vb.js";
+import { applyDefaultPlayerSounds } from "./gapi.js";
 
 let E; // window.__editor 引用
 
@@ -1289,6 +1290,10 @@ const PL_DEFAULTS = {
 // 旧存档用的是"格/秒"单位与 FIRST/THIRD 枚举，按官方口径迁移
 export function migratePlayerMeta(raw) {
   const p = Object.assign({}, raw || {});
+  // 空槽补官方默认档（脚步/跳跃/二段跳/落地/游泳/入水/重生 + 受击/死亡/发言/交互）。
+  // 放在这个唯一入口里：编辑器面板、运行期、导出三条路都经过它，
+  // 所以面板里看到的就是会响的，作者改过的槽也不会被覆盖。
+  applyDefaultPlayerSounds(p);
   const validCam = ["follow", "fps", "fixed", "relative"].includes(p.cameraMode);
   // 官方 project.json 的 player 段：数值本来就是「每 tick」单位，只需改名对齐内部字段
   if (p._units === "official") {
