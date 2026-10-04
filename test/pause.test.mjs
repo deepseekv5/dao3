@@ -38,20 +38,25 @@ const hud = await s.evaluate(`(() => {
 ok("运行控制浮块在、默认不暂停、单帧按钮禁用", hud.shown && hud.pause === "暂停" && hud.stepDisabled && !hud.paused, JSON.stringify(hud));
 ok("tick 读数报的是引擎真实的 tick", Number(hud.readout) > 0, JSON.stringify({ readout: hud.readout }));
 
-const a = await tick();
-await sleep(600);
-const b = await tick();
-ok("没暂停时时间真的在走", b > a, JSON.stringify({ a, b }));
+// 先证明"循环真的在跑"，再谈"暂停把它冻住了"。
+// 固定 sleep + b>a 两头都不可靠：机器忙时 rAF 能慢到 600ms 只走 1 格，
+// 于是"暂停后 tick 冻住"会因为本来就没在走而假通过——那正是这条断言最该防的事。
+const t0 = await tick();
+const ran = await (async () => {
+  const end = Date.now() + 6000;
+  while (Date.now() < end) { if ((await tick()) - t0 >= 5) return true; await sleep(200); }
+  return false;
+})();
+ok("没暂停时时间真的在走（6s 内至少推进 5 个 tick）", ran, JSON.stringify({ t0, now: await tick() }));
 
 await s.click("#pePause");
-await sleep(300);
-const c = await tick();
-await sleep(800);
-const d = await tick();
+const frozenFrom = await tick();
+await sleep(1200);
+const frozenTo = await tick();
 const st = await s.evaluate(`(() => ({ paused: !!window.__game.paused, pause: document.getElementById("pePause").textContent,
   stepDisabled: document.getElementById("peStep").disabled, cls: document.querySelector(".hud-play").className,
   lock: document.pointerLockElement ? document.pointerLockElement.id : "none" }))()`);
-ok("暂停后 tick 冻住", st.paused && c === d, JSON.stringify({ c, d }));
+ok("暂停后 tick 冻住（同一个 1.2s 窗口）", st.paused && frozenFrom === frozenTo, JSON.stringify({ frozenFrom, frozenTo }));
 ok("暂停态在界面上说得清（按钮变继续、单帧解禁、整块转暂停样式）",
   st.pause === "继续" && !st.stepDisabled && st.cls.includes("paused"), JSON.stringify(st));
 // 这一条是顺手抓出来的旧 bug：HUD 的白名单原来是逐个列 class 的，
@@ -62,18 +67,18 @@ await s.click("#peStep");
 await sleep(300);
 const e = await tick();
 const moved = await s.evaluate(`(() => { const g = window.__game; const rp = g._rp; return { rp: !!rp, still: !!g.paused, tick: g.currentTick }; })()`);
-ok("单帧步进只推进一个 tick，且仍停在暂停态", e === d + 1 && moved.still, JSON.stringify({ d, e, moved }));
+ok("单帧步进只推进一个 tick，且仍停在暂停态", e === frozenTo + 1 && moved.still, JSON.stringify({ frozenTo, e, moved }));
 
 // 步进完画面必须真的动了：_rp 是插值后的显示位置，画回起点就等于"按了没反应"
 const pos = await s.evaluate(`(() => { const g = window.__game; return { x: +g._rp.x.toFixed(3), y: +g._rp.y.toFixed(3), z: +g._rp.z.toFixed(3), p: +g.playerEntity.position.x.toFixed(3) }; })()`);
 ok("步进后渲染位置取的是这一 tick 的终点", Math.abs(pos.x - pos.p) < 0.001, JSON.stringify(pos));
 
 await s.evaluate(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyP", bubbles: true }))`);
-await sleep(400);
 const f = await tick();
-await sleep(600);
-const g2 = await tick();
-ok("P 键解除暂停，时间重新走", !(await s.evaluate(`window.__game.paused`)) && g2 > f, JSON.stringify({ f, g2 }));
+let resumed = false;
+const rend = Date.now() + 6000;
+while (Date.now() < rend) { if ((await tick()) - f >= 3) { resumed = true; break; } await sleep(200); }
+ok("P 键解除暂停，时间重新走", !(await s.evaluate(`window.__game.paused`)) && resumed, JSON.stringify({ f, now: await tick() }));
 
 // 退出再进不能带着上一次的暂停态
 await s.evaluate(`(() => { window.__game._togglePause(true); window.__editor.stopPlay(); return true; })()`);
