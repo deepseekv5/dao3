@@ -10,6 +10,7 @@ import { wirePalette } from "./palette.js";
 import { wirePanels } from "./panels.js";
 import { wireConsole, pushConsole, clearConsole } from "./console.js";
 import { wireViewGizmo } from "./view-gizmo.js";
+import { wireHistoryPanel } from "./history-panel.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
@@ -32,6 +33,7 @@ export function initFeatures(editor) {
   wirePanels(editor);
   wireConsole(editor);
   wireViewGizmo(editor);
+  wireHistoryPanel(editor);
   editor.frameSelected = frameSelected;
   wireStatusBar();
   wireAgentBtn(editor);

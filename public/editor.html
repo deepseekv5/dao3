@@ -42,6 +42,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   <div class="tb-center">
     <button id="undo" class="tb-ico" title="撤销 (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h10a6 6 0 0 1 0 12h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     <button id="redo" class="tb-ico" title="重做 (Ctrl+Shift+Z)"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9h-10a6 6 0 0 0 0 12h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    <button id="histBtn" class="tb-ico" title="撤销历史：看得见每一步，点一下跳回去" data-ico="history"></button>
     <span id="saveState" class="savestate"></span>
   </div>
   <div class="tb-right">

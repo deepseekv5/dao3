@@ -957,3 +957,19 @@ body.playing .rp-grip,body.playing .lib-grip{display:none}
 .view-gizmo:hover{opacity:1}
 .view-gizmo svg{display:block;overflow:visible}
 body.playing .view-gizmo{display:none}
+
+/* ---- 撤销历史窗口 ---- */
+.hist-menu{position:fixed;z-index:320;width:260px;max-height:min(58vh,460px);overflow:auto;display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--glass-border-hover);border-radius:var(--radius);
+  box-shadow:0 18px 50px rgba(0,0,0,.7);padding:4px}
+.hh-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 10px 6px;
+  font-size:11px;color:var(--primary);letter-spacing:.04em}
+.hh-head span{color:var(--font-white-disabled);font-size:10px}
+.hh-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;width:100%;text-align:left;
+  padding:6px 10px;border-radius:var(--radius-sm);background:none;border:0;font-size:12px;color:var(--font-white)}
+.hh-row i{font-style:normal;font-size:10.5px;color:var(--font-white-disabled);font-variant-numeric:tabular-nums}
+.hh-row:hover{background:rgba(255,255,255,.05)}
+.hh-row.on{background:var(--primary-dim);box-shadow:inset 2px 0 0 var(--primary)}
+/* 已经被撤销掉的那几步：留着是为了能 redo 回来，但要先说清它们不在当前状态 */
+.hh-row.future{opacity:.4}
+.hh-empty{padding:16px 10px;margin:0;text-align:center;font-size:11.5px;color:var(--font-white-disabled)}

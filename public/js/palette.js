@@ -64,6 +64,7 @@ export function wirePalette(E) {
     g("视图", "重置面板布局", "拖乱了回默认", () => E.resetPanels?.());
     g("编辑", "撤销", "Ctrl+Z", click("#undo"));
     g("编辑", "重做", "Ctrl+Shift+Z", click("#redo"));
+    g("编辑", "撤销历史…", "看得见每一步", () => E.historyPanel?.toggle());
     g("编辑", "保存世界", "Ctrl+S", () => E.save());
     // 选区这几个动作原本只有快捷键：main.js 里它们全是"没选区就 return"，
     // 从面板点进去什么都不发生就是"面板坏了"。所以条件不满足时把理由说出来。
