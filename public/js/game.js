@@ -3121,11 +3121,12 @@ void main() {
       this._syncEntityVisibility(ent);
       return;
     }
-    const ph = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshBasicMaterial({ color: 0x22c8dd, wireframe: true }));
-    ent._meshHolder.add(ph);
+    // 取不到资产就什么都不画。以前这里塞一个青色线框占位盒：一张图里几十个
+    // 没导入的模型就是一堆额外绘制与包围盒，实体一多相机那条回拉射线就被拖住，
+    // 表现为"视角卡"。而且运行模式里玩家要看到的是"这里没有东西"，不是作者的调试框。
     if (!this._warned.has("mesh:" + base)) {
       this._warned.add("mesh:" + base);
-      consoleDiv(this.hud && this.hud.console, "未找到资产 mesh/" + base + ".vb，已用占位显示（需先导入项目包或上传模型）", "warn");
+      consoleDiv(this.hud && this.hud.console, "未找到资产 mesh/" + base + ".vb，这个实体在运行模式里不可见（需先导入项目包或上传模型）", "warn");
     }
     this._syncEntityVisibility(ent);
   }
@@ -3912,20 +3913,35 @@ void main() {
     // 官方 ignoreEntities 是 boolean（整体跳过实体），同时容忍数组形式（只忽略列表内实体）
     const ignAll = opts.ignoreEntities === true;
     const ignList = Array.isArray(opts.ignoreEntities) ? opts.ignoreEntities : null;
-    const list = this.entities.filter((e2) => !e2.destroyed && !ignAll && !(ignList && ignList.includes(e2))
-      && !(opts.ignoreSelector && matchSelector(opts.ignoreSelector, e2, this)));
+    const cand = this._rayCand || (this._rayCand = []);
+    cand.length = 0;
+    if (!ignAll) {
+      for (const e2 of this.entities) {
+        if (e2.destroyed) continue;
+        if (ignList && ignList.includes(e2)) continue;
+        if (opts.ignoreSelector && matchSelector(opts.ignoreSelector, e2, this)) continue;
+        cand.push(e2);
+      }
+    }
     const mk = (t, ent, hit, normalV, cell) => ({
       hit: true, hitEntity: ent || null, hitVoxel: hit || 0,
       origin: new GameVector3(o.x, o.y, o.z), direction: new GameVector3(dir.x, dir.y, dir.z),
       distance: t, hitPosition: new GameVector3(o.x + dir.x * t, o.y + dir.y * t, o.z + dir.z * t),
       normal: normalV || new GameVector3(), voxelIndex: cell || new GameVector3(),
     });
+    // 实体命中整条射线只量一遍。原来这段写在 DDA 循环里：每往前一格就把所有实体
+    // 重测一次并新建一个临时数组，170 个实体的图就是上万次 entityBoxOf + 分配，
+    // 而相机每帧都要打一条回拉射线——实体一多就表现为"卡视角"。
+    let entT = Infinity, entHit = null;
+    for (const e2 of cand) {
+      const t2 = rayHitsBox(e2, o, dir, maxDist);
+      if (t2 >= 0 && t2 < entT) { entT = t2; entHit = e2; }
+    }
     let axis = 0, t = 0;
     for (let i = 0; i < 512; i++) {
-      const entHit = list.map((e2) => ({ e2, t: rayHitsBox(e2, o, dir, maxDist) })).find((h) => h.t >= 0);
-      if (entHit) {
+      if (entHit && entT <= t) {
         // 命中距离用射线与盒子的入射点，而不是盒心投影（否则半透明的近盒会被算到更远处）
-        if (entHit.t <= t) return mk(entHit.t, entHit.e2, 0, new GameVector3(-dir.x, -dir.y, -dir.z));
+        return mk(entT, entHit, 0, new GameVector3(-dir.x, -dir.y, -dir.z));
       }
       if (!ignoreVoxel) {
         const id = w.get(x, y, z);
