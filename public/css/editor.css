@@ -133,6 +133,13 @@ input{font-family:inherit}
 .ft:hover{background:var(--grey2);color:#fff}
 .ft.active{background:var(--primary);color:#fff}
 .ft-sep{width:1px;flex:0 0 auto;height:22px;background:var(--divider);margin:0 4px}
+/* 折叠起来的批量/几何工具。用 display:none 而不是 visibility：工具条是横向滚动的，
+   隐藏但占位的话第一次打开仍要横向滚一段才看到视角那一组。 */
+.float-toolbar:not(.more-on) .ft-extra{display:none}
+.ft-more{flex:0 0 auto;height:34px;padding:0 11px;border-radius:8px;font-size:11.5px;color:var(--font-white-minor);display:flex;align-items:center;gap:4px;background:var(--grey2)}
+.ft-more:hover{color:#fff;background:var(--grey3)}
+.ft-more.on{background:var(--primary-dim);color:var(--primary)}
+.ft-more b{font:600 10px/1 var(--mono);opacity:.8}
 /* 编辑视角分段：全局轨道 / 角色（可飞行） */
 .mode-seg{display:inline-flex;border:1px solid var(--grey2);border-radius:6px;overflow:hidden;margin-right:2px}
 .mode-seg .msb{padding:0 11px;height:24px;font-size:11.5px;color:var(--font-white-minor);background:#191932}

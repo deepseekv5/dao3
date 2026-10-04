@@ -86,18 +86,19 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <button class="ft" data-tool="paint" title="刷色 (G)" data-ico="paint"></button>
     <button class="ft" data-tool="fill" title="油漆桶填充 (F)" data-ico="fill"></button>
     <button class="ft" data-tool="eyedropper" title="吸管取色 (M)" data-ico="pick"></button>
-    <button class="ft" data-tool="line" title="线建造 (L)" data-ico="line"></button>
-    <button class="ft" data-tool="box" title="盒建造 (R)" data-ico="box"></button>
-    <button class="ft" data-tool="boxBreak" title="盒删除 (X)" data-ico="boxBreak"></button>
-    <button class="ft" data-tool="extrude" title="面拉伸 (T)" data-ico="extrude"></button>
+    <button class="ft ft-extra" data-tool="line" title="线建造 (L)" data-ico="line"></button>
+    <button class="ft ft-extra" data-tool="box" title="盒建造 (R)" data-ico="box"></button>
+    <button class="ft ft-extra" data-tool="boxBreak" title="盒删除 (X)" data-ico="boxBreak"></button>
+    <button class="ft ft-extra" data-tool="extrude" title="面拉伸 (T)" data-ico="extrude"></button>
     <button class="ft" data-tool="select" title="框选 (S)" data-ico="select"></button>
-    <button class="ft" data-tool="move" title="移动选区" data-ico="move"></button>
-    <button class="ft" data-tool="sphere" title="球体笔刷" data-ico="cube"></button>
-    <button class="ft" data-tool="sphereH" title="空心球" data-ico="cube"></button>
-    <button class="ft" data-tool="radius" title="半径笔刷" data-ico="cube"></button>
-    <button class="ft" data-tool="cylinder" title="圆柱" data-ico="cube"></button>
-    <button class="ft" data-tool="flatten" title="平整" data-ico="grid"></button>
-    <button class="ft" data-tool="array" title="阵列" data-ico="cube"></button>
+    <button class="ft ft-extra" data-tool="move" title="移动选区" data-ico="move"></button>
+    <button class="ft ft-extra" data-tool="sphere" title="球体笔刷" data-ico="cube"></button>
+    <button class="ft ft-extra" data-tool="sphereH" title="空心球" data-ico="cube"></button>
+    <button class="ft ft-extra" data-tool="radius" title="半径笔刷" data-ico="cube"></button>
+    <button class="ft ft-extra" data-tool="cylinder" title="圆柱" data-ico="cube"></button>
+    <button class="ft ft-extra" data-tool="flatten" title="平整" data-ico="grid"></button>
+    <button class="ft ft-extra" data-tool="array" title="阵列" data-ico="cube"></button>
+    <button class="ft-more" id="toolMore" title="展开/收起批量与几何工具">更多<b id="toolMoreN"></b></button>
     <span class="ft-sep"></span>
     <div id="editModeSeg" class="mode-seg" title="编辑视角：全局轨道视角 / 角色视角（可在角色下建造并飞行）">
       <button id="modeGlobal" class="msb active">全局</button><button id="modeRole" class="msb">角色</button>

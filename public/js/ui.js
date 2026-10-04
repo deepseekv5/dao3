@@ -144,11 +144,38 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   function commitOp(changes) { if (changes && changes.length) history.commit(changes, "op"); }
 
   // ---------- 中央浮动工具条 ----------
+  // 工具条原来一次摊 24 个图标，第一次打开的人分不清哪些是"我马上要用"的。
+  // 折叠不是删：11 个几何/批量工具收进「更多」，一个功能都没少，只是不再要求
+  // 用户在 24 个图标里找。展开状态记在本地，因为"我要不要常用阵列"是人的属性，
+  // 不该每次开编辑器都重新问一遍。
+  const MORE_KEY = "ly.toolsMore";
+  const toolbar = document.getElementById("editToolbar");
+  const moreBtn = $("toolMore"), moreN = $("toolMoreN");
+  const extraCount = () => toolbar.querySelectorAll(".ft-extra").length;
+  let moreOn = false;
+  try { moreOn = localStorage.getItem(MORE_KEY) === "1"; } catch { /* 隐私模式下读不到，按折叠走 */ }
+  function applyMore() {
+    toolbar.classList.toggle("more-on", moreOn);
+    moreBtn.classList.toggle("on", moreOn);
+    moreBtn.textContent = "";
+    moreBtn.append(document.createTextNode(moreOn ? "收起" : "更多"));
+    if (!moreOn) { moreN.textContent = String(extraCount()); moreBtn.append(moreN); }
+    else moreN.textContent = "";
+    moreBtn.title = moreOn ? "收起批量与几何工具" : `展开 ${extraCount()} 个批量与几何工具（线/盒/球/圆柱/阵列…）`;
+  }
+  moreBtn.onclick = () => {
+    moreOn = !moreOn; applyMore();
+    try { localStorage.setItem(MORE_KEY, moreOn ? "1" : "0"); } catch { /* 存不下就算了 */ }
+  };
   function renderTools() {
     document.querySelectorAll("#editToolbar .ft[data-tool]").forEach((b) => b.classList.toggle("active", b.dataset.tool === state.tool));
+    // 当前工具是被折叠的那一个时必须自动展开：否则用 L/R/T 快捷键切过去之后，
+    // 工具条上一个亮着的都没有，看起来像"快捷键坏了"。
+    if (!moreOn && toolbar.querySelector(".ft-extra.active")) { moreOn = true; applyMore(); }
   }
   document.querySelectorAll("#editToolbar .ft[data-tool]").forEach((b) => { b.onclick = () => api.setTool(b.dataset.tool); });
   api.setTool = (id) => { state.tool = id; renderTools(); };
+  applyMore();
   renderTools();
 
   // ---------- 辅助开关 ----------
