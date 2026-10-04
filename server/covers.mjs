@@ -241,7 +241,10 @@ export function renderCover({ indices, data, shape, colors, width = 480, height 
     // 朝"右上"的面亮、朝"左下"的面暗，平坦处保持本色。
     // 这一步让同色的路面和草地也分得出轮廓，否则整张图就是一块纯色。
     const slope = ((nb(ix + 1, iz) - nb(ix - 1, iz)) - (nb(ix, iz + 1) - nb(ix, iz - 1))) / (stride * 2);
-    const k = Math.max(0.55, Math.min(1.3, 1 + slope * 0.45 + (y - (hMin + hMax) / 2) * 0.004));
+    // 邻格遮挡：光从"右上"来，那一侧有更高的柱子就把这一格压暗。
+    // 没有这一条，塔楼底下与开阔草地上的同色方块是一个亮度，图就"平"了。
+    const occ = Math.max(0, Math.max(nb(ix + 1, iz), nb(ix, iz - 1)) - y) / (stride * 3);
+    const k = Math.max(0.5, Math.min(1.3, 1 + slope * 0.45 + (y - (hMin + hMax) / 2) * 0.004 - occ * 0.16));
     const cx = ox + (ix - iz) * tw;
     const cy = oy + (ix + iz) * th - y * lift;
     const r = Math.min(255, Math.round(rgb[0] * k)), g = Math.min(255, Math.round(rgb[1] * k)), b = Math.min(255, Math.round(rgb[2] * k));

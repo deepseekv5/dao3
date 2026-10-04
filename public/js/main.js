@@ -264,12 +264,10 @@ function captureCover() {
   if (now - _coverAt < 20000) return;
   _coverAt = now;
   try {
-    renderer.renderer.render(renderer.scene, renderer.activeCam || renderer.camera);
-    const src = renderer.renderer.domElement;
-    const c = document.createElement("canvas");
-    c.width = 480; c.height = 300;
-    const ctx = c.getContext("2d");
-    ctx.drawImage(src, 0, 0, c.width, c.height);
+    // 不再抓编辑器视口：那出来的是"作者此刻看到的半张图 + 黑底"。
+    // coverShot 会自己找一台相机把内容包围盒框满、把昼夜拨回白天打一把主光。
+    const c = renderer.coverShot(640, 360);
+    if (!c) return;
     c.toBlob((b) => {
       if (!b) return;
       fetch(`/api/world/${encodeURIComponent(worldId)}/asset?path=${encodeURIComponent("cover.png")}`, { method: "POST", body: b }).catch(() => {});

@@ -204,6 +204,11 @@ const FACES = [
   { dir: [0, 0, -1], slot: 4, corners: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]], uv: [[0, 0], [1, 0], [1, 1], [0, 1]] },
 ];
 
+// 顶点烘焙的两张表：AO 四档亮度（0 最暗＝两邻边都挡）与面朝向系数。
+// 面朝向按 FACES 顺序：+X −X +Y顶 −Y底 +Z −Z。顶亮侧暗底最暗，台阶才读得出上下。
+const AO_LUM = [0.52, 0.70, 0.86, 1];
+const FACE_TINT = [0.90, 0.83, 1.0, 0.66, 0.95, 0.78];
+
 // 旋转码：0=正面朝北(-Z)，每顺时针 90° 记 1（官方每格 +16384）。整格立方只需换「贴图来源」：
 // 某个世界面上看到的，是方块旋转前被转到这个方向的那个面。顶/底不受绕 Y 旋转影响。
 const SLOT_DIR = { 4: 0, 1: 1, 5: 2, 0: 3 }; // 水平槽位 → 方向序号（0北 1东 2南 3西）
@@ -258,15 +263,18 @@ export class VoxelRenderer {
 
     // 材质：PBR 标准材质，粗糙表面，配合色调映射更自然
     // map 在图集加载完成后由 main.js 赋值为共享的 atlas.texture
-    this.opaqueMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.0 });
-    this.transparentMat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.6, roughness: 0.5, metalness: 0.0, depthWrite: false });
+    // vertexColors：网格顶点里烘了 AO 与面朝向明暗。体素世界最容易"平"的地方就是
+    // 墙角与台阶的接缝——没有那圈接触阴影，再强的方向光也只是把一整片均匀照亮。
+    this.opaqueMat = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.0, vertexColors: true });
+    this.transparentMat = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.6, roughness: 0.5, metalness: 0.0, depthWrite: false, vertexColors: true });
     // 水面单独一条材质：程序化地形的海/湖要靠它才读得出"是水"。
     // 与通用透明方块共用 transparentMat 时，水只是"淡了一档的贴图"，
     // 实测整片群岛看着像毛玻璃平台。这里压暗底色 + 降粗糙度，让水面吃高光。
     // 只认 water：图集里 11 个 fluid 有 10 个是牛奶/果汁/酱油，统一染蓝就错了。
     // DoubleSide 是必须的：水与水之间的面会被剔掉，水面那层法线朝上（+Y），
     // 单面材质从下往上看是背面 → 直接透明，潜到水下抬头等于没有水面。
-    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false, side: THREE.DoubleSide });
+    // 水面也吃顶点色：湖底与岸壁的接缝没有 AO 会像贴了一张塑料膜
+    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false, side: THREE.DoubleSide, vertexColors: true });
     this.glowMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     // 空气墙材质：编辑器半透明绿罩（运行时整层隐藏，见 setBarriersVisible）
     this.barrierMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.28, color: 0x6fdc7f, depthWrite: false });
@@ -710,6 +718,69 @@ vec2 fxTileRect(float t){
     for (const [key, [cx, cy, cz]] of this._build) this.buildChunk(cx, cy, cz, key);
     this._build.clear();
   }
+  /** 封面产品照：独立相机把内容包围盒框满，并把昼夜拨回白天、主光抬到 45°。
+   *  为什么不用编辑器当前视口：那出来的是"作者此刻看到的半张图 + 黑底"，
+   *  而社区卡片要的是这张世界的卖点。夜里存的图也不能是一张黑封面。
+   *  相机是临时建的，不动 activeCam/camera，抓完立刻用原相机重渲一次还原画面。 */
+  coverShot(w = 640, h = 360) {
+    const wm = this.world; if (!wm) return null;
+    const b = wm.bounds(); const sh = wm.shape || [64, 64, 64];
+    const min = new THREE.Vector3(...(b ? b.min : [0, 0, 0]));
+    const max = new THREE.Vector3(...(b ? b.max : [sh[0] - 1, sh[1] - 1, sh[2] - 1]));
+    const c = min.clone().add(max).multiplyScalar(0.5);
+    const size = max.clone().sub(min);
+    const radius = Math.max(size.x, size.z, 10) * 0.5 + Math.max(size.y, 4) * 0.35;
+    const cam = this._coverCam || (this._coverCam = new THREE.PerspectiveCamera(38, 16 / 9, 1, 1000));
+    const u = this.skyMat.uniforms;
+    const save = {
+      night: u.night.value, sun: this.sun.position.clone(), tgt: this.sun.target.position.clone(),
+      sunI: this.sun.intensity, hemiI: this.hemi.intensity, ambI: this.ambient.intensity,
+      exp: this.renderer.toneMappingExposure, size: this.renderer.getSize(new THREE.Vector2()),
+    };
+    const dist = radius * 2.3;
+    cam.aspect = w / h;
+    cam.position.set(c.x + dist * 0.56, c.y + dist * 0.40, c.z + dist * 0.56);
+    // far 必须盖过天穹半径（1800），否则天空被裁掉，封面又变回黑底
+    cam.near = Math.max(0.5, dist / 200); cam.far = Math.max(dist * 4, 4200);
+    cam.lookAt(c.x, c.y - size.y * 0.08, c.z);
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    u.night.value = 0;
+    this.sun.intensity = Math.max(save.sunI, 2.4);
+    this.hemi.intensity = Math.max(save.hemiI, 0.72);
+    this.ambient.intensity = Math.max(save.ambI, 0.24);
+    this.renderer.toneMappingExposure = 1.16;
+    this.sun.position.set(c.x + radius * 1.15, c.y + radius * 1.9, c.z - radius * 0.55);
+    this.sun.target.position.copy(c); this.sun.target.updateMatrixWorld();
+    // 编辑器自己的东西不能进封面：网格线、选框、区域盒、光标幽灵、空气墙绿罩
+    const hide = [this.grid, this._zoneGroup, this._ghost, this._sel].filter(Boolean);
+    const keep = hide.map((o) => o.visible);
+    hide.forEach((o) => { o.visible = false; });
+    const barriers = [];
+    for (const rec of this.chunkMeshes.values()) if (rec && rec.barrier) { barriers.push(rec.barrier); rec.barrier.visible = false; }
+    // 实体标记盒（青色半透明方框）挂在 models 里，和真正的场景模型同一层，只能逐个挑出来
+    const markers = [];
+    this.scene.traverse((o) => { if (o.userData && o.userData.marker && o.visible) { markers.push(o); o.visible = false; } });
+    try {
+      this.renderer.setSize(w, h, false);
+      this.renderer.render(this.scene, cam);
+      const out = document.createElement("canvas");
+      out.width = w; out.height = h;
+      out.getContext("2d").drawImage(this.renderer.domElement, 0, 0, w, h);
+      return out;
+    } catch { return null; }
+    finally {
+      hide.forEach((o, i) => { o.visible = keep[i]; });
+      barriers.forEach((m) => { m.visible = true; });
+      markers.forEach((m) => { m.visible = true; });
+      u.night.value = save.night;
+      this.sun.position.copy(save.sun); this.sun.target.position.copy(save.tgt);
+      this.sun.intensity = save.sunI; this.hemi.intensity = save.hemiI;
+      this.ambient.intensity = save.ambI; this.renderer.toneMappingExposure = save.exp;
+      this.renderer.setSize(save.size.x, save.size.y, false);
+      this.renderer.render(this.scene, this.activeCam || this.camera);
+    }
+  }
+
   disposeMesh(m) { this.group.remove(m); m.geometry.dispose(); }
 
   buildChunk(cx, cy, cz, key) {
@@ -717,13 +788,29 @@ vec2 fxTileRect(float t){
     if (old) { if (old.opaque) this.disposeMesh(old.opaque); if (old.trans) this.disposeMesh(old.trans); if (old.water) this.disposeMesh(old.water); if (old.glow) this.disposeMesh(old.glow); if (old.barrier) this.disposeMesh(old.barrier); }
     const w = this.world; if (!w) { this.chunkMeshes.delete(key); return; }
     const A = this.atlas;
-    const pos = [], nor = [], uv = [], idx = [], av = [];
-    const tpos = [], tnor = [], tuv = [], tidx = [], tav = [];
-    const wpos = [], wnor = [], wuv = [], widx = [], wav = [];
+    const pos = [], nor = [], uv = [], idx = [], av = [], col = [];
+    const tpos = [], tnor = [], tuv = [], tidx = [], tav = [], tcol = [];
+    const wpos = [], wnor = [], wuv = [], widx = [], wav = [], wcol = [];
     const gpos = [], gnor = [], guv = [], gidx = [], gav = [];
     const bpos = [], bnor = [], buv = [], bidx = [], bav = [];
     const ox = cx * CHUNK, oy = cy * CHUNK, oz = cz * CHUNK;
     let vc = 0, tvc = 0, wvc = 0, gvc = 0, bvc = 0;
+    // 顶点 AO + 面朝向烘焙。体素场景"平"的根源不是灯光不够，而是墙角、台阶、
+    // 柱脚这些地方没有任何接触阴影——方向光是均匀的，它给不出那种"贴着地"的暗角。
+    // 这里在成网格的时候顺手量 12 个邻居（每个角 3 个），比 SSAO 便宜两个数量级，
+    // 而且只在块重建时算一次。
+    const occCache = new Map();
+    const solidAt = (x, y, z) => {
+      const k = (x + 32768) | ((y + 32768) << 15) | ((z + 32768) << 26 >>> 0);
+      let v = occCache.get(k);
+      if (v === undefined) {
+        const id = w.get(x, y, z);
+        const b = id ? A.byId(id) : null;
+        v = !!(id && (!b || !b.transparent));   // 水/玻璃/叶子不挡光，否则水下与树下全黑
+        occCache.set(k, v);
+      }
+      return v;
+    };
     for (let y = 0; y < CHUNK; y++) for (let z = 0; z < CHUNK; z++) for (let x = 0; x < CHUNK; x++) {
       const wx = ox + x, wy = oy + y, wz = oz + z;
       const id = w.get(wx, wy, wz); if (!id) continue;
@@ -747,7 +834,8 @@ vec2 fxTileRect(float t){
       const fmap = rot ? ROT_FACE[rot] : null; // 旋转只换贴图来源，面的几何与剔除不变
       const P = useW ? wpos : useT ? tpos : isBarrier ? bpos : pos, N = useW ? wnor : useT ? tnor : isBarrier ? bnor : nor, U = useW ? wuv : useT ? tuv : isBarrier ? buv : uv;
       let base = useW ? wvc : useT ? tvc : isBarrier ? bvc : vc;
-      for (const f of FACES) {
+      for (let fi = 0; fi < FACES.length; fi++) {
+        const f = FACES[fi];
         const nx = wx + f.dir[0], ny = wy + f.dir[1], nz = wz + f.dir[2];
         const nid = w.get(nx, ny, nz);
         const nb = nid ? A.byId(nid) : null;
@@ -763,13 +851,28 @@ vec2 fxTileRect(float t){
           ? [an.frames.length, (an.duration || 200) / 1000, an.frames[0], 0]
           : [0, 0, 0, 0];
         const AV = useW ? wav : useT ? tav : isBarrier ? bav : av;
+        const C = useW ? wcol : useT ? tcol : col;
+        const d = f.dir;
+        const ax = d[0] ? 0 : d[1] ? 1 : 2, t1 = (ax + 1) % 3, t2 = (ax + 2) % 3;
+        const p0 = [wx + d[0], wy + d[1], wz + d[2]];
         for (let c = 0; c < 4; c++) {
           const co = f.corners[c];
           P.push(wx + co[0], wy + co[1], wz + co[2]);
-          N.push(f.dir[0], f.dir[1], f.dir[2]);
+          N.push(d[0], d[1], d[2]);
           const [su, sv] = f.uv[c];
           U.push(u0 + su * (u1 - u0), v0 + sv * (v1 - v0));
           AV.push(a4[0], a4[1], a4[2], a4[3]);
+          if (C) {
+            const s1 = co[t1] ? 1 : -1, s2 = co[t2] ? 1 : -1;
+            const a1 = [p0[0], p0[1], p0[2]]; a1[t1] += s1;
+            const a2 = [p0[0], p0[1], p0[2]]; a2[t2] += s2;
+            const cn = [p0[0], p0[1], p0[2]]; cn[t1] += s1; cn[t2] += s2;
+            const o1 = solidAt(a1[0], a1[1], a1[2]) ? 1 : 0;
+            const o2 = solidAt(a2[0], a2[1], a2[2]) ? 1 : 0;
+            const oc = o1 && o2 ? 1 : (solidAt(cn[0], cn[1], cn[2]) ? 1 : 0);
+            const ao = AO_LUM[(o1 && o2) ? 0 : 3 - o1 - o2 - oc] * FACE_TINT[fi];
+            C.push(ao, ao, ao);
+          }
         }
         (useW ? widx : useT ? tidx : isBarrier ? bidx : idx).push(base, base + 1, base + 2, base, base + 2, base + 3);
         base += 4;
@@ -788,21 +891,28 @@ vec2 fxTileRect(float t){
       }
     }
     const rec = {};
-    const build = (P, N, U, I, mat, shadow, AV) => {
+    const build = (P, N, U, I, mat, shadow, AV, C) => {
       if (!P.length) return null;
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
       g.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
       g.setAttribute("uv", new THREE.Float32BufferAttribute(U, 2));
       g.setAttribute("aAnim", new THREE.Float32BufferAttribute(AV && AV.length ? AV : new Float32Array(P.length / 3 * 4), 4));
+      // 材质开了 vertexColors，就必须给到 color 属性：缺属性时 WebGL 会用常量 (0,0,0)，
+      // 整块直接黑掉。所以没有 AO 数据也要填白。
+      if (mat.vertexColors) {
+        const n = P.length / 3;
+        const arr = C && C.length === n * 3 ? C : new Array(n * 3).fill(1);
+        g.setAttribute("color", new THREE.Float32BufferAttribute(arr, 3));
+      }
       g.setIndex(I); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, mat); m.castShadow = !!shadow; m.receiveShadow = !!shadow;
       m.userData.chunk = true;
       this.group.add(m); return m;
     };
-    rec.opaque = build(pos, nor, uv, idx, this.opaqueMat, true, av);
-    rec.trans = build(tpos, tnor, tuv, tidx, this.transparentMat, false, tav);
-    rec.water = build(wpos, wnor, wuv, widx, this.waterMat, false, wav);
+    rec.opaque = build(pos, nor, uv, idx, this.opaqueMat, true, av, col);
+    rec.trans = build(tpos, tnor, tuv, tidx, this.transparentMat, false, tav, tcol);
+    rec.water = build(wpos, wnor, wuv, widx, this.waterMat, false, wav, wcol);
     rec.glow = build(gpos, gnor, guv, gidx, this.glowMat, false, gav);
     // 空气墙：半透明网格（编辑器里看得到、可拾取），运行时整体隐藏；不投影避免暴露位置
     if (!bpos.length && !bvc) rec.barrier = null;

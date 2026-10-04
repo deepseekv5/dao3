@@ -544,6 +544,7 @@ export function addEntityMarker(d) {
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(d.bounds[0] * 2, d.bounds[1] * 2, d.bounds[2] * 2).translate(0, d.bounds[1], 0)),
     new THREE.LineBasicMaterial({ color: 0x22c8dd }));
   group.add(cube, edges);
+  group.userData.marker = true;      // 封面渲染要跳过它：这是编辑器的标记盒，不是地图内容
   const ent = {
     id: "m" + Date.now().toString(36) + Math.floor(Math.random() * 99),
     name: (d.id || "实体") + (d.tags && d.tags.length ? " " + d.tags.map((t) => "." + t).join(" ") : ""),
