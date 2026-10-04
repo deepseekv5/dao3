@@ -5,7 +5,7 @@
   "height": 900
  },
  "scale": 1,
- "captured": "2026-10-04T13:56:34.691Z",
+ "captured": "2026-10-04T15:19:56.608Z",
  "shots": [
   {
    "name": "workbench",
@@ -13,7 +13,7 @@
   },
   {
    "name": "editor-build",
-   "kb": 475
+   "kb": 478
   },
   {
    "name": "block-library",
@@ -21,11 +21,11 @@
   },
   {
    "name": "editor-model",
-   "kb": 487
+   "kb": 490
   },
   {
    "name": "editor-script",
-   "kb": 220
+   "kb": 224
   },
   {
    "name": "editor-ui",
@@ -33,11 +33,11 @@
   },
   {
    "name": "editor-player",
-   "kb": 136
+   "kb": 137
   },
   {
    "name": "editor-run",
-   "kb": 205
+   "kb": 136
   },
   {
    "name": "run-store",
@@ -49,7 +49,7 @@
   },
   {
    "name": "editor-palette",
-   "kb": 211
+   "kb": 215
   }
  ],
  "pageErrors": []

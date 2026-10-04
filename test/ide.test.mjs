@@ -145,6 +145,64 @@ const framed = await s.evaluate(`(async () => {
 })()`);
 ok("Shift+F 把镜头移到选区上", framed.moved > 5 && framed.near, JSON.stringify(framed));
 
+/* ---------- 撤销历史窗口 ---------- */
+const hist = await s.evaluate(`(async () => {
+  const h = window.__editor.history;
+  const edit = (label) => h.commit([{ x: 3, y: 1, z: 3, oldId: 0, oldRot: 0, newId: 1, newRot: 0 }], label);
+  edit("place"); edit("fill"); edit("script");
+  h.undo();                                    // 停在第二步，第三步是可 redo 的那一步
+  document.getElementById("histBtn").click();
+  await new Promise(r => setTimeout(r, 350));
+  const rows = [...document.querySelectorAll(".hh-row")];
+  return { open: !!document.querySelector(".hist-menu"), n: rows.length,
+    labels: rows.map(r => r.querySelector("b").textContent),
+    on: rows.findIndex(r => r.classList.contains("on")),
+    future: rows.filter(r => r.classList.contains("future")).length };
+})()`);
+ok("历史窗口列出每一步，并标出当前在哪一步",
+  hist.open && hist.n === 3 && hist.labels.join(",") === "脚本改动,填充,放置" && hist.on === 1 && hist.future === 1, JSON.stringify(hist));
+
+const jumpedBack = await s.evaluate(`(async () => {
+  document.querySelectorAll(".hh-row")[0].click();     // 点最新那一步 = redo 回去
+  await new Promise(r => setTimeout(r, 300));
+  const h = window.__editor.history;
+  const rows = [...document.querySelectorAll(".hh-row")];
+  const out = { pointer: h.pointer, on: rows.findIndex(r => r.classList.contains("on")), future: rows.filter(r => r.classList.contains("future")).length };
+  while (h.canUndo()) h.undo();                          // 测试改动全部退回，别留在默认图上
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await new Promise(r => setTimeout(r, 250));
+  out.closed = !document.querySelector(".hist-menu");
+  return out;
+})()`);
+ok("点某一步真的跳过去，Esc 关窗", jumpedBack.pointer === 2 && jumpedBack.on === 0 && jumpedBack.future === 0 && jumpedBack.closed, JSON.stringify(jumpedBack));
+
+/* ---------- 按住属性名横向拖就能改数值 ---------- */
+const scrub = await s.evaluate(`(async () => {
+  document.querySelector('.mtab[data-menu="model"]').click();
+  await new Promise(r => setTimeout(r, 1000));
+  const item = document.querySelector("#modelList .mitem");
+  if (!item) return { err: "模型列表是空的" };
+  item.click();
+  await new Promise(r => setTimeout(r, 700));
+  const col = document.querySelectorAll("#posSliders .poscol")[0];
+  const num = col.querySelector(".posnum"), lb = col.querySelector(".poslbl");
+  const m = window.__editor.state.selectedModel;
+  const out = { before: Number(num.value), objBefore: m ? +m.object.position.x.toFixed(2) : null };
+  const r = lb.getBoundingClientRect();
+  const od = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 3, isPrimary: true, button: 0 });
+  lb.dispatchEvent(new PointerEvent("pointerdown", od(r.left + 4, r.top + 4)));
+  window.dispatchEvent(new PointerEvent("pointermove", od(r.left + 48, r.top + 4)));
+  window.dispatchEvent(new PointerEvent("pointerup", od(r.left + 48, r.top + 4)));
+  await new Promise(r2 => setTimeout(r2, 400));
+  out.after = Number(num.value);
+  out.objAfter = m ? +m.object.position.x.toFixed(2) : null;
+  out.cursor = getComputedStyle(lb).cursor;
+  while (window.__editor.history.canUndo()) window.__editor.history.undo();   // 测试改动退回
+  document.querySelector('.mtab[data-menu="build"]').click();
+  return out;
+})()`);
+ok("拖属性名改数值，并且实时作用到模型上", scrub.after >= scrub.before + 40 && scrub.objAfter >= scrub.objBefore + 40, JSON.stringify(scrub));
+
 // F1 命令面板
 await s.evaluate(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "F1", bubbles: true, cancelable: true })); return true; })()`);
 await new Promise((r) => setTimeout(r, 400));
