@@ -45,15 +45,17 @@ export function wireScriptIde(E) {
   const probBox = document.createElement("div");
   probBox.className = "ss-problems";
   probBox.id = "ssProblems";
-  probBox.hidden = true;
   consoleBox.appendChild(probBox);
   const outBox = document.getElementById("scriptOut");
+  // 哪一格可见交给 CSS（.ss-console[data-pane=...]），不在这里逐个 hidden：
+  // 后来加的东西（比如控制台那排筛选项）不会出现在这份清单里，
+  // 于是切到「问题」时它还赖在屏幕上。
+  consoleBox.dataset.pane = "out";
   tabs.onclick = (ev) => {
     const b = ev.target.closest(".ss-tab");
     if (!b) return;
     for (const x of tabs.querySelectorAll(".ss-tab")) x.classList.toggle("active", x === b);
-    outBox.hidden = b.dataset.t !== "out";
-    probBox.hidden = b.dataset.t !== "prob";
+    consoleBox.dataset.pane = b.dataset.t;
     if (b.dataset.t === "prob") renderProblems();
   };
 

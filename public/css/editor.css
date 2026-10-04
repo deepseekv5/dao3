@@ -917,3 +917,36 @@ body.playing.float-edit #peRotate{display:none}
 body.playing .rp-grip,body.playing .lib-grip{display:none}
 /* 窄屏下控制台并到下方变成横向条，竖向分隔条没有意义，直接藏掉 */
 @media (max-width:960px){.ss-grip{display:none}}
+
+/* ---- 脚本控制台：条目化日志 + 严重度筛选 ---- */
+.cs-bar{display:flex;align-items:center;gap:4px;flex:none;padding:5px 8px;border-bottom:1px solid var(--divider);background:rgba(0,0,0,.22)}
+.cs-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--font-white-disabled);padding:3px 7px;border-radius:99px;border:1px solid transparent;background:none}
+.cs-chip b{font-weight:600;font-variant-numeric:tabular-nums}
+.cs-chip.on{color:var(--fg2);background:rgba(255,255,255,.05)}
+.cs-chip[data-k="warn"].on{color:#e0a63c}
+.cs-chip[data-k="error"].on{color:var(--bad)}
+.cs-chip:hover{border-color:var(--grey3)}
+.cs-spacer{flex:1}
+.cs-act{font-size:10.5px;color:var(--font-white-minor);padding:3px 8px;border-radius:99px;border:1px solid var(--grey2);background:none}
+.cs-act:hover{color:#fff;border-color:var(--primary)}
+.cs-row{display:flex;align-items:flex-start;gap:7px;padding:3px 10px;font-family:Menlo,Consolas,monospace;font-size:11.5px;line-height:1.5;border-bottom:1px solid rgba(255,255,255,.03)}
+.cs-row:hover{background:rgba(255,255,255,.04)}
+.cs-time{flex:none;color:var(--font-white-disabled);font-size:10px;padding-top:1.5px}
+.cs-ico{flex:none;font-style:normal;width:10px;text-align:center}
+.cs-txt{flex:1;white-space:pre-wrap;word-break:break-all}
+.cs-n{flex:none;font-style:normal;color:var(--primary);font-size:10px;background:var(--primary-dim);border-radius:8px;padding:0 5px}
+.cs-n:empty{display:none}
+.cs-at{flex:none;font-size:10px;color:var(--primary);background:none;border:1px solid var(--grey2);border-radius:8px;padding:0 5px}
+.cs-at:hover{border-color:var(--primary)}
+.cs-log .cs-ico{color:var(--grey4)}
+.cs-warn,.cs-warn .cs-ico{color:#e0a63c}
+.cs-error,.cs-error .cs-ico{color:var(--bad)}
+/* 筛选状态写在盒子上、可见性交给 CSS：点一下筛选项不该重排 400 行 DOM，
+   也不会出现"筛选说只剩错误、屏幕上还留着 log"。 */
+.ss-console[data-f-log="0"] .cs-log,.ss-console[data-f-warn="0"] .cs-warn,.ss-console[data-f-error="0"] .cs-error{display:none}
+/* 控制台 / 问题两个 pane：默认显示控制台，切到问题时把日志和筛选条一起藏。
+   极性别写反——写反的症状是"控制台整个空了"。 */
+.ss-problems{display:none}
+.ss-console[data-pane="prob"] .ss-problems{display:block}
+.ss-console[data-pane="prob"] .scriptout,.ss-console[data-pane="prob"] .cs-bar{display:none}
+.ss-console.is-closed .cs-bar{display:none}

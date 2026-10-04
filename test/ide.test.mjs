@@ -211,6 +211,54 @@ await new Promise((r) => setTimeout(r, 500));
 const step2 = await s.evaluate(`(() => (window.__editor.ideState()||{}).lens)()`);
 ok("再点一下前进到第 2 行", step2 === 2, String(step2));
 
+/* ---------- 控制台：日志是条目，不是一行状态文字 ---------- */
+const cs = await s.evaluate(`(async () => {
+  const ta = document.getElementById("scriptCode");
+  ta.value = "console.log('甲 一');\\nconsole.log('甲 一');\\nconsole.warn('乙 警告');\\nconsole.error('丙 错误');\\nthrow new Error('炸了');\\n";
+  ta.dispatchEvent(new Event("input"));
+  await new Promise(r => setTimeout(r, 150));
+  document.getElementById("scriptRun").click();
+  await new Promise(r => setTimeout(r, 500));
+  const rows = [...document.querySelectorAll("#scriptOut .cs-row")];
+  const chip = (k) => document.querySelector('.cs-chip[data-k="' + k + '"] b').textContent;
+  return { n: rows.length, kinds: rows.map(r => r.dataset.k), collapsed: rows.map(r => r.dataset.n),
+    log: chip("log"), warn: chip("warn"), err: chip("error"),
+    hasGoto: !!document.querySelector("#scriptOut .cs-at") };
+})()`);
+ok("多条输出并存（不再互相覆盖）", cs.n === 4, JSON.stringify(cs));
+ok("严重度分得清", cs.kinds.join(",") === "log,log,warn,error,error" || cs.kinds.join(",") === "log,warn,error,error", JSON.stringify(cs.kinds));
+ok("重复的连续行折成 ×N", cs.collapsed.includes("2"), JSON.stringify(cs.collapsed));
+ok("筛选按钮上的计数是真的", Number(cs.log) >= 2 && Number(cs.warn) === 1 && Number(cs.err) === 2, JSON.stringify({ log: cs.log, warn: cs.warn, err: cs.err }));
+ok("带行号的报错给得出跳转入口", cs.hasGoto, JSON.stringify(cs));
+
+const csFiltered = await s.evaluate(`(async () => {
+  document.querySelector('.cs-chip[data-k="error"]').click();
+  await new Promise(r => setTimeout(r, 200));
+  const vis = [...document.querySelectorAll("#scriptOut .cs-row")].filter(r => getComputedStyle(r).display !== "none").map(r => r.dataset.k);
+  document.querySelector('.cs-chip[data-k="error"]').click();
+  await new Promise(r => setTimeout(r, 200));
+  const back = [...document.querySelectorAll("#scriptOut .cs-row")].filter(r => getComputedStyle(r).display !== "none").length;
+  return { vis, back };
+})()`);
+ok("关掉某个严重度就只剩剩下的（计数不清零）", csFiltered.vis.length === 2 && !csFiltered.vis.includes("error") && csFiltered.back === 4, JSON.stringify(csFiltered));
+
+const csJumped = await s.evaluate(`(async () => {
+  const b = document.querySelector("#scriptOut .cs-at");
+  const want = Number(b.textContent.replace(/\\D/g, ""));
+  b.click();
+  await new Promise(r => setTimeout(r, 300));
+  return { want, lens: (window.__editor.ideState() || {}).lens };
+})()`);
+ok("点条目上的行号跳过去", csJumped.lens === csJumped.want, JSON.stringify(csJumped));
+
+const cleared = await s.evaluate(`(async () => {
+  document.getElementById("csClear").click();
+  await new Promise(r => setTimeout(r, 200));
+  const chip = (k) => document.querySelector('.cs-chip[data-k="' + k + '"] b').textContent;
+  return { rows: document.querySelectorAll("#scriptOut .cs-row").length, log: chip("log"), warn: chip("warn"), err: chip("error") };
+})()`);
+ok("清空把条目和计数一起清掉", cleared.rows === 0 && !cleared.log && !cleared.warn && !cleared.err, JSON.stringify(cleared));
+
 // 状态栏那个 F1 按钮（不是快捷键）也要能开合。走真实指针事件：
 // 状态栏是 position:fixed 的一层，z-index 写错就是"看得见但点不到"。
 await s.click("#sbPalette");

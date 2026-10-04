@@ -2,6 +2,7 @@
 // 权威依据：vendor/ArenaPro-CLI/server/types/GameAPI.d.ts 与
 //          vendor/box3-product-document/api/**（逐字段默认值）。
 import * as THREE from "../vendor/three/three.module.js";
+import { pushConsole } from "./console.js";
 
 export const TICK_MS = 64; // world.onTick 周期，见 api/GameWorld/mapInfo.md
 export const ROT_SCALE = 16384; // 旋转码：每顺时针 90° 加 16384，见 api/GameVoxels/operate.md
@@ -493,6 +494,10 @@ export function noteError(msg) {
 }
 const ERR_LOG_MAX = 300;
 export function consoleDiv(el, text, kind) {
+  // 先抄一份给编辑器那侧的脚本控制台，再写运行态的那块：
+  // #gameConsole 在不运行时的确不存在，但作者关心的"刚才那一局崩在哪"
+  // 恰恰是回到编辑器之后才要看的东西。
+  pushConsole(kind === "err" ? "error" : (kind === "info" ? "log" : kind || "log"), text);
   const p = el || document.getElementById("gameConsole");
   if (!p) return;
   const d = document.createElement("div");

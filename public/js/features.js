@@ -8,6 +8,7 @@ import { wireScriptAi } from "./ai-script.js";
 import { wireScriptIde } from "./script-ide.js";
 import { wirePalette } from "./palette.js";
 import { wirePanels } from "./panels.js";
+import { wireConsole, pushConsole, clearConsole } from "./console.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
@@ -28,6 +29,7 @@ export function initFeatures(editor) {
   wireScriptIde(editor);
   wirePalette(editor);
   wirePanels(editor);
+  wireConsole(editor);
   wireStatusBar();
   wireAgentBtn(editor);
   wireModels();
@@ -650,8 +652,6 @@ export function addEntityMarker(d) {
  */
 export function runSandboxCode(e, code) {
   const w = e.world, atlas = e.atlas;
-  const out = document.getElementById("scriptOut");
-  if (out) out.style.color = "";
   const changes = new Map();
   const apply = (x, y, z, id) => {
     if (!w.inBounds(x, y, z)) return;
@@ -679,19 +679,20 @@ export function runSandboxCode(e, code) {
     clear: () => { for (const k of [...w.map.keys()]) { const [x, y, z] = w.unpack(k); apply(x, y, z, 0); } },
     count: () => { let n = w.size(); for (const c of changes.values()) { if (c.newId && !c.oldId) n++; else if (!c.newId && c.oldId) n--; } return n; },
     size: () => w.shape.slice(),
-    log: (m) => { if (out) out.textContent = String(m); },
+    log: (m) => pushConsole("log", m),
   };
   const lines = [];
   try {
     const fn = new Function("sb", "Math", "console", code);
     _errLine = -1; // 清除上次错误行标记
-    // 沙箱 console：官方脚本常用 clear/warn/info，一并支持
+    // 沙箱 console：官方脚本常用 clear/warn/info，一并支持。
+    // 严重度在这里就分好——事后再从文本里猜"这是不是错误"会看漏。
     fn(sb, Math, {
-      log: (...a) => { lines.push(a.join(" ")); },
-      error: (...a) => { lines.push("错误: " + a.join(" ")); },
-      warn: (...a) => { lines.push("警告: " + a.join(" ")); },
-      info: (...a) => { lines.push(a.join(" ")); },
-      clear: () => { lines.length = 0; },
+      log: (...a) => { const s = a.join(" "); lines.push(s); pushConsole("log", s); },
+      error: (...a) => { const s = a.join(" "); lines.push("错误: " + s); pushConsole("error", s); },
+      warn: (...a) => { const s = a.join(" "); lines.push("警告: " + s); pushConsole("warn", s); },
+      info: (...a) => { const s = a.join(" "); lines.push(s); pushConsole("log", s); },
+      clear: () => { lines.length = 0; clearConsole(); },
     });
     const list = [...changes.values()].filter((c) => c.oldId !== c.newId);
     e.history.commit(list, "script");
@@ -700,7 +701,10 @@ export function runSandboxCode(e, code) {
     if (e.ui && e.ui.refreshTree) e.ui.refreshTree();
     const text = lines.join("\n");
     const shown = text || "运行成功 · " + list.length + " 处变更";
-    if (out) { out.textContent = shown; out.style.color = ""; }
+    // 控制台是日志不是状态栏：条目在脚本调用时就进 console（见上面的沙箱 console），
+    // 这里只补一行本次结果。原来这里是 out.textContent = shown ——
+    // 一次运行只留最后一行，再跑一次就把上一轮抹掉，两条输出根本没法比对。
+    pushConsole("log", `→ ${list.length} 处变更`);
     return { ok: true, out: shown, changes: list.length };
   } catch (err) {
     // 官方 scriptErrorFound：定位出错行并在编辑器里高亮
@@ -708,10 +712,7 @@ export function runSandboxCode(e, code) {
     const m = String(err.stack || "").match(/<anonymous>:(\d+):\d+/);
     _errLine = m ? Math.max(0, parseInt(m[1], 10) - 3) : -1;
     const error = String(err && err.message || err || "");
-    if (out) {
-      out.textContent = (m ? `第 ${_errLine + 1} 行错误: ` : "错误: ") + error;
-      out.style.color = "#ff6b6b";
-    }
+    pushConsole("error", (m ? `第 ${_errLine + 1} 行错误: ` : "错误: ") + error, m ? { line: _errLine + 1 } : null);
     renderCodeEditor();
     return { ok: false, out: "", changes: 0, error, line: _errLine };
   }
