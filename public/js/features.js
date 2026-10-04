@@ -9,6 +9,7 @@ import { wireScriptIde } from "./script-ide.js";
 import { wirePalette } from "./palette.js";
 import { wirePanels } from "./panels.js";
 import { wireConsole, pushConsole, clearConsole } from "./console.js";
+import { wireViewGizmo } from "./view-gizmo.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
@@ -30,6 +31,8 @@ export function initFeatures(editor) {
   wirePalette(editor);
   wirePanels(editor);
   wireConsole(editor);
+  wireViewGizmo(editor);
+  editor.frameSelected = frameSelected;
   wireStatusBar();
   wireAgentBtn(editor);
   wireModels();
@@ -1829,10 +1832,10 @@ export function wireStore() {
 }
 
 /* 点击模型列表 → 相机缓动飞到该模型位置 */
-function focusModel(m) {
+/** 把镜头平滑移到这个包围盒上。返回 false 表示没动（第一人称下不打断）。 */
+function focusBox(box) {
   const r = E.renderer;
-  if (r.fpMode) return; // 第一人称下不打断
-  const box = new THREE.Box3().setFromObject(m.object);
+  if (r.fpMode) return false;
   const c = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3()).length() || 6;
   const dist = Math.max(8, size * 1.4);
@@ -1849,4 +1852,17 @@ function focusModel(m) {
     // 用 setTimeout 自驱：窗口被完全遮挡时 rAF 会整个挂起，而 setTimeout 最多节流到 1Hz，最多 1 秒内到位
     if (k < 1) setTimeout(step, 16);
   })();
+  return true;
+}
+function focusModel(m) { return focusBox(new THREE.Box3().setFromObject(m.object)); }
+
+/** Shift+F「聚焦选中」。选中的可能是模型、也可能是体素选区，两种都要管：
+ *  只认模型的话，框选一片之后按键什么都不动，比没有这个键更让人困惑。 */
+function frameSelected() {
+  const m = E.state.selectedModel, s = E.state.selection;
+  if (m && m.object && focusModel(m)) return;
+  if (s && focusBox(new THREE.Box3(
+    new THREE.Vector3(s.min.x - .5, s.min.y - .5, s.min.z - .5),
+    new THREE.Vector3(s.max.x + 1.5, s.max.y + 1.5, s.max.z + 1.5)))) return;
+  E.toast((m || s) ? "角色视角下不打断镜头，先按 Esc 退出" : "没有选中的模型，也没框选体素", true);
 }

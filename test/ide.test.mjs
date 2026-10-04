@@ -110,6 +110,41 @@ const cols = await s.evaluate(`(() => getComputedStyle(document.getElementById("
 ok("拖方块库变宽：卡片跟着变，且多出来的宽度换成更多列", g4.libW - 238 >= 100 && g4.libVar === g4.libW + "px" && cols >= 3, JSON.stringify({ libW: g4.libW, cols }));
 await s.evaluate(`document.getElementById("gripLib").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
 
+/* ---------- 视口坐标罗盘 + 聚焦选中 ---------- */
+const gz = await s.evaluate(`(() => {
+  const g = document.querySelector(".view-gizmo");
+  if (!g) return null;
+  const r = g.getBoundingClientRect(), rp = document.getElementById("rightPanel").getBoundingClientRect();
+  return { groups: g.querySelectorAll("g").length, insideStage: !!g.closest("#stage"), right: Math.round(r.right), rpLeft: Math.round(rp.left) };
+})()`);
+ok("坐标罗盘在视口里、六根轴都在", gz && gz.groups === 6 && gz.insideStage && gz.right <= gz.rpLeft, JSON.stringify(gz));
+
+// 点 +Z 那根轴的端点：相机应该站到 target 的 +Z 一侧。
+// 容差按距离的 5% 算而不是绝对 1 格：OrbitControls.update() 会按它自己的球坐标
+// 重算一次位置，换了 up 之后极角映射会有零点几度的偏差，那是实现细节不是 bug。
+const tipped = await s.evaluate(`(async () => {
+  document.querySelector('.view-gizmo g[data-k="z"][data-s="1"] circle').dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await new Promise(r => setTimeout(r, 250));
+  const r = window.__editor.renderer, t = r.controls.target, p = r.camera.position;
+  const d = p.distanceTo(t);
+  return { d: +d.toFixed(1), dx: +(p.x - t.x).toFixed(1), dy: +(p.y - t.y).toFixed(1), dz: +(p.z - t.z).toFixed(1) };
+})()`);
+const offAxis = Math.max(Math.abs(tipped.dx), Math.abs(tipped.dy));
+ok("点轴端点切到那个标准视角（视线沿该轴）", tipped.dz > 10 && offAxis < tipped.d * 0.05, JSON.stringify(tipped));
+
+// Shift+F 聚焦选中：框一片体素，镜头中心应该落到那片上
+const framed = await s.evaluate(`(async () => {
+  const min = { x: 6, y: 2, z: 90 }, max = { x: 10, y: 6, z: 94 };
+  window.__editor.ctx.setSelection(min, max);
+  const t0 = window.__editor.renderer.controls.target.clone();
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "F", shiftKey: true, bubbles: true, cancelable: true }));
+  await new Promise(r => setTimeout(r, 900));
+  const t = window.__editor.renderer.controls.target;
+  window.__editor.selOps.clearSel();
+  return { moved: +t.distanceTo(t0).toFixed(1), near: Math.abs(t.x - 8) < 3 && Math.abs(t.z - 92) < 3 && Math.abs(t.y - 4) < 3 };
+})()`);
+ok("Shift+F 把镜头移到选区上", framed.moved > 5 && framed.near, JSON.stringify(framed));
+
 // F1 命令面板
 await s.evaluate(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "F1", bubbles: true, cancelable: true })); return true; })()`);
 await new Promise((r) => setTimeout(r, 400));

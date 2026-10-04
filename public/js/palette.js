@@ -59,6 +59,7 @@ export function wirePalette(E) {
     g("视图", "透视 / 正交", "O", click("#ortho"));
     g("视图", "角色视角编辑", "K", click("#fpEdit"));
     g("视图", "重置视角", "", click("#resetView"));
+    g("视图", "聚焦选中", "Shift+F", () => E.frameSelected?.());
     g("视图", "全局视角", "", click("#modeGlobal"));
     g("视图", "重置面板布局", "拖乱了回默认", () => E.resetPanels?.());
     g("编辑", "撤销", "Ctrl+Z", click("#undo"));

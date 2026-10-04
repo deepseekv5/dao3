@@ -194,6 +194,9 @@ document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && k === "d") { e.preventDefault(); duplicateSel(); return; }
   if (k === "delete" || k === "backspace") { deleteSel(); return; }
   if (k === "escape") { if (dropHeldModel()) { toast("已放下模型"); return; } clearSel(); return; }
+  // Shift+F 聚焦选中。F 本身已经被「油漆桶填充」占了，这里不抢它——
+  // 改一个用了很久的键位，代价比多按一个 Shift 大。
+  if (k === "f" && e.shiftKey) { e.preventDefault(); window.__editor?.frameSelected?.(); return; }
   const toolKeys = { b: "place", e: "break", g: "paint", f: "fill", m: "eyedropper", l: "line", r: "box", x: "boxBreak", t: "extrude", s: "select" };
   if (toolKeys[k] && !e.ctrlKey && !e.metaKey) { ui.setTool(toolKeys[k]); return; }
   // Y：旋转（官方 placeVoxel 的 rot 语义，90° 步进）；手持模型优先
