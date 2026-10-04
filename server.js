@@ -272,7 +272,7 @@ function bundleStat() {
 function gatedAsset(pathname) {
   for (const g of GATED_ASSETS) {
     if (!pathname.startsWith(g.prefix)) continue;
-    const rel = decodeURIComponent(pathname.slice(g.prefix.length));
+    const rel = pathname.slice(g.prefix.length); // pathname 已解码过一次，二次解码可被 %252e 绕过，故不重复解码
     if (!rel || rel.includes("\0") || rel.includes("..")) return { blocked: "bad name" };
     const abs = path.resolve(g.dir, rel);
     if (!abs.startsWith(path.resolve(g.dir) + path.sep)) return { blocked: "escapes bundle" };
@@ -387,6 +387,19 @@ ensureSeed();
 const AI_MAX_BODY = 4 * 1024 * 1024;      // 提示词 + 代码上下文
 const AI_MAX_MS = 180000;
 const isLoopback = (ip) => /^(127\.|::1$|::ffff:127\.|localhost$)/.test(String(ip || ""));
+/** 写请求必须同源。Sec-Fetch-Site: cross-site 直接拒；带 Origin 时要求其 host 与 Host 一致；
+ *  两者都没有（curl / 测试脚本等非浏览器客户端）放行——浏览器一定会带其中之一。 */
+function sameOriginWrite(req) {
+  if (String(req.headers["sec-fetch-site"] || "") === "cross-site") return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try { return new URL(origin).host.toLowerCase() === String(req.headers.host || "").toLowerCase(); }
+  catch { return false; }
+}
+/** 世界资产上传白名单：只收素材类扩展名。挡掉 .html/.js/.svg 这类可执行内容——
+ *  否则上传的 /assets/worlds/<id>/x.html 会以同源 text/html 返回，等于存储型 XSS。 */
+const ASSET_EXT = new Set([".glb", ".gltf", ".bin", ".vox", ".vb", ".png", ".jpg", ".jpeg", ".webp",
+  ".gif", ".bmp", ".json", ".txt", ".mp3", ".wav", ".ogg", ".m4a", ".aac"]);
 function normalizeAiBase(u) {
   let x = String(u || "").trim();
   if (!x) return null;
@@ -406,11 +419,22 @@ const scrub = (text, key) => {
 };
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  let pathname = decodeURIComponent(url.pathname);
+  // 畸形百分号转义（如 /%zz）会让 decodeURIComponent 抛 URIError。之前这里没有 try/catch，
+  // 一个请求就能把进程带走（Node 直接退出，Bun 的 node:http 兼容层同样）。解码失败按坏请求处理。
+  let url, pathname;
+  try {
+    url = new URL(req.url, `http://${req.headers.host}`);
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return send(res, 400, "bad request URI");
+  }
 
   // ---- API ----
   if (pathname.startsWith("/api/")) {
+    // 写请求的同源校验：浏览器跨站发起的写一律拒绝（挡 CSRF）；无 Origin 的本地客户端（curl/脚本）放行。
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !sameOriginWrite(req)) {
+      return json(res, 403, { error: "cross-site write rejected" });
+    }
     const parts = pathname.split("/").filter(Boolean); // ['api', ...]
     if (req.method === "GET" && parts[1] === "worlds") return json(res, 200, { worlds: listWorlds() });
     if (req.method === "GET" && parts[1] === "stats") return json(res, 200, apiStats());
@@ -503,7 +527,8 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
-    if (parts[1] === "world" && safeId(parts[2])) {
+    // parts.length === 3 才走「世界本体」；否则 /asset 子路由会被这一支截胡（曾导致资产上传永远 400）
+    if (parts[1] === "world" && safeId(parts[2]) && parts.length === 3) {
       const id = parts[2];
       if (req.method === "GET") {
         const p = worldPath(id);
@@ -545,6 +570,7 @@ const server = http.createServer((req, res) => {
       const id = parts[2];
       const rel = (url.searchParams.get("path") || "").replace(/^\/+/, "");
       if (!rel || /\.\./.test(rel) || rel.length > 200) return json(res, 400, { error: "bad path" });
+      if (!ASSET_EXT.has(path.extname(rel).toLowerCase())) return json(res, 400, { error: "unsupported asset type" });
       const chunks = [];
       let total = 0;
       req.on("data", (c) => { chunks.push(c); total += c.length; if (total > 80 * 1024 * 1024) req.destroy(); });
@@ -561,7 +587,7 @@ const server = http.createServer((req, res) => {
     // ---- VOXA 模型库：GET/POST/DELETE /api/models[/:name] ----
     if (parts[1] === "models") {
       if (req.method === "GET" && parts.length === 2) return json(res, 200, { models: listModels() });
-      const name = parts[2] ? decodeURIComponent(parts[2]) : null;
+      const name = parts[2] || null; // pathname 已解码过一次，二次解码会抛 URIError
       if (name && !safeModelName(name)) return json(res, 400, { error: "bad model name" });
       if (req.method === "GET") {
         const m = readModel(name);
@@ -683,21 +709,21 @@ const server = http.createServer((req, res) => {
     const e = path.extname(gated.file).toLowerCase();
     fs.readFile(gated.file, (err, buf) => {
       if (err) return send(res, 500, "read error");
-      send(res, 200, buf, { "Content-Type": MIME[e] || "application/octet-stream", "Cache-Control": "public, max-age=3600" });
+      send(res, 200, buf, { "Content-Type": MIME[e] || "application/octet-stream", "Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff" });
     });
     return;
   }
   // 世界资产可能被写到用户目录（安装目录只读时），但前端 URL 一直是 /assets/worlds/<id>/…，
   // 所以这个前缀要能在 DATA_ROOT/assets 与仓库内 public/assets 两处都解析。
   if (pathname.startsWith("/assets/worlds/")) {
-    const rel = decodeURIComponent(pathname.slice("/assets/worlds/".length));
+    const rel = pathname.slice("/assets/worlds/".length); // pathname 已解码过一次，不再二次解码
     if (!rel.includes("..")) {
       for (const base of [ASSETS, ASSETS_IN_TREE]) {
         const f = path.join(base, rel);
         if (!f.startsWith(base)) continue;
         if (fs.existsSync(f) && fs.statSync(f).isFile()) {
           const e = path.extname(f).toLowerCase();
-          const h = { "Content-Type": MIME[e] || "application/octet-stream", "Cache-Control": "public, max-age=3600" };
+          const h = { "Content-Type": MIME[e] || "application/octet-stream", "Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff" };
           fs.readFile(f, (err, buf) => { if (err) return send(res, 500, "read error"); send(res, 200, buf, h); });
           return;
         }
