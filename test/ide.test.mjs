@@ -6,9 +6,24 @@
 //   · .script-screen 是 fixed 整屏遮罩，压在状态栏上 → 诊断按钮"看得见点不到"；
 //   · 顶栏躺着两颗没接线的图标，其中一颗写着「协作」却提示"暂未开放"。
 // 断言走真实指针事件（Session.click 会做命中测试），所以遮挡这一类才报得出来。
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { launchChrome, Session } from "./cdp.mjs";
 
 const ok = (name, cond, extra = "") => console.log((cond ? "PASS  " : "FAIL  ") + name + (extra ? "  " + extra : ""));
+
+/* ---------- 静态：颜色只有一个来源 ---------- */
+// 换主题那次只改了 :root，内层留着一堆上一套主题的硬编码色，
+// 结果是同一个界面里两种底色、五种"错误红"。这条断言是为了不再退回去。
+const CSS = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../public/css/editor.css"), "utf8");
+const afterRoot = CSS.slice(CSS.indexOf("\n}") + 2);      // :root 是文件里的第一个块，它自己当然可以写字面色
+// 规则针对的是**有彩色**：#fff / #000 这种中性色写死不算跑偏，
+// 而 #4b5563、#0d0f12 这类"上一套主题的灰"才是问题——它们会让一个界面出现两种底色。
+const NEUTRAL = new Set(["#fff", "#ffffff", "#000", "#000000"]);
+const ALLOWED = new Set([...NEUTRAL, "#ff5b5b", "#ff8a5b"]);   // 后两个是血条渐变：游戏内元素，不是界面 chrome
+const bad = [...afterRoot.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0]).filter((c) => !ALLOWED.has(c));
+ok(`editor.css 里 :root 之外没有游离的有彩色（剩 ${bad.length} 个）`, bad.length === 0, [...new Set(bad)].join(" "));
 
 const { port } = await launchChrome({});
 const s = await Session.open(port, { width: 1440, height: 900, initScripts: ['try{localStorage.setItem("dao3_disclaimer_ack","3");sessionStorage.setItem("dao3_no_autosave","1")}catch(e){}' ] });
