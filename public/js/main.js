@@ -566,6 +566,9 @@ async function boot() {
     };
     const toolDispatch = (e, fn) => {
       if (game && game.running) return; // 运行模式下鼠标属于游戏（ACTION0/1），不触发建造工具
+      // 按住平移手柄的这一段指针事件归手柄，不再走工具与拾取：
+      // 否则拖一次箭头会同时放下一排方块，一次操作改两个地方，最难查。
+      if (window.__editor?.gizmo?.handlePointer(e, fn)) return;
       if (e.button !== 0) return;
       if (renderer.fpMode) {
         if (fn === "onDown") fpDown = true;

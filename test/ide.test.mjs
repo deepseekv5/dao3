@@ -228,6 +228,53 @@ const scrub = await s.evaluate(`(async () => {
 ok("拖属性名改数值，并且实时作用到模型上", scrub.after >= scrub.before + 40 && scrub.objAfter >= scrub.objBefore + 40, JSON.stringify(scrub));
 ok("滚轮在数值框上改值、在列表上只是滚动", scrub.wheel === 1 && scrub.listNoChange, JSON.stringify({ wheel: scrub.wheel, listNoChange: scrub.listNoChange }));
 
+/* ---------- 平移手柄 ---------- */
+const giz = await s.evaluate(`(async () => {
+  document.querySelector('.mtab[data-menu="model"]').click();
+  await new Promise(r => setTimeout(r, 900));
+  document.querySelector("#modelList .mitem").click();
+  await new Promise(r => setTimeout(r, 500));
+  window.__editor.renderer.onRender(0);              // 让 sync() 跑一拍，手柄位置/尺寸就位
+  const ed = window.__editor, m = ed.state.selectedModel;
+  const at = () => ({ x: +m.object.position.x.toFixed(2), y: +m.object.position.y.toFixed(2), z: +m.object.position.z.toFixed(2) });
+  const before = at();
+  const cv = document.getElementById("viewport");
+  // 把世界点投到屏幕：断言"跟指针 1:1"要量的是模型本体在屏幕上的位置。
+  // 量箭头头部不行——头部离模型有 0.96 倍手柄长，而手柄长度按相机距离反算，
+  // 拖近拖远它自己就会变。
+  const proj = (v) => {
+    const cam = ed.renderer.activeCam || ed.renderer.camera;
+    const p = new v.constructor(v.x, v.y, v.z);
+    p.project(cam);
+    const r = cv.getBoundingClientRect();
+    return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+  };
+  const p0 = ed.gizmo.headPoint("y"), s0 = proj(m.object.position);
+  const od = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 5, isPrimary: true, button: 0, buttons: 1 });
+  cv.dispatchEvent(new PointerEvent("pointerdown", od(p0.x, p0.y)));
+  cv.dispatchEvent(new PointerEvent("pointermove", od(p0.x, p0.y - 90)));
+  cv.dispatchEvent(new PointerEvent("pointermove", od(p0.x, p0.y - 150)));
+  await new Promise(r => setTimeout(r, 150));
+  const mid = at();
+  const s1 = proj(m.object.position);                // 模型在屏幕上跟指针跟了多远
+  cv.dispatchEvent(new PointerEvent("pointerup", od(p0.x, p0.y - 150)));
+  await new Promise(r => setTimeout(r, 150));
+  const dirty = ed.state.dirty;
+  m.pos = [before.x, before.y, before.z]; m.object.position.set(before.x, before.y, before.z);
+  ed.state.selectedModel = null;
+  ed.renderer.onRender(0);
+  await new Promise(r => setTimeout(r, 200));
+  return { before, mid, followed: +(s1.y - s0.y).toFixed(1), dx: +(s1.x - s0.x).toFixed(1), dirty, visible: ed.gizmo.visible };
+})()`);
+ok("拖 Y 箭头只抬高度，X/Z 一格都不偏", giz.mid.y > giz.before.y && giz.mid.x === giz.before.x && giz.mid.z === giz.before.z, JSON.stringify(giz));
+// 跟手：指针往上拖，模型在屏幕上就得往上走，比例要在一个"手感正常"的区间里。
+// 不断言严格 1:1——单轴拖用的是"包含该轴、正对相机"的平面，
+// 沿轴移动会改变与相机的距离，透视下比例本来就会随俯仰角变（Unity 的手柄同理）。
+// 比例失控（比如 10 倍或 0.01 倍）才是真 bug，这条抓的是那个。
+ok("拖拽跟手：方向一致、比例在合理区间", giz.followed < -75 && giz.followed > -375 && Math.abs(giz.dx) < 4, JSON.stringify(giz));
+ok("拖完算一次改动（状态栏/存盘知道图变脏了）", giz.dirty === true, JSON.stringify({ dirty: giz.dirty }));
+ok("取消选中后手柄自己收起", giz.visible === false, JSON.stringify({ visible: giz.visible }));
+
 // F1 命令面板
 await s.evaluate(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "F1", bubbles: true, cancelable: true })); return true; })()`);
 await new Promise((r) => setTimeout(r, 400));
