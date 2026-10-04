@@ -168,6 +168,7 @@ function ensureCss() {
 }
 
 let _open = null;
+let _q = null;   // 打开着的抽屉里那些控件的取用口
 
 /** 在脚本界面加一个「AI 生成」按钮与抽屉。由 initFeatures 调用一次。 */
 export function wireScriptAi(E) {
@@ -183,7 +184,27 @@ export function wireScriptAi(E) {
   btn.onclick = () => (_open ? close() : open(E));
 }
 
-function close() { _open?.remove(); _open = null; }
+function close() { _open?.remove(); _open = null; _q = null; }
+
+/**
+ * 从编辑器的行内动作（CodeLens 那一排）带着预填需求打开 AI 抽屉。
+ * 抽出来是因为"选中函数→解释/注释/修错"和"手写需求"是同一个入口的两种进法，
+ * 复制一份抽屉逻辑必然和这边漂移。
+ * @param E 编辑器引用
+ * @param text 预填的需求正文
+ * @param mode "revise" 改当前脚本 | "new" 生成新脚本
+ */
+export function askAbout(E, text, mode = "revise") {
+  if (_open && _q) {
+    _q("prompt").value = text;
+    if (_q("mode")) _q("mode").value = mode;
+    _q("prompt").focus();
+    return;
+  }
+  _pending = { text, mode };
+  open(E);
+}
+let _pending = null;
 
 function open(E) {
   close();
@@ -223,6 +244,13 @@ function open(E) {
   _open = d;
 
   const q = (k) => d.querySelector(`[data-k="${k}"]`);
+  _q = q;   // 给 askAbout 用：抽屉已经开着时不用再重建，直接往需求框里填
+  if (_pending) {
+    q("prompt").value = _pending.text;
+    if (q("mode")) q("mode").value = _pending.mode || "revise";
+    setTimeout(() => q("prompt").focus(), 0);
+    _pending = null;
+  }
   const state = (msg, cls) => { const n = q("state"); n.textContent = msg; n.className = "ai-state" + (cls ? " " + cls : ""); };
   let code = "";
   let busy = null;

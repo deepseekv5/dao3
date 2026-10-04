@@ -27,7 +27,7 @@ const lineOf = (src, at) => src.slice(0, at).split("\n").length;
 /**
  * @param code 脚本正文
  * @param opts meta.scriptChecks：{ enabled, nullable, unused, readonly }
- * @returns [{ line, rule, msg }]
+ * @returns [{ line, rule, msg, sev }]  sev: "error" | "warn" | "info"
  */
 export function lintScript(code, opts = {}) {
   if (!opts.enabled || !code || !code.trim()) return [];
@@ -48,21 +48,48 @@ export function lintScript(code, opts = {}) {
       while (re.exec(src)) n++;
       // 声明本身占一次；再赋过值也只算写了没读，这里不区分读写——
       // 所以这一条只报"整个名字只出现过一次"的情况，宁可漏报不误报。
-      if (n <= 1) out.push({ line: lineOf(code, d.at), rule: "未使用局部变量", msg: `局部变量「${d.name}」声明后没有被引用` });
+      if (n <= 1) out.push({ line: lineOf(code, d.at), rule: "未使用局部变量", msg: `局部变量「${d.name}」声明后没有被引用`, sev: "info" });
     }
   }
 
   const on = (k) => opts[k] !== false;
-  for (const [re, rule, msg, want] of [
-    [NULLABLE, "严格空值检查", "这个官方接口可能返回 undefined，直接取属性会抛错；先判空或走 ?.value", "strictNullChecks"],
-    [READONLY_API, "只读官方属性", "官方把这个属性定义为只读，赋值不会生效", "readonlyApi"],
+  for (const [re, rule, msg, want, sev] of [
+    [NULLABLE, "严格空值检查", "这个官方接口可能返回 undefined，直接取属性会抛错；先判空或走 ?.value", "strictNullChecks", "warn"],
+    [READONLY_API, "只读官方属性", "官方把这个属性定义为只读，赋值不会生效", "readonlyApi", "error"],
   ]) {
     if (!on(want)) continue;
     re.lastIndex = 0;
     let m;
-    while ((m = re.exec(src))) out.push({ line: lineOf(code, m.index), rule, msg });
+    while ((m = re.exec(src))) out.push({ line: lineOf(code, m.index), rule, msg, sev });
   }
 
+  return out.sort((a, b) => a.line - b.line);
+}
+
+/* ---- 符号：给「大纲」和函数上方的行内动作条用 ---- */
+// 只认四种最常见的定义写法。对象方法/类方法故意不做：正则误判率高，
+// 列出来的"符号"点下去跳错位置，比少列几类更伤。
+const SYMBOL = [
+  [/(?:^|[;{}\n])\s*(?:export\s+)?async\s+function\s*\*?\s*([A-Za-z_$][\w$]*)/g, "函数"],
+  [/(?:^|[;{}\n])\s*(?:export\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/g, "函数"],
+  [/(?:^|[;{}\n])\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g, "箭头函数"],
+  [/(?:^|[;{}\n])\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?function/g, "函数"],
+  [/(?:^|[;{}\n])\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g, "类"],
+];
+/** @returns [{ name, kind, line }] 行号 1 基，和诊断同一口径 */
+export function symbolsOf(code) {
+  const src = stripNoise(String(code || ""));
+  const seen = new Set(), out = [];
+  for (const [re, kind] of SYMBOL) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(src))) {
+      const name = m[1];
+      if (seen.has(name)) continue;
+      seen.add(name);
+      out.push({ name, kind, line: lineOf(code, m.index + m[0].indexOf(name)) });
+    }
+  }
   return out.sort((a, b) => a.line - b.line);
 }
 

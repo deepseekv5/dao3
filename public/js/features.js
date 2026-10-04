@@ -5,6 +5,7 @@ import { authorColor } from "./diff.js";
 import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
+import { wireScriptIde } from "./script-ide.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
@@ -22,6 +23,7 @@ export function initFeatures(editor) {
   wireTerrainModal();
   wireScript();
   wireScriptAi(editor);
+  wireScriptIde(editor);
   wireAgentBtn(editor);
   wireModels();
   wirePlayer();
@@ -336,6 +338,8 @@ function wireScript() {
   // 只能在 wire 之后挂：模块顶层的 E 还是 undefined，那时赋值会直接抛错，
   // 整个编辑器脚本就废了（实测 boot 不起来）。
   e.refreshScriptView = refreshScriptView;
+  // script-ide.js 要在行号槽重画之后补诊断标记，给它一个"画完了"的钩子
+  e.renderCode = renderCodeEditor;
   // 运行游戏 = 进入完整运行模式（官方 GameAPI）
   document.getElementById("scriptPlay").onclick = () => { showScriptScreen(false); window.__play && window.__play(); };
   ta.addEventListener("keydown", (ev) => {
@@ -483,7 +487,9 @@ function renderCodeEditor() {
   for (let i = 1; i <= lines; i++) {
     const label = (i - 1 === _errLine ? "▶" : i);
     const who = authors && authors[i - 1];
-    g += who ? `<span class="bl" data-by="${escAttr(who)}" style="color:${blameColor(who)}">${label}</span>` : `${label}\n`;
+    // 每行都必须包成带 data-ln 的节点：诊断标记要按行号找位置，
+    // 而裸文本节点不算 children —— 不包的时候行号槽看起来正常，标记却永远画不上。
+    g += `<span class="${who ? "bl ln" : "ln"}" data-ln="${i}"${who ? ` data-by="${escAttr(who)}" style="color:${blameColor(who)}"` : ""}>${label}</span>\n`;
   }
   gutter.innerHTML = g;
 }

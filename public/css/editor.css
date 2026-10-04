@@ -801,3 +801,47 @@ body.playing.float-edit #peRotate{display:none}
 #btnCollab.on{color:var(--primary);background:var(--primary-dim)}
 /* 行号槽按作者上色：一眼看出"这行是谁写的"，不用点进任何菜单 */
 #scriptGutter .bl{display:block;white-space:pre}
+
+/* ---- 脚本 IDE 层：诊断装饰、行内动作、问题面板 ---- */
+/* 行装饰压在文字下面（z-index 靠后 + 半透明），只画一条虚底边：
+   整行刷色会把语法高亮盖住，而"这行有问题"本来就该比代码本身弱一档。 */
+.dg-row{position:absolute;left:0;right:0;height:20px;pointer-events:none;border-bottom:1px dotted transparent}
+.dg-row.dg-error{border-bottom-color:var(--bad);background:rgba(224,82,75,.10)}
+.dg-row.dg-warn{border-bottom-color:#e0a63c;background:rgba(224,166,60,.07)}
+.dg-row.dg-info{border-bottom-color:var(--font-black-minor)}
+.dg-mark{font-style:normal;margin-left:3px;font-size:9px;vertical-align:middle}
+.dg-mark.dg-error{color:var(--bad)}.dg-mark.dg-warn{color:#e0a63c}.dg-mark.dg-info{color:var(--font-black-minor)}
+
+.ss-lens{display:flex;align-items:center;gap:10px;padding:5px 16px;flex:0 0 auto;
+  border-bottom:1px solid var(--divider);background:#131519;font-size:11px;color:var(--font-black-minor)}
+.lens-where{font-family:Menlo,Consolas,monospace;color:var(--fg2)}
+.lens-acts{display:flex;gap:4px}
+.lens-acts button,.lens-err{padding:2px 9px;border-radius:5px;background:var(--grey2);color:#cfd3dc;font-size:10.5px;border:0;cursor:pointer}
+.lens-acts button:hover{background:var(--primary-dim);color:var(--primary)}
+.lens-err{margin-left:2px;background:rgba(224,82,75,.18);color:#ffb4b4}
+.lens-err:hover{background:rgba(224,82,75,.3)}
+.lens-keys{font-size:10px;color:#4b5563}
+.ss-lens .ss-spacer{flex:1}
+
+.ss-tabs{display:flex;align-items:center;gap:4px;padding:6px 10px;border-bottom:1px solid var(--divider);flex:0 0 auto}
+.ss-console.is-closed .ss-tabs,.ss-console.is-closed .ss-problems{display:none}
+.ss-tab{padding:3px 10px;border-radius:5px;background:none;border:0;color:var(--font-black-minor);font-size:11px;cursor:pointer}
+.ss-tab:hover{color:#fff}
+.ss-tab.active{background:var(--grey2);color:#fff}
+.ss-tab b{margin-left:4px;font:600 9.5px/1 Menlo,monospace;color:var(--primary)}
+.ss-tabs .ss-spacer{flex:1}
+#ssProbSum{font-size:9.5px;color:#4b5563;white-space:nowrap}
+.ss-problems{flex:1;overflow:auto;padding:4px 0}
+.dg-filter{display:flex;flex-wrap:wrap;gap:4px;padding:6px 10px;border-bottom:1px solid var(--divider)}
+.dg-chip{padding:2px 8px;border-radius:999px;background:none;border:1px solid var(--divider);color:var(--font-black-minor);font-size:10px;cursor:pointer}
+.dg-chip.on{border-color:var(--primary);color:var(--primary);background:var(--primary-dim)}
+.dg-fix{margin-left:auto;padding:2px 9px;border-radius:5px;background:rgba(224,82,75,.18);color:#ffb4b4;border:0;font-size:10px;cursor:pointer}
+.dg-fix:hover{background:rgba(224,82,75,.32)}
+.dg-item{display:grid;grid-template-columns:14px 1fr;gap:2px 6px;width:100%;text-align:left;padding:6px 10px;
+  background:none;border:0;border-bottom:1px solid rgba(255,255,255,.03);color:inherit;cursor:pointer;font:inherit}
+.dg-item:hover{background:rgba(255,255,255,.04)}
+.dg-dot{grid-row:1/3;font-style:normal;font-size:9px;line-height:1.7}
+.dg-dot.dg-error{color:var(--bad)}.dg-dot.dg-warn{color:#e0a63c}.dg-dot.dg-info{color:var(--font-black-minor)}
+.dg-where{font-size:10px;color:#4b5563;font-family:Menlo,Consolas,monospace}
+.dg-msg{font-size:11px;color:#cfd3dc;line-height:1.5;word-break:break-word}
+.dg-empty{padding:12px;font-size:11px;color:#4b5563;margin:0}

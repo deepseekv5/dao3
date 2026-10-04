@@ -121,7 +121,7 @@ export function extractJson(text) {
  *
  * 官方服务端脚本支持顶层 await，所以 `new Function(code)` 会因为 await 而
  * 报 SyntaxError——那不是模型的错。两种包法都试一遍，只有都过不去才算错。
- * @returns {{ok: true} | {ok: false, error: string}}
+ * @returns {{ok: true} | {ok: false, error: string, line?: number}}
  */
 export function checkSyntax(code) {
   const src = String(code || "");
@@ -135,6 +135,9 @@ export function checkSyntax(code) {
     // 顶层 await 那条路也过不去，说明是真语法错。报哪个？两个都在，
     // 但同步那份的行列号对模型更有用（async 包法整体下移了一行）。
     const err = String(plainErr && plainErr.message || e.message || e);
+    // 不报行号。V8 在 new Function 抛的 SyntaxError 里给的是**构造器自己**的位置，
+    // 从 stack 里正则捞 ":128:11" 会捞到 ai.js 的行号 —— 拿它去标用户代码的第 128 行，
+    // 比不标更糟：装饰画在了看不见的地方，而真正报错的那行干干净净。
     return { ok: false, error: err.slice(0, 300) };
   }
 }
