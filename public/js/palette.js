@@ -60,6 +60,7 @@ export function wirePalette(E) {
     g("视图", "角色视角编辑", "K", click("#fpEdit"));
     g("视图", "重置视角", "", click("#resetView"));
     g("视图", "全局视角", "", click("#modeGlobal"));
+    g("视图", "重置面板布局", "拖乱了回默认", () => E.resetPanels?.());
     g("编辑", "撤销", "Ctrl+Z", click("#undo"));
     g("编辑", "重做", "Ctrl+Shift+Z", click("#redo"));
     g("编辑", "保存世界", "Ctrl+S", () => E.save());

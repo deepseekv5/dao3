@@ -79,6 +79,8 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <!-- 场景 tab 内容：全局变换 -->
     <div class="lc-scene" id="globalToolbar"></div>
   </aside>
+  <button class="lib-grip" id="gripLib" type="button" role="separator" aria-orientation="vertical"
+          aria-label="方块库宽度" title="拖动调整方块库宽度（双击复位，方向键微调）"></button>
 
   <!-- 中央浮动编辑工具条 -->
   <div id="editToolbar" class="float-toolbar">
@@ -110,6 +112,11 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <button class="ft active" id="grid" title="网格" data-ico="grid"></button>
     <button class="ft" id="resetView" title="重置视角" data-ico="home"></button>
   </div>
+
+  <!-- 分隔条：平时是一根透明命中区，hover/聚焦才亮出一条线（IDE 的分隔条应该
+       只在你要用它的时候出现）。可拖、可双击复位、可方向键调，三件事都在 panels.js。 -->
+  <button class="rp-grip" id="gripRight" type="button" role="separator" aria-orientation="vertical"
+          aria-label="右栏宽度" title="拖动调整右栏宽度（双击复位，方向键微调）"></button>
 
   <!-- 右侧：导览 + 属性 -->
   <aside id="rightPanel">
@@ -358,6 +365,8 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
         <textarea id="scriptCode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
       </div>
     </div>
+    <button class="ss-grip" id="gripConsole" type="button" role="separator" aria-orientation="vertical"
+            aria-label="控制台宽度" title="拖动调整控制台宽度（双击复位，方向键微调）"></button>
     <div class="ss-console" id="scriptConsole">
       <button class="ss-console-head" id="scriptConsoleHead" title="运行游戏时脚本报错也会显示在这里；运行期间修改不会保存">控制台<span>▾</span></button>
       <div id="scriptOut" class="scriptout"></div>

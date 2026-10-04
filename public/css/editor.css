@@ -31,6 +31,10 @@
   --radius-sm:2px; --radius-md:4px; --radius-lg:6px;
   --ease:cubic-bezier(0.16, 1, 0.3, 1);
   --ok:#39ff14; --warn:#e0a63c; --bad:#ff2a8a;
+  /* 面板几何的唯一真相：分隔条只改这四个值，右边属性卡与工具条的位置都从它派生。
+     以前 .prop-card 的 right:314px 和工具条的 50% - 28px 是手调魔数，
+     一旦右栏宽度可变，它们就会各说各话。 */
+  --lib-w:238px; --rp-w:300px; --prop-w:250px; --console-w:300px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#050510;color:var(--font-white);font-family:var(--font);overflow:hidden;font-size:13px;-webkit-font-smoothing:antialiased}
@@ -91,7 +95,7 @@ input{font-family:inherit}
 #viewport{position:absolute;inset:0;width:100%;height:100%;display:block;outline:none}
 
 /* left floating library card */
-.float-card{position:absolute;top:14px;left:14px;width:238px;background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.55);z-index:20;overflow:hidden;backdrop-filter:blur(8px)}
+.float-card{position:absolute;top:14px;left:14px;width:var(--lib-w);background:var(--card);border:1px solid rgba(255,255,255,.06);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.55);z-index:20;overflow:hidden;backdrop-filter:blur(8px)}
 .lc-tabs{display:flex;background:rgba(0,0,0,.25)}
 .lc-tab{flex:1;padding:12px 0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:13px;color:var(--font-white-minor);position:relative}
 .lc-tab .i{font-size:16px}
@@ -108,7 +112,9 @@ input{font-family:inherit}
 .lc-rail button{width:28px;height:28px;border-radius:6px;font-size:14px;color:var(--font-white-minor);display:flex;align-items:center;justify-content:center}
 .lc-rail button:hover{background:var(--grey2);color:#fff}
 .lc-rail button.active{background:var(--primary-light);color:var(--primary)}
-.lc-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;overflow-y:auto;align-content:start}
+/* 列数跟着卡片宽度走：以前写死 1fr 1fr，把方块库拖宽只会得到两个大空格子，
+   缩窄则挤成一列。缩略图本身封顶 56px，所以多出来的宽度应该换成"多几列"。 */
+.lc-grid{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;padding:8px;overflow-y:auto;align-content:start}
 .block{position:relative;background:#161a2a;border:1px solid #23282f;border-radius:9px;padding:8px 5px 6px;display:flex;flex-direction:column;align-items:center;gap:2px}
 .block img{width:100%;max-width:56px;height:56px;image-rendering:pixelated;object-fit:contain}
 .block .nm{font-size:11px;color:var(--font-white-major);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
@@ -127,10 +133,11 @@ input{font-family:inherit}
 .global-toolbar button:hover{background:var(--primary);border-color:var(--primary)}
 
 /* center floating edit toolbar */
-/* left 不是 50%：#stage 是整幅宽，右边 300px 被场景/属性面板占着，
-   居中就会压在面板的 tab 行上（实拍里"预览/界面"两个 tab 被吃掉一半）。
-   左卡 244px + 右面板 300px，两者之间的中心 = 50% - 28px。 */
-.float-toolbar{position:absolute;top:14px;left:calc(50% - 28px);transform:translateX(-50%);display:flex;align-items:center;gap:2px;background:rgba(20,20,20,.92);border:1px solid var(--grey2);border-radius:12px;padding:6px;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 28px);overflow-x:auto;scrollbar-width:none}
+/* left 不是 50%：#stage 是整幅宽，右边被面板占着，居中就会压在面板的 tab 行上
+   （实拍里"预览/界面"两个 tab 被吃掉一半）。所以居中在**两块面板之间的净空**里：
+   净空 = [14px + --lib-w, 100% - --rp-w]，它的中心就是下面这条。
+   右栏宽度现在可拖，公式必须跟着变量走，不能再写手调魔数。 */
+.float-toolbar{position:absolute;top:14px;left:calc(50% + (var(--lib-w) + 14px - var(--rp-w)) / 2);transform:translateX(-50%);display:flex;align-items:center;gap:2px;background:rgba(20,20,20,.92);border:1px solid var(--grey2);border-radius:12px;padding:6px;z-index:20;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:calc(100% - 28px);overflow-x:auto;scrollbar-width:none}
 .float-toolbar::-webkit-scrollbar{display:none}
 .float-toolbar .ft{flex:0 0 auto}
 .ft{width:34px;height:34px;border-radius:8px;font-size:16px;color:var(--font-white-minor);display:flex;align-items:center;justify-content:center}
@@ -151,7 +158,7 @@ input{font-family:inherit}
 .mode-seg .msb.active{background:var(--primary);color:#180d00;font-weight:700}
 
 /* right panel */
-#rightPanel{position:absolute;top:0;right:0;bottom:0;width:300px;background:var(--panel);border-left:1px solid #000;display:flex;flex-direction:column;z-index:15}
+#rightPanel{position:absolute;top:0;right:0;bottom:0;width:var(--rp-w);background:var(--panel);border-left:1px solid #000;display:flex;flex-direction:column;z-index:15}
 .rp-sec{border-bottom:1px solid #000}
 .rp-sec.grow{flex:1;overflow:hidden;display:flex;flex-direction:column}
 .rp-head{display:flex;align-items:center;gap:6px;padding:10px 12px;font-size:13px;font-weight:600;color:#fff}
@@ -299,7 +306,7 @@ button.sb-btn:hover{color:#fff;border-color:var(--primary);background:var(--prim
 .model-panel .model-list{flex:1 1 auto;min-height:80px;max-height:none;overflow-y:auto}
 .model-panel .ent-props{flex:0 0 auto;max-height:46%;overflow-y:auto;border-top:1px solid var(--divider)}
 /* 实体属性卡：不依赖页签，选中模型即出现（贴在右侧面板左边） */
-.prop-card{display:none;top:14px;right:314px;bottom:14px;left:auto;width:250px;max-height:none;flex-direction:column;overflow:hidden;z-index:21}
+.prop-card{display:none;top:14px;right:calc(var(--rp-w) + 14px);bottom:14px;left:auto;width:var(--prop-w);max-height:none;flex-direction:column;overflow:hidden;z-index:21}
 .prop-card.show{display:flex}
 .prop-card .ent-props{flex:1 1 auto;min-height:0;overflow-y:auto;padding-bottom:10px}
 .prop-card .lc-tabs{display:flex;align-items:center}
@@ -615,7 +622,7 @@ body.float-edit #tbtns{cursor:grab}
 .ss-files-head button{width:22px;height:22px;border-radius:5px;background:none;color:var(--font-white-minor);font-size:13px;display:flex;align-items:center;justify-content:center}
 .ss-files-head button:hover{background:var(--grey2);color:#fff}
 .ss-files{overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:4px}
-.ss-console{width:300px;flex:none;border-left:1px solid var(--divider);display:flex;flex-direction:column;background:rgba(0,0,0,.28)}
+.ss-console{width:var(--console-w);flex:none;border-left:1px solid var(--divider);display:flex;flex-direction:column;background:rgba(0,0,0,.28)}
 .ss-console-head{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 12px;
   font:inherit;font-size:11px;color:var(--font-black-minor);background:none;border:0;border-bottom:1px solid var(--divider);cursor:pointer}
 .ss-console-head span{font-size:9px;transition:transform .15s}
@@ -885,3 +892,19 @@ body.playing.float-edit #peRotate{display:none}
    鼠标扫过时选中行会掉回 hover 底色，看不出光标在哪一行。 */
 .pl-row.on{background:var(--primary-dim);box-shadow:inset 2px 0 0 var(--primary)}
 .pl-none{padding:20px;text-align:center;font-size:12px;color:var(--font-white-disabled);margin:0}
+
+/* ---- 分隔条：可拖、可双击复位、可方向键微调 ----
+   命中区 9px 宽但只画 1px 亮线，而且只在 hover / 聚焦 / 拖动时出现——
+   常驻一条灰线会让界面更挤，而分隔条应该在你需要它的时候才存在。 */
+.rp-grip,.lib-grip{position:absolute;width:9px;padding:0;border:0;background:none;z-index:24;cursor:col-resize;touch-action:none;-webkit-user-select:none;user-select:none}
+.rp-grip{top:0;bottom:0;right:calc(var(--rp-w) - 4px)}
+.lib-grip{top:14px;bottom:14px;left:calc(var(--lib-w) + 10px)}
+.ss-grip{position:relative;width:7px;flex:none;padding:0;border:0;background:none;cursor:col-resize;touch-action:none;-webkit-user-select:none;user-select:none;z-index:3}
+.rp-grip::after,.lib-grip::after,.ss-grip::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;
+  margin-left:-.5px;background:transparent;transition:background .12s var(--ease),box-shadow .12s var(--ease)}
+.rp-grip:hover::after,.lib-grip:hover::after,.ss-grip:hover::after,
+.rp-grip:focus-visible::after,.lib-grip:focus-visible::after,.ss-grip:focus-visible::after,
+.rp-grip.on::after,.lib-grip.on::after,.ss-grip.on::after{background:var(--primary);box-shadow:0 0 8px rgba(0,229,255,.6)}
+body.playing .rp-grip,body.playing .lib-grip{display:none}
+/* 窄屏下控制台并到下方变成横向条，竖向分隔条没有意义，直接藏掉 */
+@media (max-width:960px){.ss-grip{display:none}}

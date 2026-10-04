@@ -7,6 +7,7 @@ import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
 import { wireScriptIde } from "./script-ide.js";
 import { wirePalette } from "./palette.js";
+import { wirePanels } from "./panels.js";
 import { openAgent } from "./ai-agent.js";
 import { initPack } from "./pack.js";
 import { CHECK_GROUPS, TS_ONLY_NOTE } from "./lint.js";
@@ -26,6 +27,7 @@ export function initFeatures(editor) {
   wireScriptAi(editor);
   wireScriptIde(editor);
   wirePalette(editor);
+  wirePanels(editor);
   wireStatusBar();
   wireAgentBtn(editor);
   wireModels();

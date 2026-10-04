@@ -68,6 +68,48 @@ const anon = await s.evaluate(`(() => [].map.call(document.querySelectorAll("#to
 const noId = await s.evaluate(`(() => [].filter.call(document.querySelectorAll("#topbar .tb-ico"), b => !b.id).map(b => b.title))()`);
 ok("顶栏图标全部有 id（可接线）且 title 不为空", noId.length === 0 && anon.length === 0, JSON.stringify({ noId, anon }));
 
+/* ---------- 分隔条：拖、双击复位、方向键，且派生几何要跟着走 ---------- */
+// 用合成 PointerEvent（与 test/e2e.mjs 拖浮标那套同一手法）：
+// 我的处理器是 pointerdown 挂在把手、move/up 挂在 window，这条链路必须按顺序打。
+const drag = (sel, dx) => s.evaluate(`(async () => {
+  const el = document.querySelector(${JSON.stringify(sel)});
+  const r = el.getBoundingClientRect();
+  const od = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 7, isPrimary: true, button: 0 });
+  el.dispatchEvent(new PointerEvent("pointerdown", od(r.left + 4, r.top + r.height / 2)));
+  window.dispatchEvent(new PointerEvent("pointermove", od(r.left + 4 + ${dx}, r.top + r.height / 2)));
+  window.dispatchEvent(new PointerEvent("pointerup", od(r.left + 4 + ${dx}, r.top + r.height / 2)));
+  await new Promise(r2 => setTimeout(r2, 120));
+  return true;
+})()`);
+const geom = () => s.evaluate(`(() => {
+  const cs = getComputedStyle(document.documentElement);
+  const rp = document.getElementById("rightPanel").getBoundingClientRect();
+  const tb = document.getElementById("editToolbar").getBoundingClientRect();
+  const lib = document.getElementById("libCard").getBoundingClientRect();
+  return { rpVar: cs.getPropertyValue("--rp-w").trim(), libVar: cs.getPropertyValue("--lib-w").trim(),
+    rpW: Math.round(rp.width), rpLeft: Math.round(rp.left), tbRight: Math.round(tb.right), libW: Math.round(lib.width) };
+})()`);
+const g0 = await geom();
+await drag("#gripRight", -120);
+const g1 = await geom();
+ok("拖右栏分隔条：往左拖变宽，CSS 变量跟着走", g1.rpW - g0.rpW >= 110 && g1.rpVar === g1.rpW + "px", JSON.stringify({ a: g0.rpW, b: g1.rpW, v: g1.rpVar }));
+ok("变宽后工具条仍不压面板（居中公式是派生的，不是手调魔数）", g1.tbRight <= g1.rpLeft, JSON.stringify({ tbRight: g1.tbRight, rpLeft: g1.rpLeft }));
+
+await s.evaluate(`document.getElementById("gripRight").focus()`);
+await s.evaluate(`document.getElementById("gripRight").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))`);
+const g2 = await geom();
+ok("方向键微调分隔条（右箭头把手往右 = 右栏变窄 10px）", g1.rpW - g2.rpW === 10, JSON.stringify({ g1: g1.rpW, g2: g2.rpW }));
+
+await s.evaluate(`document.getElementById("gripRight").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+const g3 = await geom();
+ok("双击分隔条回到默认宽度", g3.rpW === 300 && g3.rpVar === "300px", JSON.stringify({ rpW: g3.rpW, v: g3.rpVar }));
+
+await drag("#gripLib", 110);
+const g4 = await geom();
+const cols = await s.evaluate(`(() => getComputedStyle(document.getElementById("blockLib")).gridTemplateColumns.split(" ").length)()`);
+ok("拖方块库变宽：卡片跟着变，且多出来的宽度换成更多列", g4.libW - 238 >= 100 && g4.libVar === g4.libW + "px" && cols >= 3, JSON.stringify({ libW: g4.libW, cols }));
+await s.evaluate(`document.getElementById("gripLib").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+
 // F1 命令面板
 await s.evaluate(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "F1", bubbles: true, cancelable: true })); return true; })()`);
 await new Promise((r) => setTimeout(r, 400));
@@ -185,6 +227,15 @@ ok("状态栏按钮开面板、Esc 关面板", on && off, JSON.stringify({ on, o
 const cover = await s.evaluate(`(() => { const r = document.getElementById("scriptScreen").getBoundingClientRect(); return { bottom: Math.round(r.bottom), vh: window.innerHeight }; })()`);
 ok("脚本工作区不压住状态栏", cover.bottom === cover.vh - 24, JSON.stringify(cover));
 
+// 脚本页的控制台也是一块面板：它的把手在左边，往左拖变宽。
+const c0 = await s.evaluate(`(() => Math.round(document.getElementById("scriptConsole").getBoundingClientRect().width))()`);
+await drag("#gripConsole", -90);
+const c1 = await s.evaluate(`(() => ({ w: Math.round(document.getElementById("scriptConsole").getBoundingClientRect().width),
+  v: getComputedStyle(document.documentElement).getPropertyValue("--console-w").trim(),
+  closed: document.getElementById("scriptConsole").classList.contains("is-closed") }))()`);
+ok("控制台分隔条能拖宽，且拖的时候自动展开", c1.w - c0 >= 80 && c1.v === c1.w + "px" && !c1.closed, JSON.stringify({ c0, c1 }));
+await s.evaluate(`document.getElementById("gripConsole").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+
 await s.evaluate(`(() => { document.getElementById("sbPalette").click(); return true; })()`);
 await new Promise((r) => setTimeout(r, 400));
 await s.shot("test/out/ide-palette.png");
@@ -216,6 +267,19 @@ await s.evaluate(`(() => {
 await new Promise((r) => setTimeout(r, 500));
 const clean = await s.evaluate(`(() => { const f = (window.__editor.state.scripts || [])[0]; return { n: (window.__editor.state.scripts||[]).length, head: (f && f.code || "").slice(0, 20), restored: (f&&f.code) === ${JSON.stringify(origScript)}, diags: window.__editor.ideDiags().length }; })()`);
 ok("测试没把垃圾脚本写回默认图", !/unusedThing/.test(clean.head || "") && clean.restored, JSON.stringify(clean));
+
+// 尺寸要活过一次重载，而且是在世界 load 完**之前**就贴好——
+// 否则每次开图都会看到布局从默认值跳到记忆值（initFeatures 要等 60s 冷启动）。
+await s.evaluate(`(() => { document.body.classList.remove("playing"); return true; })()`);
+await new Promise((r) => setTimeout(r, 300));
+await drag("#gripRight", -100);
+const want = await geom();
+const stored = await s.evaluate(`localStorage.getItem("ly.panelSizes")`);
+await s.goto("http://127.0.0.1:5173/editor.html", { settleMs: 1500 });
+const early = await s.evaluate(`(() => getComputedStyle(document.documentElement).getPropertyValue("--rp-w").trim())()`);
+ok("重载后布局立刻恢复（不等世界 load 完）", early === want.rpVar && want.rpW > 300, JSON.stringify({ stored, rpW: want.rpW, early }));
+// 复位，免得这条断言把持久化留在非默认值上影响后面的实拍
+await s.evaluate(`(() => { localStorage.setItem("ly.panelSizes", "{}"); return true; })()`);
 
 await s.close();
 process.exit(0);
