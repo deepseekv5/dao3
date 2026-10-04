@@ -319,14 +319,30 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     $("propGlow").textContent = b && (b.emissive[0] + b.emissive[1] + b.emissive[2]) > 0.05 ? "是" : "否";
   }
   updateProp();
-  // 每帧用当前拾取体素更新位置滑杆（只读显示）
+  api.onSelection = () => { syncPosSliders(); };
+  // 滑杆只表示"选中模型的坐标"这一件事。
+  // 以前每帧还把鼠标拾取到的体素写进去（光标扫到哪，X/Y/Z 就自己跳到哪），
+  // 于是"在预览区拖一下，旁边的拖动框跟着变"。两个问题叠在一起：
+  // 它看起来能拖，实际每帧被覆盖，拖了也白拖；而光标坐标 HUD 上的 #coords 已经在报了。
+  // 初值必须是 null 而不是 false：false 会让第一次 on === posLinked 直接 return，
+  // "没选中模型就禁用滑杆"这条从此 never 生效（实测 disabled 三个都是 false）。
+  let posLinked = null;
+  function syncPosSliders() {
+    const on = ctx.mode === "model" && !!state.selectedModel;
+    if (on === posLinked) return;
+    posLinked = on;
+    for (const c of posCols) {
+      c.slider.disabled = !on; c.num.disabled = !on;
+      c.slider.title = on ? "" : "选中一个模型后才能填坐标";
+      if (!on) { c.slider.value = 0; c.num.value = 0; }
+    }
+  }
   renderer.onRender = () => {
-    if (ctx.mode === "model" && state.selectedModel) { const p = state.selectedModel.pos; ["X","Y","Z"].forEach((_, i) => { if (posCols[i] && document.activeElement !== posCols[i].slider) { posCols[i].slider.value = p[i]; posCols[i].num.value = p[i]; } }); return; }
-    const p = ctx.pick;
-    const v = state.selection ? [state.selection.min.x, state.selection.min.y, state.selection.min.z] : p ? [p.x, p.y, p.z] : [0, 0, 0];
-    ["X", "Y", "Z"].forEach((_, i) => { if (posCols[i] && document.activeElement !== posCols[i].slider && document.activeElement !== posCols[i].num) { posCols[i].slider.value = v[i]; posCols[i].num.value = v[i]; } });
+    syncPosSliders();
+    if (!posLinked) return;
+    const p = state.selectedModel.pos;
+    ["X", "Y", "Z"].forEach((_, i) => { const c = posCols[i]; if (c && document.activeElement !== c.slider && document.activeElement !== c.num) { c.slider.value = p[i]; c.num.value = p[i]; } });
   };
-  api.onSelection = () => { };
   api.onBlockPicked = (id) => { state.currentBlock = id; pushRecent(id); renderBlocks(); updateProp(); toast("取色: " + (atlas.byId(id)?.name || id)); };
 
   // ---------- 特效 / 音效（官方实体 particle / sound 记录）----------

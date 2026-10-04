@@ -23,7 +23,7 @@ export function mountCollab(E) {
   // 这几个必须在 start() 可能被调用之前就声明：它们由 hookHistory/hookScripts 使用，
   // 而那两个函数在 start() 里就会跑。声明写在下面会踩到 TDZ——一点按钮就
   // "Cannot access 'origCommit' before initialization"，协作直接开不起来。
-  let origCommit = null, origUndo = null, origRedo = null, scriptTimer = null, scriptHook = null;
+  let origCommit = null, origUndo = null, origRedo = null, scriptHook = null;
   E.collab = api;   // features.js 的脚本 input 与行号槽要回调进来，先挂上
   const btn = document.getElementById("btnCollab");
   if (!btn) return api;
@@ -104,15 +104,36 @@ export function mountCollab(E) {
     // 改这两个值的入口有滑杆、世界面板按钮、脚本 setGameRule、/time /weather 命令四处，
     // 逐个埋点必然漏掉后来加的那个——漏掉的症状是"我调了白天他没变"，不报错。
     api._sentEnv = null;
+    // 脚本的"最后确认过的内容"。轮询拿它和 state.scripts 比，谁不一样谁就是
+    // 被某个没走 notifyEdit 的入口改的（AI / Agent / 重置 / 导入）。
+    api._seenScript = new Map();
+    api._dirtyScript = new Map();
     api._envTimer = setInterval(() => {
       if (!api.on || !api.net || !api.net.live || api.applying) return;
       const t = E.state && E.state.terrain;
-      if (!t) return;
-      const cur = { dayNight: Math.round(Number(t.dayNight || 0) * 1000) / 1000, weather: t.weather || "clear" };
-      const last = api._sentEnv;
-      if (last && last.dayNight === cur.dayNight && last.weather === cur.weather) return;
-      api._sentEnv = cur;
-      api.net.op(null, null, cur);
+      if (t) {
+        const cur = { dayNight: Math.round(Number(t.dayNight || 0) * 1000) / 1000, weather: t.weather || "clear" };
+        const last = api._sentEnv;
+        if (!last || last.dayNight !== cur.dayNight || last.weather !== cur.weather) {
+          api._sentEnv = cur;
+          api.net.op(null, null, cur);
+        }
+      }
+      // 内容连续 1.2 秒没再变才发：打字中途每一帧都整份上传，既刷网络也把对方的
+      // "某某改了 index.js" 提示刷成噪音。这个窗口和原来 notifyEdit 的防抖一致。
+      const now = Date.now();
+      const batch = [];
+      for (const f of E.state.scripts || []) {
+        const code = f.code || "";
+        if (api._seenScript.get(f.name) === code) { api._dirtyScript.delete(f.name); continue; }
+        const d = api._dirtyScript.get(f.name);
+        if (!d || d.code !== code) api._dirtyScript.set(f.name, { code, since: now });
+        else if (now - d.since >= 1200) batch.push([f.name, code]);
+      }
+      if (batch.length) {
+        for (const [name, code] of batch) { api._seenScript.set(name, code); api._dirtyScript.delete(name); }
+        api.net.send({ t: "op", s: batch });
+      }
     }, 600);
     api.net = connect({ kind: "edit", roomId: E.worldId, on: {
       welcome: (m) => {
@@ -157,7 +178,6 @@ export function mountCollab(E) {
     const h = E.history;
     if (origCommit) { h.commit = origCommit; h.undo = origUndo; h.redo = origRedo; origCommit = origUndo = origRedo = null; }
     if (scriptHook) { E.state.scripts.forEach((f) => { f._collabHook = false; }); scriptHook = null; }
-    clearTimeout(scriptTimer);
   }
   function sendCells(changes, swap = false) {
     if (!api.net || !changes || !changes.length) return;
@@ -168,14 +188,15 @@ export function mountCollab(E) {
     // 脚本是"整份文件覆盖 + 服务端算归属"：不做行合并。两个人同时改同一个文件时
     // 后写的会盖掉先写的，但先写的那位会在改动流与行号颜色上看到自己的行没了 ——
     // 这比静默合并出错要诚实，也是本地工具能承担的最简单一致语义。
+    //
+    // 这里只发"我在写这个文件"的在场信号；**发送内容交给下面的 diff 轮询**。
+    // 原因和 env 一样：往 state.scripts 里写代码的入口不止打字框一个 ——
+    // AI 写代码（ai-script.js）、Agent 改脚本（ai-agent.js）、重置脚本按钮、
+    // 导入项目包，全都会绕过 notifyEdit。逐个埋点必然漏，而漏掉的表征是
+    // "我让 AI 改了脚本，队友那边没动"，不报错。
     scriptHook = (name) => {
       if (!api.net) return;
       api.net.send({ t: "note", file: name });
-      clearTimeout(scriptTimer);
-      scriptTimer = setTimeout(() => {
-        const f = (E.state.scripts || []).find((x) => x.name === name);
-        if (f) api.net.send({ t: "op", s: [[f.name, f.code || ""]] });
-      }, 1200);
     };
     api.notifyEdit = scriptHook;
   }
@@ -202,6 +223,8 @@ export function mountCollab(E) {
         if (f) {
           if (f.code === code && !authorRle) continue;
           f.code = code;
+          // 记成"已经确认过的内容"，否则发送侧的 diff 轮询会把刚收到的代码原样推回去
+          api._seenScript && api._seenScript.set(name, code);
           // 正在看这个文件就要立刻反映出来，否则别人改了而屏幕上还是旧的
           if (E.refreshScriptView) E.refreshScriptView(name);
           E.toast(`${(m.by && m.by.name) || "有人"} 改了 ${name}`);
