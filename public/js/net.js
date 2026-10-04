@@ -63,7 +63,12 @@ export function connect(opts) {
       return send({ t: "state", p, r, ...extra });
     },
     // 世界改动交给服务端定序再发给所有人：每个人只有提案权，没有"我先改所以是我对"。
-    op(v, e) { return send({ t: "op", ...(v && v.length ? { v } : {}), ...(e && e.length ? { e } : {}) }); },
+    // env 是环境标量（昼夜/天气），跟方块走同一条流才有"两边看到的天空一致"。
+    op(v, e, env) {
+      const msg = { t: "op", ...(v && v.length ? { v } : {}), ...(e && e.length ? { e } : {}) };
+      if (env) msg.env = env;
+      return send(msg);
+    },
     chat(m) { return send({ t: "chat", m }); },
     get live() { return !!ws && ws.readyState === 1; },
     close() { closedByUs = true; clearInterval(hb); try { ws && ws.close(); } catch { /* 已经关了 */ } },

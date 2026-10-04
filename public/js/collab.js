@@ -100,6 +100,20 @@ export function mountCollab(E) {
     document.body.classList.add("collab-on");
     btn.classList.add("on");
     btn.title = "协作中：点我关闭";
+    // 环境（昼夜/天气）用 diff 轮询而不是在 ui.js 的滑杆回调里埋点：
+    // 改这两个值的入口有滑杆、世界面板按钮、脚本 setGameRule、/time /weather 命令四处，
+    // 逐个埋点必然漏掉后来加的那个——漏掉的症状是"我调了白天他没变"，不报错。
+    api._sentEnv = null;
+    api._envTimer = setInterval(() => {
+      if (!api.on || !api.net || !api.net.live || api.applying) return;
+      const t = E.state && E.state.terrain;
+      if (!t) return;
+      const cur = { dayNight: Math.round(Number(t.dayNight || 0) * 1000) / 1000, weather: t.weather || "clear" };
+      const last = api._sentEnv;
+      if (last && last.dayNight === cur.dayNight && last.weather === cur.weather) return;
+      api._sentEnv = cur;
+      api.net.op(null, null, cur);
+    }, 600);
     api.net = connect({ kind: "edit", roomId: E.worldId, on: {
       welcome: (m) => {
         api.peers = new Map((m.peers || []).map((p) => [p.id, { id: p.id, name: p.name, editing: null }]));
@@ -120,6 +134,7 @@ export function mountCollab(E) {
 
   function stop() {
     api.on = false;
+    clearInterval(api._envTimer); api._envTimer = null;
     if (api.net) { api.net.close(); api.net = null; }
     unhook();
     const p = document.getElementById("collabPanel");
@@ -193,6 +208,22 @@ export function mountCollab(E) {
         } else {
           E.state.scripts.push({ name, code });
           if (E.refreshScriptFiles) E.refreshScriptFiles();
+        }
+      }
+      // 环境：整份覆盖，值相同就不动（避免每 600ms 重算一次光照）
+      if (m.env && E.state && E.state.terrain) {
+        const t = E.state.terrain;
+        let changed = false;
+        if (Number.isFinite(m.env.dayNight) && m.env.dayNight !== t.dayNight) { t.dayNight = m.env.dayNight; changed = true; }
+        if (m.env.weather != null) {
+          const w = m.env.weather === "clear" ? "" : m.env.weather;
+          if (w !== (t.weather || "")) { t.weather = w; changed = true; }
+        }
+        // 记下"这就是当前值"，否则本地轮询会把它原样再发一遍回去
+        api._sentEnv = { dayNight: Number(t.dayNight || 0), weather: t.weather || "clear" };
+        if (changed) {
+          E.applyTerrain && E.applyTerrain();
+          if (m.by) api.feed.push({ ts: Date.now(), by: m.by, kind: "env", what: t.weather ? `天气 ${t.weather}` : `昼夜 ${(Number(t.dayNight) * 24).toFixed(1)} 时` });
         }
       }
       if ((m.v || []).length || (m.s || []).length) { E.markDirty && E.markDirty(); E.updateStatus && E.updateStatus(); }

@@ -79,7 +79,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <span id="realtime" class="anchor"></span>
 <h2 id="联机与聊天">联机与聊天</h2>
 <p><code>server/realtime.mjs</code>，原生 WebSocket，零依赖。一个 <code>pubId</code> 一个房间， <b>房间上限 24 人</b>——本地服务不是给压测用的，超了就明确拒绝而不是悄悄丢消息。</p>
-<p>同房间同步：加入/离开、位置与朝向、名字与外观、聊天消息。 不同步的：方块改动、实体移动、环境状态（昼夜/天气/gameRules）。 这几条是已知的缺口，不是遗漏——见 <a href="api-reference.html">API 参考</a> 的 World 一节。</p>
+<p>同房间同步：加入/离开、位置与朝向、名字与外观、聊天消息。 协作编辑房（<code>edit:&lt;世界 id&gt;</code>）另走一条权威流：方块改动、实体变换、脚本内容、 以及<b>环境标量（昼夜 / 天气）</b>——所有人共用服务端定的顺序， 没有&quot;我先改所以我对&quot;。环境用白名单 + 取值域校验，越界的 <code>dayNight</code> 会让光照算出 NaN。</p>
 <p>聊天是房间内的临时广播，<b>不落库</b>。聊天记录不是社区内容，不该进广场。</p>
 <span id="limits" class="anchor"></span>
 <h2 id="做不到什么">做不到什么</h2>

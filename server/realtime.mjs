@@ -128,6 +128,9 @@ export function createRealtime({ community, worldExists } = {}) {
       // 否则两个人同时保存就是后保存的悄悄把前一个人的改动抹了。
       r.scripts = new Map();  // 文件名 -> 代码
       r.lineAuthors = new Map(); // 文件名 -> 每行的作者（"这行是谁写的"就靠它）
+      // 环境只有几个标量，走同一权威流才有"白天/黑夜一致"可言。
+      // 存整份而不是增量：晚进来的人要能一次拿到当前值，增量做不到这件事。
+      r.env = {};             // dayNight: 0..1，weather: ""|rain|snow|thunder
       r.feed = [];            // 改动流：{ts, by, kind, what}，给协作面板与"这行是谁写的"用
       r.seq = 0;
       rooms.set(key, r);
@@ -150,6 +153,17 @@ export function createRealtime({ community, worldExists } = {}) {
 
   function applyWorldOp(room, m, peer) {
     const changedV = [], changedE = [], changedS = [];
+    let changedEnv = null;
+    // 环境是白名单 + 取值域，不是"客户端给什么存什么"：
+    // 一个越界的 dayNight 会让光照算出 NaN，然后每个人的天空都不一样。
+    if (m.env && typeof m.env === "object") {
+      const next = { ...room.env };
+      const dn = Number(m.env.dayNight);
+      if (Number.isFinite(dn) && dn >= 0 && dn <= 1 && dn !== room.env.dayNight) next.dayNight = dn;
+      const wx = m.env.weather;
+      if ((wx === "" || wx === "clear" || wx === "rain" || wx === "snow" || wx === "thunder") && wx !== room.env.weather) next.weather = wx;
+      if (JSON.stringify(next) !== JSON.stringify(room.env)) { room.env = next; changedEnv = { ...room.env }; }
+    }
     if (Array.isArray(m.v)) {
       for (const cell of m.v.slice(0, MAX_OP_CELLS)) {
         if (!Array.isArray(cell) || cell.length < 5) continue;
@@ -195,19 +209,21 @@ export function createRealtime({ community, worldExists } = {}) {
         pushFeed(room, Object.assign(stamp(peer, "script", name), stat));
       }
     }
-    if (!changedV.length && !changedE.length && !changedS.length) return;
+    if (!changedV.length && !changedE.length && !changedS.length && !changedEnv) return;
     room.seq++;
     if (changedV.length) pushFeed(room, stamp(peer, "voxel", changedV.length + " 格"));
     if (changedE.length) pushFeed(room, stamp(peer, "entity", changedE.length + " 个实体"));
+    if (changedEnv) pushFeed(room, stamp(peer, "env", changedEnv.weather && changedEnv.weather !== "clear" ? changedEnv.weather : `昼夜 ${(Number(changedEnv.dayNight) * 24).toFixed(1)} 时`));
     // by 一起广播：客户端要靠它标"这一格是谁放的"，而 by 是服务端盖的，伪造不了
     broadcast(room, { t: "world", seq: room.seq, v: changedV, e: changedE, s: changedS,
-      by: { id: peer.user.id, name: peer.user.name } });
+      env: changedEnv || undefined, by: { id: peer.user.id, name: peer.user.name } });
   }
 
   function worldSnapshot(room) {
     return { seq: room.seq, v: [...room.voxels.entries()].map(([k, val]) => [...k.split(",").map(Number), val[0], val[1]]),
       e: [...room.entities.entries()].map(([k, val]) => [k, ...val]),
       s: [...room.scripts.entries()].map(([name, code]) => [name, code]),
+      env: { ...room.env },
       authors: [...room.lineAuthors.entries()].map(([name, rows]) => [name, rows]) };
   }
 

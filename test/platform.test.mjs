@@ -532,12 +532,20 @@ ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = doc
   // 这条守的是"三份 :root / 三份手抄侧栏"重新长出来。以前工作台、社区、后台各抄一份
   // <nav class="wb-railnav">，admin 那份最后只剩 4 条还把"社区广场"写成"社区"，
   // 人在后台点不回手册与 API；四份 :root 则是换主题色时必然漏改的地方。
+  // 不把期望的十六进制写死在断言里（那样每换一次配色就要改一次测试，
+  // 而且改漏了就得到一条"看着像产品坏了"的假失败）。这里反过来证：
+  // 页面 body 的底色必须等于该页 --bg0 令牌算出来的那个 rgb，
+  // 这样既守住"三份 :root 重新长出来"，也守住"底色真的来自令牌而不是抄了一份字面量"。
   const read = `(async () => {
     const nav = document.querySelector(".wb-railnav");
+    const cs = getComputedStyle(document.documentElement);
+    const hex = (cs.getPropertyValue("--bg0") || "").trim();
+    const m = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
     return JSON.stringify({
       items: nav ? [...nav.querySelectorAll("a")].map((a) => a.title) : null,
       bg: getComputedStyle(document.body).backgroundColor,
-      primary: getComputedStyle(document.documentElement).getPropertyValue("--primary").trim(),
+      tokenBg: m ? "rgb(" + parseInt(m[1], 16) + ", " + parseInt(m[2], 16) + ", " + parseInt(m[3], 16) + ")" : "",
+      primary: cs.getPropertyValue("--primary").trim(),
       tokens: !!document.querySelector('link[href*="tokens.css"]'),
     });
   })()`;
@@ -552,10 +560,11 @@ ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = doc
     JSON.stringify(parsed.后台.items));
   ok("侧栏由 rail.js 渲染，不再手抄", (parsed.工作台.items || []).length >= 7, String((parsed.工作台.items || []).length));
   ok("全站底色与主色来自同一份 tokens.css",
-    new Set(Object.values(parsed).map((p) => p.bg)).size === 1 && parsed.工作台.bg === "rgb(13, 13, 13)"
+    new Set(Object.values(parsed).map((p) => p.bg)).size === 1
     && new Set(Object.values(parsed).map((p) => p.primary)).size === 1
-    && Object.values(parsed).every((p) => p.tokens),
-    JSON.stringify(Object.fromEntries(Object.entries(parsed).map(([k, p]) => [k, p.bg + " " + p.primary]))));
+    && Object.values(parsed).every((p) => p.tokens)
+    && Object.values(parsed).every((p) => p.tokenBg && p.bg === p.tokenBg),
+    JSON.stringify(Object.fromEntries(Object.entries(parsed).map(([k, p]) => [k, p.bg + " / 令牌 " + (p.tokenBg || "?") + " " + p.primary]))));
 }
 
 
@@ -584,6 +593,57 @@ ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = doc
     delete keep.meta.player.initialPosition;
     await fetch('/api/world/216d665d3ca92bd1b9a2', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(keep) }); return 1; })()`);
   await C.close();
+}
+
+
+/* ---------------- 联机世界状态：两个人看到的是同一个世界 ---------------- */
+{
+  // 单开一对会话，不复用 A/B：到这里 A 已经跑过工作台、社区、后台、发布、运行十几跳，
+  // 从后台页直接跳编辑器实测会把 Page.navigate 卡死（渲染进程被上一页的东西堵住了）。
+  const CA = await Session.open(chrome.port, { isolated: true, width: 1100, height: 720, initScripts: [ACK, HOOK] });
+  const CB = await Session.open(chrome.port, { isolated: true, width: 1100, height: 720, initScripts: [ACK, HOOK] });
+  // 单独开一张小图，不碰默认地图：协作会改地形与方块，落在默认图上就是存档污染。
+  const wid = "envsync" + Date.now().toString(36).slice(-6);
+  await CA.evaluate(`(async () => {
+    const payload = { formatVersion: "unity", shape: [16, 16, 16], dir: [1, 1, 1], indices: [], data: [], rot: [], meta: { name: "联机状态测试" } };
+    const r = await fetch('/api/world/${wid}', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    return r.status;
+  })()`);
+  await CA.goto(BASE + "/index.html");
+  await CB.goto(BASE + "/index.html");
+  await register(CA, "环境同步甲");
+  await register(CB, "环境同步乙");
+  const editUrl = BASE + `/edit/${wid}`;
+  await CA.goto(editUrl, { settleMs: 2500 });
+  await CB.goto(editUrl, { settleMs: 2500 });
+  await until(CA, `!!(window.__editor && window.__editor.state && window.__editor.collab)`, { tries: 30, ms: 500 });
+  await until(CB, `!!(window.__editor && window.__editor.state && window.__editor.collab)`, { tries: 30, ms: 500 });
+  await CA.evaluate(`document.getElementById("btnCollab").click(); 1`);
+  await CB.evaluate(`document.getElementById("btnCollab").click(); 1`);
+  const joined = await until(CA, `window.__editor.collab.on && window.__editor.collab.peers.size >= 1`, { tries: 24, ms: 500 });
+  ok("两个账号进了同一个协作房间", !!joined,
+    await CA.evaluate(`JSON.stringify({ on: !!(window.__editor||{}).collab && window.__editor.collab.on, peers: (window.__editor.collab||{peers:new Map()}).peers.size })`));
+
+  // 环境：昼夜与天气是标量，走同一条权威流才有"天空一致"可言
+  await CA.evaluate(`(() => { const t = window.__editor.state.terrain; t.dayNight = 0.86; t.weather = "snow"; window.__editor.applyTerrain(); return 1 })()`);
+  const envSynced = await until(CB, `Math.abs((window.__editor.state.terrain.dayNight || 0) - 0.86) < 0.002 && window.__editor.state.terrain.weather === "snow"`, { tries: 24, ms: 500 });
+  ok("甲调昼夜到 0.86 并下雪，乙的环境跟着变", !!envSynced,
+    await CB.evaluate(`JSON.stringify({ dn: (window.__editor.state.terrain||{}).dayNight, wx: (window.__editor.state.terrain||{}).weather })`));
+
+  // 反向也要成立：权威流是双向的，不是甲单向推给乙
+  await CB.evaluate(`(() => { const t = window.__editor.state.terrain; t.dayNight = 0.12; t.weather = ""; window.__editor.applyTerrain(); return 1 })()`);
+  const envBack = await until(CA, `Math.abs((window.__editor.state.terrain.dayNight || 1) - 0.12) < 0.002 && !(window.__editor.state.terrain.weather)`, { tries: 24, ms: 500 });
+  ok("乙改回 0.12 并停雪，甲也跟着变", !!envBack,
+    await CA.evaluate(`JSON.stringify({ dn: (window.__editor.state.terrain||{}).dayNight, wx: (window.__editor.state.terrain||{}).weather })`));
+
+  // 方块：放置要真的落到对方世界里，而不是只改了自己本地
+  await CA.evaluate(`(() => { window.__editor.world.set(3, 3, 3, 1, 0); window.__editor.renderer.markDirty(3, 3, 3); window.__editor.collab.net.op([[3, 3, 3, 1, 0]], null); return 1 })()`);
+  const voxSynced = await until(CB, `window.__editor.world.get(3, 3, 3) === 1`, { tries: 20, ms: 500 });
+  ok("甲放的一格方块出现在乙的世界里", !!voxSynced,
+    await CB.evaluate(`String(window.__editor.world.get(3, 3, 3))`));
+
+  await CA.evaluate(`fetch('/api/world/${wid}', { method: 'DELETE' })`);
+  await CA.close(); await CB.close();
 }
 
 
