@@ -29,6 +29,8 @@ function build() {
       </header>
       <div class="gm-list">
         <button data-x="resume"><span>继续游戏</span><kbd>Esc</kbd></button>
+        <button data-x="pause"><span id="gmPause">暂停世界</span><kbd>P</kbd></button>
+        <button data-x="step"><span>单帧步进</span><kbd>⇧P</kbd></button>
         <button data-x="view"><span>切换视角</span><kbd>V</kbd></button>
         <button data-x="settings"><span>画面与操作</span><kbd>H</kbd></button>
         <button data-x="chat"><span>聊天</span><kbd>↵</kbd></button>
@@ -37,7 +39,7 @@ function build() {
         <button class="danger" data-x="leave"><span id="gmLeave">离开游戏</span><kbd></kbd></button>
       </div>
       <footer>
-        <span>菜单不会暂停世界</span>
+        <span id="gmPauseNote">菜单不会暂停世界</span>
         <span id="gmOnline"></span>
       </footer>
     </div>`;
@@ -45,6 +47,10 @@ function build() {
   host.addEventListener("click", (e) => { if (e.target === host) close(); });
   const on = (k, fn) => { const b = host.querySelector(`[data-x="${k}"]`); if (b) b.onclick = fn; };
   on("resume", close);
+  on("pause", () => { rt._togglePause(); syncPause(); });
+  // 步进前先确保是暂停态：菜单里点"单帧"的人要的就是"走一格给我看"，
+  // 而不是被教育一遍"先暂停"。
+  on("step", () => { if (!rt.paused) rt._togglePause(true); rt._stepFrame(); syncPause(); });
   on("view", () => { const p = rt.player; p.cameraMode = p.cameraMode === "fps" ? "follow" : "fps"; close(); });
   on("settings", () => { close(); document.getElementById("gameHudSettings")?.classList.add("show"); });
   on("chat", () => { close(); rt.openChat && rt.openChat(); });
@@ -54,6 +60,17 @@ function build() {
     if (f && f.id) location.href = "/edit/" + encodeURIComponent(f.id) + "?play=1&from=" + encodeURIComponent(mTitle());
   });
   on("leave", () => leave());
+}
+
+/** 暂停态在菜单里的两处体现：按钮文字、脚注。
+ *  菜单是"世界状态的一面镜子"，镜子里写着"暂停世界"而其实已经暂停，
+ *  人就再也分不清了。 */
+function syncPause() {
+  if (!host || !rt) return;
+  const label = host.querySelector("#gmPause");
+  const note = host.querySelector("#gmPauseNote");
+  if (label) label.textContent = rt.paused ? "继续世界" : "暂停世界";
+  if (note) note.textContent = rt.paused ? `世界已暂停 · tick ${rt.currentTick}` : "菜单不会暂停世界";
 }
 
 /** 当前这张图叫什么：回指的时候要带上，否则"回去"按钮只是一句无主的话。 */
@@ -101,6 +118,7 @@ export function open(_rt) {
     if (name && f && f.title) name.textContent = "回到「" + f.title + "」";
   }
   host.querySelector("#gmOnline").textContent = (window.__online || 1) > 1 ? window.__online + " 人在线" : "";
+  syncPause();
 }
 
 export function close() {

@@ -202,6 +202,13 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <span id="gameTitle" class="pe-title">运行中</span>
     <span id="hudOnline" class="hud-online"></span>
   </div>
+  <!-- 运行控制：暂停 / 单帧步进 / tick 读数。摆在这里的理由和 Unity 一样——
+       调脚本时要的是"让时间走一格"，而不是刷新一次页面重跑一遍。 -->
+  <div class="hud-play">
+    <button id="pePause" class="pe-store" title="暂停 / 继续（P）">暂停</button>
+    <button id="peStep" class="pe-store" title="只走一个 tick（Shift+P，需先暂停）" disabled>单帧</button>
+    <span id="peTick" class="pe-tick" title="当前 tick：1 tick = 64ms，脚本里的 world.tick 就是它">0</span>
+  </div>
   <div class="hud-tools">
     <button id="gameStoreBtn" class="pe-store" title="商品列表（world.products()）" hidden>商店</button>
     <button id="chatToggle" class="pe-store ico" title="聊天（T）" aria-label="聊天">

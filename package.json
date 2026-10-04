@@ -43,7 +43,8 @@
     "test:platform": "node test/platform.test.mjs",
     "test:realtime": "node test/realtime.test.mjs",
     "test:vox": "node test/vox.test.mjs",
-    "test:ide": "node test/ide.test.mjs"
+    "test:ide": "node test/ide.test.mjs",
+    "test:pause": "node test/pause.test.mjs"
   },
   "files": [
     "server.js",

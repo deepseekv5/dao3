@@ -400,12 +400,21 @@ body.playing #stage{top:0;bottom:0}
 body.playing #topbar,body.playing #libCard,body.playing #editToolbar,body.playing #rightPanel,body.playing #hud,body.playing #ctxmenu{display:none !important}
 body.playing canvas{cursor:crosshair}
 /* HUD 通用外壳：半透石墨底 + 发丝描边，所有浮层共用，避免每块各调各的 */
-.hud-map,.hud-tools,.pe-readout,#gameLockHint,#gameInteract,#gameHint,.game-hud-settings{
+.hud-map,.hud-play,.hud-tools,.pe-readout,#gameLockHint,#gameInteract,#gameHint,.game-hud-settings{
   background:rgba(14,14,16,.72);border:1px solid var(--line);border-radius:10px;
   backdrop-filter:blur(10px);box-shadow:0 6px 22px rgba(0,0,0,.35)}
 /* 左上：地图名 + 在线人数 */
 .hud-map{position:absolute;top:14px;left:14px;display:none;align-items:center;gap:9px;padding:7px 12px;pointer-events:none}
 body.playing .hud-map{display:flex}
+/* 顶部居中：运行控制。暂停时这块转成警告色——画面冻住和画面坏了是两回事，
+   不标出来的话人只会去按刷新。 */
+.hud-play{position:absolute;top:14px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:2px;padding:4px;pointer-events:auto}
+body.playing .hud-play{display:flex}
+.hud-play.paused{border-color:rgba(224,166,60,.65);box-shadow:0 6px 22px rgba(0,0,0,.35),0 0 14px rgba(224,166,60,.22)}
+.hud-play.paused #pePause{color:var(--warn);border-color:rgba(224,166,60,.45)}
+.hud-play.paused .pe-tick{color:var(--warn)}
+#peStep:disabled{opacity:.32;cursor:not-allowed}
+.pe-tick{font:11px/1 ui-monospace,Menlo,monospace;color:var(--fg3);padding:0 8px;min-width:56px;text-align:right;font-variant-numeric:tabular-nums}
 .pe-title{color:#fff;font-size:13px;font-weight:600;letter-spacing:.2px;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 右上：出口与工具。退出是这里唯一的强调色，别的都压成灰 */
 .hud-tools{position:absolute;top:14px;right:14px;display:none;align-items:center;gap:2px;padding:4px;pointer-events:auto}

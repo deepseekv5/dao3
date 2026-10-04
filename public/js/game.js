@@ -387,6 +387,7 @@ export class GameRuntime {
   constructor(editor) {
     this.e = editor;
     this.running = false;
+    this.paused = false;
     this.currentTick = 0;
     this.entities = [];
     this.zones = [];
@@ -437,6 +438,7 @@ export class GameRuntime {
   start({ scripts = [], assets = {}, spawnIndex = null, player = null } = {}) {
     if (this.running) return;
     this.running = true;
+    this.paused = false;      // 上一次运行留下的暂停态不能带进这一次
     const e = this.e, r = e.renderer;
     this.assets = {
       meshes: (assets && assets.meshes) || {}, audio: (assets && assets.audio) || {},
@@ -699,6 +701,7 @@ export class GameRuntime {
   stop() {
     if (!this.running) return;
     this.running = false;
+    this.paused = false;
     const e = this.e, r = e.renderer;
     if (this._net) { this._net.close(); this._net = null; }
     // 从菜单里点"退出"时菜单还开着；不关掉的话下一次进运行，
@@ -1278,6 +1281,13 @@ export class GameRuntime {
       }
       if (c === "backquote") rt._toggleConsole();
       if (c === "keyh") { const s = document.getElementById("gameHudSettings"); s && s.classList.toggle("show"); }
+      // P 暂停 / 继续，Shift+P 在暂停态下只走一个 tick。
+      // ev.repeat 必须挡：长按 P 会以每秒几十次的频率翻暂停态，画面看着就是抽搐。
+      if (c === "keyp" && !ev.repeat) {
+        if (ev.shiftKey) { if (!rt.paused) rt._togglePause(true); else rt._stepFrame(); }
+        else rt._togglePause();
+        return;
+      }
       if (c === "escape" && rt._storeOpen) { rt._toggleStore(false); return; }
       // 面板开着时 Esc 先关面板，不会一路穿到游戏菜单
       if (c === "escape" && rt.hud && rt.hud.chatPanel && rt.hud.chatPanel.classList.contains("show")) { rt.setChatPanel(false); return; }
@@ -1308,8 +1318,12 @@ export class GameRuntime {
       if (!axis.includes("y")) rt._tYaw -= clamp(ev.movementX || 0, -80, 80) * 0.0022;
       if (!axis.includes("x")) rt._tPitch = clamp(rt._tPitch - clamp(ev.movementY || 0, -80, 80) * 0.0022, -1.52, 1.52);
     };
-    // 点 HUD / 脚本创建的 UI 不能同时被当成 ACTION0 或抢指针锁（官方不变式）
-    const inUi = (ev) => { const t = ev && ev.target; return !!(t && t.closest && t.closest("#clientUiRoot, .uiw-host, #gameStore, #gameHudSettings, #gameUIWidgets, .hud-tools")); };
+    // 点 HUD / 脚本创建的 UI 不能同时被当成 ACTION0 或抢指针锁（官方不变式）。
+    // 判据是"目标不是画布本身、且落在 UI 容器里"，而不是逐个列 HUD 的 class：
+    // 列清单必然漏掉后来加的那一块，而漏掉的表征是"那个按钮第一次点没反应、
+    // 第二次才生效"——因为第一次点击被拿去过指针锁了。运行态所有浮块都在
+    // #playEntry 底下，所以列它一个就够（.hud-tools 是它的子孙）。
+    const inUi = (ev) => { const t = ev && ev.target; return !!(t && t.closest && t.closest("#playEntry, #clientUiRoot, .uiw-host, #gameStore, #gameHudSettings, #gameUIWidgets")); };
     this._onMouseDown = (ev) => {
       if (!rt.running || inUi(ev)) return;
       const el = rt.e.renderer.renderer.domElement;
@@ -1709,23 +1723,17 @@ export class GameRuntime {
     let real = now - this._last;
     this._last = now;
     if (real > 1000) real = TICK_MS;
+    // 暂停：不喂时间，但照常出帧。画面还能转、镜头还能看，只有模拟停了——
+    // 这是 Unity 暂停的语义，也是唯一有用的那种（冻成一屏像素没法定位问题）。
+    // 累加器一起清零，否则按继续的那一帧会补跑暂停期间的全部时间。
+    if (this.paused) { real = 0; this._acc = 0; }
     this._acc += real;
     let skip = false;
     const backlog = TICK_MS * 5;
     if (this._acc > backlog) { skip = true; this._acc = backlog; }
     while (this._acc >= TICK_MS) {
       this._acc -= TICK_MS;
-      const prev = this.currentTick;
-      this.currentTick++;
-      // 接触集按帧重算：先清空， simulate 内重新登记，随后据此判定「脱离接触」事件
-      for (const e2 of this.entities) { if (e2._voxelContacts && e2._voxelContacts.length) e2._voxelContacts.length = 0; }
-      this._guard("物理", () => this._simulate());
-      this._guard("方块脱离", () => this._settleVoxelSeparate());
-      this._guard("方块脏区", () => this._flushVoxelDirty());
-      this._guard("区域", () => this._stepZones());
-      this._guard("环境", () => this._stepEnvironment());
-      this._guard("定时器", () => this._stepTimers());
-      this._guard("onTick", () => this._channels.Tick.fire(this._tickEvent(prev, skip)));
+      this._tickOnce(skip);
       skip = false;
     }
     this._syncRenderPos();
@@ -1737,6 +1745,48 @@ export class GameRuntime {
     if (this._oldOnRender) this._oldOnRender(dt);
     this._applyEnvironment();
     this._updateHud(dt);
+  }
+  /** 一个 tick 的全部副作用。单帧步进和主循环共用这一份——
+   *  两处各写一遍的话，"步进跑的和正常跑的不一样"是最难查的那类 bug。 */
+  _tickOnce(skip) {
+    const prev = this.currentTick;
+    this.currentTick++;
+    // 接触集按帧重算：先清空， simulate 内重新登记，随后据此判定「脱离接触」事件
+    for (const e2 of this.entities) { if (e2._voxelContacts && e2._voxelContacts.length) e2._voxelContacts.length = 0; }
+    this._guard("物理", () => this._simulate());
+    this._guard("方块脱离", () => this._settleVoxelSeparate());
+    this._guard("方块脏区", () => this._flushVoxelDirty());
+    this._guard("区域", () => this._stepZones());
+    this._guard("环境", () => this._stepEnvironment());
+    this._guard("定时器", () => this._stepTimers());
+    this._guard("onTick", () => this._channels.Tick.fire(this._tickEvent(prev, skip)));
+  }
+  /** 只走一个 tick（暂停时用）。 */
+  _stepFrame() {
+    if (!this.running) return false;
+    if (!this.paused) { this.toast("先暂停，再单帧步进", true); return false; }
+    this._acc = 0;
+    this._tickOnce(false);
+    // _syncRenderPos 是按累加器余量插值的，_acc=0 会画回这一 tick 的**起点**——
+    // 步进了却看不见动，正是要避免的那种"没反应"。把累加器顶满再同步，
+    // 拿到的就是这一 tick 的终点；随后清零，暂停期间它本来也不该涨。
+    this._acc = TICK_MS;
+    const dt = TICK_MS / 1000;
+    this._syncRenderPos();
+    this._acc = 0;
+    this._updateCamera(dt);
+    this._updateEntitiesVisual(dt);
+    this._updateZonesVisual();
+    if (this._oldOnRender) this._oldOnRender(dt);
+    this._applyEnvironment();
+    this._updateHud(dt);
+    return true;
+  }
+  _togglePause(on) {
+    this.paused = on == null ? !this.paused : !!on;
+    if (this.hud) this._syncPauseHud();
+    if (this.paused) this.toast("已暂停：按 P 继续，Shift+P 走一格");
+    return this.paused;
   }
   _tickEvent(prevTick, skip) {
     // elapsedTimeMS 官方口径是「帧之间的时间间隔」（GameAPI.d.ts:21469），不是从启动算起。
@@ -4415,6 +4465,16 @@ void main() {
     cn.classList.toggle("show", next);
     document.body.classList.toggle("hud-debug", next);
   }
+  /** 暂停态在界面上的三处体现：按钮文字、单帧能不能点、整块描边转警告色。
+   *  只写一处就会出现"按钮写着暂停、其实已经是继续"这种自相矛盾。 */
+  _syncPauseHud() {
+    const h = this.hud;
+    if (!h || !h.pauseBtn) return;
+    h.pauseBtn.textContent = this.paused ? "继续" : "暂停";
+    h.pauseBtn.title = this.paused ? "继续（P）" : "暂停（P）";
+    if (h.stepBtn) h.stepBtn.disabled = !this.paused;
+    if (h.playBar) h.playBar.classList.toggle("paused", this.paused);
+  }
   _setupHud() {
     const $ = (id) => document.getElementById(id);
     this.hud = {
@@ -4427,6 +4487,7 @@ void main() {
       chatPanel: $("chatPanel"), chatLog: $("chatLog"), chatWho: $("chatWho"), chatBadge: $("chatBadge"),
       chatBtn: $("chatToggle"), qualityBtn: $("qualityToggle"), qualityPanel: $("qualityPanel"),
       qualityList: $("qualityList"), qualityLabel: $("qualityLabel"),
+      pauseBtn: $("pePause"), stepBtn: $("peStep"), tickEl: $("peTick"), playBar: document.querySelector(".hud-play"),
     };
     this._storeOpen = false;
     this._purchases = {};
@@ -4449,6 +4510,9 @@ void main() {
       if (x) x.onclick = () => this.hud.qualityPanel.classList.remove("show");
     }
     this._bindQuality();
+    if (this.hud.pauseBtn) this.hud.pauseBtn.onclick = () => this._togglePause();
+    if (this.hud.stepBtn) this.hud.stepBtn.onclick = () => this._stepFrame();
+    this._syncPauseHud();
     if (this.hud.entry) this.hud.entry.classList.add("show");
     if (this.hud.cross) this.hud.cross.classList.add("show");
     if (this.hud.console) { this.hud.console.innerHTML = ""; this.hud.console.classList.remove("show"); }
@@ -4661,6 +4725,9 @@ void main() {
     if (cam) cam.value = this.player.cameraMode;
   }
   _updateHud(dt) {
+    // tick 读数放在最前面：暂停与步进时它必须继续动，那正是它的用途。
+    const tk = this.hud && this.hud.tickEl;
+    if (tk && tk._t !== this.currentTick) { tk._t = this.currentTick; tk.textContent = String(this.currentTick); }
     const p = this.player, ent = this.playerEntity;
     if (!p || !ent) return;
     const t = this._nearestInteractable();
