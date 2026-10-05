@@ -83,6 +83,7 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
     <button data-act="exportGlb">导出 gltf (.glb)</button>
     <div class="vx-menu-sec">社区</div>
     <button data-act="publishModel">发布模型到社区…</button>
+    <button data-act="skinLib">皮肤库…（默认皮肤与所有换肤作品）</button>
     <button data-act="wearSkin" id="miWear">穿上这套皮肤（换肤作品）</button>
     <button data-act="publishSkin" id="miPubSkin">发布皮肤到社区…</button>
     <div class="vx-menu-sec">历史</div>
@@ -140,7 +141,8 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
           <button id="vxDupPart" class="vx-mini" title="复制部件">⧉</button>
           <button id="vxGroup" class="vx-mini" title="编组（多部件绑定同一骨骼前必做）">⬚</button>
           <button id="vxAddBone" class="vx-mini" title="创建独立骨骼">🦴</button>
-          <button id="vxSkinTemplate" class="vx-mini" title="载入 18 节点人形模板">人</button>
+          <button id="vxSkinTemplate" class="vx-mini" title="载入体素小人（18 根骨骼 + T 字方块人）">人</button>
+          <button id="vxRigRef" class="vx-mini" title="默认皮肤底模显隐（换肤作品）">底</button>
         </span>
       </header>
       <div class="vx-sect-b">

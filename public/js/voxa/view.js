@@ -4,6 +4,16 @@ import { OrbitControls } from "../../vendor/three/OrbitControls.js";
 import { colorOf, hexToRgb, partIndex, bindDoc, invalidateIndex, contourEdges } from "./model.js";
 
 const CUBE = new THREE.BoxGeometry(1, 1, 1);
+// 部件框：一根单位立方体的 12 条棱，靠每个框自己的 scale 拉成实际尺寸。
+// 原来每个部件各建一份 BoxGeometry + EdgesGeometry，而拖拽位置/旋转时每帧都要
+// rebuildBoxes()——15 个部件就是每帧 30 次几何分配，这棵树在换肤模板上直接卡手。
+const UNIT_EDGES = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+const BOX_MAT = new THREE.LineBasicMaterial({ color: 0x565656 });
+const BOX_MAT_ACTIVE = new THREE.LineBasicMaterial({ color: 0xe8e8e8 });
+// 骨骼关节点：全部骨骼共用一颗球（材质也是），重建时不能顺手 dispose 掉它
+const DOT_GEO = new THREE.SphereGeometry(0.22, 10, 8);
+const DOT_MAT = new THREE.MeshBasicMaterial({ color: 0x50e3a4 });
+const _v3 = new THREE.Vector3();
 const HOVER_MAX = 64, SEL_MAX = 4000;   // 高亮层容量：改这里要同时改 _marker 的分配
 
 export class VoxaView {
@@ -39,9 +49,8 @@ export class VoxaView {
     this.root = new THREE.Group();
     this.scene.add(this.root);
     this.partNodes = new Map();  // partId -> { group, mesh, emissive }
-    this.boneNodes = new Map();  // boneId -> Object3D
-    this.boneHelpers = new THREE.Group();
-    this.scene.add(this.boneHelpers);
+    this.boneNodes = new Map();  // boneId -> Object3D（保留在父子链里）
+    this.boneMarkers = [];       // 每根骨骼的坐标轴+关节点球，显隐只关这一层
     this.boxHelpers = new THREE.Group();
     this.scene.add(this.boxHelpers);
     // 模型中心点标记（官方全局工具栏"调整模型中心点"）：三轴小箭头 + 一颗点
@@ -102,31 +111,68 @@ export class VoxaView {
 
   /* ---------------- 骨骼节点 ---------------- */
   buildBones() {
-    for (const b of this.boneNodes.values()) b.parent && b.parent.remove(b);
-    this.boneNodes.clear();
-    this.boneHelpers.clear();
-    for (const b of this.doc.bones) {
-      const o = new THREE.Object3D();
-      o.name = b.name;
-      o.userData.boneId = b.id;
-      this.boneNodes.set(b.id, o);
+    // 骨骼集与父子关系没变就别重建节点：拖动骨骼位移/旋转的回调每帧都在调这里，
+    // 整树重建会把挂在骨骼下的部件与框一并摘掉（画面上的小人拖一下就少一块），
+    // 而且白扔十几个 AxesHelper。结构真变了才重建，并把部件重新挂回新的父节点。
+    const sig = this.doc.bones.map((b) => `${b.id}>${b.parent || ""}`).join("|");
+    if (sig !== this._boneSig || this.boneNodes.size !== this.doc.bones.length) {
+      for (const b of this.boneNodes.values()) b.parent && b.parent.remove(b);
+      this.boneNodes.clear();
+      this.clearMarkers();
+      this._boneSig = sig;
+      for (const b of this.doc.bones) {
+        const o = new THREE.Object3D();
+        o.name = b.name;
+        o.userData.boneId = b.id;
+        this.boneNodes.set(b.id, o);
+      }
+      for (const b of this.doc.bones) {
+        const o = this.boneNodes.get(b.id);
+        const parent = b.parent && this.boneNodes.get(b.parent);
+        // 骨骼节点必须留在父子链里：b.position 存的是**相对父骨骼**的偏移。
+        // 之前这里最后又 boneHelpers.add(o)，等于把每根骨骼从链上摘下来平铺到
+        // 场景级辅助组——于是 hips 的 +8 格没了、torso 只剩自己的 +3 格，
+        // 挂在骨骼下的部件又用绝对位置，整个小人直接散架（换肤模板那些 bug 的真因）。
+        (parent || this.root).add(o);
+        // 关节标记单独包一层：骨骼下面挂着部件，开关"显示骨骼"只能关标记，
+        // 关骨骼节点会把用户的部件一起藏掉。
+        const mk = new THREE.Group();
+        mk.userData.boneId = b.id;
+        mk.add(new THREE.AxesHelper(2.2), new THREE.Mesh(DOT_GEO, DOT_MAT));
+        mk.visible = this.showBones;
+        o.add(mk);
+        this.boneMarkers.push(mk);
+      }
+      this.reattachParts();
     }
     for (const b of this.doc.bones) {
       const o = this.boneNodes.get(b.id);
-      const parent = b.parent && this.boneNodes.get(b.parent);
-      (parent || this.root).add(o);
+      if (!o) continue;
       o.position.set(...b.position);
-      o.rotation.set(b.rotation.map(d => d * Math.PI / 180)[0] || 0, (b.rotation[1] || 0) * Math.PI / 180, (b.rotation[2] || 0) * Math.PI / 180);
+      o.rotation.set((b.rotation[0] || 0) * Math.PI / 180, (b.rotation[1] || 0) * Math.PI / 180, (b.rotation[2] || 0) * Math.PI / 180);
       o.scale.set(b.scale[0] || 1, b.scale[1] || 1, b.scale[2] || 1);
-      const h = new THREE.AxesHelper(2.2);
-      h.userData.boneId = b.id;
-      o.add(h);
-      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshBasicMaterial({ color: 0x50e3a4 }));
-      dot.userData.boneId = b.id;
-      o.add(dot);
-      this.boneHelpers.add(o);
     }
-    this.boneHelpers.visible = this.showBones;
+  }
+  /** 骨骼树换过一次之后，把部件与部件框挂回各自的骨骼节点（或根） */
+  reattachParts() {
+    for (const p of this.doc.parts) {
+      const n = this.partNodes.get(p.id);
+      if (!n) continue;
+      const bone = p.bone && this.boneNodes.get(p.bone);
+      (bone || this.root).add(n.group);
+    }
+    this.rebuildBoxes();
+  }
+  clearMarkers() {
+    for (const mk of this.boneMarkers) {
+      for (const c of mk.children) {
+        // DOT_GEO/DOT_MAT 是模块级共享资源，只有 AxesHelper 自己那份需要释放
+        if (c.geometry && c.geometry !== DOT_GEO) c.geometry.dispose();
+        if (c.material && c.material !== DOT_MAT) c.material.dispose();
+      }
+      mk.parent && mk.parent.remove(mk);
+    }
+    this.boneMarkers = [];
   }
   /* ---------------- 部件网格 ---------------- */
   rebuild() {
@@ -245,6 +291,75 @@ export class VoxaView {
     this.external.material && this.external.material.dispose && this.external.material.dispose();
     this.external = null;
   }
+  /** 默认皮肤底模：官方换肤模式打开就是"一套已绑好骨骼的角色"，我们那份现成的
+   *  是 CC0 的 ATLAS-09 机甲。它只是参照：不进作品、不进导出、不参与拾取，
+   *  但它的真实关节位置会被 app.fitBonesToRig() 读回去贴到骨骼上。 */
+  async setRigReference(url, { opacity = 0.5, height = 22 } = {}) {
+    this.clearRigReference();
+    const { loadRigScene, autoMap, boneNames, deriveFacing } = await import("../skin-rig.js");
+    const scene = await loadRigScene(url);
+    const map = autoMap(boneNames(scene));
+    const g = new THREE.Group();
+    g.add(scene);
+    // 体素编辑器的"前"是 +Z，而 glTF 导出时脸朝哪只有模型自己知道。
+    // 由左右关节叉乘推出来再转正——照一台侧身的底模画皮肤是灾难。
+    const fwd = deriveFacing(scene, map);
+    g.rotation.y = Math.atan2(fwd.x, fwd.z);
+    g.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(scene);
+    const k = height / (box.max.y - box.min.y || 1);
+    g.scale.setScalar(k);
+    g.position.set(-(box.max.x + box.min.x) / 2 * k, -box.min.y * k, -(box.max.z + box.min.z) / 2 * k);
+    scene.traverse((o) => {
+      if (!o.isMesh) return;
+      o.raycast = () => {};
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!m) continue;
+        m.transparent = true; m.opacity = opacity; m.depthWrite = false;
+      }
+    });
+    g.renderOrder = -1;
+    g.userData.url = url;
+    g.userData.autoMap = map;
+    this.root.add(g);
+    this.rigRef = g;
+    return g;
+  }
+  /** 底模里真实存在的节点名（映射表写错时用它当场纠正） */
+  rigBoneNames() {
+    if (!this.rigRef) return null;
+    const out = new Set();
+    this.rigRef.traverse((o) => { if (o.name) out.add(o.name); });
+    return out;
+  }
+  /** 底模上这些关节名的模型空间位置（体素单位）。没载入参照就返回 null。 */
+  rigJointPositions(names) {
+    if (!this.rigRef) return null;
+    this.root.updateWorldMatrix(true, false);
+    const byName = new Map();
+    this.rigRef.traverse((o) => { if (o.name && !byName.has(o.name)) byName.set(o.name, o); });
+    const out = new Map();
+    const v = new THREE.Vector3();
+    for (const n of names || []) {
+      const b = byName.get(n);
+      if (!b) continue;
+      b.getWorldPosition(v);
+      this.root.worldToLocal(v);
+      out.set(n, [v.x, v.y, v.z]);
+    }
+    return out;
+  }
+  setRigVisible(on) { if (this.rigRef) this.rigRef.visible = !!on; }
+  clearRigReference() {
+    if (!this.rigRef) return;
+    this.rigRef.parent && this.rigRef.parent.remove(this.rigRef);
+    this.rigRef.traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry && o.geometry.dispose && o.geometry.dispose();
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m && m.dispose && m.dispose();
+    });
+    this.rigRef = null;
+  }
   applyPartTransform(part) {
     const n = this.partNodes.get(part.id);
     if (!n) return;
@@ -255,16 +370,16 @@ export class VoxaView {
   rebuildBoxes() {
     this.boxHelpers.clear();
     for (const p of this.doc.parts) {
-      const box = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(p.size[0], p.size[1], p.size[2])),
+      const box = new THREE.LineSegments(UNIT_EDGES,
         // 官方部件框是细白线（选中态更亮），不是实心块
-        new THREE.LineBasicMaterial({ color: p === this.activePart ? 0xe8e8e8 : 0x565656 }));
+        p === this.activePart ? BOX_MAT_ACTIVE : BOX_MAT);
       // 框必须跟着部件自己的旋转/缩放走：只摆位置的话，把部件转 90° 之后
       // 屏幕上那根框还停在原地，"选没选中"就变成猜。
       const sc = [p.scale[0] || 1, p.scale[1] || 1, p.scale[2] || 1];
-      box.position.set(p.pos[0] + p.size[0] / 2 * sc[0], p.pos[1] + p.size[1] / 2 * sc[1], p.pos[2] + p.size[2] / 2 * sc[2]);
+      const dim = [p.size[0] * sc[0], p.size[1] * sc[1], p.size[2] * sc[2]];
+      box.position.set(p.pos[0] + dim[0] / 2, p.pos[1] + dim[1] / 2, p.pos[2] + dim[2] / 2);
       box.rotation.set(p.rot[0] * Math.PI / 180, p.rot[1] * Math.PI / 180, p.rot[2] * Math.PI / 180);
-      box.scale.set(sc[0], sc[1], sc[2]);
+      box.scale.set(dim[0], dim[1], dim[2]);
       box.userData.partId = p.id;
       const bone = p.bone && this.boneNodes.get(p.bone);
       (bone || this.root).add(box);
@@ -299,7 +414,10 @@ export class VoxaView {
     const v = n.group.parent.worldToLocal(new THREE.Vector3(world[0], world[1], world[2]));
     return [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
   }
-  setBoneVisible(on) { this.showBones = on; this.boneHelpers.visible = on; }
+  setBoneVisible(on) {
+    this.showBones = on;
+    for (const mk of this.boneMarkers) mk.visible = on;
+  }
   /** 边缘线三档（官方 auxiliaryToolbar.md 里它是下拉框，不是二值开关）：
    *    hide     不画
    *    contour  只画"暴露面的外边界"——官方截图里那种干净的格子线
@@ -399,7 +517,7 @@ export class VoxaView {
   }
   pickBone(ev) {
     this.raycaster.setFromCamera(this.ndc(ev), this.camera);
-    const hits = this.raycaster.intersectObjects(this.boneHelpers.children, true);
+    const hits = this.raycaster.intersectObjects(this.boneMarkers, true);
     for (const h of hits) {
       let o = h.object;
       while (o && !o.userData.boneId) o = o.parent;
@@ -502,6 +620,23 @@ export class VoxaView {
       for (let a = 0; a < 3; a++) {
         lo[a] = Math.min(lo[a], p.pos[a]);
         hi[a] = Math.max(hi[a], p.pos[a] + p.size[a] * (p.scale[a] || 1));
+      }
+    }
+    if (!any) {
+      // 换肤作品刚打开时一个部件都没有：这时要框住底模（没底模就框骨骼），
+      // 否则相机停在初始位置上，画面里只剩机甲的一条腿，看着像模型坏了。
+      if (this.rigRef) {
+        const b = new THREE.Box3().setFromObject(this.rigRef);
+        if (!b.isEmpty()) { lo = [b.min.x, b.min.y, b.min.z]; hi = [b.max.x, b.max.y, b.max.z]; any = true; }
+      }
+      if (!any && this.doc.bones.length) {
+        for (const b of this.doc.bones) {
+          const o = this.boneNodes.get(b.id);
+          if (!o) continue;
+          o.getWorldPosition(_v3);
+          any = true;
+          for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], _v3[a]); hi[a] = Math.max(hi[a], _v3[a]); }
+        }
       }
     }
     if (!any) return;

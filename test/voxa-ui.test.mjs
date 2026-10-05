@@ -554,19 +554,26 @@ ok("AnimationMixer 播得动：骨骼节点的位置确实被剪辑改了",
 const tpl = await page(`
   const a = window.__voxa;
   a.doc.type = "skin"; a.doc.parts.length = 0; a.doc.bones = a.doc.bones.filter((b) => b.id === "root");
+  a.doc.ref = null;
   a.loadSkinTemplate(); a.applyDocType();
   const rows = [...document.querySelectorAll("#vxParts .vx-item")].map((r) => r.textContent);
   const propTitle = (document.querySelector("#vxProps .vx-sec-h") || {}).textContent || "";
   const bound = a.doc.parts.filter((p) => p.bone && a.doc.bones.some((b) => b.id === p.bone)).length;
-  return { parts: a.doc.parts.length, rows: rows.length, bound,
+  const head = a.doc.parts.find((p) => p.name === "头");
+  const wp = a.view.partWorldPos(head);
+  return { parts: a.doc.parts.length, rows: rows.length, bound, headWorld: wp,
     stale: rows.some((t) => /Body/.test(t)) && !a.doc.parts.some((p) => p.name === "Body"),
     propHasPart: /部件\\s/.test(propTitle) && a.doc.parts.some((p) => ("部件 " + p.name) === propTitle.trim()),
     wear: document.getElementById("miWear").disabled, pub: document.getElementById("miPubSkin").disabled,
     pivot: document.getElementById("vxPivot").disabled, badge: document.getElementById("vxTypeBadge").textContent,
     groups: [...document.querySelectorAll("#vxPalette .gp-name")].map((e) => e.textContent),
-    bonesShown: a.view.boneHelpers.visible && a.view.boneHelpers.children.length };`);
+    bonesShown: a.view.boneMarkers.filter((m) => m.visible).length };`);
 ok("换肤模板载入后：15 个部件进列表、每个都绑到一根真骨骼上",
   tpl.parts === 15 && tpl.rows === 15 && tpl.bound === 15, JSON.stringify(tpl).slice(0, 200));
+// 骨骼节点被平铺到场景级辅助组时，部件的"绝对位置 + 骨骼偏移"会累加两次父链，
+// 小人在画面上直接散架——这条钉住的是那个 bug 不能再回来。
+ok("部件在世界坐标里就在表格那个位置（骨骼父子链没被压平，小人不散架）",
+  tpl.headWorld.join(",") === "-4,16,-3", JSON.stringify(tpl.headWorld));
 ok("参数面板跟着换成模板里的部件（不是上一个作品留下的幽灵部件）",
   tpl.stale === false && tpl.propHasPart === true, JSON.stringify({ stale: tpl.stale, prop: tpl.propHasPart }));
 ok("换肤模式下：中心点置灰、穿上/发布皮肤可点，徽标写着换肤模式",
@@ -574,6 +581,86 @@ ok("换肤模式下：中心点置灰、穿上/发布皮肤可点，徽标写着
 ok("色板给到「肤色」「衣服」两个命名色组，骨骼层画得出 19 个关节",
   tpl.groups.includes("肤色") && tpl.groups.includes("衣服") && tpl.bonesShown === 19,
   JSON.stringify({ g: tpl.groups, b: tpl.bonesShown }));
+
+/* ---------- 皮肤库入口：徽标可点、默认皮肤排在第一、打开就是绑好骨骼的那一套 ---------- */
+const lib = await page(`
+  const a = window.__voxa;
+  a.doc = (await import("/js/voxa/model.js")).newDoc("临时作品", "free");
+  a.applyDocType();
+  document.getElementById("vxTypeBadge").click();
+  // 皮肤库要等 /api/models 回来才建得出那一列，点完立刻读 DOM 只会读到空
+  await new Promise((r) => setTimeout(r, 900));
+  const m = document.getElementById("vxSkinModal");
+  const rows = m ? [...m.querySelectorAll(".vx-hist-row")] : [];
+  const first = rows[0] ? rows[0].querySelector("b").textContent : "";
+  const hint = rows[0] ? rows[0].querySelector("span").textContent : "";
+  rows[0] && rows[0].querySelector("button").click();
+  // 底模那台 6.6MB 的机甲解析完才会贴骨骼，读数要等它
+  for (let i = 0; i < 60 && !a.view.rigRef; i++) await new Promise((r) => setTimeout(r, 250));
+  await new Promise((r) => setTimeout(r, 400));
+  const d = a.doc;
+  const rec = await a.buildSkinRecord();
+  const byId = new Map(d.bones.map((b) => [b.id, b]));
+  const absOf = (name) => {
+    const b0 = d.bones.find((x) => x.name === name);
+    let p = [0, 0, 0], c = b0;
+    while (c) { p = p.map((v, i) => v + c.position[i]); c = byId.get(c.parent); }
+    return p;
+  };
+  const meas = a.view.rigJointPositions(Object.values(d.ref.bones));
+  const err = Object.entries(d.ref.bones)
+    .filter(([, gl]) => meas && meas.has(gl))
+    .map(([slot, gl]) => {
+      const A = absOf(slot), M = meas.get(gl);
+      return [slot, +Math.max(...[0, 1, 2].map((i) => Math.abs(A[i] - M[i]))).toFixed(3)];
+    })
+    .sort((x, y) => y[1] - x[1]);
+  return { opened: !!m, rows: rows.length, first, hint,
+    afterType: d.type, afterParts: d.parts.length, afterBones: d.bones.length,
+    ghost: !!a.view.rigRef, refModel: d.ref && d.ref.model,
+    worst: err.slice(0, 4),
+    recModel: rec && rec.model, recBones: rec ? Object.keys(rec.bones || {}).length : 0,
+    fitSlots: err.length, fitMax: err.length ? err[0][1] : 99,
+    badge: document.getElementById("vxTypeBadge").textContent,
+    wear: document.getElementById("miWear").disabled,
+    list: [...document.querySelectorAll("#vxParts .vx-item")].length,
+    undoBack: (a.undo(), a.doc.name) };`);
+ok("顶栏徽标能点开皮肤库，第一行就是内置默认皮肤（那台机甲）",
+  lib.opened && /ATLAS-09/.test(lib.first) && /18 关节/.test(lib.hint), JSON.stringify(lib).slice(0, 200));
+ok("从皮肤库打开默认皮肤：换肤作品 + 机甲底模显示出来，不再自带方块小人",
+  lib.afterType === "skin" && lib.afterParts === 0 && lib.ghost === true
+  && lib.refModel === "/skins/atlas-09.glb" && lib.badge === "换肤模式" && lib.wear === false,
+  JSON.stringify(lib).slice(0, 240));
+ok("18 根骨骼贴到机甲的真实关节上（逐槽位与实测位置比对）",
+  lib.fitSlots >= 17 && lib.fitMax < 0.02, JSON.stringify({ slots: lib.fitSlots, worst: lib.worst }));
+ok("默认皮肤直接就能当皮肤用：不导 glb、不要求先打开某张图",
+  lib.recModel === "/skins/atlas-09.glb" && lib.recBones >= 17, JSON.stringify({ m: lib.recModel, b: lib.recBones }));
+ok("载入皮肤这一步能撤回（撤回后回到原来那份作品）",
+  lib.undoBack === "临时作品", String(lib.undoBack));
+
+/* ---------- 底模开关：换肤作品才给点，点了画面真的要变 ---------- */
+const tg = await page(`
+  const a = window.__voxa;
+  const btn = document.getElementById("vxRigRef");
+  const M = await import("/js/voxa/model.js");
+  a.applySkinDoc(M.defaultSkinDoc("开关探针"));
+  for (let i = 0; i < 80 && !a.view.rigRef; i++) await new Promise((r) => setTimeout(r, 250));
+  await new Promise((r) => setTimeout(r, 600));
+  const on = { dis: btn.disabled, vis: a.view.rigRef.visible, cls: btn.classList.contains("on") };
+  btn.click();
+  const off = { vis: a.view.rigRef.visible, cls: btn.classList.contains("on") };
+  btn.click();
+  const back = { vis: a.view.rigRef.visible, cls: btn.classList.contains("on") };
+  a.applySkinDoc(M.newDoc("自由作品", "free"));
+  await new Promise((r) => setTimeout(r, 300));
+  const free = { dis: btn.disabled, dim: btn.classList.contains("dim"), ghost: !!a.view.rigRef };
+  return JSON.stringify({ on, off, back, free });`);
+const TG = JSON.parse(tg);
+ok("换肤作品：底模默认开着，那颗按钮亮着", TG.on.dis === false && TG.on.vis === true && TG.on.cls === true, tg);
+ok("点一下底模真的藏起来、再点回来（开关不是只改样式）",
+  TG.off.vis === false && TG.off.cls === false && TG.back.vis === true && TG.back.cls === true, tg);
+ok("自由模式没有底模这回事：按钮置灰、参照也清掉了",
+  TG.free.dis === true && TG.free.dim === true && TG.free.ghost === false, tg);
 
 await s.close();
 process.exit(0);

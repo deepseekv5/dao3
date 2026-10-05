@@ -118,6 +118,8 @@ body.voxa{
 .vx-mini{min-width:18px;height:18px;padding:0 4px;border-radius:3px;background:#11112a;border:1px solid #383838;
   color:#d0d0d0;font-size:10px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
 .vx-mini:hover{background:var(--vx-accent);color:var(--vx-accent-ink);border-color:transparent}
+/* 开关型小按钮（底模显隐…）：按下态要有颜色，不然"开着还是关着"看不出来 */
+.vx-mini.on{background:var(--vx-accent);color:var(--vx-accent-ink);border-color:transparent}
 
 /* 色板 */
 /* 色板：官方是"命名色组 + 每行 11 块"。以前是一条 flex 平铺 + 一行写死的 Group 文字 */

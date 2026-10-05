@@ -7,12 +7,13 @@
  * 所以判据全部落在纯函数上，跑得起、也钉得住。
  */
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   newDoc, newPart, addPart, serialize, deserialize, transformVoxels, ensureRoom,
   faceCells, fillRange, ensureColor, setVoxel, getVoxel, MAX_BOX,
   addBone, bindPart, toGLB, eulerToQuatXYZ, stats, exposedFaces, contourEdges,
-  applySkinTemplate, SKIN_BONES,
+  applySkinTemplate, defaultSkinDoc, SKIN_BONES,
 } from "../public/js/voxa/model.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -244,12 +245,16 @@ const glb = async (doc) => {
   ok("空部件没有线", segs(newPart("E", [4, 4, 4])) === 0);
 }
 
-/* ---------------- 换肤模板：18 根骨骼要铺在一个体素小人身上 ---------------- */
-// 官方换肤模式打开就是 T 字人形。以前这里只建骨骼、没有人，而且偏移全是 [0,n,0]，
-// 于是左右肩/肘/膝全叠在同一根竖直柱子上——点了按钮只是多出一列名字。
+/* ---------------- 换肤模板：18 根骨骼 + 可选的体素小人 ---------------- */
+// 官方换肤模式打开就是"一套已绑好骨骼的角色"，所以体素小人是显式动作（withBody），
+// 骨骼与关节位置则永远是那 18 个槽位。
 {
+  const only = newDoc("换肤作品", "skin");
+  const bare = applySkinTemplate(only);
+  ok("默认只铺骨骼，不再塞一个方块小人（皮肤模式打开就是一部干净的骨架）",
+    bare.bones === 18 && bare.parts === 0 && only.parts.length === 0 && SKIN_BONES.every((n) => only.bones.some((b) => b.name === n)));
   const doc = newDoc("换肤作品", "skin");
-  const r = applySkinTemplate(doc);
+  const r = applySkinTemplate(doc, true);
   const byId = new Map(doc.bones.map((b) => [b.id, b]));
   const abs = (name) => {
     const b = doc.bones.find((x) => x.name === name);
@@ -268,7 +273,18 @@ const glb = async (doc) => {
   ok("T 字人形有身体：15 个部件、每个都有体素且都绑到一根骨骼",
     doc.parts.length === 15 && r.parts === 15 && doc.parts.every((p) => p.voxels.length && p.bone && byId.has(p.bone)),
     `parts=${doc.parts.length} voxels=${doc.parts.reduce((a, p) => a + p.voxels.length, 0)}`);
-  const head = doc.parts.find((p) => p.name === "头");
+  // 官方口径：换肤模式只能改"各部件绑定骨骼节点的偏移"——所以部件 pos 必须是
+  // 相对所绑骨骼的。渲染层与 toGLB 都按父子链走，写绝对位置会累加两次父偏移，
+  // 小人就散架（这正是上一版"部件乱飞"的真因）。
+  const headPart = doc.parts.find((p) => p.name === "头");
+  const world = (p) => {
+    let v = p.pos.slice(), c = byId.get(p.bone);
+    while (c) { v = v.map((a, i) => a + c.position[i]); c = byId.get(c.parent); }
+    return v;
+  };
+  ok("部件位置 = 绝对位置 − 所绑骨骼位置（沿父链求和后回到表格里的关节）",
+    world(headPart).map((v) => Math.round(v)).join(",") === "-4,16,-3",
+    JSON.stringify({ local: headPart.pos, world: world(headPart) }));
   const modeC = (list) => {
     const t = new Map();
     for (const v of list) t.set(v.c, (t.get(v.c) || 0) + 1);
@@ -276,6 +292,7 @@ const glb = async (doc) => {
     for (const [c, k] of t) if (k > n) { best = c; n = k; }
     return best;
   };
+  const head = headPart;
   const front = head.size[2] - 1;
   const face = modeC(head.voxels.filter((v) => v.z === front && v.y >= 2 && v.y <= 4));
   const hair = modeC(head.voxels.filter((v) => v.y >= head.size[1] - 2));
@@ -284,12 +301,48 @@ const glb = async (doc) => {
     `colors=${new Set(head.voxels.map((v) => v.c)).size} hair=${hair} face=${face}`);
   const groups = [...new Set(doc.palette.map((c) => c.g))];
   ok("色板给的是命名色组：肤色 + 衣服", groups.includes("肤色") && groups.includes("衣服"), groups.join("/"));
-  const again = applySkinTemplate(doc);
-  ok("重复点「人形模板」不会把人变成两个", again.parts === 0 && doc.parts.length === 15);
+  const again = applySkinTemplate(doc, true);
+  ok("重复点「体素小人」不会把人变成两个", again.parts === 0 && doc.parts.length === 15);
   const { g } = await glb(doc);
   const names = new Set(g.nodes.map((n) => n.name));
   ok("导出的 .glb 里 18 根骨骼名齐全（换肤作品能当骨骼皮肤穿的唯一前提）",
     SKIN_BONES.every((n) => names.has(n)), [...names].slice(0, 6).join(","));
+  // 骨骼树必须真的成树：部件节点要挂在它那根骨骼下面，不是全平铺在根上
+  const nodeOf = (n) => g.nodes.find((x) => x.name === n);
+  const childOfArm = nodeOf("leftUpperArm").children || [];
+  ok("glb 里部件是骨骼的子节点、骨骼按父子链成树（平铺出去游戏里四肢不会跟着躯干）",
+    childOfArm.length > 0 && (nodeOf("leftShoulder").children || []).includes(g.nodes.indexOf(nodeOf("leftUpperArm"))),
+    JSON.stringify({ arm: childOfArm, shoulder: (nodeOf("leftShoulder").children || []).length }));
+}
+
+/* ---------------- 内置默认皮肤：打开 VOXA 就是那台已绑骨骼的机甲 ---------------- */
+{
+  const doc = defaultSkinDoc();
+  ok("默认皮肤是换肤作品：18 根骨骼已铺好，底模是内置机甲，不再自带方块小人",
+    doc.type === "skin" && SKIN_BONES.every((n) => doc.bones.some((b) => b.name === n))
+    && doc.parts.length === 0 && !!doc.ref && doc.ref.model === "/skins/atlas-09.glb",
+    JSON.stringify({ type: doc.type, parts: doc.parts.length, bones: doc.bones.length, ref: doc.ref && doc.ref.model }));
+  // 机甲本身没有 neck 关节（节点表里就是 head 直接挂 chest），所以缺 neck 是对的；
+  // 判据落在"姿态真会写的那 10 个挂点一个都不能少"，而不是凑满 18 这个数字。
+  const DRIVE_SLOTS = ["head", "torso", "leftUpperArm", "rightUpperArm", "leftUpperLeg", "rightUpperLeg",
+    "leftLowerArm", "rightLowerArm", "leftLowerLeg", "rightLowerLeg"];
+  const missed = SKIN_BONES.filter((s) => !doc.ref.bones[s]);
+  ok("默认皮肤的关节映射覆盖姿态要驱动的全部 10 个挂点，缺口只有机甲本来就没有的 neck",
+    DRIVE_SLOTS.every((s) => doc.ref.bones[s]) && missed.join(",") === "neck",
+    `缺 ${missed.join(",")}`);
+  ok("底模文件确实在库里（public/skins/atlas-09.glb）",
+    !!doc.ref.model && fs.existsSync(path.join(ROOT, "public/skins/atlas-09.glb")));
+  ok("色板照旧给肤色/衣服两组（在机甲上涂体素用的就是它）",
+    ["肤色", "衣服"].every((g) => doc.palette.some((c) => c.g === g)), [...new Set(doc.palette.map((c) => c.g))].join("/"));
+  const back = deserialize(serialize(doc));
+  ok("ref 跟着存盘走：往返一次还是那台机甲（丢了它，穿上就不知道用哪副骨架）",
+    back.ref && back.ref.model === doc.ref.model && back.ref.bones.head === "head" && back.type === "skin");
+  const body = defaultSkinDoc("体素皮肤", true);
+  ok("想要方块小人仍然给：withBody=true 出 15 个绑好的部件",
+    body.parts.length === 15 && body.parts.every((p) => p.bone) && !!body.ref);
+  const again = defaultSkinDoc("另一份");
+  ok("每次取默认皮肤都是干净的一份（不共享上一次的骨骼对象）",
+    again.name === "另一份" && again.bones[1] !== doc.bones[1] && again.bones.length === doc.bones.length);
 }
 
 console.log(`\nvoxa: ${pass} passed, ${fail} failed`);

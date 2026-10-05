@@ -14,6 +14,7 @@
 //  · meta.gamepadLayout 在 gamepad.js 里，本文件不写。
 import { h, iconSvg, toHex, renderDoll, disposeGL, openPlayerModal, registerPanel } from "./player-modal-shell.js";
 import { FACE_PLACEHOLDER, facePreview, MC_PRESETS, presetUrl, readSkinFile, skinNameFrom } from "../skin-sheet.js";
+import { BUILTIN_RIG_PRESETS } from "../skin-presets.js";
 
 // 六个本地部件 ↔ 官方 18 槽（game.js 的 PART_SLOT 反向表，那边没导出，只能自带一份）
 const PARTS = [
@@ -197,22 +198,26 @@ function renderSkinPanel(ctx, skins) {
       img.title = "骨骼皮肤 · 关节映射见导入对话框";
     }
     const menuBtn = h("button", { class: "pm-card-more", type: "button", title: "更多操作", text: "⋮" });
-    menuBtn.onclick = () => popMenu(menuBtn, [
+    const entries = [
       ["设为本图默认", () => { applySkin(E, s, notify); refresh(); }],
       ["重命名", () => renameSkin(E, skins, s, refresh, notify)],
-      ["发布到皮肤社区", async () => {
-        const c = await coverFor(s);
-        import("../publish-skin.js").then((m) => m.openSkinPublishDialog(Object.assign({}, s, { cover: c }), notify));
-      }],
-      ["删除", () => {
-        const i = skins.indexOf(s);
-        if (i >= 0) skins.splice(i, 1);
-        if (!skins.length || s.default) normalizeDefault(E, skins);
-        E.markDirty && E.markDirty();
-        notify(`已删除「${s.name}」`);
-        refresh();
-      }],
-    ]);
+    ];
+    // 回 VOXA 编辑只对从 VOXA 来的作品有意义：没有 src 就不知道开哪一份，
+    // 摆一个点了只会报"模型库里没有"的按钮，比不给这个按钮更糟。
+    if (s.src) entries.push(["在 VOXA 里编辑", () => { location.href = "/voxa?model=" + encodeURIComponent(s.src); }]);
+    entries.push(["发布到皮肤社区", async () => {
+      const c = await coverFor(s);
+      import("../publish-skin.js").then((m) => m.openSkinPublishDialog(Object.assign({}, s, { cover: c }), notify));
+    }]);
+    entries.push(["删除", () => {
+      const i = skins.indexOf(s);
+      if (i >= 0) skins.splice(i, 1);
+      if (!skins.length || s.default) normalizeDefault(E, skins);
+      E.markDirty && E.markDirty();
+      notify(`已删除「${s.name}」`);
+      refresh();
+    }]);
+    menuBtn.onclick = () => popMenu(menuBtn, entries);
     return h("div", { class: "pm-card" + (s.default ? " is-default" : ""), "data-skin": s.name }, [
       img,
       s.default ? h("span", { class: "pm-card-badge", text: "本图默认皮肤" }) : null,
@@ -364,7 +369,11 @@ async function importFromVoxa(E, skins, refresh, notify) {
   if (!list.length) { notify("素材库里还没有 VOXA 模型，先去「模型」页签建一个再导入"); return; }
   listDialog({
     title: "从素材库导入",
-    items: list.map((m) => ({ label: m.name || "(未命名)", hint: `${m.voxels | 0} 体素 / ${m.parts | 0} 部件`, value: m.name })),
+    items: list.map((m) => ({
+      label: (m.type === "skin" ? "【换肤】" : "") + (m.name || "(未命名)"),
+      hint: m.type === "skin" ? `${m.parts | 0} 部件 / ${m.bones | 0} 骨骼：整套模型进库` : `${m.voxels | 0} 体素 / ${m.parts | 0} 部件：取配色`,
+      value: m.name,
+    })),
     onPick: async (name) => {
       let doc = null;
       try {
@@ -373,6 +382,18 @@ async function importFromVoxa(E, skins, refresh, notify) {
         doc = await r.json();
       } catch (err) {
         notify(`模型「${name}」读取失败：${String((err && err.message) || err)}`);
+        return;
+      }
+      if (doc.type === "skin") {
+        try {
+          const rec = await rigFromVoxa(E, skins, doc);
+          const hit = skins.find((s) => s.src === rec.src);
+          if (hit) Object.assign(hit, rec, { edited: Date.now() }); else skins.push(rec);
+          applySkin(E, hit || rec, notify);
+          E.markDirty && E.markDirty();
+          notify(`已导入换肤作品「${rec.name}」并设为本图默认（在 VOXA 里改完可再同步一次）`);
+          refresh();
+        } catch (err) { notify("导入失败：" + String((err && err.message) || err), true); }
         return;
       }
       const colors = colorsFromVoxa(doc);
@@ -384,6 +405,32 @@ async function importFromVoxa(E, skins, refresh, notify) {
       refresh();
     },
   });
+}
+
+/** 换肤作品 → 骨骼皮肤：导成 .glb 落到本图素材目录，关节映射是恒等的
+ *  （VOXA 那 18 根骨骼名本来就是官方 GameBodyPart）。
+ *  只取配色的话，作者在小人身上画的衣服、头发、鞋就全丢了。 */
+async function rigFromVoxa(E, skins, doc) {
+  const painted = (doc.parts || []).some((p) => (p.voxels || []).length);
+  if (doc.ref && doc.ref.model && !painted) {
+    // 没涂过体素的换肤作品，"皮肤"就是它绑的那台底模：直接引用现成模型。
+    // 走导出的话会得到一份只有骨骼、没有网格的 glb，穿上是个隐形人。
+    return makeSkin(uniqueName(skins, doc.name), { ...DEFAULT_COLORS },
+      { kind: "rig", model: doc.ref.model, bones: Object.assign({}, doc.ref.bones), src: doc.name });
+  }
+  const wid = E.worldId;
+  if (!wid) throw new Error("先打开一张图：模型要落到本图的素材目录");
+  const { toGLB, SKIN_BONES } = await import("../voxa/model.js");
+  const bones = {};
+  for (const b of doc.bones || []) if (SKIN_BONES.includes(b.name)) bones[b.name] = b.name;
+  if (Object.keys(bones).length < 6) throw new Error("这份换肤作品的骨骼不全，导不出可穿的皮肤");
+  const base = String(doc.name || "skin").replace(/[\\/:*?"<>|\s]+/g, "_");
+  const rel = "models/" + base + ".skin.glb";
+  const buf = await (await toGLB(doc)).arrayBuffer();
+  const r = await fetch(`/api/world/${wid}/asset?path=${encodeURIComponent(rel)}`, { method: "POST", body: buf });
+  if (!r.ok) throw new Error("素材写入失败 HTTP " + r.status);
+  return makeSkin(uniqueName(skins, doc.name), colorsFromVoxa(doc) || { ...DEFAULT_COLORS },
+    { kind: "rig", model: `/assets/worlds/${wid}/${rel}`, bones, src: doc.name });
 }
 
 /**
@@ -530,18 +577,9 @@ function rigDialog(E, skins, refresh, notify, R, init) {
 // CC0 机甲（来源与授权见 THIRD_PARTY_NOTICES.md 与 docs/credits.md）。
 // 这份关节映射是实测出来的：这台模型没有 neck，其余十七个槽位一一对上，
 // 走路姿态下左右脚/左右手的位移方向与经典人偶同向（tmp/rig-probe.mjs 量的）。
-const BUILTIN_RIGS = [{
-  name: "ATLAS-09 机甲",
-  model: "/skins/atlas-09.glb",
-  hint: "CC0 · 18 关节 · 6.9 MB",
-  bones: {
-    hips: "pelvis", torso: "chest", head: "head",
-    leftShoulder: "shoulderL", leftUpperArm: "upper_armL", leftLowerArm: "forearmL", leftHand: "handL",
-    rightShoulder: "shoulderR", rightUpperArm: "upper_armR", rightLowerArm: "forearmR", rightHand: "handR",
-    leftUpperLeg: "thighL", leftLowerLeg: "shinL", leftFoot: "footL",
-    rightUpperLeg: "thighR", rightLowerLeg: "shinR", rightFoot: "footR",
-  },
-}];
+// 内置机甲预设挪到了 skin-presets.js：VOXA 的默认皮肤与这里必须是同一份数据，
+// 否则"编辑器里的默认皮肤"和"皮肤库里那张卡"会长成两台不同的模型。
+const BUILTIN_RIGS = BUILTIN_RIG_PRESETS;
 
 async function addBuiltinRig(E, skins, refresh, notify, preset) {
   const hit = skins.find((s) => s.model === preset.model && String(s.name).startsWith(preset.name));

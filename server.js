@@ -127,7 +127,7 @@ function listModels() {
     try {
       const doc = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(MODELS, f))).toString("utf8"));
       const voxels = (doc.parts || []).reduce((s, p) => s + (p.voxels || []).length, 0);
-      out.push({ name: doc.name || Buffer.from(f.replace(".json.gz", ""), "hex").toString("utf8"), parts: (doc.parts || []).length, bones: (doc.bones || []).length, anims: (doc.anims || []).length, voxels, mtime: fs.statSync(path.join(MODELS, f)).mtimeMs });
+      out.push({ name: doc.name || Buffer.from(f.replace(".json.gz", ""), "hex").toString("utf8"), type: doc.type || "free", parts: (doc.parts || []).length, bones: (doc.bones || []).length, anims: (doc.anims || []).length, voxels, mtime: fs.statSync(path.join(MODELS, f)).mtimeMs });
     } catch {}
   }
   return out.sort((a, b) => b.mtime - a.mtime);

@@ -3,6 +3,7 @@
 //   部件=体素容器，骨骼=层级，绑定为刚体（多部件需先编组），动画固定 24 帧/秒，
 //   物理盒 默认=初始模型最小包围盒 / 自定义=固定立方体，部件上限 128。
 import { readVox } from "../world.js";
+import { DEFAULT_SKIN_RIG } from "../skin-presets.js";
 
 export const VOXA_VERSION = 1;
 export const MAX_PARTS = 128;
@@ -70,6 +71,10 @@ export function newDoc(name = "未命名模型", type = "free") {
     // 模型中心点（官方 parts/globalToolbar.md 第 6 项"调整模型中心点"）：
     // 实体在游戏里挂在哪、旋转绕哪，都由它决定
     pivot: [0, 0, 0],
+    // 换肤作品的底模：{ name, model, bones:{槽位:glTF关节名} }。
+    // 官方换肤模式打开就是"一套已绑骨骼的现成角色"，我们那份现成的就是内置机甲；
+    // 自由模式恒为 null。存进文档而不是运行时猜，导出与穿上才知道该用哪台骨架。
+    ref: null,
   };
 }
 
@@ -366,9 +371,11 @@ export function groupParts(doc, parts, name) {
 }
 
 /* ------------------------------ 换肤模板 ------------------------------ */
-// 官方换肤模式（editor/skinningMode.md）打开就是**一个 T 字人形**：18 根骨骼铺在
-// 一个体素小人身上。以前这里只建了骨骼、没有人，而骨骼偏移又全是竖直的
-// （[0,n,0]），于是四肢的关节全叠在同一根柱子上——模板按钮点了也只是多出一列名字。
+// 官方换肤模式（editor/skinningMode.md）打开就是**一套已绑好 18 根骨骼的角色**，
+// 编辑器只让你在上面改部件与偏移。那份"现成角色"我们用的是 CC0 的内置机甲
+// （skin-presets.js），这张表负责的是剩下的两件事：
+//   1. 18 个槽位的人形关节位置（没有机甲时的骨架，也是机甲贴合前的初值）；
+//   2. 「载入体素小人」那套部件——想要方块人就显式开，不默认塞给你。
 //
 // 一张表同时派生骨骼与部件：关节位置决定骨骼偏移，部件盒子贴着关节摆。
 // 分两处写就一定会飘（手在腕骨外面两格这种错，靠眼睛看不出来）。
@@ -390,49 +397,69 @@ const SKIN_T = {
     rightUpperLeg: "hips", rightLowerLeg: "rightUpperLeg", rightFoot: "rightLowerLeg",
   },
   // [部件名, 骨骼, 盒子尺寸, 盒子原点(模型空间，可为负), 主色]
+  // 这套颜色刻意取运行时默认角色（game.js avatarPalette）的五键，不是另调一版：
+  // 皮肤编辑器里看到的人偶，就该是穿上身后那张脸，否则"改完不像"是必然的。
   parts: [
-    ["头", "head", [8, 7, 7], [-4, 16, -3], "#f2c9a0"],
-    ["躯干", "torso", [6, 5, 4], [-3, 11, -2], "#5b7fa8"],
-    ["骨盆", "hips", [6, 3, 4], [-3, 8, -2], "#3d4a63"],
-    ["左上臂", "leftUpperArm", [4, 2, 2], [-7, 12, -1], "#5b7fa8"],
-    ["左小臂", "leftLowerArm", [3, 2, 2], [-10, 12, -1], "#f2c9a0"],
-    ["左手", "leftHand", [2, 2, 2], [-12, 12, -1], "#e8b98c"],
-    ["右上臂", "rightUpperArm", [4, 2, 2], [3, 12, -1], "#5b7fa8"],
-    ["右小臂", "rightLowerArm", [3, 2, 2], [7, 12, -1], "#f2c9a0"],
-    ["右手", "rightHand", [2, 2, 2], [10, 12, -1], "#e8b98c"],
-    ["左大腿", "leftUpperLeg", [2, 4, 2], [-2, 4, -1], "#3d4a63"],
-    ["左小腿", "leftLowerLeg", [2, 3, 2], [-2, 1, -1], "#3d4a63"],
-    ["左脚", "leftFoot", [2, 1, 3], [-2, 0, -1], "#2c2622"],
-    ["右大腿", "rightUpperLeg", [2, 4, 2], [0, 4, -1], "#3d4a63"],
-    ["右小腿", "rightLowerLeg", [2, 3, 2], [0, 1, -1], "#3d4a63"],
-    ["右脚", "rightFoot", [2, 1, 3], [0, 0, -1], "#2c2622"],
+    ["头", "head", [8, 7, 7], [-4, 16, -3], "#ffd7b0"],
+    ["躯干", "torso", [6, 5, 4], [-3, 11, -2], "#5aa8e8"],
+    ["骨盆", "hips", [6, 3, 4], [-3, 8, -2], "#5b6c8e"],
+    ["左上臂", "leftUpperArm", [4, 2, 2], [-7, 12, -1], "#5aa8e8"],
+    ["左小臂", "leftLowerArm", [3, 2, 2], [-10, 12, -1], "#ffd7b0"],
+    ["左手", "leftHand", [2, 2, 2], [-12, 12, -1], "#eab88e"],
+    ["右上臂", "rightUpperArm", [4, 2, 2], [3, 12, -1], "#5aa8e8"],
+    ["右小臂", "rightLowerArm", [3, 2, 2], [7, 12, -1], "#ffd7b0"],
+    ["右手", "rightHand", [2, 2, 2], [10, 12, -1], "#eab88e"],
+    ["左大腿", "leftUpperLeg", [2, 4, 2], [-2, 4, -1], "#5b6c8e"],
+    ["左小腿", "leftLowerLeg", [2, 3, 2], [-2, 1, -1], "#48566f"],
+    ["左脚", "leftFoot", [2, 1, 3], [-2, 0, -1], "#7b5441"],
+    ["右大腿", "rightUpperLeg", [2, 4, 2], [0, 4, -1], "#5b6c8e"],
+    ["右小腿", "rightLowerLeg", [2, 3, 2], [0, 1, -1], "#48566f"],
+    ["右脚", "rightFoot", [2, 1, 3], [0, 0, -1], "#7b5441"],
   ],
   // 脸上的细节与头发：局部坐标（部件自己的 0..size-1），front 是 +z
   detail: {
     头: [
-      ["#4a3327", [[0, 5, 0], [7, 6, 6]]],              // 头发帽（盖住头顶与后脑）
-      ["#4a3327", [[0, 0, 0], [7, 4, 1]]],              // 后脑头发
-      ["#2b2b33", [[2, 3, 6], [2, 4, 6]]],              // 左眼
-      ["#2b2b33", [[5, 3, 6], [5, 4, 6]]],              // 右眼
-      ["#4a3327", [[1, 5, 6], [3, 5, 6]]],              // 左眉
-      ["#4a3327", [[4, 5, 6], [6, 5, 6]]],              // 右眉
-      ["#e8a3a3", [[1, 2, 6], [1, 2, 6]]],              // 左腮
-      ["#e8a3a3", [[6, 2, 6], [6, 2, 6]]],              // 右腮
+      ["#6b4630", [[0, 5, 0], [7, 6, 6]]],              // 头发帽（盖住头顶与后脑）
+      ["#6b4630", [[0, 0, 0], [7, 4, 1]]],              // 后脑头发
+      ["#3a3644", [[2, 3, 6], [2, 4, 6]]],              // 左眼
+      ["#3a3644", [[5, 3, 6], [5, 4, 6]]],              // 右眼
+      ["#54372a", [[1, 5, 6], [3, 5, 6]]],              // 左眉
+      ["#54372a", [[4, 5, 6], [6, 5, 6]]],              // 右眉
+      ["#e9ac96", [[1, 2, 6], [1, 2, 6]]],              // 左腮
+      ["#e9ac96", [[6, 2, 6], [6, 2, 6]]],              // 右腮
+      ["#c0705f", [[3, 1, 6], [4, 1, 6]]],              // 嘴
     ],
     躯干: [
-      ["#3d4a63", [[0, 0, 0], [5, 0, 3]]],              // 下摆（腰线）
+      ["#3d7cba", [[0, 0, 0], [5, 0, 3]]],              // 下摆（腰线）
+      ["#f2f6fb", [[1, 4, 2], [4, 4, 3]]],              // 领口
     ],
   },
   // 官方色板是"命名色组"，换肤模板给的是肤色与衣服色两组
   palette: {
-    肤色: ["#f2c9a0", "#e8b98c", "#e0ac7e", "#c98d5f", "#8a5a35", "#4a3327", "#2b2b33", "#e8a3a3", "#ffffff", "#7d5c46", "#c9c9d2"],
-    衣服: ["#5b7fa8", "#3d4a63", "#2c2622", "#d9b45e", "#e85b5b", "#4ecb8d", "#f2c14e", "#a06bff", "#2f3b52", "#e8e6e1", "#12b5c9"],
+    肤色: ["#ffd7b0", "#eab88e", "#e0ac7e", "#c98d5f", "#8a5a35", "#6b4630", "#54372a", "#3a3644", "#e9ac96", "#c0705f", "#ffffff"],
+    衣服: ["#5aa8e8", "#3d7cba", "#5b6c8e", "#48566f", "#7b5441", "#f2f6fb", "#e85b5b", "#4ecb8d", "#f2c14e", "#a06bff", "#12b5c9"],
   },
 };
 
-/** 换肤模板：18 根人形骨骼 + 一个 T 字体素小人，每个部件绑到自己那根骨骼。
+/** 内置默认皮肤：官方换肤模式打开就是"一套已绑好骨骼的角色"，我们直接用
+ *  CC0 的那台机甲当默认皮肤，而不是我们自己捏的方块小人——小人丑且散，
+ *  15 个部件一开就十几个实例化网格 + 十几套轮廓线，皮肤编辑反而更卡。
+ *  所以默认只有 18 根骨骼 + 涂装色板 + 指向机甲的 ref；想要体素小人
+ *  由「载入体素小人」显式开启（withBody）。
+ *  存文件就会有第二份真相：这套东西全部由代码生成，不落 JSON。 */
+export function defaultSkinDoc(name = "ATLAS-09 皮肤", withBody = false) {
+  const doc = newDoc(name, "skin");
+  doc.ref = { name: DEFAULT_SKIN_RIG.name, model: DEFAULT_SKIN_RIG.model, bones: Object.assign({}, DEFAULT_SKIN_RIG.bones) };
+  applySkinTemplate(doc, withBody);
+  return doc;
+}
+
+/** 换肤模板：18 根人形骨骼（+ 可选的 T 字体素小人，每个部件绑到自己那根骨骼）。
+ *  部件位置按官方口径存成**相对所绑骨骼的偏移**（editor/skinningMode.md：换肤模式
+ *  只能改"各部件绑定骨骼节点的偏移"），所以这里由绝对关节位置减出来，
+ *  与渲染层/toGLB 的父子链同一套坐标约定。
  *  返回 {bones, parts, voxels} 便于提示语与断言都用真数，不写死。 */
-export function applySkinTemplate(doc) {
+export function applySkinTemplate(doc, withBody = false) {
   const abs = SKIN_T.joints;
   const ids = { Root: "root" };
   for (const n of SKIN_BONES) {
@@ -448,10 +475,12 @@ export function applySkinTemplate(doc) {
   for (const g of groups) for (const hex of SKIN_T.palette[g]) ensureColorIn(doc, hex, g);
   let voxels = 0;
   const made = [];
+  if (!withBody) return { bones: SKIN_BONES.length, parts: 0, voxels: 0 };
   for (const [name, bone, size, pos, hex] of SKIN_T.parts) {
     if (doc.parts.some((p) => p.name === name)) continue;
     const part = newPart(name, size);
-    part.pos = pos.slice();
+    const j = abs[bone] || [0, 0, 0];
+    part.pos = [pos[0] - j[0], pos[1] - j[1], pos[2] - j[2]];
     part.bone = ids[bone] || null;
     doc.parts.push(part);
     made.push(part);
@@ -628,6 +657,7 @@ export function serialize(doc) {
     anims: anims.map((a) => ({ id: a.id, name: a.name, fps: a.fps, tracks: a.tracks })),
     curAnim: doc.curAnim || 0,
     pivot: (doc.pivot || [0, 0, 0]).slice(),
+    ref: doc.ref ? { name: doc.ref.name, model: doc.ref.model, bones: Object.assign({}, doc.ref.bones) } : null,
     physics,
   };
 }
@@ -645,6 +675,9 @@ export function deserialize(raw) {
   doc.curAnim = raw.curAnim || 0;
   doc.physics = raw.physics || doc.physics;
   doc.pivot = Array.isArray(raw.pivot) && raw.pivot.length === 3 ? raw.pivot.map(Number) : doc.pivot;
+  doc.ref = raw.ref && raw.ref.model
+    ? { name: raw.ref.name || "默认皮肤", model: raw.ref.model, bones: Object.assign({}, raw.ref.bones) }
+    : null;
   doc.parts.forEach((p) => invalidateIndex(p));
   return doc;
 }

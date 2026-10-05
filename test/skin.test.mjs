@@ -106,7 +106,14 @@ const A = JSON.parse(await S.evaluate(`(async () => {
   const { GameRuntime } = await import('/js/game.js');
   const scene = await R.loadRigScene('/skins/atlas-09.glb');
   const names = R.boneNames(scene);
-  const map = R.autoMap(names);
+  const auto = R.autoMap(names);
+  // 这里刻意用**内置预设那张表**（编辑器「内置机甲」按钮与 VOXA 默认皮肤走的就是它），
+  // 不再用现场 autoMap：表里一个关节名写错，穿上去就是"模型在但站着不动"，
+  // 而 autoMap 会替它兜底、把这个问题永远测不出来。
+  const P = (await import('/js/skin-presets.js')).DEFAULT_SKIN_RIG;
+  const presetBad = Object.entries(P.bones).filter(([, n]) => !names.includes(n)).map(([s]) => s);
+  const presetMiss = Object.keys(auto).filter((s) => !P.bones[s]);
+  const map = P.bones;
   const fwd = R.deriveFacing(scene, map);
   const rec = { model: '/skins/atlas-09.glb', bones: map };
   const av = R.assembleRig(await R.loadRigScene('/skins/atlas-09.glb'), rec);
@@ -139,6 +146,7 @@ const A = JSON.parse(await S.evaluate(`(async () => {
   const maxSide = Math.max(...series.map((x) => x.ls));
   return JSON.stringify({
     slots: Object.keys(map).length, hasNeck: !!map.neck,
+    presetBad, presetMiss,
     facing: [F.x, F.y, F.z].map((v) => +v.toFixed(2)),
     height: +(box.max.y - box.min.y).toFixed(2), floor: +box.min.y.toFixed(3),
     parts6: ['head','body','armL','armR','legL','legR'].every((k) => av.userData.parts[k]),
@@ -148,8 +156,10 @@ const A = JSON.parse(await S.evaluate(`(async () => {
     maxSide: +maxSide.toFixed(3), legOpp: +minProd('lf', 'rf').toFixed(4), armOpp: +minProd('lh', 'rh').toFixed(4),
   });
 })()`));
-ok("自动映射认到 15 个槽位（这台没有 neck，其余一一对上）",
-  A.slots >= 15 && !A.hasNeck, JSON.stringify(A).slice(0, 120));
+ok("内置预设的每一个关节名都在模型里真实存在（认不出的那一段会站着不动）",
+  A.presetBad.length === 0, JSON.stringify(A.presetBad));
+ok("预设覆盖 autoMap 能认出的每一段（这台没有 neck，其余 17 段一一对上）",
+  A.slots === 17 && !A.hasNeck && A.presetMiss.length === 0, JSON.stringify({ slots: A.slots, miss: A.presetMiss }));
 ok("朝向由骨架几何推出：这台机甲脸朝 -Z", A.facing[2] === -1 && Math.abs(A.facing[0]) < 0.01, JSON.stringify(A.facing));
 ok("装出来的是同一个人偶契约（六块 + 四关节 + rigSkin 标记）",
   A.parts6 && A.joints4 && A.rigSkin && A.noBob, JSON.stringify({ p: A.parts6, j: A.joints4, s: A.rigSkin, b: A.noBob }));

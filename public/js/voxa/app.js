@@ -7,10 +7,11 @@ import {
   setVoxel, eraseVoxel, getVoxel, ensureColor, colorOf, removeUnusedColors, autoCrop, transformVoxels,
   floodSelect, fillRange, eraseRange, linePoints, faceCells, ensureRoom, extrude, addBone, childBones, removeBone, bindPart,
   groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, MAX_BOX, EASINGS, ANIM_FPS, hexToRgb, rgbToHex, toGLB, importVox,
-  parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc, applySkinTemplate,
+  parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc, applySkinTemplate, defaultSkinDoc,
 } from "./model.js";
 
 import { openAiModel } from "./ai-model.js";
+import { DEFAULT_SKIN_RIG } from "../skin-presets.js";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -235,6 +236,13 @@ class VoxaApp {
     };
     $("vxAddBone").onclick = () => { this.snapshot("新建骨骼"); const b = addBone(this.doc, "Bone", this.activeBone); this.activeBone = b; this.view.buildBones(); this.renderAll(); };
     $("vxSkinTemplate").onclick = () => this.loadSkinTemplate();
+    const rigBtn = $("vxRigRef");
+    if (rigBtn) rigBtn.onclick = () => {
+      this._rigOn = this._rigOn === false;
+      this.view.setRigVisible(this._rigOn);
+      rigBtn.classList.toggle("on", this._rigOn);
+      this.tip(this._rigOn ? "已显示默认皮肤底模" : "已隐藏底模（骨骼与部件不受影响）");
+    };
     // 按钮的 title 写的是"增加颜色组"，实现就必须真的建一个组：
     // 以前它往平铺列表里塞一个色块，于是官方那块"多色组色板"永远做不出来。
     $("vxAddColor").onclick = () => this.addColorGroup();
@@ -511,6 +519,7 @@ class VoxaApp {
       case "publishModel": this.publishModel(); break;
       case "wearSkin": this.wearSkin(); break;
       case "publishSkin": this.publishSkin(); break;
+      case "skinLib": this.openSkinLibrary(); break;
       case "undo": this.undo(); break;
       case "redo": this.redo(); break;
       case "saveVersion": this.pushHistory("手动存档"); break;
@@ -555,15 +564,14 @@ class VoxaApp {
   /** 换肤是作品类型而不是编辑器模式：它只影响新建时的模板与可用操作 */
   /** 官方新建对话框：自由模式 / 换肤模式，类型一旦定下不可修改，所以必须问清楚 */
   newDocFlow() {
-    const pick = window.prompt("新建模型\n1 = 自由模式（不设限，支持自定义动画）\n2 = 换肤模式（做玩家皮肤，载入 18 节点人形模板，类型创建后不可更改）", "1");
+    const pick = window.prompt("新建模型\n1 = 自由模式（不设限，支持自定义动画）\n2 = 换肤模式（做玩家皮肤：打开即载入默认皮肤「" + DEFAULT_SKIN_RIG.name + "」的 18 关节骨骼，类型创建后不可更改）", "1");
     if (pick === null) return;
     const type = String(pick).trim() === "2" ? "skin" : "free";
     if (!confirm("新建模型会清空当前内容，确定？")) return;
-    this.doc = newDoc(type === "skin" ? "换肤作品" : "未命名模型", type);
+    this.doc = type === "skin" ? defaultSkinDoc("换肤作品") : newDoc("未命名模型", "free");
     this.activePart = null; this.inPart = false;
     this.view.setDoc(this.doc);
-    if (type === "skin") this.loadSkinTemplate(true);
-    else this.seedStarterPart();
+    if (type !== "skin") this.seedStarterPart();
     this.applyDocType();
     this.renderAll();
     this.tip(type === "skin" ? "已新建换肤作品（类型不可更改）" : "已新建自由模式作品");
@@ -585,9 +593,104 @@ class VoxaApp {
     const b = $("vxTypeBadge");
     b.textContent = skin ? "换肤模式" : "自由模式";
     b.classList.toggle("skin", skin);
+    const rr = $("vxRigRef");
+    if (rr) {
+      rr.disabled = !skin;
+      rr.classList.toggle("dim", !skin);
+      rr.classList.toggle("on", skin && this._rigOn !== false);
+      rr.title = skin ? "默认皮肤底模（" + ((this.doc.ref && this.doc.ref.name) || DEFAULT_SKIN_RIG.name) + "）显隐"
+        : "只有换肤作品有默认皮肤底模";
+    }
+    this.ensureRigReference();
+    // 徽标本身就是入口：做皮肤的人第一眼看到的是"换肤模式"这四个字，
+    // 点它就该看到有哪些皮肤可改，而不是先去翻九宫格菜单。
+    b.onclick = () => this.openSkinLibrary();
+    b.style.cursor = "pointer";
     b.title = skin
-      ? "换肤作品：仅可修改皮肤部件内容与各部件绑定骨骼节点的偏移，类型创建后不可更改"
-      : "自由模式：不设限创作模式，支持自定义动画";
+      ? "换肤作品：仅可修改皮肤部件内容与各部件绑定骨骼节点的偏移，类型创建后不可更改。点这里打开皮肤库"
+      : "自由模式：不设限创作模式，支持自定义动画。点这里打开皮肤库（默认皮肤是已绑 18 关节的内置机甲）";
+  }
+
+  /** 换肤作品的底模：默认皮肤那台机甲以半透明参照出现，并把它的真实关节位置
+   *  贴回文档骨骼（fitBonesToRig）。读不出来（离线、素材被清）就退回表格里
+   *  那套人形关节，编辑器照常能用——参照是辅助，不是依赖。 */
+  async ensureRigReference() {
+    // 老存盘里没有 ref（那时默认皮肤还是我们自己画的方块人）：认成内置那台机甲，
+    // 不然"有底模但骨骼贴不上"会留下一个只对旧文件出现的错误状态。
+    if (this.doc.type === "skin" && !this.doc.ref) {
+      this.doc.ref = { name: DEFAULT_SKIN_RIG.name, model: DEFAULT_SKIN_RIG.model, bones: Object.assign({}, DEFAULT_SKIN_RIG.bones) };
+    }
+    const url = this.doc.type === "skin" ? (this.doc.ref && this.doc.ref.model) || DEFAULT_SKIN_RIG.model : null;
+    if (!url) { this.view.clearRigReference(); return; }
+    if (this.view.rigRef && this.view.rigRef.userData.url === url) {
+      this.view.setRigVisible(this._rigOn !== false);
+      // 底模没换但作品换了：新文档那 18 根骨骼还停在人形关节表上，
+      // 这里必须再贴一次（贴是幂等的：同一份实测、同一套父链，算出来就是同一个数）
+      this.fitBonesToRig();
+      return;
+    }
+    const seq = (this._rigSeq = (this._rigSeq || 0) + 1);
+    try {
+      const g = await this.view.setRigReference(url);
+      // 快速连点皮肤库时会有两次加载同时在飞，晚到的那次不能把当前作品盖掉
+      if (seq !== this._rigSeq) { if (this.view.rigRef === g) this.view.clearRigReference(); return; }
+      this.view.setRigVisible(this._rigOn !== false);
+      const n = this.fitBonesToRig();
+      if (n && !this.doc.parts.some((p) => (p.voxels || []).length)) this.view.focus();
+      if (n) this.tip(`骨骼已贴到「${(this.doc.ref && this.doc.ref.name) || DEFAULT_SKIN_RIG.name}」的 ${n} 个关节上`
+        + (this._rigFixed ? `（并纠正了 ${this._rigFixed} 个模型里不存在的关节名）` : ""));
+    } catch (e) {
+      if (seq !== this._rigSeq) return;
+      this.view.clearRigReference();
+      this.tip("底模读不出来，已退回人形关节表：" + e.message);
+    }
+  }
+  /** 机甲真实关节（模型空间）→ 骨骼的相对偏移：骨骼位置存的是"相对父骨骼"，
+   *  所以自顶向下算，每根骨骼先定绝对位置（有实测就用实测，没有就沿用人形的
+   *  那段偏移），再减去父骨骼的绝对位置写成相对值。
+   *  这样"机甲没有 neck 关节"也不会让头飘着：neck 自己按人形摆，head 仍然
+   *  精确落在实测的头部关节上。
+   *  只在**还没涂过体素**的骨架上做：已经照着人形画好的部件属于那份作品，
+   *  半路把骨骼搬到机甲关节上会把小人撕散。 */
+  fitBonesToRig() {
+    const ref = this.doc.ref;
+    if (!ref || !ref.bones || this.doc.type !== "skin") return 0;
+    if (this.doc.parts.some((p) => (p.voxels || []).length)) return 0;
+    // 映射表里的名字以模型为准：预设写错、或作者改了骨架命名时，认不出的那一段
+    // 用 autoMap 现场识别的结果顶上。留着错名字的后果是"机甲站着不动"，
+    // 而皮肤是要穿进游戏的东西，这一步必须当场修好再存。
+    const have = this.view.rigBoneNames();
+    const auto = this.view.rigRef && this.view.rigRef.userData.autoMap;
+    let fixed = 0;
+    if (have && auto) {
+      for (const slot of Object.keys(ref.bones)) {
+        if (have.has(ref.bones[slot])) continue;
+        if (auto[slot] && have.has(auto[slot])) { ref.bones[slot] = auto[slot]; fixed++; }
+      }
+    }
+    this._rigFixed = fixed;
+    const meas = this.view.rigJointPositions(Object.keys(ref.bones).map((k) => ref.bones[k]));
+    if (!meas || !meas.size) return 0;
+    const kids = new Map();
+    for (const b of this.doc.bones) {
+      if (!b.parent) continue;
+      if (!kids.has(b.parent)) kids.set(b.parent, []);
+      kids.get(b.parent).push(b);
+    }
+    let n = 0;
+    const walk = (b, parAbs) => {
+      const gl = ref.bones[b.name];
+      const hit = gl && meas.get(gl);
+      if (hit) {
+        b.position = [0, 1, 2].map((i) => +(hit[i] - parAbs[i]).toFixed(3));
+        n++;
+      }
+      const abs = [0, 1, 2].map((i) => parAbs[i] + b.position[i]);
+      for (const c of kids.get(b.id) || []) walk(c, abs);
+    };
+    for (const root of this.doc.bones.filter((b) => !b.parent)) walk(root, [0, 0, 0]);
+    if (n) { this.view.rebuild(); this.renderBones(); this.dirty(); }
+    return n;
   }
   /** 把当前部件框尺寸回填到顶栏的三个数字框 */
   syncSizeBoxes() {
@@ -1655,19 +1758,85 @@ class VoxaApp {
     this.view.applyPose(this.doc, a, this.frame);
     this.dirty();
   }
-  loadSkinTemplate(quiet) {
+  loadSkinTemplate(quiet, withBody = true) {
     const has = SKIN_BONES.every((n) => this.doc.bones.some((b) => b.name === n))
-      && this.doc.parts.some((p) => p.bone);          // 只有骨骼没有人，等于模板没做
-    if (has) { if (!quiet) this.tip("人形模板已存在"); return; }
-    this.snapshot("换肤模板");
-    const r = applySkinTemplate(this.doc);
+      && (!withBody || this.doc.parts.some((p) => p.bone));   // 要小人却没小人，等于模板没做全
+    if (has) { if (!quiet) this.tip(withBody ? "体素小人已在了" : "人形骨骼已在了"); return; }
+    this.snapshot(withBody ? "载入体素小人" : "换肤模板");
+    const r = applySkinTemplate(this.doc, withBody);
     // 模板会换掉整批部件：还攥着旧的那一个，右侧参数面板就会显示一个
     // 已经不在文档里的"部件 Body"，改数字改到空气上（和 restore 里那类幽灵态同源）。
     this.activePart = this.doc.parts[0] || null;
     this.view.rebuild();
     this.renderBones(); this.renderParts(); this.renderPalette(); this.renderStat(); this.renderProps();
     this.dirty();
-    if (!quiet) this.tip(`已载入人形模板：${r.bones} 根骨骼 · ${r.parts} 个部件 · ${r.voxels} 体素`);
+    if (!quiet) this.tip(`已${withBody ? "载入体素小人" : "铺好人形骨骼"}：${r.bones} 根骨骼 · ${r.parts} 个部件 · ${r.voxels} 体素`);
+  }
+
+  /** 皮肤库：VOXA 里的皮肤入口。内置默认皮肤永远排第一（18 根骨骼已按真实
+   *  关节绑好，打开就能改），后面是模型库里所有换肤作品。
+   *  它必须在 VOXA 里，而不是只有编辑器那一层：改皮肤的人是在体素上涂的，
+   *  不是在一个弹窗里挑六个颜色。 */
+  async openSkinLibrary() {
+    const old = document.getElementById("vxSkinModal");
+    if (old) old.remove();
+    let rows = [];
+    try {
+      const r = await fetch("/api/models");
+      if (r.ok) rows = (((await r.json()).models) || []).filter((x) => x && x.type === "skin");
+    } catch { /* 服务端没起来也照样能开默认皮肤 */ }
+    const m = document.createElement("div");
+    m.id = "vxSkinModal"; m.className = "vx-modal show";
+    const box = document.createElement("div"); box.className = "vx-modal-box vx-hist";
+    const h = document.createElement("h3"); h.textContent = "皮肤库";
+    box.appendChild(h);
+    const add = (label, hint, onOpen) => {
+      const row = document.createElement("div"); row.className = "vx-hist-row";
+      const info = document.createElement("div"); info.className = "vx-hist-info";
+      info.innerHTML = "<b>" + label + "</b><span>" + hint + "</span>";
+      const btn = document.createElement("button"); btn.textContent = "打开编辑"; btn.className = "vx-mini";
+      btn.onclick = async () => { m.remove(); await onOpen(); };
+      row.appendChild(info); row.appendChild(btn);
+      box.appendChild(row);
+    };
+    add(DEFAULT_SKIN_RIG.name + "（内置默认皮肤）",
+      "18 关节已绑到机甲真实骨骼 · CC0 · 也可以改成体素涂装", () => {
+        this.applySkinDoc(defaultSkinDoc(DEFAULT_SKIN_RIG.name + " 皮肤"));
+      });
+    add("体素小人模板", "18 根骨骼 + 15 个方块部件（不想要机甲底模时用它）", () => {
+      this.applySkinDoc(defaultSkinDoc("体素皮肤", true));
+    });
+    for (const r of rows) add(r.name, `${r.parts} 部件 · ${r.voxels} 体素 · ${r.bones} 骨骼`, async () => {
+      try {
+        const rr = await fetch("/api/models/" + encodeURIComponent(r.name));
+        if (!rr.ok) throw new Error("HTTP " + rr.status);
+        this.applySkinDoc(deserialize(await rr.json()));
+      } catch (e) { this.toast("打开失败：" + e.message, true); }
+    });
+    if (!rows.length) {
+      const e = document.createElement("div"); e.className = "vx-hist-empty";
+      e.textContent = "还没有你自己的换肤作品：新建时选「换肤模式」，或从默认皮肤改一份再保存。";
+      box.appendChild(e);
+    }
+    const close = document.createElement("button"); close.textContent = "关闭"; close.className = "vx-btn";
+    close.onclick = () => m.remove();
+    box.appendChild(close);
+    m.appendChild(box);
+    m.onclick = (ev) => { if (ev.target === m) m.remove(); };
+    document.body.appendChild(m);
+  }
+  /** 换一份作品进编辑器：部件/骨骼对象全换新，所有"还攥着旧对象"的引用必须一起重认。 */
+  applySkinDoc(doc) {
+    this.snapshot("载入皮肤");
+    this.doc = doc;
+    this.doc.parts.forEach((p) => bindDoc(p, this.doc));
+    this.view.setDoc(this.doc);
+    this.activePart = this.doc.parts[0] || null;
+    this.activeBone = this.doc.bones[0] || null;
+    this.color = this.doc.palette[0] || this.color;
+    this.selection = []; this.picked.clear(); this.inPart = false;
+    this.applyDocType(); this.renderAll(); this.dirty();
+    this.tip(`已载入「${this.doc.name}」，改完用菜单里的「穿上这套皮肤」`);
   }
 
   /* ---------------- 持久化 ---------------- */
@@ -1918,6 +2087,13 @@ class VoxaApp {
   /** 换肤作品 → {model, bones}：glb 落到当前世界的素材目录，映射是恒等的
    *  （骨骼名本来就是官方那 18 个 GameBodyPart 名，不需要认）。 */
   async buildSkinRecord() {
+    // 皮肤库里那份默认皮肤就是机甲本身：没在它身上涂任何体素时，
+    // "这套皮肤"= 机甲，直接用它的模型与关节映射，不用导出、也不用落到某张图
+    // （皮肤跟着人走，跟着图走是体素涂装那条路没办法要素材目录才做的）。
+    const painted = this.doc.parts.some((p) => p.visible !== false && (p.voxels || []).length);
+    if (this.doc.ref && this.doc.ref.model && !painted) {
+      return { model: this.doc.ref.model, bones: Object.assign({}, this.doc.ref.bones) };
+    }
     const worldId = new URLSearchParams(location.search).get("world") || localStorage.getItem("dao3_last_world");
     if (!worldId) { this.tip("先从编辑器打开这张图再存皮肤：模型要落到本图的素材目录"); return null; }
     const bones = {};
@@ -2197,5 +2373,17 @@ function download(blob, name) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
-
 window.__voxa = new VoxaApp();
+// ?model=<名字>：编辑器皮肤库的「在 VOXA 里编辑」跳过来时，按名字从模型库取那一份作品。
+// 取不到必须说出来——静默退回本地作品，用户读到的是"皮肤库骗我"。
+// 构造函数不能 await，所以这一步挂在实例化之后；载入走 applySkinDoc，因此能一步撤回原作品。
+(async () => {
+  const want = new URLSearchParams(location.search).get("model");
+  if (!want) return;
+  const app = window.__voxa;
+  try {
+    const r = await fetch("/api/models/" + encodeURIComponent(want));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    app.applySkinDoc(deserialize(await r.json()));
+  } catch (e) { app.toast(`模型库里没有「${want}」，已打开本地作品（${e.message}）`, true); }
+})();
