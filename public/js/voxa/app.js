@@ -6,7 +6,7 @@ import {
   newDoc, newPart, newBone, newAnim, addPart, clonePart, serialize, deserialize, stats,
   setVoxel, eraseVoxel, getVoxel, ensureColor, colorOf, removeUnusedColors, autoCrop, transformVoxels,
   floodSelect, fillRange, eraseRange, linePoints, faceCells, ensureRoom, extrude, addBone, childBones, removeBone, bindPart,
-  groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, MAX_BOX, EASINGS, hexToRgb, rgbToHex, toGLB, importVox,
+  groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, MAX_BOX, EASINGS, ANIM_FPS, hexToRgb, rgbToHex, toGLB, importVox,
   parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc,
 } from "./model.js";
 
@@ -15,6 +15,19 @@ import { openAiModel } from "./ai-model.js";
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const MODEL_KEY = "dao3_voxa_current";
+
+/* 时间轴几何：骨骼名列的宽度要和 .tl-bone 的 CSS 宽度一致，
+   刻度尺与轨道共用这一个数，否则秒线和段块会整体错开一截。 */
+const TL_LABEL = 104;
+/* 五档缓动在段块里画成的曲线形状（viewBox 24×12，左下→右上）。
+   官方 animationPanel.md 只给名字，形状是照着它截图里那些块画的。 */
+const EASE_PATH = {
+  normal: "M0,12 L24,0",
+  step: "M0,12 L12,12 L12,0 L24,0",
+  in: "M0,12 Q24,12 24,0",
+  out: "M0,12 Q0,0 24,0",
+  inout: "M0,12 C12,12 12,0 24,0",
+};
 
 const TOOLS = {
   build: { label: "点建造", hint: "左键在命中面外侧放置体素" },
@@ -100,6 +113,7 @@ class VoxaApp {
     this.selection = [];
     this.picked = new Set();   // Cmd/Ctrl 挑中的部件，编组用
     this.frame = 0;
+    this.tl = { pxf: 7 };   // 时间轴：每帧多少像素（缩放滑条改的就是它）
     this.playing = 0;
     this.speed = 1;
     this.undoStack = [];
@@ -227,6 +241,30 @@ class VoxaApp {
     $("vxSpeed").onclick = () => { this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 0.5 : 1; $("vxSpeed").textContent = this.speed + "x"; };
     $("vxKey").onclick = () => this.keyframe();
     $("vxScrub").oninput = () => { this.setFrame(Number($("vxScrub").value)); };
+    $("vxTlZoom").oninput = () => {
+      this.tl.pxf = Number($("vxTlZoom").value);
+      this.renderTimeline();
+    };
+    // 官方：时间轴空白处按住中键拖动 = 平移时间轴
+    $("vxTlScroll").addEventListener("pointerdown", (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      const sc = e.currentTarget, x0 = e.clientX, l0 = sc.scrollLeft;
+      const mv = (ev) => { sc.scrollLeft = l0 - (ev.clientX - x0); };
+      const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
+      window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+    });
+    // 在刻度尺上按下并拖动 = 直接拨播放头（比去够底部那根 14px 的滑条容易得多）
+    $("vxRuler").addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const sc = $("vxTlScroll"), max = Number($("vxScrub").max) || 0;
+      const at = (cx) => this.setFrame(clamp(Math.round((cx - sc.getBoundingClientRect().left - TL_LABEL + sc.scrollLeft) / this.tl.pxf), 0, max));
+      at(e.clientX);
+      const mv = (ev) => at(ev.clientX);
+      const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); };
+      window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up);
+    });
     this.wireChrome();
     window.addEventListener("keydown", (e) => {
       // 部件/骨骼/动画改名走的是 contentEditable 的 <span>，它不是 INPUT。
@@ -240,7 +278,20 @@ class VoxaApp {
       if ((e.ctrlKey || e.metaKey) && k === "d") { e.preventDefault(); $("vxDupPart").click(); return; }
       const map = { b: "build", e: "erase", l: "line", f: "face", g: "paint", k: "bucket", w: "wand", s: "select", x: "extrude", m: "move", r: "rot", t: "scale", i: "eyedropper" };
       if (map[k] && !e.ctrlKey && !e.metaKey) { this.setTool(map[k]); }
-      if (k === "delete" && this.selection.length) this.applySelectionOp("erase");
+      if (k === "delete") {
+        // 动画模式下 Delete 删的是"当前帧上这根骨骼的键"，不是体素选区：
+        // 同一个键要跟当前语境走，否则在时间轴上按删除会把模型删了。
+        const anim = curAnim(this.doc);
+        const keys = this.mode === "anim" && this.activeBone && anim && anim.tracks[this.activeBone.id];
+        const at = keys && keys.find((x) => x.f === this.frame);
+        if (at) { e.preventDefault(); this.deleteKey(anim, this.activeBone, at); return; }
+        if (this.selection.length) this.applySelectionOp("erase");
+      }
+      // 逐帧步进：官方文档通篇只写鼠标操作，没有键位，这一对是我们自己加的便利
+      if (this.mode === "anim" && (k === "arrowleft" || k === "arrowright")) {
+        e.preventDefault();
+        this.setFrame(clamp(this.frame + (k === "arrowright" ? 1 : -1), 0, Number($("vxScrub").max) || 0));
+      }
       if (k === "escape") { if (this.inPart) this.setInPart(false); else if (this.selection.length) { this.selection = []; this.view.showSelection([]); } }
     });
     window.addEventListener("resize", () => this.view.resize());
@@ -1057,7 +1108,7 @@ class VoxaApp {
     $("grpPhMode").querySelectorAll("button[data-ph]").forEach((b) => b.classList.toggle("on", b.dataset.ph === ph.mode));
   }
   renderTimeline() {
-    // 官方动画面板：左列「动画列表」，右侧骨骼节点轨道 + 秒刻度尺
+    // 官方动画面板：左列「动画列表」，右侧每根骨骼一条轨道 + 秒刻度尺
     const list = $("vxAnimList");
     list.innerHTML = "";
     this.doc.anims.forEach((a, i) => {
@@ -1084,12 +1135,19 @@ class VoxaApp {
     const max = Math.max(24, this.view.frameBounds());
     $("vxScrub").max = max;
     $("vxFrameMax").textContent = max;
+    const pxf = this.tl.pxf;
+    const laneW = max * pxf + 12;
 
     const ruler = $("vxRuler");
+    ruler.style.width = (TL_LABEL + laneW) + "px";
     ruler.innerHTML = "";
-    for (let s = 0; s <= Math.ceil(max / 24); s++) {
+    // 秒标：太密的时候隔两秒标一个，但每根秒线都画（数格子还要靠它们）
+    const labelEvery = pxf * ANIM_FPS < 46 ? 2 : 1;
+    for (let s = 0; s <= Math.ceil(max / ANIM_FPS); s++) {
       const t = document.createElement("span");
-      t.className = "tick"; t.style.left = (s * 24 / max * 100) + "%"; t.textContent = s + "s";
+      t.className = "tick" + (s % labelEvery ? " min" : "");
+      t.style.left = (TL_LABEL + s * ANIM_FPS * pxf) + "px";
+      t.textContent = s + "s";
       ruler.appendChild(t);
     }
     const head = document.createElement("span"); head.className = "playhead"; head.id = "playhead";
@@ -1097,40 +1155,149 @@ class VoxaApp {
 
     const host = $("vxTracks");
     host.innerHTML = "";
-    const rows = this.doc.bones.filter((b) => anim && anim.tracks[b.id] && anim.tracks[b.id].length);
-    for (const b of rows) {
+    // 每一根骨骼都要有一行（官方 GIF 里没打键的骨骼也在列）。
+    // 以前只列"当前动画里已有键"的骨骼，于是新建动画时整条时间轴是空的，
+    // 用户看不到"该给谁打键"，只能瞎点。
+    let anyKey = false;
+    for (const b of this.doc.bones) {
+      const keys = ((anim && anim.tracks[b.id]) || []).slice().sort((x, y) => x.f - y.f);
+      if (keys.length) anyKey = true;
       const row = document.createElement("div");
-      row.className = "tl-row";
-      const lab = document.createElement("span"); lab.className = "tl-bone"; lab.textContent = b.name;
-      const lane = document.createElement("div"); lane.className = "tl-lane";
-      for (const k of anim.tracks[b.id]) {
+      row.className = "tl-row" + (this.activeBone && this.activeBone.id === b.id ? " sel" : "");
+      row.style.width = (TL_LABEL + laneW) + "px";
+      const lab = document.createElement("span");
+      lab.className = "tl-bone";
+      lab.textContent = b.name;
+      lab.title = keys.length ? `${b.name} · ${keys.length} 帧` : `${b.name} · 还没有帧`;
+      if (keys.length) {
+        const badge = document.createElement("i");
+        badge.textContent = keys.length;
+        lab.appendChild(badge);
+      }
+      lab.onclick = () => { this.activeBone = b; this.renderBones(); this.renderProps(); this.renderTimeline(); };
+      const lane = document.createElement("div");
+      lane.className = "tl-lane";
+      lane.style.width = laneW + "px";
+      for (let i = 0; i + 1 < keys.length; i++) {
+        const a = keys[i], c = keys[i + 1];
+        const seg = document.createElement("div");
+        seg.className = "tl-seg";
+        seg.style.left = a.f * pxf + "px";
+        seg.style.width = Math.max(2, (c.f - a.f) * pxf) + "px";
+        // 段块里画缓动曲线：官方那五档（正常/打断/缓入/缓出/缓入缓出）
+        // 光看颜色分不出来，曲线形状一眼就知道这一段是怎么走的。
+        seg.innerHTML = `<svg viewBox="0 0 24 12" preserveAspectRatio="none"><path d="${EASE_PATH[a.ease] || EASE_PATH.normal}"/></svg>`;
+        seg.title = `${a.f} → ${c.f} 帧 · 缓动 ${a.ease || "normal"}`;
+        lane.appendChild(seg);
+      }
+      keys.forEach((k, i) => {
         const cell = document.createElement("button");
         cell.className = "tl-key" + (k.f === this.frame ? " active" : "");
-        cell.style.left = (k.f / max * 100) + "%";
-        cell.title = `第 ${k.f} 帧 · 缓动 ${k.ease}`;
-        cell.onclick = () => this.setFrame(k.f);
+        cell.style.left = k.f * pxf + "px";
+        cell.title = `第 ${k.f} 帧 · 缓动 ${k.ease || "normal"}（拖动改时间，右键换缓动/删除）`;
+        cell.onpointerdown = (e) => this.dragKey(e, anim, b, k, keys, i, pxf, max);
         cell.oncontextmenu = (e) => {
-          e.preventDefault();
-          const i = EASINGS.indexOf(k.ease || "normal");
-          k.ease = EASINGS[(i + 1) % EASINGS.length];
-          cell.title = `第 ${k.f} 帧 · 缓动 ${k.ease}`;
-          this.tip("缓动：" + k.ease);
+          e.preventDefault(); e.stopPropagation();
+          this.menuAt(e.clientX, e.clientY, [
+            ...EASINGS.map((name) => ({
+              label: "缓动 · " + name, on: (k.ease || "normal") === name,
+              run: () => { this.snapshot("改缓动"); k.ease = name; this.renderTimeline(); this.tip(`${b.name} 第 ${k.f} 帧缓动：${name}`); },
+            })),
+            { sep: true },
+            { label: "删除这一帧", danger: true, run: () => this.deleteKey(anim, b, k) },
+          ]);
         };
         lane.appendChild(cell);
-      }
+      });
       row.appendChild(lab); row.appendChild(lane);
       host.appendChild(row);
     }
-    if (!rows.length) host.innerHTML = '<div class="vx-empty">选中骨骼并移动它，然后点 ◆ 创建帧</div>';
+    if (!anyKey) {
+      const tipRow = document.createElement("div");
+      tipRow.className = "tl-row";
+      tipRow.innerHTML = `<span class="tl-bone">提示</span><span class="tl-empty">点一行骨骼名选中它，摆好姿态后按 ◆ 创建帧</span>`;
+      host.appendChild(tipRow);
+    }
+    this.setFrame(this.frame);
   }
+  /** 拖动一个关键帧改时间。快照只在真的动了之后才拍——点一下不该往撤销栈里塞一步 */
+  dragKey(e, anim, bone, k, keys, i, pxf, max) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const from = k.f, x0 = e.clientX;
+    const lo = i > 0 ? keys[i - 1].f + 1 : 0;
+    const hi = i + 1 < keys.length ? keys[i + 1].f - 1 : max;
+    const el = e.target;
+    let moved = false;
+    const onMove = (ev) => {
+      const f = clamp(from + Math.round((ev.clientX - x0) / pxf), Math.min(lo, from), Math.max(hi, from));
+      if (f === k.f) return;
+      if (!moved) { moved = true; this.snapshot("移动帧"); }
+      k.f = f;
+      el.style.left = f * pxf + "px";
+      el.title = `第 ${f} 帧 · 缓动 ${k.ease || "normal"}（拖动改时间，右键换缓动/删除）`;
+      this.setFrame(f);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (moved) { this.renderTimeline(); this.dirty(); }
+      else { this.setFrame(k.f); }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+  deleteKey(anim, bone, k) {
+    // 先拍快照再删：反过来等于把"已经删完"的状态存进撤销栈，删掉的帧回不来。
+    this.snapshot("删除帧");
+    const keys = anim.tracks[bone.id] || [];
+    const n = keys.length;
+    anim.tracks[bone.id] = keys.filter((x) => x !== k);
+    if (!anim.tracks[bone.id].length) delete anim.tracks[bone.id];
+    this.tip(`删掉 ${bone.name} 第 ${k.f} 帧（还能撤销）`);
+    this.renderTimeline();
+    this.dirty();
+    if (n === 1) this.view.resetPose();
+  }
+  /** 一个很小的弹出菜单：时间轴先用，视口右键菜单（部件/骨骼）复用同一套 */
+  menuAt(x, y, items) {
+    this.closeMenu();
+    const m = document.createElement("div");
+    m.className = "vx-pop";
+    m.style.left = x + "px"; m.style.top = y + "px";
+    for (const it of items) {
+      if (it.sep) { m.appendChild(Object.assign(document.createElement("hr"), { className: "vx-pop-sep" })); continue; }
+      const b = document.createElement("button");
+      b.className = "vx-pop-i" + (it.on ? " on" : "") + (it.danger ? " danger" : "");
+      b.textContent = it.label;
+      b.onclick = () => { this.closeMenu(); it.run && it.run(); };
+      m.appendChild(b);
+    }
+    document.body.appendChild(m);
+    const r = m.getBoundingClientRect();
+    if (r.right > innerWidth - 6) m.style.left = Math.max(6, innerWidth - r.width - 6) + "px";
+    if (r.bottom > innerHeight - 6) m.style.top = Math.max(6, innerHeight - r.height - 6) + "px";
+    this._menu = m;
+    const off = (ev) => { if (!m.contains(ev.target)) { this.closeMenu(); window.removeEventListener("pointerdown", off, true); } };
+    setTimeout(() => window.addEventListener("pointerdown", off, true), 0);
+  }
+  closeMenu() { if (this._menu) { this._menu.remove(); this._menu = null; } }
   setFrame(f) {
     this.frame = Math.max(0, f);
     $("vxScrub").value = this.frame;
     $("vxFrameNum").textContent = this.frame;
     const max = Math.max(1, Number($("vxScrub").max) || 24);
     const head = $("playhead");
-    if (head) head.style.left = (this.frame / max * 100) + "%";
-    const t = this.frame / 24;
+    if (head) head.style.left = (TL_LABEL + this.frame * this.tl.pxf) + "px";
+    // 播放头跑到视口外时把它滚进来：否则拖帧/逐帧步进之后"看起来没动"
+    const sc = $("vxTlScroll");
+    if (sc && head) {
+      const x = TL_LABEL + this.frame * this.tl.pxf;
+      if (x < sc.scrollLeft + TL_LABEL) sc.scrollLeft = Math.max(0, x - TL_LABEL - 8);
+      else if (x > sc.scrollLeft + sc.clientWidth - 12) sc.scrollLeft = x - sc.clientWidth + 20;
+    }
+    const t = this.frame / ANIM_FPS;
     $("vxTimeText").textContent = String(Math.floor(t)).padStart(2, "0") + ":" + String(Math.round((t % 1) * 60)).padStart(2, "0");
     this.view.applyPose(this.doc, curAnim(this.doc), this.frame);
   }

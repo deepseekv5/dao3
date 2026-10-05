@@ -63,7 +63,7 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
     <button id="vxPublish" class="vx-btn pub" title="导出为世界可用的 mesh 并登记进模型库">发布</button>
   </div>
 
-  <div id="vxMenuPanel" class="vx-menu">
+  <div id="vxMenuPanel" class="vx-topmenu">
     <div class="vx-menu-sec">导航</div>
     <button data-act="home">返回主界面（工作台）</button>
     <div class="vx-menu-sec">文件</div>
@@ -200,11 +200,16 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
       <button id="vxKey" class="vx-mini" title="创建帧">◆</button>
       <b id="vxTimeText" class="ap-time">00:00</b>
       <span class="tl-frame">帧 <b id="vxFrameNum">0</b> / <span id="vxFrameMax">24</span></span>
+      <label class="tl-zoom" title="缩放时间轴">缩放<input id="vxTlZoom" type="range" min="2" max="26" step="1" value="7"/></label>
       <button id="vxAnimDel" class="vx-mini" title="删除当前动画">🗑</button>
     </div>
     <div class="ap-body">
-      <div id="vxRuler" class="tl-ruler"></div>
-      <div id="vxTracks" class="tl-tracks"></div>
+      <!-- 一把横滚：刻度尺与所有轨道在同一个滚动容器里，刻度尺吸顶、骨骼名列吸左。
+           分成两个容器就要写滚同同步代码，那种同步迟早会和轨道错位。 -->
+      <div id="vxTlScroll" class="tl-scroll">
+        <div id="vxRuler" class="tl-ruler"></div>
+        <div id="vxTracks" class="tl-tracks"></div>
+      </div>
       <input id="vxScrub" class="tl-scrub" type="range" min="0" max="24" step="1" value="0"/>
     </div>
   </div>

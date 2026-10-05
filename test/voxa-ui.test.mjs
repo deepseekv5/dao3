@@ -162,5 +162,103 @@ if (bp) {
   ok("视口里能找到可命中的骨骼点", false, "扫描 15×15 个点都没命中骨骼");
 }
 
+/* ---------- 顶栏圆点菜单：默认必须是收起来的 ---------- */
+// 时间轴的弹出菜单一度也叫 .vx-menu，把主菜单那条 display:none 一起改掉了，
+// 症状是"顶栏摊开一大块菜单、把色板压住"。两边类名分家后这条要钉住。
+const topMenu = await page(`const p = document.getElementById("vxMenuPanel");
+  const cs = getComputedStyle(p), r = p.getBoundingClientRect();
+  return { cls: p.className, display: cs.display, shown: r.width > 0 && r.height > 0 };`);
+ok("顶栏圆点菜单默认收起（display:none）",
+  topMenu.cls.includes("vx-topmenu") && topMenu.display === "none" && topMenu.shown === false, JSON.stringify(topMenu));
+
+/* ---------- 时间轴：每根骨骼一行、段块带缓动曲线、能拖能删能缩放 ---------- */
+await page(`
+  const a = window.__voxa, doc = a.doc;
+  document.querySelector('#vxModes [data-mode="anim"]').click();
+  doc.bones.push({ id: "tl-b", name: "左臂", parent: "root", position: [1, 2, 3], rotation: [0, 0, 0], scale: [1, 1, 1], op: 1 });
+  doc.anims[doc.curAnim].tracks["tl-b"] = [
+    { f: 0, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "normal" },
+    { f: 12, pos: [2, 4, 3], rot: [0, 30, 0], scale: [1, 1, 1], op: 1, ease: "in" },
+    { f: 30, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "out" }];
+  doc.anims[doc.curAnim].tracks.root = [
+    { f: 0, pos: [0, 0, 0], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "step" },
+    { f: 24, pos: [0, 1, 0], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "step" }];
+  a.renderTimeline();
+  return 1;`);
+await sleep(300);
+const tl = await page(`
+  const rows = [...document.querySelectorAll("#vxTracks .tl-row")];
+  return { rows: rows.length, labels: rows.map((r) => r.querySelector(".tl-bone").textContent),
+    segs: document.querySelectorAll(".tl-seg").length, keys: document.querySelectorAll(".tl-key").length,
+    curves: [...document.querySelectorAll(".tl-seg path")].map((p) => p.getAttribute("d")),
+    laneW: document.querySelector(".tl-lane").style.width,
+    rulerW: document.getElementById("vxRuler").style.width,
+    bones: window.__voxa.doc.bones.length };`);
+// 行数是几完全由骨骼数决定（前面几条测试会往里加探针骨骼），
+// 所以断言"行数 == 骨骼数"而不是写死一个数：没打键的骨骼也必须有一行。
+ok("时间轴每根骨骼一条轨道，没打键的也列出来",
+  tl.rows === tl.bones && tl.labels.some((x) => x.startsWith("左臂")) && tl.labels.some((x) => x.startsWith("Root")),
+  JSON.stringify({ rows: tl.rows, bones: tl.bones, labels: tl.labels }));
+ok("键与键之间画成段块，段块里带缓动曲线形状",
+  tl.segs === 3 && tl.keys === 5 && tl.curves.length === 3 && new Set(tl.curves).size >= 3,
+  JSON.stringify({ segs: tl.segs, keys: tl.keys, curves: [...new Set(tl.curves)] }));
+
+/** 按骨骼名找键，不按行号：前面的测试会往 doc.bones 里加骨骼，行号会漂 */
+const keyPt = (boneName, keyIdx) => page(`
+  const row = [...document.querySelectorAll("#vxTracks .tl-row")]
+    .find((r) => r.querySelector(".tl-bone").textContent.startsWith(${JSON.stringify(boneName)}));
+  const k = row && row.querySelectorAll(".tl-key")[${keyIdx}];
+  if (!k) return null;
+  const r = k.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`);
+const framesOf = () => page(`const a = window.__voxa; return (a.doc.anims[a.doc.curAnim].tracks["tl-b"] || []).map((k) => k.f);`);
+const kf0 = await framesOf();
+const kp = await keyPt("左臂", 1);
+await drag(kp, { x: kp.x + 42, y: kp.y });
+const kf1 = await framesOf();
+await page(`window.__voxa.undo(); return 1;`);
+await sleep(150);
+const kf2 = await framesOf();
+ok("拖动关键帧改时间（12 → 18）并且能撤销回来",
+  JSON.stringify(kf0) === "[0,12,30]" && JSON.stringify(kf1) === "[0,18,30]" && JSON.stringify(kf2) === "[0,12,30]",
+  JSON.stringify({ kf0, kf1, kf2 }));
+
+const del = await page(`
+  const a = window.__voxa, an = a.doc.anims[a.doc.curAnim];
+  a.activeBone = a.doc.bones.find((b) => b.id === "tl-b");
+  const before = an.tracks["tl-b"].map((k) => k.f).join(",");
+  a.deleteKey(an, a.activeBone, an.tracks["tl-b"][1]);
+  const after = (a.doc.anims[a.doc.curAnim].tracks["tl-b"] || []).map((k) => k.f).join(",");
+  a.undo();
+  const back = ((a.doc.anims[a.doc.curAnim].tracks["tl-b"]) || []).map((k) => k.f).join(",");
+  return { before, after, back };`);
+ok("删除单帧生效，且删得掉也撤得回",
+  del.before === "0,12,30" && del.after === "0,30" && del.back === "0,12,30", JSON.stringify(del));
+
+const zoomed = await page(`
+  const before = document.querySelector(".tl-lane").style.width;
+  const z = document.getElementById("vxTlZoom"); z.value = "20"; z.dispatchEvent(new Event("input"));
+  return { before, after: document.querySelector(".tl-lane").style.width,
+    ruler: document.getElementById("vxRuler").style.width,
+    head: document.getElementById("playhead").style.left };`);
+ok("缩放时间轴：轨道宽度与播放头位置跟着每帧像素走",
+  zoomed.before === "222px" && zoomed.after === "612px" && parseInt(zoomed.ruler, 10) > parseInt(zoomed.after, 10),
+  JSON.stringify(zoomed));
+
+// 右键一个关键帧：弹出的是 .vx-pop（五档缓动 + 删除），顶栏菜单必须仍然收着
+const kp2 = await keyPt("左臂", 1);
+await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: kp2.x, y: kp2.y, button: "right", buttons: 2, clickCount: 1 });
+await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: kp2.x, y: kp2.y, button: "right", buttons: 0 });
+await sleep(250);
+const pop = await page(`
+  const m = document.querySelector(".vx-pop");
+  const p = document.getElementById("vxMenuPanel");
+  return { items: m ? [...m.querySelectorAll("button")].map((b) => b.textContent) : null,
+    on: m ? [...m.querySelectorAll("button.on")].map((b) => b.textContent) : null,
+    topShown: p.classList.contains("show"), topDisplay: getComputedStyle(p).display };`);
+ok("帧上右键出缓动菜单（5 档 + 删除），且顶栏菜单不被带出来",
+  !!pop.items && pop.items.length === 6 && pop.items[5] === "删除这一帧"
+  && pop.topShown === false && pop.topDisplay === "none", JSON.stringify(pop));
+await page(`window.__voxa.closeMenu(); return 1;`);
+
 await s.close();
 process.exit(0);
