@@ -33,8 +33,10 @@ export function rgbToHex(r, g, b) {
   return `#${h(r)}${h(g)}${h(b)}`;
 }
 
-export function newPaletteEntry(hex = "#c8a06c", emissive = 0) {
-  return { i: nextId("c"), hex, emissive };
+export function newPaletteEntry(hex = "#c8a06c", emissive = 0, group = "Group") {
+  // g 是色组名。官方色板是"多个命名色组 × 每组若干色块"（截图里 Group / Color /
+  // Group-1 并存），我们原先是一条平铺的列表，等于把这块做成了占位。
+  return { i: nextId("c"), hex, emissive, g: group || "Group" };
 }
 export function newPart(name = "Object", size = [8, 8, 8]) {
   return {
@@ -60,6 +62,8 @@ export function newDoc(name = "未命名模型", type = "free") {
     // 官方口径：作品类型（自由 / 换肤）在创建时刻即决定，且不支持之后修改
     type: type === "skin" ? "skin" : "free",
     palette: [newPaletteEntry()],
+    // palCur：新加的颜色落进哪个色组（官方"增加颜色组"之后加色就进那一组）
+    palCur: "Group",
     parts: [], bones: [root],
     anims: [newAnim("idle")], curAnim: 0,
     physics: { mode: "default", center: [0, 0, 0], size: [1, 1, 1] },
@@ -121,7 +125,7 @@ export function ensureColor(doc, hex, emissive = 0) {
   const want = String(hex || "#ffffff").toLowerCase();
   const found = doc.palette.find((p) => p.hex.toLowerCase() === want && Math.abs((p.emissive || 0) - emissive) < 0.01);
   if (found) return found.i;
-  const e = newPaletteEntry(want, emissive);
+  const e = newPaletteEntry(want, emissive, doc.palCur || "Group");
   doc.palette.push(e);
   return e.i;
 }
@@ -444,7 +448,8 @@ export function serialize(doc) {
     // 以前它不在这里，于是 deserialize 落到 newDoc 的默认值 "free"：
     // 换肤作品存一次盘、撤销一次、或走一次 V 口令，就悄悄变成自由模式。
     type: doc.type || "free",
-    palette: palette.map((c) => ({ i: c.i, hex: c.hex, emissive: c.emissive || 0 })),
+    palette: palette.map((c) => ({ i: c.i, hex: c.hex, emissive: c.emissive || 0, g: c.g || "Group" })),
+    palCur: doc.palCur || "Group",
     parts: parts.map((p) => ({
       id: p.id, name: p.name, size: p.size, pos: p.pos, rot: p.rot, scale: p.scale,
       visible: p.visible !== false, opacity: p.opacity ?? 1, bone: p.bone || null, group: p.group || null,
@@ -460,7 +465,8 @@ export function serialize(doc) {
 export function deserialize(raw) {
   const doc = newDoc(raw.name || "未命名模型");
   if (raw.type) doc.type = raw.type;
-  doc.palette = (raw.palette && raw.palette.length) ? raw.palette : doc.palette;
+  doc.palette = (raw.palette && raw.palette.length) ? raw.palette.map((c) => Object.assign({ g: "Group" }, c)) : doc.palette;
+  doc.palCur = raw.palCur || "Group";
   doc.parts = (raw.parts || []).map((p) => Object.assign({ visible: true, opacity: 1, voxels: [] }, p));
   doc.parts.forEach((p) => bindDoc(p, doc));
   // 老文件里没有 op：给回 1，而不是留 undefined 让渲染层每次都要 ?? 

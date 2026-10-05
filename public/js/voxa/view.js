@@ -255,6 +255,14 @@ export class VoxaView {
     }
     this.boxHelpers.visible = this.showBoxes;
   }
+  /** 只重绘"用得到这个颜色"的那几个部件。
+   *  系统取色器每动一下就来一次，整场景 rebuild 在 128 部件的模型上会明显卡手。 */
+  rebuildColors(colorId) {
+    for (const p of this.doc.parts) {
+      if (p.voxels.some((v) => v.c === colorId)) this.rebuildPart(p);
+    }
+    this.rebuildBoxes();
+  }
   setActivePart(part) { this.activePart = part; this.rebuildBoxes(); }
   /** 「局部 / 世界坐标」要有真实差别，靠的就是渲染层这条现成的父子链：
    *  部件挂在骨骼节点下、骨骼再挂在父骨骼下，所以世界位置 = 链上变换 ∘ 部件局部位置。

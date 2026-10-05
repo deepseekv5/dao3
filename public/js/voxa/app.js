@@ -3,7 +3,7 @@
 import * as THREE from "../../vendor/three/three.module.js";
 import { VoxaView } from "./view.js";
 import {
-  newDoc, newPart, newBone, newAnim, addPart, clonePart, serialize, deserialize, stats,
+  newDoc, newPart, newBone, newAnim, newPaletteEntry, addPart, clonePart, serialize, deserialize, stats,
   setVoxel, eraseVoxel, getVoxel, ensureColor, colorOf, removeUnusedColors, autoCrop, transformVoxels,
   floodSelect, fillRange, eraseRange, linePoints, faceCells, ensureRoom, extrude, addBone, childBones, removeBone, bindPart,
   groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, MAX_BOX, EASINGS, ANIM_FPS, hexToRgb, rgbToHex, toGLB, importVox,
@@ -222,8 +222,13 @@ class VoxaApp {
     };
     $("vxAddBone").onclick = () => { this.snapshot("新建骨骼"); const b = addBone(this.doc, "Bone", this.activeBone); this.activeBone = b; this.view.buildBones(); this.renderAll(); };
     $("vxSkinTemplate").onclick = () => this.loadSkinTemplate();
-    $("vxAddColor").onclick = () => { this.snapshot("增加颜色"); this.doc.palette.push({ i: "c" + Date.now().toString(36), hex: "#88aaff", emissive: 0 }); this.renderPalette(); };
+    // 按钮的 title 写的是"增加颜色组"，实现就必须真的建一个组：
+    // 以前它往平铺列表里塞一个色块，于是官方那块"多色组色板"永远做不出来。
+    $("vxAddColor").onclick = () => this.addColorGroup();
     $("vxCleanColors").onclick = () => { this.snapshot("清除未用颜色"); removeUnusedColors(this.doc); this.renderPalette(); this.view.rebuild(); };
+    $("vxPalExport").onclick = () => this.exportPalette();
+    $("vxPalImport").onclick = () => $("vxPalFile").click();
+    $("vxPalFile").onchange = (e) => this.importPalette(e.target.files && e.target.files[0]);
     $("phMode").onchange = () => { this.doc.physics.mode = $("phMode").value; refreshPhysics(this.doc); this.renderPhysics(); };
     $("phPos").onchange = () => { this.doc.physics.center = parseVec($("phPos").value, this.doc.physics.center); this.dirty(); };
     $("phSize").onchange = () => { this.doc.physics.size = parseVec($("phSize").value, this.doc.physics.size); this.dirty(); };
@@ -574,7 +579,10 @@ class VoxaApp {
     for (const inp of document.querySelectorAll("#vxProps .vx-vec[data-vec]")) {
       if (inp === document.activeElement) continue;
       const arr = this._vecSrc[inp.dataset.vec];
-      if (arr) inp.value = arr().map((v) => +v.toFixed(2)).join(", ");
+      if (!arr) continue;
+      const v = arr();
+      const i = inp.dataset.i;
+      inp.value = i == null ? v.map((x) => +x.toFixed(2)).join(", ") : String(+v[Number(i)].toFixed(2));
     }
   }
   syncPhysicsFields() {
@@ -942,35 +950,161 @@ class VoxaApp {
     };
     walk(null, 0);
   }
+  /** 官方色板：若干命名色组，每组一行一行铺（每行 11 块），组名可改，
+   *  组尾一个 ＋ 往这一组加色。以前是一条平铺列表 + 一行写死的 "Group" 文字。 */
   renderPalette(keepFields) {
     const host = $("vxPalette");
     host.innerHTML = "";
-    for (const c of this.doc.palette) {
-      const el = document.createElement("div");
-      el.className = "vx-swatch" + (c === this.color ? " active" : "");
-      el.style.background = c.hex;
-      el.title = `${c.hex} 发光 ${((c.emissive || 0) * 100).toFixed(0)}%`;
-      if ((c.emissive || 0) > 0.02) el.classList.add("glow");
-      el.onclick = () => { this.color = c; this.renderPalette(); this.renderProps(); };
-      el.oncontextmenu = (e) => {
-        e.preventDefault();
-        const inp = document.createElement("input");
-        inp.type = "color"; inp.value = c.hex;
-        // 系统取色器每动一下都触发 input。以前既不拍快照、又整场景 rebuild，
-        // 于是一次改色既撤不回来、又要重算所有部件；这里改成"进面板拍一次 + 只重绘用到的部件"
-        let touched = false;
-        inp.oninput = () => {
-          if (!touched) { this.snapshot("改色"); touched = true; }
-          c.hex = inp.value;
-          el.style.background = c.hex;
-          this.view.rebuild();
-          if (this.color === c) this.syncColorFields();
+    const order = [];
+    for (const c of this.doc.palette) if (!order.includes(c.g || "Group")) order.push(c.g || "Group");
+    if (!order.length) order.push("Group");
+    for (const g of order) {
+      const head = document.createElement("div");
+      head.className = "vx-grpline";
+      const nm = document.createElement("span");
+      nm.className = "gp-name";
+      nm.textContent = g;
+      nm.title = "双击改色组名";
+      nm.ondblclick = () => {
+        nm.contentEditable = "true"; nm.focus();
+        nm.onblur = () => {
+          const to = (nm.textContent || "").trim() || g;
+          if (to !== g) {
+            this.snapshot("改色组名");
+            for (const c of this.doc.palette) if ((c.g || "Group") === g) c.g = to;
+            if (this.doc.palCur === g) this.doc.palCur = to;
+          }
+          nm.contentEditable = "false";
+          this.renderPalette(true); this.dirty();
         };
-        inp.click();
       };
-      host.appendChild(el);
+      const add = document.createElement("button");
+      add.className = "gp-add";
+      add.textContent = "＋";
+      add.title = `往「${g}」加一个颜色`;
+      add.onclick = () => this.addColorTo(g);
+      head.appendChild(nm); head.appendChild(add);
+      host.appendChild(head);
+
+      const grid = document.createElement("div");
+      grid.className = "vx-palgrid";
+      for (const c of this.doc.palette) {
+        if ((c.g || "Group") !== g) continue;
+        grid.appendChild(this.swatch(c));
+      }
+      host.appendChild(grid);
     }
     if (!keepFields) this.syncColorFields();
+  }
+  swatch(c) {
+    const el = document.createElement("div");
+    el.className = "vx-swatch" + (c === this.color ? " active" : "");
+    el.style.background = c.hex;
+    el.title = `${c.hex} 发光 ${((c.emissive || 0) * 100).toFixed(0)}%（右键：改色 / 复制 / 删除）`;
+    if ((c.emissive || 0) > 0.02) el.classList.add("glow");
+    el.onclick = () => { this.color = c; this.doc.palCur = c.g || "Group"; this.renderPalette(); this.renderProps(); };
+    el.oncontextmenu = (e) => {
+      e.preventDefault();
+      const used = this.colorUsedCount(c);
+      this.menuAt(e.clientX, e.clientY, [
+        { label: "改色…", run: () => this.pickNative(c, el) },
+        { label: "复制一份到下一组", run: () => this.cloneColor(c) },
+        { sep: true },
+        { label: used ? `删除（${used} 个体素在用）` : "从色板删除", danger: true, run: () => this.deleteColor(c, used) },
+      ]);
+    };
+    return el;
+  }
+  colorUsedCount(c) {
+    let n = 0;
+    for (const p of this.doc.parts) for (const v of p.voxels) if (v.c === c.i) n++;
+    return n;
+  }
+  /** 系统取色器。每动一下都触发 input：进面板拍一次快照、只重绘用到的部件，
+   *  否则一次改色既占几十步撤销、又要重算整个场景。 */
+  pickNative(c, el) {
+    const inp = document.createElement("input");
+    inp.type = "color"; inp.value = c.hex;
+    let touched = false;
+    inp.oninput = () => {
+      if (!touched) { this.snapshot("改色"); touched = true; }
+      c.hex = inp.value;
+      el.style.background = c.hex;
+      this.view.rebuildColors(c.i);
+      if (this.color === c) this.syncColorFields();
+    };
+    inp.click();
+  }
+  addColorGroup() {
+    this.snapshot("增加颜色组");
+    let n = 1, name = "Group-1";
+    const have = new Set(this.doc.palette.map((c) => c.g || "Group"));
+    while (have.has(name)) { n++; name = `Group-${n}`; }
+    this.doc.palCur = name;
+    this.doc.palette.push(newPaletteEntry("#88aaff", 0, name));
+    this.renderPalette(); this.dirty();
+    this.tip(`新建色组「${name}」`);
+  }
+  addColorTo(g) {
+    this.snapshot("增加颜色");
+    this.doc.palCur = g;
+    this.doc.palette.push(newPaletteEntry(this.color && this.color.hex ? this.color.hex : "#88aaff", 0, g));
+    this.renderPalette(); this.dirty();
+  }
+  cloneColor(c) {
+    this.snapshot("复制颜色");
+    const order = [];
+    for (const x of this.doc.palette) if (!order.includes(x.g || "Group")) order.push(x.g || "Group");
+    const at = order.indexOf(c.g || "Group");
+    const to = order[(at + 1) % order.length] || "Group";
+    this.doc.palette.push(newPaletteEntry(c.hex, c.emissive || 0, to));
+    this.renderPalette(); this.dirty();
+    this.tip(`已把 ${c.hex} 复制到「${to}」`);
+  }
+  deleteColor(c, used) {
+    if (used) return this.tip(`有 ${used} 个体素还在用 ${c.hex}，先把它们换成别的颜色`);
+    if (this.doc.palette.length <= 1) return this.tip("色板至少要留一个颜色");
+    this.snapshot("删除颜色");
+    this.doc.palette = this.doc.palette.filter((x) => x !== c);
+    if (this.color === c) this.color = this.doc.palette[0];
+    this.renderPalette(); this.dirty();
+  }
+  exportPalette() {
+    const groups = [];
+    for (const c of this.doc.palette) {
+      const g = c.g || "Group";
+      let box = groups.find((x) => x.name === g);
+      if (!box) groups.push(box = { name: g, colors: [] });
+      box.colors.push({ hex: c.hex, emissive: +(c.emissive || 0).toFixed(3) });
+    }
+    download(new Blob([JSON.stringify({ kind: "voxa-palette", version: 1, groups }, null, 2)], { type: "application/json" }),
+      (this.doc.name || "model") + "-色板.json");
+    this.tip("色板已导出为 JSON");
+  }
+  /** 导入是"把这些颜色加进色板"，不是改模型：同 hex+发光 的复用现有项，
+   *  所以重复导入不会产生一堆看起来不一样、实际等价的色块。 */
+  async importPalette(file) {
+    if (!file) return;
+    let raw = null;
+    try { raw = JSON.parse(await file.text()); } catch { return this.tip("这个文件不是合法的 JSON"); }
+    const groups = Array.isArray(raw && raw.groups) ? raw.groups : null;
+    if (!groups) return this.tip("文件里没有 groups 数组，不像 VOXA 导出的色板");
+    this.snapshot("导入色板");
+    let added = 0;
+    for (const g of groups) {
+      const name = String(g.name || "导入色组");
+      for (const c of (g.colors || [])) {
+        const hex = String(c.hex || "").toLowerCase();
+        if (!/^#[0-9a-f]{6}$/.test(hex)) continue;
+        const em = Number(c.emissive) || 0;
+        const have = this.doc.palette.find((p) => p.hex.toLowerCase() === hex && Math.abs((p.emissive || 0) - em) < 0.01);
+        if (have) continue;
+        this.doc.palette.push(newPaletteEntry(hex, em, name));
+        added++;
+      }
+    }
+    this.renderPalette(); this.view.rebuild(); this.dirty();
+    this.tip(added ? `导入色板：新增 ${added} 个颜色` : "色板里已经有这些颜色了");
   }
   renderProps() {
     const host = $("vxProps");
@@ -983,31 +1117,15 @@ class VoxaApp {
     if (this.mode === "physics") {
       const ph = this.doc.physics;
       this._phFields = { center: () => ph.center, size: () => ph.size };
-      const row = (label, arr, key) => {
-        const r = document.createElement("div");
-        r.className = "vx-axisrow";
-        r.innerHTML = `<span class="ax">${label}</span>`;
-        ["X", "Y", "Z"].forEach((ax, i) => {
-          const inp = document.createElement("input");
-          inp.type = "number"; inp.step = "0.1"; inp.value = +(arr[i] ?? 0).toFixed(2);
-          inp.title = `${key} ${ax}`;
-          inp.dataset.ph = key; inp.dataset.i = i;
-          // 数字框改碰撞盒以前完全进不了撤销栈——手滑打错一个数就只能自己再打回去
-          inp.onfocus = () => this.snapshot("碰撞盒");
-          inp.onchange = () => {
-            const next = arr.slice(); next[i] = Number(inp.value) || 0;
-            if (key === "center") ph.center = next; else ph.size = next.map((v) => Math.max(0.05, v));
-            ph.mode = "custom"; refreshPhysics(this.doc);
-            this.renderPhysics(); this.view.rebuild(); this.dirty();
-          };
-          r.appendChild(inp);
-        });
-        return r;
+      const setPh = (key) => (next) => {
+        if (key === "center") ph.center = next; else ph.size = next.map((v) => Math.max(0.05, v));
+        ph.mode = "custom"; refreshPhysics(this.doc);
+        this.renderPhysics(); this.view.rebuild(); this.dirty();
       };
       const box = document.createElement("div");
       box.className = "vx-sec";
-      box.appendChild(row("", ph.center, "center"));
-      box.appendChild(row("", ph.size, "size"));
+      box.appendChild(axisRow("位置", ph.center, setPh("center"), { snap: () => this.snapshot("碰撞盒") }));
+      box.appendChild(axisRow("尺寸", ph.size, setPh("size"), { snap: () => this.snapshot("碰撞盒尺寸") }));
       host.appendChild(box);
       const t = document.createElement("div");
       t.className = "vx-empty";
@@ -1018,9 +1136,9 @@ class VoxaApp {
     if (this.mode === "anim" && this.activeBone) {
       const snap = (l) => () => this.snapshot(l);
       host.appendChild(section("骨骼 " + this.activeBone.name, [
-        vecRow("位移", this.activeBone.position, (v) => { this.activeBone.position = v; this.view.buildBones(); }, null, snap("骨骼位移")),
-        vecRow("旋转", this.activeBone.rotation, (v) => { this.activeBone.rotation = v; this.view.buildBones(); }, null, snap("骨骼旋转")),
-        vecRow("缩放", this.activeBone.scale, (v) => { this.activeBone.scale = v; this.view.buildBones(); }, null, snap("骨骼缩放")),
+        axisRow("位移", this.activeBone.position, (v) => { this.activeBone.position = v; this.view.buildBones(); this.view.applyPose(this.doc, curAnim(this.doc), this.frame); }, { vecKey: "pos", snap: snap("骨骼位移") }),
+        axisRow("旋转", this.activeBone.rotation, (v) => { this.activeBone.rotation = v; this.view.buildBones(); this.view.applyPose(this.doc, curAnim(this.doc), this.frame); }, { unit: "°", step: 1, vecKey: "rot", snap: snap("骨骼旋转") }),
+        axisRow("缩放", this.activeBone.scale, (v) => { this.activeBone.scale = v; this.view.buildBones(); this.view.applyPose(this.doc, curAnim(this.doc), this.frame); }, { unit: "%", step: 1, vecKey: "scale", snap: snap("骨骼缩放") }),
         sliderRow("不透明度", boneOpacityOf(this.activeBone), (val) => this.setBoneOpacity(val)),
       ]));
       host.appendChild(btnRow([["◆ 创建帧", () => this.keyframe()]]));
@@ -1038,16 +1156,16 @@ class VoxaApp {
       // 「位置」这一行随坐标系变口径：局部=相对所绑骨骼，世界=模型空间里的绝对位置。
       // 旋转/缩放始终是局部值（官方那两行也没有世界口径，父子链上转两次欧拉角
       // 与分量相加并不等价，硬做只会给出一组对不上画面的数字）。
-      vecRow("位置", world ? this.view.partWorldPos(p) : p.pos, (v) => {
+      axisRow("位置", world ? this.view.partWorldPos(p) : p.pos, (v) => {
         p.pos = world ? this.view.partPosFromWorld(p, v) : v;
-        this.view.applyPartTransform(p); this.view.rebuildBoxes();
-      }, "pos", snap("改位置")),
-      vecRow("旋转", p.rot, (v) => { p.rot = v; this.view.applyPartTransform(p); }, "rot", snap("改旋转")),
-      vecRow("缩放", p.scale, (v) => { p.scale = v; this.view.applyPartTransform(p); }, "scale", snap("改缩放")),
-      vecRow("部件框", p.size, (v) => {
-        p.size = v.map((x) => clamp(Math.round(x) || 1, 1, MAX_BOX));
-        this.view.rebuildBoxes(); this.syncSizeBoxes(); this.renderStat();
-      }, "size", snap("改部件框")),
+        this.view.applyPartTransform(p); this.view.rebuildBoxes(); this.dirty();
+      }, { vecKey: "pos", snap: snap("改位置") }),
+      axisRow("旋转", p.rot, (v) => { p.rot = v; this.view.applyPartTransform(p); this.view.rebuildBoxes(); this.dirty(); }, { unit: "°", step: 1, vecKey: "rot", snap: snap("改旋转") }),
+      axisRow("缩放", p.scale, (v) => { p.scale = v; this.view.applyPartTransform(p); this.dirty(); }, { unit: "%", step: 1, vecKey: "scale", snap: snap("改缩放") }),
+      axisRow("部件框", p.size, (v) => {
+        p.size = v;
+        this.view.rebuildBoxes(); this.syncSizeBoxes(); this.renderStat(); this.dirty();
+      }, { ints: true, step: 1, vecKey: "size", snap: snap("改部件框") }),
       sliderRow("不透明度", p.opacity ?? 1, (val) => {
         // 滑杆每动一格都拍一次快照会淹掉撤销栈，所以只在落到新值时记一步
         if ((p.opacity ?? 1) === val) return;
@@ -1663,6 +1781,42 @@ function section(title, rows) {
   for (const r of rows) d.appendChild(r);
   return d;
 }
+/** 官方「参数」面板一行的形状：一个名字 + 三个独立数字格，每格后挂 X/Y/Z
+ *  （旋转带 °、缩放带 %）。以前是一格 "0, 0, 0" 的文本框——
+ *  三个数挤在一起，只想改 Y 就得把三个数重打一遍，也没有单位。 */
+function axisRow(label, values, onSet, opts = {}) {
+  const { unit = "", step = 0.1, vecKey = null, snap = null, ints = false } = opts;
+  const row = document.createElement("div");
+  row.className = "vx-row vx-axis2";
+  const lab = document.createElement("label");
+  lab.textContent = label;
+  row.appendChild(lab);
+  ["X", "Y", "Z"].forEach((ax, i) => {
+    const cell = document.createElement("span");
+    cell.className = "vx-axcell";
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.step = step;
+    const v = values[i] ?? 0;
+    inp.value = ints ? String(Math.round(v)) : String(+v.toFixed(2));
+    if (vecKey) { inp.dataset.vec = vecKey; inp.dataset.i = String(i); }
+    inp.title = `${label} ${ax}`;
+    inp.onchange = () => {
+      const next = [values[0] ?? 0, values[1] ?? 0, values[2] ?? 0];
+      const raw = Number(inp.value);
+      next[i] = ints ? clamp(Math.round(Number.isFinite(raw) ? raw : 1), 1, MAX_BOX) : (Number.isFinite(raw) ? raw : 0);
+      if (snap) snap();
+      onSet(next);
+    };
+    cell.appendChild(inp);
+    const cap = document.createElement("em");
+    cap.className = "ax " + ax.toLowerCase();
+    cap.textContent = ax + unit;
+    cell.appendChild(cap);
+    row.appendChild(cell);
+  });
+  return row;
+}
+
 function vecRow(label, value, set, key, snap) {
   const row = document.createElement("div");
   row.className = "vx-row";
@@ -1678,11 +1832,16 @@ function vecRow(label, value, set, key, snap) {
   return row;
 }
 function sliderRow(label, value, set) {
+  // 官方这一行是"滑条 + 一个百分比读数框"：光有 0..1 的小数字既不好读也没法直接输入
   const row = document.createElement("div");
   row.className = "vx-row";
-  row.innerHTML = `<label>${label}</label><input type="range" min="0" max="1" step="0.01" value="${value}"/><em>${value}</em>`;
-  const r = row.querySelector("input");
-  r.oninput = () => { row.querySelector("em").textContent = r.value; set(Number(r.value)); };
+  row.innerHTML = `<label>${label}</label><input type="range" min="0" max="1" step="0.01" value="${value}"/>`
+    + `<span class="vx-pct"><input type="number" min="0" max="100" step="1" value="${Math.round(value * 100)}"/><em>%</em></span>`;
+  const r = row.querySelector('input[type="range"]'), n = row.querySelector('input[type="number"]');
+  const show = (v) => { r.value = v; n.value = Math.round(v * 100); };
+  r.oninput = () => { n.value = Math.round(r.value * 100); set(Number(r.value)); };
+  n.onchange = () => set(clamp((Number(n.value) || 0) / 100, 0, 1));
+  row.showValue = show;
   return row;
 }
 function selectRow(label, values, labels, value, set) {

@@ -116,13 +116,20 @@ body.voxa{
 .vx-mini:hover{background:var(--vx-accent);color:var(--vx-accent-ink);border-color:transparent}
 
 /* 色板 */
-.vx-palette{display:flex;flex-wrap:wrap;gap:3px}
+/* 色板：官方是"命名色组 + 每行 11 块"。以前是一条 flex 平铺 + 一行写死的 Group 文字 */
+.vx-palette{display:flex;flex-direction:column;gap:2px}
+.vx-palgrid{display:grid;grid-template-columns:repeat(11,1fr);gap:3px}
+.vx-grpline{display:flex;align-items:center;gap:5px;margin:6px 0 3px;font-size:11.5px;color:#c2c2c2}
+.vx-grpline .gp-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;outline:none}
+.vx-grpline .gp-name[contenteditable="true"]{color:var(--vx-accent);text-overflow:clip}
+.vx-grpline .gp-add{flex:0 0 auto;width:18px;height:16px;line-height:14px;border:1px solid #2c2c52;border-radius:3px;
+  background:none;color:#c2c2c2;font-size:11px;cursor:pointer;padding:0}
+.vx-grpline .gp-add:hover{border-color:var(--vx-accent);color:var(--vx-accent)}
 .vx-swatch{width:21px;height:21px;border-radius:2px;border:1px solid rgba(255,255,255,.14);cursor:pointer}
 .vx-swatch:hover{border-color:#fff}
 /* 官方选中色块是白色虚线描边 */
 .vx-swatch.active{outline:1px dashed #fff;outline-offset:-3px;border-color:transparent}
 .vx-swatch.glow{box-shadow:0 0 7px 1px rgba(255,236,170,.75)}
-.vx-grpline{display:flex;align-items:center;gap:5px;margin:8px 0 5px;font-size:11.5px;color:#c2c2c2}
 .vx-hsv{position:relative;margin-top:8px;border-radius:3px;overflow:hidden;border:1px solid #333}
 .vx-hsv canvas{display:block;width:100%;height:96px;cursor:crosshair}
 .vx-hsv .knob{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;
@@ -172,6 +179,25 @@ body.voxa{
 .vx-row em{font-style:normal;color:#fff;width:32px;text-align:right;font-size:10.5px;font-variant-numeric:tabular-nums}
 .vx-row select{flex:1 1 auto;min-width:0}
 .vx-axisrow{display:flex;gap:4px;align-items:center}
+/* 官方「参数」面板的一行：名字 + 三个独立数字格，每格后挂 X/Y/Z（带单位） */
+.vx-axis2{display:flex;align-items:center;gap:3px;min-width:0}
+.vx-axis2 label{flex:0 0 34px;color:var(--vx-fg2);font-size:11.5px}
+.vx-axcell{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:1px}
+/* 这一整条规则里没有全局 box-sizing：input 写 width:100% 再叠 padding + border
+   就会比格子本身宽，数字被挤成一个花括号。所以这两行必须显式 border-box。 */
+.vx-axcell input{box-sizing:border-box;width:100%;min-width:0;background:#111;border:1px solid #333;color:#fff;
+  border-radius:3px;padding:2px 1px;font-size:11px;font-family:Menlo,Consolas,monospace}
+.vx-axcell input::-webkit-outer-spin-button,.vx-axcell input::-webkit-inner-spin-button{appearance:none;margin:0}
+.vx-axcell input[type=number]{appearance:textfield;-moz-appearance:textfield}
+.vx-axcell input:focus{outline:none;border-color:var(--vx-accent)}
+.vx-axcell em{font-style:normal;font-size:9px;font-weight:700;flex:0 0 auto}
+.vx-axcell em.x{color:#e05555}.vx-axcell em.y{color:#5ac05a}.vx-axcell em.z{color:#4a90e2}
+.vx-pct{display:flex;align-items:center;gap:1px;flex:0 0 auto}
+.vx-pct input{box-sizing:border-box;width:42px;background:#111;border:1px solid #333;color:#fff;border-radius:3px;
+  padding:2px 3px;font-size:11px;font-family:Menlo,Consolas,monospace;text-align:right}
+.vx-pct input::-webkit-outer-spin-button,.vx-pct input::-webkit-inner-spin-button{appearance:none;margin:0}
+.vx-pct input:focus{outline:none;border-color:var(--vx-accent)}
+.vx-pct em{font-style:normal;color:var(--vx-fg3);font-size:10.5px}
 .vx-axisrow .ax{width:13px;text-align:center;font-size:10.5px;font-weight:700;flex:0 0 auto}
 .vx-axisrow .ax.x{color:#e05555}.vx-axisrow .ax.y{color:#5ac05a}.vx-axisrow .ax.z{color:#4a90e2}
 .vx-axisrow input{flex:1 1 0;min-width:0;background:#111;border:1px solid #333;color:#fff;border-radius:3px;

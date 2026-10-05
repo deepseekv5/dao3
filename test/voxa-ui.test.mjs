@@ -70,14 +70,16 @@ ok("拖动部件改位置，撤销一步就回到拖之前（快照必须拍在�
   JSON.stringify({ p0, p1, p2 }));
 
 /* ---------- 数值框改位置也要进撤销栈 ---------- */
-await page(`const i = document.querySelector('#vxProps input[data-vec="pos"]');
-  i.value = "3, 4, 5"; i.dispatchEvent(new Event("change")); return 1;`);
+// 官方形态是三个独立数字格（X/Y/Z 各一格），所以这里只动 X 一格：
+// 只想改一个数就得把三个数重打一遍，是"0, 0, 0"挤一格那种文本框的毛病。
+await page(`const i = document.querySelector('#vxProps input[data-vec="pos"][data-i="0"]');
+  i.value = "7"; i.dispatchEvent(new Event("change")); return 1;`);
 await sleep(200);
 const p3 = await partPos();
 await page(`window.__voxa.undo(); return 1;`);
 const p4 = await partPos();
-ok("数值框改位置进撤销栈（手滑打错一个数能撤回来）",
-  JSON.stringify(p3) === JSON.stringify([3, 4, 5]) && JSON.stringify(p4) === JSON.stringify(p0),
+ok("数值框改位置进撤销栈（只动 X 一格，另两格不受牵连）",
+  p3[0] === 7 && JSON.stringify(p3.slice(1)) === JSON.stringify(p0.slice(1)) && JSON.stringify(p4) === JSON.stringify(p0),
   JSON.stringify({ p3, p4 }));
 
 /* ---------- 框选高亮：容量 1 的缓冲写 4000 个实例 ---------- */
@@ -131,7 +133,7 @@ const sp = await page(`
   p.pos = [0, 0, 0]; p.bone = b.id;
   a.setMode ? a.setMode("model") : document.querySelector('#vxModes [data-mode="model"]').click();
   a.activePart = p; a.view.rebuild();
-  const read = () => document.querySelector('#vxProps input[data-vec="pos"]').value;
+  const read = () => [...document.querySelectorAll('#vxProps input[data-vec="pos"]')].map((i) => i.value).join(",");
   a.space = "local"; a.renderProps(); const local = read();
   a.space = "world"; a.renderProps(); const world = read();
   return { local, world };`);
@@ -161,6 +163,42 @@ if (bp) {
 } else {
   ok("视口里能找到可命中的骨骼点", false, "扫描 15×15 个点都没命中骨骼");
 }
+
+/* ---------- 参数面板：官方那"三个独立数字格 + 单位" ---------- */
+const axis = await page(`
+  const rows = [...document.querySelectorAll("#vxProps .vx-axis2")];
+  return { n: rows.length,
+    labels: rows.map((r) => r.querySelector("label").textContent),
+    caps: rows.map((r) => [...r.querySelectorAll(".vx-axcell em")].map((e) => e.textContent).join("/")),
+    boxes: rows[0] ? rows[0].querySelectorAll("input[type=number]").length : 0,
+    pct: !!document.querySelector("#vxProps .vx-pct input[type=number]") };`);
+const overflow = await page(`
+  const pr = document.getElementById("vxProps").getBoundingClientRect();
+  return [...document.querySelectorAll("#vxProps .vx-axis2")].filter((r) => r.getBoundingClientRect().right > pr.right + 1).length;`);
+ok("参数面板每行三格 X/Y/Z，旋转带 °、缩放带 %，不透明度有百分比读数框",
+  axis.n >= 3 && axis.boxes === 3 && axis.caps.some((c) => c === "X°/Y°/Z°")
+  && axis.caps.some((c) => c === "X%/Y%/Z%") && axis.pct === true && overflow === 0,
+  JSON.stringify({ ...axis, overflow }));
+
+/* ---------- 色板：命名色组 + 每行 11 块 ---------- */
+const pal0 = await page(`
+  document.getElementById("vxAddColor").click();
+  const heads = [...document.querySelectorAll("#vxPalette .vx-grpline .gp-name")].map((n) => n.textContent);
+  return { heads, grids: document.querySelectorAll("#vxPalette .vx-palgrid").length,
+    cols: getComputedStyle(document.querySelector("#vxPalette .vx-palgrid")).gridTemplateColumns.split(" ").length,
+    palCur: window.__voxa.doc.palCur, groups: [...new Set(window.__voxa.doc.palette.map((c) => c.g))],
+    ser: JSON.parse(JSON.stringify(window.__voxa.serialize ? {} : {})) };`);
+ok("增加颜色组建出真正的色组：两个组名、两块网格、每行 11 列",
+  pal0.heads.length === 2 && pal0.grids === 2 && pal0.cols === 11
+  && pal0.groups.length === 2 && pal0.palCur === pal0.heads[1], JSON.stringify(pal0));
+const palDel = await page(`
+  const a = window.__voxa;
+  const free = a.doc.palette.find((c) => a.colorUsedCount(c) === 0 && a.doc.palette.length > 1);
+  const before = a.doc.palette.length;
+  a.deleteColor(free, 0);
+  return { before, after: a.doc.palette.length, hex: free && free.hex };`);
+ok("色板里的空闲颜色可删除，删除走撤销栈",
+  palDel.after === palDel.before - 1, JSON.stringify(palDel));
 
 /* ---------- 顶栏圆点菜单：默认必须是收起来的 ---------- */
 // 时间轴的弹出菜单一度也叫 .vx-menu，把主菜单那条 display:none 一起改掉了，

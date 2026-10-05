@@ -118,12 +118,14 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
       <header class="vx-sect-h"><i class="tri">▾</i><span>色板</span>
         <span class="acts">
           <button id="vxAddColor" class="vx-mini" title="增加颜色组">＋</button>
+          <button id="vxPalImport" class="vx-mini" title="导入色板 (.json)">⤓</button>
+          <button id="vxPalExport" class="vx-mini" title="导出色板 (.json)">⤒</button>
           <button id="vxCleanColors" class="vx-mini" title="清除未使用的颜色">⌫</button>
         </span>
       </header>
       <div class="vx-sect-b">
         <div id="vxPalette" class="vx-palette"></div>
-        <div class="vx-grpline"><span class="ti" data-vico="folder"></span>Group</div>
+        <input id="vxPalFile" type="file" accept=".json,application/json" hidden/>
         <div id="vxHsv" class="vx-hsv"><canvas id="hsvArea" width="232" height="96"></canvas></div>
         <div class="vx-hue"><span class="ti" data-vico="eyedropper"></span><input id="vxHue" type="range" min="0" max="360" step="1" value="0"/></div>
         <div class="vx-rgb">
