@@ -103,14 +103,27 @@ export function wireComplete(E, ta) {
       .slice(0, MAX).map((x) => x.it);
   }
 
+  /** 光标左边这段是"写给人看的文字"吗：字符串里、或行注释之后。
+   *  这些地方弹补全只会挡路——本项目的脚本里满是 "赛车模板"、"#finish" 这类字面量，
+   *  而它们恰好长得像标识符前缀。判定只扫当前行（够用：模板字符串跨行时最多少挡一次）。 */
+  function isText(seg) {
+    let q = null;
+    for (let i = 0; i < seg.length; i++) {
+      const c = seg[i];
+      if (q) { if (c === "\\") i++; else if (c === q) q = null; continue; }
+      if (c === '"' || c === "'" || c === "`") { q = c; continue; }
+      if (c === "/" && (seg[i + 1] === "/" || seg[i + 1] === "*")) return true;
+    }
+    return !!q;
+  }
+
   /** 光标左边是什么：`world.` 是点上下文，`woo` 是裸前缀。
    *  两个都拿不到就返回 null（选区非空、行是注释、点在括号后面等等）。 */
   function context() {
     const pos = ta.selectionStart;
     if (pos !== ta.selectionEnd) return null;
     const before = ta.value.slice(0, pos);
-    const line = before.slice(before.lastIndexOf("\n") + 1);
-    if (/^\s*(?:\/\/|\*)/.test(line)) return null;   // 注释里打字不弹
+    if (isText(before.slice(before.lastIndexOf("\n") + 1))) return null;
     const d = /([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)?$/.exec(before);
     if (d) return { recv: d[1], prefix: d[2] || "", start: pos - (d[2] || "").length };
     const b = /([A-Za-z_$][\w$]*)$/.exec(before);

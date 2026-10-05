@@ -916,6 +916,15 @@ ok("Ctrl+Space 在没有前缀时列出全部全局（并且不会漏进一个�
   !acBlank.show && acManual.show && acManual.n === 40 && acManual.value === "",
   JSON.stringify({ blank: acBlank.show, n: acManual.n, value: acManual.value }));
 
+// 字符串与注释里不弹：本项目脚本满是 "赛车模板"、"#finish" 这类字面量，
+// 它们恰好长得像标识符前缀，弹出来就是挡在打字的路中间。
+await putCode('const n = "wor', 14);
+const acInString = await acState();
+await putCode("// wor", 6);
+const acInComment = await acState();
+ok("字符串里和注释里打字不弹", !acInString.show && !acInComment.show,
+  JSON.stringify({ str: acInString.show, cmt: acInComment.show }));
+
 await putCode("world.zzz", 9);
 const acNone = await acState();
 ok("收窄到没有一个候选时整块收起，不留空框", !acNone.show, JSON.stringify({ n: acNone.n }));
