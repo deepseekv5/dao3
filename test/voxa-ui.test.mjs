@@ -550,5 +550,30 @@ const mixer = await page(`
 ok("AnimationMixer 播得动：骨骼节点的位置确实被剪辑改了",
   !!mixer.node && mixer.tracks >= 3 && mixer.moved > 0.01, JSON.stringify(mixer));
 
+/* ---------- 换肤模板：官方那张 T 字人形 + 骨骼，界面三处要同时跟上 ---------- */
+const tpl = await page(`
+  const a = window.__voxa;
+  a.doc.type = "skin"; a.doc.parts.length = 0; a.doc.bones = a.doc.bones.filter((b) => b.id === "root");
+  a.loadSkinTemplate(); a.applyDocType();
+  const rows = [...document.querySelectorAll("#vxParts .vx-item")].map((r) => r.textContent);
+  const propTitle = (document.querySelector("#vxProps .vx-sec-h") || {}).textContent || "";
+  const bound = a.doc.parts.filter((p) => p.bone && a.doc.bones.some((b) => b.id === p.bone)).length;
+  return { parts: a.doc.parts.length, rows: rows.length, bound,
+    stale: rows.some((t) => /Body/.test(t)) && !a.doc.parts.some((p) => p.name === "Body"),
+    propHasPart: /部件\\s/.test(propTitle) && a.doc.parts.some((p) => ("部件 " + p.name) === propTitle.trim()),
+    wear: document.getElementById("miWear").disabled, pub: document.getElementById("miPubSkin").disabled,
+    pivot: document.getElementById("vxPivot").disabled, badge: document.getElementById("vxTypeBadge").textContent,
+    groups: [...document.querySelectorAll("#vxPalette .gp-name")].map((e) => e.textContent),
+    bonesShown: a.view.boneHelpers.visible && a.view.boneHelpers.children.length };`);
+ok("换肤模板载入后：15 个部件进列表、每个都绑到一根真骨骼上",
+  tpl.parts === 15 && tpl.rows === 15 && tpl.bound === 15, JSON.stringify(tpl).slice(0, 200));
+ok("参数面板跟着换成模板里的部件（不是上一个作品留下的幽灵部件）",
+  tpl.stale === false && tpl.propHasPart === true, JSON.stringify({ stale: tpl.stale, prop: tpl.propHasPart }));
+ok("换肤模式下：中心点置灰、穿上/发布皮肤可点，徽标写着换肤模式",
+  tpl.pivot === true && tpl.wear === false && tpl.pub === false && tpl.badge === "换肤模式", JSON.stringify(tpl).slice(0, 160));
+ok("色板给到「肤色」「衣服」两个命名色组，骨骼层画得出 19 个关节",
+  tpl.groups.includes("肤色") && tpl.groups.includes("衣服") && tpl.bonesShown === 19,
+  JSON.stringify({ g: tpl.groups, b: tpl.bonesShown }));
+
 await s.close();
 process.exit(0);

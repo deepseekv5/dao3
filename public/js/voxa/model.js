@@ -365,6 +365,120 @@ export function groupParts(doc, parts, name) {
   return g;
 }
 
+/* ------------------------------ 换肤模板 ------------------------------ */
+// 官方换肤模式（editor/skinningMode.md）打开就是**一个 T 字人形**：18 根骨骼铺在
+// 一个体素小人身上。以前这里只建了骨骼、没有人，而骨骼偏移又全是竖直的
+// （[0,n,0]），于是四肢的关节全叠在同一根柱子上——模板按钮点了也只是多出一列名字。
+//
+// 一张表同时派生骨骼与部件：关节位置决定骨骼偏移，部件盒子贴着关节摆。
+// 分两处写就一定会飘（手在腕骨外面两格这种错，靠眼睛看不出来）。
+// 单位是体素格，上 +Y、脸朝 +Z、右手边 +X（与运行时经典人偶同一套约定）。
+const SKIN_T = {
+  // 关节绝对位置；偏移 = 自己 − 父关节
+  joints: {
+    hips: [0, 8, 0], torso: [0, 11, 0], neck: [0, 15, 0], head: [0, 16.5, 0],
+    leftShoulder: [-3.5, 13, 0], leftUpperArm: [-7, 13, 0], leftLowerArm: [-10, 13, 0], leftHand: [-12, 13, 0],
+    rightShoulder: [2.5, 13, 0], rightUpperArm: [6, 13, 0], rightLowerArm: [9, 13, 0], rightHand: [11, 13, 0],
+    leftUpperLeg: [-1.5, 8, 0], leftLowerLeg: [-1.5, 4, 0], leftFoot: [-1.5, 1, 0],
+    rightUpperLeg: [0.5, 8, 0], rightLowerLeg: [0.5, 4, 0], rightFoot: [0.5, 1, 0],
+  },
+  parent: {
+    hips: "Root", torso: "hips", neck: "torso", head: "neck",
+    leftShoulder: "torso", leftUpperArm: "leftShoulder", leftLowerArm: "leftUpperArm", leftHand: "leftLowerArm",
+    rightShoulder: "torso", rightUpperArm: "rightShoulder", rightLowerArm: "rightUpperArm", rightHand: "rightLowerArm",
+    leftUpperLeg: "hips", leftLowerLeg: "leftUpperLeg", leftFoot: "leftLowerLeg",
+    rightUpperLeg: "hips", rightLowerLeg: "rightUpperLeg", rightFoot: "rightLowerLeg",
+  },
+  // [部件名, 骨骼, 盒子尺寸, 盒子原点(模型空间，可为负), 主色]
+  parts: [
+    ["头", "head", [8, 7, 7], [-4, 16, -3], "#f2c9a0"],
+    ["躯干", "torso", [6, 5, 4], [-3, 11, -2], "#5b7fa8"],
+    ["骨盆", "hips", [6, 3, 4], [-3, 8, -2], "#3d4a63"],
+    ["左上臂", "leftUpperArm", [4, 2, 2], [-7, 12, -1], "#5b7fa8"],
+    ["左小臂", "leftLowerArm", [3, 2, 2], [-10, 12, -1], "#f2c9a0"],
+    ["左手", "leftHand", [2, 2, 2], [-12, 12, -1], "#e8b98c"],
+    ["右上臂", "rightUpperArm", [4, 2, 2], [3, 12, -1], "#5b7fa8"],
+    ["右小臂", "rightLowerArm", [3, 2, 2], [7, 12, -1], "#f2c9a0"],
+    ["右手", "rightHand", [2, 2, 2], [10, 12, -1], "#e8b98c"],
+    ["左大腿", "leftUpperLeg", [2, 4, 2], [-2, 4, -1], "#3d4a63"],
+    ["左小腿", "leftLowerLeg", [2, 3, 2], [-2, 1, -1], "#3d4a63"],
+    ["左脚", "leftFoot", [2, 1, 3], [-2, 0, -1], "#2c2622"],
+    ["右大腿", "rightUpperLeg", [2, 4, 2], [0, 4, -1], "#3d4a63"],
+    ["右小腿", "rightLowerLeg", [2, 3, 2], [0, 1, -1], "#3d4a63"],
+    ["右脚", "rightFoot", [2, 1, 3], [0, 0, -1], "#2c2622"],
+  ],
+  // 脸上的细节与头发：局部坐标（部件自己的 0..size-1），front 是 +z
+  detail: {
+    头: [
+      ["#4a3327", [[0, 5, 0], [7, 6, 6]]],              // 头发帽（盖住头顶与后脑）
+      ["#4a3327", [[0, 0, 0], [7, 4, 1]]],              // 后脑头发
+      ["#2b2b33", [[2, 3, 6], [2, 4, 6]]],              // 左眼
+      ["#2b2b33", [[5, 3, 6], [5, 4, 6]]],              // 右眼
+      ["#4a3327", [[1, 5, 6], [3, 5, 6]]],              // 左眉
+      ["#4a3327", [[4, 5, 6], [6, 5, 6]]],              // 右眉
+      ["#e8a3a3", [[1, 2, 6], [1, 2, 6]]],              // 左腮
+      ["#e8a3a3", [[6, 2, 6], [6, 2, 6]]],              // 右腮
+    ],
+    躯干: [
+      ["#3d4a63", [[0, 0, 0], [5, 0, 3]]],              // 下摆（腰线）
+    ],
+  },
+  // 官方色板是"命名色组"，换肤模板给的是肤色与衣服色两组
+  palette: {
+    肤色: ["#f2c9a0", "#e8b98c", "#e0ac7e", "#c98d5f", "#8a5a35", "#4a3327", "#2b2b33", "#e8a3a3", "#ffffff", "#7d5c46", "#c9c9d2"],
+    衣服: ["#5b7fa8", "#3d4a63", "#2c2622", "#d9b45e", "#e85b5b", "#4ecb8d", "#f2c14e", "#a06bff", "#2f3b52", "#e8e6e1", "#12b5c9"],
+  },
+};
+
+/** 换肤模板：18 根人形骨骼 + 一个 T 字体素小人，每个部件绑到自己那根骨骼。
+ *  返回 {bones, parts, voxels} 便于提示语与断言都用真数，不写死。 */
+export function applySkinTemplate(doc) {
+  const abs = SKIN_T.joints;
+  const ids = { Root: "root" };
+  for (const n of SKIN_BONES) {
+    if (doc.bones.some((b) => b.name === n)) continue;
+    const pname = SKIN_T.parent[n];
+    const a = abs[n], p = pname === "Root" ? [0, 0, 0] : abs[pname];
+    const b = newBone(n, ids[pname] || "root");
+    b.position = [a[0] - p[0], a[1] - p[1], a[2] - p[2]];
+    doc.bones.push(b);
+    ids[n] = b.id;
+  }
+  const groups = Object.keys(SKIN_T.palette);
+  for (const g of groups) for (const hex of SKIN_T.palette[g]) ensureColorIn(doc, hex, g);
+  let voxels = 0;
+  const made = [];
+  for (const [name, bone, size, pos, hex] of SKIN_T.parts) {
+    if (doc.parts.some((p) => p.name === name)) continue;
+    const part = newPart(name, size);
+    part.pos = pos.slice();
+    part.bone = ids[bone] || null;
+    doc.parts.push(part);
+    made.push(part);
+    const cur = doc.palCur;
+    doc.palCur = "肤色";
+    voxels += fillRange(part, [0, 0, 0], [size[0] - 1, size[1] - 1, size[2] - 1], ensureColor(doc, hex, 0));
+    for (const [dhex, [[x0, y0, z0], [x1, y1, z1]]] of (SKIN_T.detail[name] || [])) {
+      const cid = ensureColor(doc, dhex, 0);
+      for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) {
+        const at = partIndex(part).get(vkey(x, y, z));
+        if (at !== undefined) part.voxels[at].c = cid;
+      }
+    }
+    doc.palCur = cur;
+    invalidateIndex(part);
+  }
+  return { bones: SKIN_BONES.length, parts: made.length, voxels };
+}
+/** 往指定色组里放一个颜色（已有同色就复用，不重复塞） */
+function ensureColorIn(doc, hex, group) {
+  const want = String(hex).toLowerCase();
+  const found = doc.palette.find((p) => p.hex.toLowerCase() === want);
+  if (found) { found.g = group; return found.i; }
+  const e = newPaletteEntry(want, 0, group);
+  doc.palette.push(e);
+  return e.i;
+}
 /* ------------------------------ 动画 ------------------------------ */
 export function curAnim(doc) { return doc.anims[doc.curAnim] || doc.anims[0]; }
 export function ensureTrack(doc, boneId) {

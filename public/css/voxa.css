@@ -110,6 +110,11 @@ body.voxa{
 .vx-sect.closed>.vx-sect-h .tri{transform:rotate(-90deg)}
 .vx-sect.closed .vx-sect-b{display:none}
 .vx-sect-b{padding:8px;overflow-y:auto;min-height:0}
+/* 置灰必须看得出来：以前只挂了 .dim 这个类名，而 .dim 只在 .frow/.drawer-head
+   下面有规则，于是"换肤模式下中心点不可调"这条官方约束在界面上没有任何反馈。 */
+.vx-mini:disabled,.vx-ico:disabled,.vx-sel:disabled,.vx-topmenu button:disabled,.dim{
+  opacity:.4;cursor:not-allowed}
+.vx-topmenu button:disabled:hover{background:transparent;color:inherit}
 .vx-mini{min-width:18px;height:18px;padding:0 4px;border-radius:3px;background:#11112a;border:1px solid #383838;
   color:#d0d0d0;font-size:10px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
 .vx-mini:hover{background:var(--vx-accent);color:var(--vx-accent-ink);border-color:transparent}

@@ -3,11 +3,11 @@
 import * as THREE from "../../vendor/three/three.module.js";
 import { VoxaView } from "./view.js";
 import {
-  newDoc, newPart, newBone, newAnim, newPaletteEntry, addPart, clonePart, serialize, deserialize, stats,
+  newDoc, newPart, newAnim, newPaletteEntry, addPart, clonePart, serialize, deserialize, stats,
   setVoxel, eraseVoxel, getVoxel, ensureColor, colorOf, removeUnusedColors, autoCrop, transformVoxels,
   floodSelect, fillRange, eraseRange, linePoints, faceCells, ensureRoom, extrude, addBone, childBones, removeBone, bindPart,
   groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, MAX_BOX, EASINGS, ANIM_FPS, hexToRgb, rgbToHex, toGLB, importVox,
-  parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc,
+  parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc, applySkinTemplate,
 } from "./model.js";
 
 import { openAiModel } from "./ai-model.js";
@@ -509,6 +509,8 @@ class VoxaApp {
       case "exportGlb": this.exportGlb(); break;
       case "publish": this.publish(); break;
       case "publishModel": this.publishModel(); break;
+      case "wearSkin": this.wearSkin(); break;
+      case "publishSkin": this.publishSkin(); break;
       case "undo": this.undo(); break;
       case "redo": this.redo(); break;
       case "saveVersion": this.pushHistory("手动存档"); break;
@@ -571,6 +573,15 @@ class VoxaApp {
     const pv = $("vxPivot");
     if (pv) { pv.disabled = this.doc.type === "skin"; pv.classList.toggle("dim", pv.disabled); }
     const skin = this.doc.type === "skin";
+    // 「穿上/发布皮肤」只对换肤作品有意义：自由作品的部件没绑到人形骨骼上，
+    // 发出去是一套只有躯干会动的怪胎，不如一开始就不给点。
+    for (const id of ["miWear", "miPubSkin"]) {
+      const el = $(id);
+      if (!el) continue;
+      el.disabled = !skin;
+      el.classList.toggle("dim", !skin);
+      el.title = skin ? "" : "仅换肤作品可用：新建时选「换肤模式」才会载入 18 节点人形骨骼";
+    }
     const b = $("vxTypeBadge");
     b.textContent = skin ? "换肤模式" : "自由模式";
     b.classList.toggle("skin", skin);
@@ -1645,28 +1656,18 @@ class VoxaApp {
     this.dirty();
   }
   loadSkinTemplate(quiet) {
-    const has = SKIN_BONES.every((n) => this.doc.bones.some((b) => b.name === n));
+    const has = SKIN_BONES.every((n) => this.doc.bones.some((b) => b.name === n))
+      && this.doc.parts.some((p) => p.bone);          // 只有骨骼没有人，等于模板没做
     if (has) { if (!quiet) this.tip("人形模板已存在"); return; }
     this.snapshot("换肤模板");
-    const byName = { hips: "root" };
-    const parentOf = {
-      torso: "hips", neck: "torso", head: "neck",
-      leftShoulder: "torso", leftUpperArm: "leftShoulder", leftLowerArm: "leftUpperArm", leftHand: "leftLowerArm",
-      rightShoulder: "torso", rightUpperArm: "rightShoulder", rightLowerArm: "rightUpperArm", rightHand: "rightLowerArm",
-      leftUpperLeg: "hips", leftLowerLeg: "leftUpperLeg", leftFoot: "leftLowerLeg",
-      rightUpperLeg: "hips", rightLowerLeg: "rightUpperLeg", rightFoot: "rightLowerLeg",
-    };
-    const H = { hips: [0, 8, 0], torso: [0, 3, 0], neck: [0, 3, 0], head: [0, 2, 0] };
-    for (const n of SKIN_BONES) {
-      const parent = byName[parentOf[n]] || "root";
-      const b = newBone(n, parent);
-      b.position = (H[n] || [0, 0, 0]).slice();
-      this.doc.bones.push(b);
-      byName[n] = b.id;
-    }
-    this.view.buildBones();
-    this.renderBones();
-    if (!quiet) this.tip("已载入 18 节点人形骨骼模板");
+    const r = applySkinTemplate(this.doc);
+    // 模板会换掉整批部件：还攥着旧的那一个，右侧参数面板就会显示一个
+    // 已经不在文档里的"部件 Body"，改数字改到空气上（和 restore 里那类幽灵态同源）。
+    this.activePart = this.doc.parts[0] || null;
+    this.view.rebuild();
+    this.renderBones(); this.renderParts(); this.renderPalette(); this.renderStat(); this.renderProps();
+    this.dirty();
+    if (!quiet) this.tip(`已载入人形模板：${r.bones} 根骨骼 · ${r.parts} 个部件 · ${r.voxels} 体素`);
   }
 
   /* ---------------- 持久化 ---------------- */
@@ -1914,6 +1915,53 @@ class VoxaApp {
     const { openModelPublishDialog } = await import("../publish-model.js");
     openModelPublishDialog(this.doc, (msg) => this.toast(msg));
   }
+  /** 换肤作品 → {model, bones}：glb 落到当前世界的素材目录，映射是恒等的
+   *  （骨骼名本来就是官方那 18 个 GameBodyPart 名，不需要认）。 */
+  async buildSkinRecord() {
+    const worldId = new URLSearchParams(location.search).get("world") || localStorage.getItem("dao3_last_world");
+    if (!worldId) { this.tip("先从编辑器打开这张图再存皮肤：模型要落到本图的素材目录"); return null; }
+    const bones = {};
+    for (const b of this.doc.bones) if (SKIN_BONES.includes(b.name)) bones[b.name] = b.name;
+    if (Object.keys(bones).length < 6) { this.tip("这份作品没有 18 节点人形骨骼，先点「人形模板」"); return null; }
+    this.tip("正在导出皮肤模型…");
+    try {
+      const blob = await toGLB(this.doc);
+      const base = String(this.doc.name || "skin").replace(/[\\/:*?"<>|\s]+/g, "_");
+      const rel = "models/" + base + ".skin.glb";
+      const r = await fetch(`/api/world/${worldId}/asset?path=${encodeURIComponent(rel)}`, { method: "POST", body: await blob.arrayBuffer() });
+      if (!r.ok) throw new Error("素材写入失败 HTTP " + r.status);
+      return { model: `/assets/worlds/${worldId}/${rel}`, bones };
+    } catch (e) { this.toast("导出失败：" + e.message, true); return null; }
+  }
+  /** 穿上这套皮肤：写进**账号**皮肤而不是这张图——皮肤属于人。
+   *  运行时用 skin-rig 那套姿态重定向驱动它，与机甲走同一条链路，零新增运行时代码。 */
+  async wearSkin() {
+    if (this.doc.type !== "skin") return this.tip("只有换肤作品能穿上：新建时选「换肤模式」");
+    const rec = await this.buildSkinRecord();
+    if (!rec) return;
+    const auth = await import("../auth.js");
+    if (!auth.me) await auth.refreshMe();
+    if (!auth.me) { auth.openAuth("login"); this.tip("穿上皮肤要先登录：皮肤跟着账号走"); return; }
+    const six = skinSixColors(this.doc);
+    try {
+      const r = await auth.api("PATCH", "/api/community/me", {
+        skin: Object.assign({}, auth.me.skin || {}, six, {
+          name: String(this.doc.name || "换肤作品").slice(0, 24), kind: "rig", model: rec.model, bones: rec.bones,
+        }),
+      });
+      auth.setMe(r.user);
+      const lost = !r.user.skin || !r.user.skin.model;
+      this.toast(lost ? "已写入账号，但服务端没接受这个模型路径（只认站内路径）" : `已穿上「${this.doc.name}」，进任何一张图都这一身`, lost);
+    } catch (e) { this.toast("穿上失败：" + e.message, true); }
+  }
+  async publishSkin() {
+    if (this.doc.type !== "skin") return this.tip("只有换肤作品能发布到皮肤社区");
+    const rec = await this.buildSkinRecord();
+    if (!rec) return;
+    const { openSkinPublishDialog } = await import("../publish-skin.js");
+    openSkinPublishDialog(Object.assign({ name: this.doc.name, skin: skinSixColors(this.doc).six }, rec, { kind: "rig" }),
+      (msg) => this.toast(msg));
+  }
   async publish() {
     const worldId = new URLSearchParams(location.search).get("world") || localStorage.getItem("dao3_last_world") || "216d665d3ca92bd1b9a2";
     const base = this.doc.name.replace(/[\\/:*?"<>|]/g, "_");
@@ -1970,6 +2018,32 @@ function section(title, rows) {
 /** 官方「参数」面板一行的形状：一个名字 + 三个独立数字格，每格后挂 X/Y/Z
  *  （旋转带 °、缩放带 %）。以前是一格 "0, 0, 0" 的文本框——
  *  三个数挤在一起，只想改 Y 就得把三个数重打一遍，也没有单位。 */
+/** 换肤作品 → 账号皮肤那五键 + 六块色：按部位取**众数**色。
+ *  取均值会把蓝上衣红裤子糊成一块紫，官方那套皮肤本来就是"这一格什么颜色"。
+ *  头发单独取头顶两层的众数（并排掉与脸同色的那批），否则整颗头会被判成肤色。 */
+function skinSixColors(doc) {
+  const hexOf = (cid) => { const c = colorOf(doc, cid); return c && /^#[0-9a-f]{6}$/i.test(c.hex) ? c.hex.toLowerCase() : null; };
+  const mode = (voxels) => {
+    const t = new Map();
+    for (const v of voxels) { const h = hexOf(v.c); if (h) t.set(h, (t.get(h) || 0) + 1); }
+    let best = null, n = -1;
+    for (const [h, k] of t) if (k > n) { best = h; n = k; }
+    return best;
+  };
+  const named = (...keys) => doc.parts.filter((p) => keys.some((k) => String(p.name).includes(k)));
+  const vox = (...keys) => named(...keys).flatMap((p) => p.voxels);
+  const head = named("头")[0];
+  const face = mode(vox("头")) || "#ffd7b0";
+  const top = head ? head.voxels.filter((v) => v.y >= head.size[1] - 2) : [];
+  const hair = mode(top.filter((v) => hexOf(v.c) !== face)) || "#6b4630";
+  const shirt = mode(vox("躯干", "上臂")) || "#5aa8e8";
+  const pants = mode(vox("骨盆", "大腿")) || "#5b6c8e";
+  return {
+    skin: face, shirt, pants, hair, shoe: mode(vox("脚")) || "#7b5441",
+    six: { head: face, body: shirt, armL: shirt, armR: shirt, legL: pants, legR: pants },
+  };
+}
+
 function axisRow(label, values, onSet, opts = {}) {
   const { unit = "", step = 0.1, vecKey = null, snap = null, ints = false } = opts;
   const row = document.createElement("div");

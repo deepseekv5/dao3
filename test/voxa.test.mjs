@@ -12,6 +12,7 @@ import {
   newDoc, newPart, addPart, serialize, deserialize, transformVoxels, ensureRoom,
   faceCells, fillRange, ensureColor, setVoxel, getVoxel, MAX_BOX,
   addBone, bindPart, toGLB, eulerToQuatXYZ, stats, exposedFaces, contourEdges,
+  applySkinTemplate, SKIN_BONES,
 } from "../public/js/voxa/model.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -241,6 +242,54 @@ const glb = async (doc) => {
   ok("L 形转角的两条棱是真轮廓，不能当缝删掉",
     segs(cells([0, 0, 0], [1, 0, 0], [0, 1, 0])) === 22, `拿到 ${segs(cells([0, 0, 0], [1, 0, 0], [0, 1, 0]))}`);
   ok("空部件没有线", segs(newPart("E", [4, 4, 4])) === 0);
+}
+
+/* ---------------- 换肤模板：18 根骨骼要铺在一个体素小人身上 ---------------- */
+// 官方换肤模式打开就是 T 字人形。以前这里只建骨骼、没有人，而且偏移全是 [0,n,0]，
+// 于是左右肩/肘/膝全叠在同一根竖直柱子上——点了按钮只是多出一列名字。
+{
+  const doc = newDoc("换肤作品", "skin");
+  const r = applySkinTemplate(doc);
+  const byId = new Map(doc.bones.map((b) => [b.id, b]));
+  const abs = (name) => {
+    const b = doc.bones.find((x) => x.name === name);
+    let p = [0, 0, 0], c = b;
+    while (c) { p = p.map((v, i) => v + c.position[i]); c = byId.get(c.parent); }
+    return p;
+  };
+  ok("18 根人形骨骼全部建出，且都有父级链", r.bones === 18 && SKIN_BONES.every((n) => doc.bones.some((b) => b.name === n)));
+  ok("髋在 8 格高、胸/颈/头依次向上", abs("hips")[1] === 8 && abs("torso")[1] === 11 && abs("head")[1] > abs("neck")[1]);
+  ok("四肢有横向偏移（旧模板全是竖直偏移，肘与肩叠在同一根柱子上）",
+    abs("leftUpperArm")[0] < -3 && abs("rightUpperArm")[0] > 2 && abs("leftLowerLeg")[0] < 0 && abs("rightLowerLeg")[0] > 0,
+    JSON.stringify({ le: abs("leftUpperArm"), re: abs("rightUpperArm") }));
+  ok("左右对称：两只手到身体中线的距离一样",
+    Math.abs((abs("leftHand")[0] + abs("rightHand")[0]) + 1) < 0.01,
+    JSON.stringify([abs("leftHand")[0], abs("rightHand")[0]]));
+  ok("T 字人形有身体：15 个部件、每个都有体素且都绑到一根骨骼",
+    doc.parts.length === 15 && r.parts === 15 && doc.parts.every((p) => p.voxels.length && p.bone && byId.has(p.bone)),
+    `parts=${doc.parts.length} voxels=${doc.parts.reduce((a, p) => a + p.voxels.length, 0)}`);
+  const head = doc.parts.find((p) => p.name === "头");
+  const modeC = (list) => {
+    const t = new Map();
+    for (const v of list) t.set(v.c, (t.get(v.c) || 0) + 1);
+    let best = null, n = -1;
+    for (const [c, k] of t) if (k > n) { best = c; n = k; }
+    return best;
+  };
+  const front = head.size[2] - 1;
+  const face = modeC(head.voxels.filter((v) => v.z === front && v.y >= 2 && v.y <= 4));
+  const hair = modeC(head.voxels.filter((v) => v.y >= head.size[1] - 2));
+  ok("头上有头发、脸、眼睛三种以上颜色，且头顶那两层不是脸色的",
+    new Set(head.voxels.map((v) => v.c)).size >= 3 && hair !== face,
+    `colors=${new Set(head.voxels.map((v) => v.c)).size} hair=${hair} face=${face}`);
+  const groups = [...new Set(doc.palette.map((c) => c.g))];
+  ok("色板给的是命名色组：肤色 + 衣服", groups.includes("肤色") && groups.includes("衣服"), groups.join("/"));
+  const again = applySkinTemplate(doc);
+  ok("重复点「人形模板」不会把人变成两个", again.parts === 0 && doc.parts.length === 15);
+  const { g } = await glb(doc);
+  const names = new Set(g.nodes.map((n) => n.name));
+  ok("导出的 .glb 里 18 根骨骼名齐全（换肤作品能当骨骼皮肤穿的唯一前提）",
+    SKIN_BONES.every((n) => names.has(n)), [...names].slice(0, 6).join(","));
 }
 
 console.log(`\nvoxa: ${pass} passed, ${fail} failed`);
