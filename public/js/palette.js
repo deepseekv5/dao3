@@ -60,6 +60,11 @@ export function wirePalette(E) {
     g("视图", "角色视角编辑", "K", click("#fpEdit"));
     g("视图", "重置视角", "", click("#resetView"));
     g("视图", "聚焦选中", "Shift+F", () => E.frameSelected?.());
+    // 手柄模式转调属性卡上那排按钮自己：面板和按钮走同一条 onclick，
+    // 就没有"从按钮点进去对、从面板搜进去不对"这种两份实现的漂移。
+    for (const [k, zh] of [["move", "移动"], ["rotate", "旋转"], ["scale", "缩放"]]) {
+      g("视图", `手柄切到「${zh}」`, "选中模型后拖它", click(`#gizModes [data-gm="${k}"]`));
+    }
     g("视图", "全局视角", "", click("#modeGlobal"));
     g("视图", "重置面板布局", "拖乱了回默认", () => E.resetPanels?.());
     g("编辑", "撤销", "Ctrl+Z", click("#undo"));

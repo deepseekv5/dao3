@@ -171,6 +171,13 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
 <div id="propCard" class="float-card prop-card">
   <div class="lc-tabs">
     <button class="lc-tab active"><span class="i" data-ico="cube"></span>实体属性</button>
+    <!-- 手柄模式：选中模型才出现。放属性卡头部而不是场景里，是因为这排按钮改的就是
+         这张卡正在编辑的那个对象，两处永远同生同灭，不需要再判断一次"该不该显示"。 -->
+    <div class="pc-giz" id="gizModes" role="group" aria-label="变换手柄模式" hidden>
+      <button class="pg-btn" data-gm="move" title="移动手柄：拖箭头只沿那一根轴走，拖中心球在屏幕平面里自由挪">移动</button>
+      <button class="pg-btn" data-gm="rotate" title="旋转手柄：拖圆环绕该轴转，外圈绕视线转；按住 Shift 吸附 15°">旋转</button>
+      <button class="pg-btn" data-gm="scale" title="缩放手柄：拖端头方块只改那一根轴，拖中间立方体等比缩放；按住 Shift 吸附 0.25 倍">缩放</button>
+    </div>
     <button id="propClose" class="lc-tab pc-close" title="收起属性卡">×</button>
   </div>
   <div id="entProps" class="ent-props"></div>

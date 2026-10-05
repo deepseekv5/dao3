@@ -319,6 +319,13 @@ button.sb-btn:hover{color:#fff;border-color:var(--primary);background:var(--prim
 .prop-card .lc-tabs{display:flex;align-items:center}
 .prop-card .pc-close{margin-left:auto;flex:0 0 auto;width:30px;padding:0;color:var(--font-black-minor)}
 .prop-card .pc-close:hover{color:#fff}
+/* 手柄模式：页签自己 flex:1 会把剩余空间吃光，所以这排按钮天生贴着右边的 ×。
+   收起属性卡时它跟着整张卡消失，不需要第二条隐藏判断。 */
+.pc-giz{display:flex;align-items:center;gap:2px;flex:0 0 auto;padding-right:2px}
+.pc-giz[hidden]{display:none}
+.pg-btn{font-size:11px;padding:4px 8px;border-radius:7px;color:var(--font-white-minor);border:1px solid transparent;white-space:nowrap}
+.pg-btn:hover{background:var(--grey2);color:#fff}
+.pg-btn.on{background:var(--primary-light);border-color:var(--primary);color:#fff}
 body.playing .prop-card{display:none !important}
 @media (max-width:1180px){.prop-card{right:14px;top:auto;bottom:64px;max-height:46%}}
 .model-list{padding:8px 12px;max-height:300px;overflow:auto;display:flex;flex-direction:column;gap:6px}

@@ -569,7 +569,12 @@ async function boot() {
       // 按住平移手柄的这一段指针事件归手柄，不再走工具与拾取：
       // 否则拖一次箭头会同时放下一排方块，一次操作改两个地方，最难查。
       if (window.__editor?.gizmo?.handlePointer(e, fn)) return;
-      if (e.button !== 0) return;
+      // 按下与松开看 button，拖动看 buttons。Chrome 在 pointermove 上把 e.button 报成 -1
+      // （哪怕左键正按着），所以原来这句 `if (e.button !== 0) return;` 让所有工具的 onMove
+      // 静默失效：盒/线/平整一次都建不出来、拖拆一格都拆不掉，而 pointerup 的 button 是 0
+      // 能正常到达，于是表现成"按下、拖动、松手，画面什么都没发生"。
+      if (fn === "onMove" ? !(e.buttons & 1) : e.button !== 0) return;
+      ctx.shift = e.shiftKey;
       if (renderer.fpMode) {
         if (fn === "onDown") fpDown = true;
         if (fn === "onUp") fpDown = false;
@@ -611,10 +616,13 @@ async function boot() {
         return;
       } else {
         ctx.pick = renderer.pick(ndcFromEvent(e).x, ndcFromEvent(e).y);
-        // 搭建模式下点到「比方块更靠前」的模型 → 视为选中该模型并弹出属性面板
+        // 搭建模式下点到「比方块更靠前」的模型 → 视为选中该模型并弹出属性面板。
+        // 这里要留半个方块的余量：赛道围栏这类网格就是紧贴着墙装的，实测它比方块面
+        // 只靠前 0.3 格——按严格比较的话每一次点击都被判给围栏，症状是"拆不掉方块"，
+        // 而用户看到的是同一个屏幕上的同一格。差得明显（车挡在墙前）才归模型。
         if (fn === "onDown") {
           const picked = pickModel(e);
-          if (picked && (!ctx.pick || ctx.pick.ground || picked.dist < ctx.pick.dist)) {
+          if (picked && (!ctx.pick || ctx.pick.ground || picked.dist < ctx.pick.dist - 0.6)) {
             selectModel(picked.m);
             return;
           }
@@ -637,7 +645,7 @@ async function boot() {
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
   // selOps 单独一组：命令面板要能调到剪贴板这几个动作。它们原本只有键盘快捷键，
   // 而快捷键藏在按钮之外的动作，正是面板最容易漏掉的一类（漏了就等于"面板不全"）。
-  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel } };
+  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, refreshModelList, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel } };
   // 协作要改 history.commit、读 state.scripts，所以必须等 __editor 赋完再挂：
   // 挂早一行就是 mountCollab(undefined)，异常被 catch 咽掉，按钮点了没反应。
   import("./collab.js").then(({ mountCollab }) => {

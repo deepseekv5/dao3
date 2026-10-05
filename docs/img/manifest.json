@@ -5,7 +5,7 @@
   "height": 900
  },
  "scale": 1,
- "captured": "2026-10-04T16:05:03.593Z",
+ "captured": "2026-10-05T03:51:00.298Z",
  "shots": [
   {
    "name": "workbench",
@@ -21,7 +21,7 @@
   },
   {
    "name": "editor-model",
-   "kb": 332
+   "kb": 334
   },
   {
    "name": "editor-script",
@@ -54,6 +54,10 @@
   {
    "name": "editor-pack",
    "kb": 104
+  },
+  {
+   "name": "editor-rotate",
+   "kb": 340
   }
  ],
  "pageErrors": []

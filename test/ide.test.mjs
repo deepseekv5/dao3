@@ -35,8 +35,12 @@ await s.goto("http://127.0.0.1:5173/editor.html", { settleMs: 8000 });
 async function wait(expr, ms = 120000, label = expr) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
-    if (await s.evaluate(`(() => !!(${expr}))()`)) return true;
-    await new Promise((r) => setTimeout(r, 1000));
+    // evaluate 超时也算"还没就绪"：世界 load 会把主线程压满几十秒，
+    // 那时候轮询本身也会被拖死，把它当失败就会报出一个不存在的 bug。
+    let ready = false;
+    try { ready = !!(await s.evaluate(`(() => !!(${expr}))()`)); } catch { ready = false; }
+    if (ready) return true;
+    await new Promise((r) => setTimeout(r, 1500));
   }
   throw new Error("等超时（" + ms + "ms）：" + label);
 }
@@ -195,13 +199,19 @@ ok("点某一步真的跳过去，Esc 关窗", jumpedBack.pointer === 2 && jumpe
 const scrub = await s.evaluate(`(async () => {
   document.querySelector('.mtab[data-menu="model"]').click();
   await new Promise(r => setTimeout(r, 1000));
-  const item = document.querySelector("#modelList .mitem");
-  if (!item) return { err: "模型列表是空的" };
+  // 按名选中，不用"列表第一项"：那一项是谁取决于 199 个实体的模型资源谁先加载完，
+  // 同一个页面里两次点到的都可能不是同一个模型。抽到别的那个再红，
+  // 红的理由就跟被测的东西没关系了。
+  const item = [...document.querySelectorAll("#modelList .mitem")].find(x => /报名点/.test(x.textContent));
+  if (!item) return { err: "模型列表里没有「报名点」" };
   item.click();
-  await new Promise(r => setTimeout(r, 700));
+  // 等滑杆真的被填上，别睡一个固定时长：那是渲染循环里"下一帧"才写进去的，
+  // 而软件光栅化下这一帧可能要好几秒——睡 700ms 读到的就是初始的 0，
+  // 于是断言红得像是拖拽坏了。
   const col = document.querySelectorAll("#posSliders .poscol")[0];
   const num = col.querySelector(".posnum"), lb = col.querySelector(".poslbl");
   const m = window.__editor.state.selectedModel;
+  for (let i = 0; i < 60 && (num.disabled || Number(num.value) === 0); i++) await new Promise(r => setTimeout(r, 250));
   const out = { before: Number(num.value), objBefore: m ? +m.object.position.x.toFixed(2) : null };
   const r = lb.getBoundingClientRect();
   const od = (x, y) => ({ bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 3, isPrimary: true, button: 0 });
@@ -232,8 +242,10 @@ ok("滚轮在数值框上改值、在列表上只是滚动", scrub.wheel === 1 &
 const giz = await s.evaluate(`(async () => {
   document.querySelector('.mtab[data-menu="model"]').click();
   await new Promise(r => setTimeout(r, 900));
-  document.querySelector("#modelList .mitem").click();
+  const it2 = [...document.querySelectorAll("#modelList .mitem")].find(x => /报名点/.test(x.textContent)) || document.querySelector("#modelList .mitem");
+  it2.click();
   await new Promise(r => setTimeout(r, 500));
+  window.__editor.gizmo.setMode("move");              // 模式记在本地，后面旋转/缩放那几节会改它
   window.__editor.renderer.onRender(0);              // 让 sync() 跑一拍，手柄位置/尺寸就位
   const ed = window.__editor, m = ed.state.selectedModel;
   const at = () => ({ x: +m.object.position.x.toFixed(2), y: +m.object.position.y.toFixed(2), z: +m.object.position.z.toFixed(2) });
@@ -493,6 +505,273 @@ const early = await s.evaluate(`(() => getComputedStyle(document.documentElement
 ok("重载后布局立刻恢复（不等世界 load 完）", early === want.rpVar && want.rpW > 300, JSON.stringify({ stored, rpW: want.rpW, early }));
 // 复位，免得这条断言把持久化留在非默认值上影响后面的实拍
 await s.evaluate(`(() => { localStorage.setItem("ly.panelSizes", "{}"); return true; })()`);
+
+/* ---------- 工具拖拽 / 批量建造（必须用真实鼠标输入） ---------- */
+// 为什么这一段不能用合成 PointerEvent：真浏览器在 pointermove 上把 e.button 报成 -1
+// （哪怕左键正按着），而合成事件的 button 是测试自己填的、想填几填几。
+// "盒/线/球一次都建不出来、拖拆一格都拆不掉"这个 bug 就是这么躲过整套断言的：
+// toolDispatch 顶部的 e.button !== 0 拦掉了所有 onMove，而断言用合成事件绕过了它。
+// 这一节的每一条都必须走 Input.dispatchMouseEvent，否则它就不是回归测试，是同谋。
+await wait(`window.__editor && document.getElementById("sbMode").textContent === "搭建"`, 150000, "重载后编辑器就绪");
+const page = (body) => s.evaluate(`(() => {${body}})()`);
+async function mdown(x, y, mod = 0) { await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1, modifiers: mod }); await new Promise((r) => setTimeout(r, 60)); }
+async function mmove(x, y, mod = 0) { await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "left", buttons: 1, modifiers: mod }); await new Promise((r) => setTimeout(r, 60)); }
+async function mup(x, y, mod = 0) { await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1, modifiers: mod }); await new Promise((r) => setTimeout(r, 260)); }
+async function stroke(x0, y0, x1, y1, mod = 0) {
+  await mdown(x0, y0, mod);
+  await mmove(Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2), mod);
+  await mmove(x1, y1, mod);
+  await mup(x1, y1, mod);
+}
+// 屏幕上哪一点是实心方块，直接问引擎的拾取接口——写死坐标的话换个角度就测到空气。
+// mode="free" 排掉"有模型明显挡在前面"的点（那种点击归模型，测不出工具本身）；
+// mode="slack" 只要"模型贴在前半个格内"的点，用来验余量那条规则。
+const probePoint = (mode) => page(`
+  const ed = window.__editor, r = ed.renderer, W = ed.world;
+  const rect = r.renderer.domElement.getBoundingClientRect();
+  for (let fy = 0.35; fy <= 0.8; fy += 0.05) for (let fx = 0.3; fx <= 0.8; fx += 0.05) {
+    const ndc = { x: fx * 2 - 1, y: -(fy * 2 - 1) };
+    const p = r.pick(ndc.x, ndc.y);
+    if (!p || p.ground || !W.get(p.x, p.y, p.z)) continue;
+    r.raycaster.setFromCamera(ndc, r.activeCam || r.camera);
+    let model = null, md = Infinity;
+    for (const h of r.raycaster.intersectObjects(r.models.children, true)) {
+      let o = h.object; while (o.parent && o.parent !== r.models) o = o.parent;
+      if (!o || (o.userData && o.userData.ghost)) continue;
+      const m = (ed.state.models || []).find((x) => x.object === o);
+      if (m) { model = m.name || m.meshName; md = h.distance; break; }
+    }
+    const gap = p.dist - md;                       // > 0 = 模型比方块更靠前
+    ${mode === "slack" ? "if (!(model && gap > 0 && gap <= 0.6)) continue;" : "if (model && gap > 0.6) continue;"}
+    // 手柄画在哪儿，哪儿就归手柄——这是它的本职。工具测试要绕开那些像素，
+    // 否则"这一笔没建出来"是手柄吃掉的，不是工具坏了。
+    const cx = rect.left + fx * rect.width, cy = rect.top + fy * rect.height;
+    if (ed.gizmo.visible && ed.gizmo.grabAt({ clientX: cx, clientY: cy })) continue;
+    return { x: Math.round(cx), y: Math.round(cy),
+      vx: p.x, vy: p.y, vz: p.z, ax: p.ax, ay: p.ay, az: p.az, model, gap: +gap.toFixed(2) };
+  }
+  return null;`);
+const blockPoint = () => probePoint("free");
+const lastStep = () => page(`const e = window.__editor.history.stack.slice(-1)[0]; return e ? { label: e.label, n: e.changes.length } : null;`);
+const useTool = (t) => page(`window.__editor.ui.setTool(${JSON.stringify(t)}); return 1;`);
+const boxLen = () => page(`const e = window.__editor.history.stack.slice(-1)[0]; if (!e) return 0; window.__editor.history.undo(); return e.changes.length;`);
+
+await useTool("box");
+const bp = await blockPoint();
+await stroke(bp.x, bp.y, bp.x + 90, bp.y + 55);
+const built = await lastStep();
+const builtThere = await page(`return window.__editor.world.get(${bp.vx + 3}, ${bp.vy + 3}, ${bp.vz}) !== 0;`);
+ok("盒工具一次拖拽真的建出一片（不是只建起点那一格）", built.label === "box" && built.n >= 8, JSON.stringify({ built, builtThere }));
+const rolledBack = await boxLen();
+ok("撤销一次就把这一拖建的全退回去", rolledBack === built.n, JSON.stringify({ rolledBack, n: built.n }));
+
+await useTool("break");
+const bp2 = await blockPoint();
+await stroke(bp2.x, bp2.y, bp2.x + 70, bp2.y + 45);
+const broke = await lastStep();
+ok("破坏工具沿路连拆多格（拖拽不再被丢掉）", broke.label === "break" && broke.n >= 2, JSON.stringify(broke));
+await boxLen();
+
+// 赛道围栏这类网格就是紧贴着墙装的（实测只差 0.3 格）。按严格"谁近归谁"判的话
+// 每一次点击都被判给围栏，症状正是"拆不掉方块"——用户看着的就是那一格。
+const slackPt = await probePoint("slack");
+await useTool("break");
+let slackRes = null;
+if (slackPt) {
+  await mdown(slackPt.x, slackPt.y);
+  await mup(slackPt.x, slackPt.y);
+  slackRes = await page(`
+    const ed = window.__editor;
+    return { still: ed.world.get(${slackPt.vx}, ${slackPt.vy}, ${slackPt.vz}), sel: ed.state.selectedModel ? 1 : 0 };`);
+  await boxLen();
+}
+ok("模型贴在前半个格内时点击归方块：拆得掉、也不把模型抢去选中",
+  !!slackPt && !!slackRes && slackRes.still === 0 && slackRes.sel === 0, JSON.stringify({ slackPt, slackRes }));
+await useTool("sphere");
+const bp3 = await blockPoint();
+await stroke(bp3.x, bp3.y, bp3.x + 12, bp3.y + 6);
+const ball = await lastStep();
+// 半径 1 的球是中心 + 六个邻格 = 7 格。这里曾经是 0：onDown 里那句
+// this._apply=()=>{} 把工具自己的 _apply 覆盖成了空函数，而工具对象是模块单例，
+// 一次覆盖永久生效——球/空心球/半径笔刷/圆柱/空心柱五个工具全在建空气。
+ok("球体笔刷一次点出一坨而不是 0 格", ball.label === "sphere" && ball.n >= 7, JSON.stringify(ball));
+await boxLen();
+
+// Shift 要真的传到工具里（ctx.modifiers.shift 原来只有声明、没有任何写入点，
+// 于是 Hollow 盒永远实心）。同一段拖拽，空心必须比实心省下方块。
+await useTool("box");
+const bp4 = await blockPoint();
+await stroke(bp4.x, bp4.y, bp4.x + 96, bp4.y + 60);
+const solid = (await lastStep()).n;
+await boxLen();
+await stroke(bp4.x, bp4.y, bp4.x + 96, bp4.y + 60, 8);        // modifiers 位：Shift = 8
+const shell = await lastStep();
+ok("按住 Shift 的盒是空心壳（修饰键真的到了工具里）", shell.label === "box" && shell.n < solid && shell.n > 1, JSON.stringify({ solid, shell: shell.n }));
+await boxLen();
+
+// 阵列：原来份数和偏移都取同一个 s，s=1 时唯一那份被"跳过原点"的判据略过，
+// 一次点击什么都不做；现在偏移按选区自身尺寸算。
+// 测之前先在空中放一块孤立方块、拿它当选区：直接拿地表某格的话三个目标格
+// 本来就是同一种方块，diff 为空——断言会因为"没变化"而红，而那恰恰是正确行为。
+const bp5 = await blockPoint();
+await useTool("place");
+await stroke(bp5.x, bp5.y, bp5.x, bp5.y);
+const sel = { x: bp5.ax, y: bp5.ay, z: bp5.az };
+const lone = await page(`
+  const ed = window.__editor;
+  ed.ctx.setSelection({ x: ${sel.x}, y: ${sel.y}, z: ${sel.z} }, { x: ${sel.x}, y: ${sel.y}, z: ${sel.z} });
+  ed.ui.setTool("array");
+  return ed.world.get(${sel.x}, ${sel.y}, ${sel.z});`);
+await stroke(bp5.x, bp5.y, bp5.x + 4, bp5.y + 4);
+const arrayed = await lastStep();
+const copied = await page(`
+  const W = window.__editor.world, want = ${lone};
+  return [[1, 0], [0, 1], [1, 1]].filter(([dx, dz]) => W.get(${sel.x} + ${'dx'}, ${sel.y}, ${sel.z} + ${'dz'}) === want).length;`);
+ok("阵列按选区尺寸复制出副本（不再是空操作）", lone !== 0 && arrayed.label === "array" && arrayed.n >= 1, JSON.stringify({ lone, arrayed, copied }));
+await boxLen();
+await boxLen();
+await page(`window.__editor.selOps.clearSel(); window.__editor.ui.setTool("place"); return 1;`);
+
+/* ---------- 旋转 / 缩放手柄 ---------- */
+await page(`document.querySelector('.mtab[data-menu="model"]').click(); return 1;`);
+await new Promise((r) => setTimeout(r, 900));
+await page(`
+  const it = [...document.querySelectorAll("#modelList .mitem")].find(x => /报名点/.test(x.textContent)) || document.querySelector("#modelList .mitem");
+  it.click();
+  const m = window.__editor.state.selectedModel;
+  // 这一节会真的转、真的缩放它。自动存档已经关了，但"测试改过出厂图上的实体"
+  // 这种痕迹不该靠那道闸门去兜，所以把初始 transform 留着，测完原样写回。
+  window.__restoreSel = { q: m.object.quaternion.toArray(), s: m.object.scale.toArray(), p: m.object.position.toArray() };
+  return 1;`);
+await new Promise((r) => setTimeout(r, 500));
+// 先只切模式：grabPoint / 真按下之间必须跑过至少一帧，才谈得上"量到的就是屏幕上的那一支"。
+// camera.matrixWorldInverse 只有 render() 会刷，而渲染循环的顺序是
+// controls.update() → onRender(sync) → render()，所以刚聚焦完直接投影拿到的是上一帧的视图矩阵。
+await page(`window.__editor.gizmo.setMode("rotate"); window.__editor.renderer.onRender(0); return 1;`);
+const pA = await page(`const p = window.__editor.gizmo.grabPoint("y"); return { x: +p.x.toFixed(1), y: +p.y.toFixed(1) };`);
+await new Promise((r) => setTimeout(r, 300));          // 让真帧跑几拍
+const rot = await page(`
+  const ed = window.__editor, m = ed.state.selectedModel;
+  ed.renderer.onRender(0);
+  const cam = ed.renderer.activeCam || ed.renderer.camera;
+  const rect = ed.renderer.renderer.domElement.getBoundingClientRect();
+  const c = m.object.position.clone().project(cam);
+  const ctr = { x: rect.left + (c.x + 1) / 2 * rect.width, y: rect.top + (1 - c.y) / 2 * rect.height };
+  const a = ed.gizmo.grabPoint("y");
+  const ang = 40 * Math.PI / 180, dx = a.x - ctr.x, dy = a.y - ctr.y;
+  const hit = ed.gizmo.grabAt({ clientX: a.x, clientY: a.y });
+  return { q0: m.object.quaternion.toArray().map(v => +v.toFixed(3)), yaw0: +(m.object.rotation.y * 180 / Math.PI).toFixed(1),
+    p1: { x: +a.x.toFixed(1), y: +a.y.toFixed(1) }, tag: hit ? hit.tag : null, radius: +Math.hypot(dx, dy).toFixed(1),
+    from: { x: Math.round(a.x), y: Math.round(a.y) },
+    to: { x: Math.round(ctr.x + dx * Math.cos(ang) - dy * Math.sin(ang)), y: Math.round(ctr.y + dx * Math.sin(ang) + dy * Math.cos(ang)) } };`);
+const drift = +Math.hypot(rot.p1.x - pA.x, rot.p1.y - pA.y).toFixed(1);
+// 这条防的是"投影拿上一帧的相机矩阵"：修之前这里差 200 多像素，
+// 于是按下点落不到环上，手柄没抓到、反倒被模型拖走。
+ok("刚聚焦就量到的抓点，跑过一帧后仍在原地，并且真抓得住", drift < 2 && rot.tag === "rot:y" && rot.radius > 30, JSON.stringify({ drift, tag: rot.tag, radius: rot.radius }));
+await stroke(rot.from.x, rot.from.y, rot.to.x, rot.to.y);
+const turned = await page(`
+  const ed = window.__editor, m = ed.state.selectedModel;
+  const e = (ed.collectEntities() || []).find(x => x.name === (m.name || m.meshName)) || null;
+  return { q: m.object.quaternion.toArray().map(v => +v.toFixed(3)), yaw: +(m.object.rotation.y * 180 / Math.PI).toFixed(1),
+    orient: m.orientation && m.orientation.map(v => +v.toFixed(3)), dirty: ed.state.dirty,
+    saved: e && e.orientation && e.orientation.map(v => +v.toFixed(3)) };`);
+ok("拖旋转环真的把模型转了（朝向变了且记成一次改动）",
+  JSON.stringify(turned.q) !== JSON.stringify(rot.q0) && Math.abs(turned.yaw - rot.yaw0) > 8 && turned.dirty === true,
+  JSON.stringify({ before: rot.yaw0, after: turned.yaw }));
+// 保存链路读的必须是 object 的四元数，否则界面上转了、存盘回到没转的样子。
+const sameQ = !!turned.saved && !!turned.orient && turned.saved.join(",") === turned.orient.join(",");
+ok("旋转结果写进 entitiesTree 的 orientation（不是单位四元数）",
+  sameQ && turned.saved.join(",") !== "0,0,0,1", JSON.stringify({ saved: turned.saved, orient: turned.orient }));
+
+const sc = await page(`
+  const ed = window.__editor, m = ed.state.selectedModel;
+  ed.gizmo.setMode("scale"); ed.renderer.onRender(0);
+  const p = ed.gizmo.grabPoint("x");
+  const c = (() => { const cam = ed.renderer.activeCam || ed.renderer.camera;
+    const rect = ed.renderer.renderer.domElement.getBoundingClientRect();
+    const v = m.object.position.clone().project(cam);
+    return { x: rect.left + (v.x + 1) / 2 * rect.width, y: rect.top + (1 - v.y) / 2 * rect.height }; })();
+  const dx = p.x - c.x, dy = p.y - c.y, L = Math.hypot(dx, dy) || 1;
+  return { s0: m.object.scale.toArray().map(v => +v.toFixed(4)),
+    from: { x: Math.round(p.x), y: Math.round(p.y) },
+    to: { x: Math.round(p.x + dx / L * 34), y: Math.round(p.y + dy / L * 34) } };`);
+await stroke(sc.from.x, sc.from.y, sc.to.x, sc.to.y);
+const scaled = await page(`const s = window.__editor.state.selectedModel.object.scale; return s.toArray().map(v => +v.toFixed(4));`);
+// 单轴缩放只该动那一根：另外两轴原地不动，才叫"拖 X 端头改 X"。
+ok("拖 X 端头只把 X 轴拉长，Y/Z 一点不动",
+  scaled[0] > sc.s0[0] * 1.05 && Math.abs(scaled[1] - sc.s0[1]) < 1e-6 && Math.abs(scaled[2] - sc.s0[2]) < 1e-6,
+  JSON.stringify({ before: sc.s0, after: scaled }));
+
+const uni = await page(`
+  const ed = window.__editor, m = ed.state.selectedModel;
+  ed.renderer.onRender(0);
+  const p = ed.gizmo.grabPoint("center");
+  return { s0: m.object.scale.toArray().map(v => +v.toFixed(6)), from: { x: Math.round(p.x), y: Math.round(p.y) }, to: { x: Math.round(p.x), y: Math.round(p.y) - 46 } };`);
+await stroke(uni.from.x, uni.from.y, uni.to.x, uni.to.y);
+const unified = await page(`const s = window.__editor.state.selectedModel.object.scale; return s.toArray().map(v => +v.toFixed(6));`);
+// 比的是"三轴乘的是不是同一个系数"。4 位小数会把 0.1006944 报成 0.1007，
+// 那个误差比这条判据本身还大——留着就会得到一个谁都解释不了的红。
+const r0 = unified[0] / uni.s0[0], r1 = unified[1] / uni.s0[1], r2 = unified[2] / uni.s0[2];
+ok("拖中间立方体是等比缩放，三轴同比例",
+  r0 > 1.05 && Math.abs(r0 - r1) < 1e-4 && Math.abs(r1 - r2) < 1e-4,
+  JSON.stringify({ before: uni.s0, after: unified, r: [r0, r1, r2].map(v => +v.toFixed(5)) }));
+
+// 手柄按住后拖到面板上松手：这一串事件里视口收不到 pointerup。
+// 不兜住的话 drag 一直挂着，之后每一次工具拖动的 move/up 都被吞掉——
+// 症状正是"突然拆不掉方块、也建不了东西"，而且只能刷新页面恢复。
+await page(`window.__editor.gizmo.setMode("move"); window.__editor.renderer.onRender(0); return 1;`);
+const hp = await page(`const p = window.__editor.gizmo.grabPoint("y"); return { x: Math.round(p.x), y: Math.round(p.y) };`);
+await mdown(hp.x, hp.y);
+await mmove(hp.x + 40, hp.y - 60);
+await mup(1350, 430);                       // 落在右侧面板上，视口收不到这次松开
+await new Promise((r) => setTimeout(r, 200));
+const afterStuck = await page(`return window.__editor.gizmo.grabbing;`);
+// 先回搭建工作区再测建造。模型工作区里（ctx.mode === "model"）指针本来就该归
+// "拖模型 / 摆手持模型"，盒工具在那儿一次也建不出来——那是工作区让位，不是手柄吞点击。
+await page(`document.querySelector('.mtab[data-menu="build"]').click(); return 1;`);
+await new Promise((r) => setTimeout(r, 600));
+const ws = await page(`return { mode: window.__editor.ctx.mode, giz: window.__editor.gizmo.visible, sel: !!window.__editor.state.selectedModel };`);
+await useTool("box");
+const bp6 = await blockPoint();
+await stroke(bp6.x, bp6.y, bp6.x + 200, bp6.y + 130);
+const survived = await lastStep();
+ok("在手柄外松手不会把手柄卡在拖动态", afterStuck === null, JSON.stringify(afterStuck));
+// 门槛是"这一次拖拽提交了盒子"，不是"盒子有多大"：视角已经聚焦到一个小模型上，
+// 200 像素也只跨几格，把 n>=8 写在这里只会得到一条说不出所以然的红。
+ok("卡住之后工具照样能用（这条防的是全瘫）",
+  ws.mode === "build" && ws.giz === true && ws.sel === true && survived.label === "box" && survived.n >= 2,
+  JSON.stringify({ ws, survived }));
+await boxLen();
+
+// 手柄只吃"正落在它上面"的那一次按下：旁边照样能建。
+const near = await page(`
+  const ed = window.__editor, m = ed.state.selectedModel;
+  ed.renderer.onRender(0);
+  const p = ed.gizmo.grabPoint("y");
+  return { at: !!ed.gizmo.grabAt({ clientX: p.x, clientY: p.y }), far: !!ed.gizmo.grabAt({ clientX: p.x + 120, clientY: p.y + 120 }) };`);
+await useTool("box");
+const bp7 = await blockPoint();
+await stroke(bp7.x, bp7.y, bp7.x + 200, bp7.y + 120);
+const withModel = await lastStep();
+ok("选中模型时手柄不吞掉远处的建造",
+  near.at === true && near.far === false && withModel.label === "box" && withModel.n >= 2,
+  JSON.stringify({ near, n: withModel.n }));
+await boxLen();
+await page(`
+  const ed = window.__editor, r = window.__restoreSel, m = ed.state.selectedModel;
+  if (r && m) { m.object.quaternion.fromArray(r.q); m.object.scale.fromArray(r.s); m.object.position.fromArray(r.p); m.orientation = r.q; }
+  ed.state.selectedModel = null; ed.gizmo.setMode("move"); ed.ui.setTool("place");
+  return 1;`);
+
+// 手柄模式是"这个人的习惯"，要活过重载；测完还回默认，免得影响后面的实拍。
+await page(`window.__editor.gizmo.setMode("scale"); return 1;`);
+await new Promise((r) => setTimeout(r, 200));
+const keptMode = await page(`return localStorage.getItem("ly.gizmoMode");`);
+await s.goto("http://127.0.0.1:5173/editor.html", { settleMs: 1500 });
+await wait(`window.__editor && document.getElementById("sbMode").textContent === "搭建"`, 150000, "重载后编辑器就绪");
+const reloaded = await page(`return { mode: window.__editor.gizmo.mode, on: document.querySelector('#gizModes [data-gm="scale"]').classList.contains("on") };`);
+ok("手柄模式记在本地并在重载后恢复", keptMode === "scale" && reloaded.mode === "scale" && reloaded.on, JSON.stringify({ keptMode, reloaded }));
+await page(`window.__editor.gizmo.setMode("move"); return 1;`);
 
 await s.close();
 process.exit(0);

@@ -363,7 +363,12 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
       if (!on) { c.slider.value = 0; c.num.value = 0; }
     }
   }
-  renderer.onRender = () => {
+  // renderer.onRender 是一个"只有一个位置"的槽（ui / gizmo / main / game 都会写它），
+  // 谁直接赋值就会把前面挂上去的整条链抹掉，而且症状只是"某块面板不再每帧刷新"，
+  // 很难想到是被谁覆盖的。所以每一处都自己把旧值接下来再包一层。
+  const prevOnRender = renderer.onRender;
+  renderer.onRender = (d) => {
+    if (prevOnRender) prevOnRender(d);
     syncPosSliders();
     if (!posLinked) return;
     const p = state.selectedModel.pos;
