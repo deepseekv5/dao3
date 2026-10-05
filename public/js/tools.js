@@ -3,7 +3,6 @@
 //   onDown 一次操作的起点；onMove 拖动途中；onUp 终点 + 一次性提交到 History
 //   （一次撤销 = 一次拖拽）。onUp 里先补一次 _apply 再提交，
 //   因为 move 可能被浏览器合并掉，最后那一格否则就丢了。
-import { VoxelWorld } from "./world.js";
 
 function key(x, y, z) { return x + "," + y + "," + z; }
 // 工具读的是 ctx.shift（由 main.js 每次派发时从事件当场取），不是一份全局状态。

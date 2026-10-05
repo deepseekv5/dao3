@@ -604,13 +604,15 @@ ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = doc
   const CB = await Session.open(chrome.port, { isolated: true, width: 1100, height: 720, initScripts: [ACK, HOOK] });
   // 单独开一张小图，不碰默认地图：协作会改地形与方块，落在默认图上就是存档污染。
   const wid = "envsync" + Date.now().toString(36).slice(-6);
+  // 先导航再 fetch：会话刚开出来停在 about:blank，那里没有 base URL，
+  // 相对路径的 fetch('/api/world/…') 会在解析阶段就抛，整条协作测试跟着崩。
+  await CA.goto(BASE + "/index.html");
+  await CB.goto(BASE + "/index.html");
   await CA.evaluate(`(async () => {
     const payload = { formatVersion: "unity", shape: [16, 16, 16], dir: [1, 1, 1], indices: [], data: [], rot: [], meta: { name: "联机状态测试" } };
     const r = await fetch('/api/world/${wid}', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     return r.status;
   })()`);
-  await CA.goto(BASE + "/index.html");
-  await CB.goto(BASE + "/index.html");
   await register(CA, "环境同步甲");
   await register(CB, "环境同步乙");
   const editUrl = BASE + `/edit/${wid}`;
@@ -621,8 +623,13 @@ ok("退出后菜单不留在屏幕上", await A.evaluate(`(() => { const m = doc
   await CA.evaluate(`document.getElementById("btnCollab").click(); 1`);
   await CB.evaluate(`document.getElementById("btnCollab").click(); 1`);
   const joined = await until(CA, `window.__editor.collab.on && window.__editor.collab.peers.size >= 1`, { tries: 24, ms: 500 });
-  ok("两个账号进了同一个协作房间", !!joined,
-    await CA.evaluate(`JSON.stringify({ on: !!(window.__editor||{}).collab && window.__editor.collab.on, peers: (window.__editor.collab||{peers:new Map()}).peers.size })`));
+  // 两边都要确认进房了再改。只等 A 看到 B 是不够的：B 那边可能还在握手中，
+  // 而环境是"变了才发"的一次性广播——A 先改、B 后到，B 就永远收不到那一次，
+  // 表现为"对方调了白天我这边没变"（实测就是这么红一条）。
+  const joinedB = await until(CB, `window.__editor.collab.on && window.__editor.collab.peers.size >= 1`, { tries: 24, ms: 500 });
+  ok("两个账号进了同一个协作房间", !!joined && !!joinedB,
+    await CA.evaluate(`JSON.stringify({ on: !!(window.__editor||{}).collab && window.__editor.collab.on, peers: (window.__editor.collab||{peers:new Map()}).peers.size })`)
+    + await CB.evaluate(`JSON.stringify({ bOn: window.__editor.collab.on, bPeers: window.__editor.collab.peers.size })`));
 
   // 环境：昼夜与天气是标量，走同一条权威流才有"天空一致"可言
   await CA.evaluate(`(() => { const t = window.__editor.state.terrain; t.dayNight = 0.86; t.weather = "snow"; window.__editor.applyTerrain(); return 1 })()`);
