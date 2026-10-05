@@ -763,6 +763,75 @@ await page(`
   ed.state.selectedModel = null; ed.gizmo.setMode("move"); ed.ui.setTool("place");
   return 1;`);
 
+/* ---------- 脚本编辑的日常四件套（真实键盘） ---------- */
+// 同一条理由：Tab / Enter / Ctrl+/ 这些必须用 Input.dispatchKeyEvent 打，
+// 合成 KeyboardEvent 的 code/modifiers 是测试自己编的，测不出"浏览器实际会不会走到这里"。
+async function pressKey(k, code, modifiers = 0) {
+  for (const type of ["keyDown", "keyUp"]) {
+    await s.send("Input.dispatchKeyEvent", { type, key: k, code, windowsVirtualKeyCode: vkOf(code), ...(modifiers ? { modifiers } : {}) });
+  }
+  await new Promise((r) => setTimeout(r, 140));
+}
+function vkOf(code) { return code === "Tab" ? 9 : code === "Enter" ? 13 : code === "Slash" ? 191 : 0; }
+const codeVal = () => page(`return document.getElementById("scriptCode").value;`);
+const putCode = (text, s0, s1) => page(`
+  const ta = document.getElementById("scriptCode");
+  ta.value = ${JSON.stringify(text)};
+  ta.selectionStart = ${s0}; ta.selectionEnd = ${s1 == null ? s0 : s1};
+  ta.focus(); ta.dispatchEvent(new Event("input")); return 1;`);
+
+await page(`document.querySelector('.mtab[data-menu="script"]').click(); return 1;`);
+await wait(`document.getElementById("scriptScreen").classList.contains("show")`, 60000, "脚本工作区已打开");
+const origCode = await codeVal();
+await page(`window.__editor.__scriptIdx = 0; return 1;`);
+
+await putCode("aaa\nbbb\nccc", 0, 11);
+await pressKey("Tab", "Tab");
+const indented = await codeVal();
+await pressKey("Tab", "Tab", 8);                                   // Shift+Tab
+const outdented = await codeVal();
+// 旧行为：Tab 把整个选区替换成两个空格 —— 选中一段代码按下去，代码就没了。
+ok("Tab 缩进整块、Shift+Tab 退回，一个字都不丢",
+  indented === "  aaa\n  bbb\n  ccc" && outdented === "aaa\nbbb\nccc",
+  JSON.stringify({ indented, outdented }));
+
+await putCode("function f() {", 14);
+await pressKey("Enter", "Enter");
+const afterBrace = await codeVal();
+await putCode("if (a) {}", 8);
+await pressKey("Enter", "Enter");
+const expanded = await codeVal();
+ok("回车自动接上缩进：{ 结尾多一级，夹在 {|} 中间会把收尾挪下去",
+  afterBrace === "function f() {\n  " && expanded === "if (a) {\n  \n}",
+  JSON.stringify({ afterBrace, expanded }));
+
+await putCode("aaa\nbbb", 0, 7);
+await pressKey("/", "Slash", 2);
+const commented = await codeVal();
+await pressKey("/", "Slash", 2);
+const uncommented = await codeVal();
+ok("Ctrl+/ 成对地加注释与去注释", commented === "// aaa\n// bbb" && uncommented === "aaa\nbbb",
+  JSON.stringify({ commented, uncommented }));
+
+await putCode("l1\nl2\nl3\nl4", 9);
+await page(`document.getElementById("scriptCode").dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowDown", bubbles: true })); return 1;`);
+await new Promise((r) => setTimeout(r, 350));
+const curLine = await page(`
+  const g = document.getElementById("scriptGutter");
+  const cur = g.querySelector(".ln.cur"), row = document.getElementById("scriptHi").querySelector(".cur-row");
+  const spans = g.querySelectorAll(".ln");
+  return { ln: cur && cur.dataset.ln, rowTop: row && row.style.top,
+    pitch: spans.length > 1 ? +(spans[1].getBoundingClientRect().top - spans[0].getBoundingClientRect().top).toFixed(1) : -1 };`);
+// pitch 必须是 20（与诊断标记、当前行用的 LH 同一个值）。
+// 行号改成块级之后，innerHTML 里那些 \n 会再各占一行，实测行距翻成 40 ——
+// 数字看着还是 1..n 很整齐，标记却全错位半行，这种错只有量一次才知道。
+ok("当前行高亮落在正确行上，且行号槽行距仍是 20px",
+  curLine.ln === "4" && curLine.rowTop === "72px" && curLine.pitch === 20, JSON.stringify(curLine));
+
+await putCode(origCode, 0, 0);
+await page(`document.querySelector('.mtab[data-menu="build"]').click(); return 1;`);
+await new Promise((r) => setTimeout(r, 500));
+
 // 手柄模式是"这个人的习惯"，要活过重载；测完还回默认，免得影响后面的实拍。
 await page(`window.__editor.gizmo.setMode("scale"); return 1;`);
 await new Promise((r) => setTimeout(r, 200));

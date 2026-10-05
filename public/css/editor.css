@@ -856,6 +856,13 @@ body.playing.float-edit #peRotate{display:none}
 /* 行装饰压在文字下面（z-index 靠后 + 半透明），只画一条虚底边：
    整行刷色会把语法高亮盖住，而"这行有问题"本来就该比代码本身弱一档。 */
 .dg-row{position:absolute;left:0;right:0;height:20px;pointer-events:none;border-bottom:1px dotted transparent}
+/* 当前行：行号加粗 + 一层底色 + 左侧一道主色。
+   行号本来靠 white-space:pre 里的 \n 分行，这里改成块级才铺得满整行。 */
+#scriptGutter .ln{display:block}
+#scriptGutter .ln.cur{color:var(--fg);background:var(--primary-light);box-shadow:inset 3px 0 0 var(--primary)}
+/* 整行那一层要淡得多：--primary-light 是 30% 的青，直接铺到代码上等于把这一行糊住。
+   用 opacity 压到约 7%，既认得出"我在这行"又不挡字（不新增色值，配色仍然只有一个来源）。 */
+.cur-row{position:absolute;left:0;right:0;height:20px;pointer-events:none;background:var(--primary-light);opacity:.25}
 .dg-row.dg-error{border-bottom-color:var(--bad);background:rgba(224,82,75,.10)}
 .dg-row.dg-warn{border-bottom-color:var(--warn);background:rgba(224,166,60,.07)}
 .dg-row.dg-info{border-bottom-color:var(--font-black-minor)}

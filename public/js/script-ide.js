@@ -126,6 +126,8 @@ export function wireScriptIde(E) {
     // 控制台空的时候会被收成一根竖条（那是它自己的设计）。但"有问题"就是它该展开的理由，
     // 收着等于把诊断藏起来——正是这次要修的毛病。
     if (diags.some((d) => d.sev !== "info")) consoleBox.classList.remove("is-closed");
+    // 行号槽每次重画都是整个 innerHTML，刚挂上的 .cur 会被抹掉，所以跟着补一次
+    paintCursorLine();
   }
 
   /* ---------- 问题面板 ---------- */
@@ -168,7 +170,23 @@ export function wireScriptIde(E) {
   }
 
   /* ---------- 行内动作（CodeLens 的那半边） ---------- */
+  /** 当前行高亮：行号加粗 + 整行淡淡一层。
+   *  没有它的话，textarea 上跳三五行就不知道自己在哪，Ctrl+G 也变成盲跳。 */
+  function paintCursorLine() {
+    const hi = document.getElementById("scriptHi");
+    const gutter = document.getElementById("scriptGutter");
+    if (!hi || !gutter) return;
+    let row = hi.querySelector(".cur-row");
+    if (!row) { row = document.createElement("div"); row.className = "cur-row"; hi.appendChild(row); }
+    row.style.top = (PAD + (cursorLine - 1) * LH) + "px";
+    const cur = gutter.querySelector(".ln.cur");
+    if (cur && !cur.matches(`[data-ln="${cursorLine}"]`)) cur.classList.remove("cur");
+    const node = gutter.querySelector(`[data-ln="${cursorLine}"]`);
+    if (node) node.classList.add("cur");
+  }
+
   function renderLens() {
+    paintCursorLine();
     const t = ta();
     const code = (t && t.value) || "";
     const syms = symbolsOf(code);
@@ -180,7 +198,7 @@ export function wireScriptIde(E) {
           <button data-a="optimize">优化重构</button><button data-a="fix">纠正错误</button>
         </span>` : "") +
       (counts.length ? `<button class="lens-err" data-a="line">${counts.length} 个问题</button>` : "") +
-      `<span class="ss-spacer"></span><span class="lens-keys">F8 下一个问题 · Ctrl+G 跳行 · Ctrl+P 切文件</span>`;
+      `<span class="ss-spacer"></span><span class="lens-keys">Tab 缩进 · Shift+Tab 反缩进 · Ctrl+/ 注释 · F8 下一个问题 · Ctrl+G 跳行 · Ctrl+P 切文件</span>`;
   }
   lens.onclick = (ev) => {
     const b = ev.target.closest("button[data-a]");

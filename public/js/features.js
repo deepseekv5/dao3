@@ -377,6 +377,95 @@ function wireScriptConsole() {
   new MutationObserver(() => { if (out.childElementCount) box.classList.remove("is-closed"); }).observe(out, { childList: true });
 }
 
+// ---------- 代码编辑的日常四件套 ----------
+// Tab / Shift+Tab / Enter / Ctrl+/ 。
+// 每一条都只改 ta.value 然后派发一次 input：高亮、诊断、写回 state.scripts、
+// 协作广播全挂在 input 上。在这里再各自走一遍就是第二份实现，必然漂移
+// （上一轮那个"改了不重查"就是这么来的）。
+const IND = "  ";
+const OPEN_RE = /[{([]$/;
+const NEAR_CLOSE_RE = /^\s*[)}\]]/;
+
+function applyEdit(ta, value, selStart, selEnd) {
+  ta.value = value;
+  ta.selectionStart = selStart;
+  ta.selectionEnd = selEnd == null ? selStart : selEnd;
+  ta.dispatchEvent(new Event("input"));
+}
+
+/** 选区覆盖到的整行范围（起点行的行首 → 终点行的行尾） */
+function blockRange(ta) {
+  const v = ta.value;
+  const first = v.lastIndexOf("\n", ta.selectionStart - 1) + 1;
+  let last = v.indexOf("\n", ta.selectionEnd);
+  if (last < 0) last = v.length;
+  // 选区正好停在行首时不该把下一行也算进去（按过 Tab 的人都知道那有多莫名）
+  if (last > ta.selectionStart && ta.selectionEnd === firstLineStart(v, last)) last = v.lastIndexOf("\n", last - 2) + 1;
+  return { first, last };
+}
+function firstLineStart(v, idx) { return v.lastIndexOf("\n", idx - 1) + 1; }
+
+function indentBlock(ta, out) {
+  const { first, last } = blockRange(ta);
+  const lines = ta.value.slice(first, last).split("\n");
+  const next = lines.map((l) => {
+    if (out) return l.startsWith(IND) ? l.slice(IND.length) : (l.startsWith("\t") ? l.slice(1) : (l.startsWith(" ") ? l.slice(1) : l));
+    return l.trim() === "" ? l : IND + l;
+  }).join("\n");
+  applyEdit(ta, ta.value.slice(0, first) + next + ta.value.slice(last), first, first + next.length);
+}
+
+function newlineIndent(ta) {
+  const v = ta.value, s = ta.selectionStart;
+  if (s !== ta.selectionEnd) return false;           // 有选区时 Enter 就是普通替换，别抢
+  const lineStart = firstLineStart(v, s);
+  const before = v.slice(lineStart, s);
+  const lead = (before.match(/^[ \t]*/) || [""])[0];
+  let base = lead;
+  if (OPEN_RE.test(before.trimEnd())) base = lead + IND;
+  const after = v.slice(s);
+  if (NEAR_CLOSE_RE.test(after) && OPEN_RE.test(before.trimEnd())) {
+    // 光标正好夹在 {|} 中间：把收尾挪到下一行的原缩进，光标停在中间那一行
+    const close = after.match(/^\s*([)}\]])/)[1];
+    const rest = after.slice(after.indexOf(close) + close.length);
+    applyEdit(ta, v.slice(0, s) + "\n" + base + "\n" + lead + close + rest, s + 1 + base.length);
+    return true;
+  }
+  applyEdit(ta, v.slice(0, s) + "\n" + base + v.slice(s), s + 1 + base.length);
+  return true;
+}
+
+function toggleComment(ta) {
+  const { first, last } = blockRange(ta);
+  const lines = ta.value.slice(first, last).split("\n");
+  const real = lines.filter((l) => l.trim() !== "");
+  const allOn = real.length > 0 && real.every((l) => /^\s*\/\//.test(l));
+  const next = lines.map((l) => {
+    if (l.trim() === "") return l;
+    if (allOn) return l.replace(/^(\s*)\/\/\s?/, "$1");
+    return l.replace(/^(\s*)/, "$1// ");
+  }).join("\n");
+  applyEdit(ta, ta.value.slice(0, first) + next + ta.value.slice(last), first, first + next.length);
+}
+
+function wireCodeEditing(ta) {
+  ta.addEventListener("keydown", (ev) => {
+    if (ev.code === "Tab") {
+      ev.preventDefault();
+      const multi = ta.value.slice(ta.selectionStart, ta.selectionEnd).includes("\n");
+      if (multi || ev.shiftKey) indentBlock(ta, ev.shiftKey);
+      else applyEdit(ta, ta.value.slice(0, ta.selectionStart) + IND + ta.value.slice(ta.selectionEnd), ta.selectionStart + IND.length);
+      return;
+    }
+    // 只处理"光秃秃的回车"：带修饰键的留给别的绑定（Ctrl+Enter 是运行）
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      if (newlineIndent(ta)) ev.preventDefault();
+      return;
+    }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === "/") { ev.preventDefault(); toggleComment(ta); }
+  });
+}
+
 function wireScript() {
   const e = E;
   wireScriptChecks();
@@ -406,15 +495,9 @@ function wireScript() {
   document.getElementById("scriptPlay").onclick = () => { showScriptScreen(false); window.__play && window.__play(); };
   ta.addEventListener("keydown", (ev) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.code === "Enter") { ev.preventDefault(); runScript(); return; }
-    if (ev.code === "Tab") {
-      ev.preventDefault();
-      const s = ta.selectionStart, t = ta.selectionEnd;
-      ta.value = ta.value.slice(0, s) + "  " + ta.value.slice(t);
-      ta.selectionStart = ta.selectionEnd = s + 2;
-      ta.dispatchEvent(new Event("input"));
-    }
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); e.markDirty ? e.markDirty() : null; e.toast("脚本已记录（保存世界时一并写入）"); }
   });
+  wireCodeEditing(ta);
   // ---- JS 语法高亮（零依赖 tokenizer，见文件底部模块级实现）----
   const render = () => renderCodeEditor();
   const syncScroll = () => syncCodeScroll();
@@ -551,7 +634,10 @@ function renderCodeEditor() {
     const who = authors && authors[i - 1];
     // 每行都必须包成带 data-ln 的节点：诊断标记要按行号找位置，
     // 而裸文本节点不算 children —— 不包的时候行号槽看起来正常，标记却永远画不上。
-    g += `<span class="${who ? "bl ln" : "ln"}" data-ln="${i}"${who ? ` data-by="${escAttr(who)}" style="color:${blameColor(who)}"` : ""}>${label}</span>\n`;
+    // 行与行的分隔交给 .ln{display:block}，这里不能再留 \n：
+    // 块级元素 + pre 里的换行文本会各占一行，实测行距从 20px 变成 40px，
+    // 而诊断标记与当前行是按 20px 定位的，整套就会错开半行。
+    g += `<span class="${who ? "bl ln" : "ln"}" data-ln="${i}"${who ? ` data-by="${escAttr(who)}" style="color:${blameColor(who)}"` : ""}>${label}</span>`;
   }
   gutter.innerHTML = g;
 }
