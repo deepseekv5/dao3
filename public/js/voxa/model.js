@@ -501,90 +501,198 @@ export function parseVoxPalette(bytes) {
 
 /* ------------------------------ glTF 导出 ------------------------------ */
 // 官方导出格式为 glTF（editor/universal.md:13）；这里生成 .glb 二进制容器。
+//
+// 结构：一个根节点 + 每根骨骼一个节点（父子关系照 doc.bones）+ 每个部件一个节点，
+// 部件节点挂在它绑定的骨骼节点下面。官方 VOXA 是**刚体绑骨**（一个部件整块跟着一根骨骼走，
+// 没有顶点权重），所以这里不需要 skins/animations 之外的蒙皮数据：
+// 骨骼动 → 子节点跟着动，这正是刚体绑骨的定义。
+//
+// 动画：每条 doc.anims 一个 glTF animation，通道是骨骼节点的 translation/rotation/scale。
+// 五档缓动里 step 与三条平滑档，glTF 的 sampler 只能整条通道一种插值，
+// 所以平滑档按 1/4 帧重采样成 LINEAR（形状保真），step 用"同一时刻补一帧旧值"的
+// 标准做法跳变。不透明度没有对应的 glTF 通道（要 KHR_materials_* 才勉强），
+// 因此不进导出——编辑器里仍然有效，这点在提示语里写明。
+const GLB_FACES = [
+  { n: [1, 0, 0], c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
+  { n: [-1, 0, 0], c: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
+  { n: [0, 1, 0], c: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
+  { n: [0, -1, 0], c: [[1, 0, 0], [1, 0, 1], [0, 0, 1], [0, 0, 0]] },
+  { n: [0, 0, 1], c: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]] },
+  { n: [0, 0, -1], c: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
+];
+/** three.js 的 Euler(x,y,z,'XYZ') → 四元数，glTF 要 [x,y,z,w]。
+ *  两边必须同一套公式，否则编辑器里看着正对的部件导出去就歪了。 */
+export function eulerToQuatXYZ(rx, ry, rz) {
+  const d = Math.PI / 180 / 2, c1 = Math.cos(rx * d), s1 = Math.sin(rx * d);
+  const c2 = Math.cos(ry * d), s2 = Math.sin(ry * d), c3 = Math.cos(rz * d), s3 = Math.sin(rz * d);
+  return [s1 * c2 * c3 + c1 * s2 * s3, c1 * s2 * c3 - s1 * c2 * s3, c1 * c2 * s3 + s1 * s2 * c3, c1 * c2 * c3 - s1 * s2 * s3];
+}
+const compOf = (a) => (a instanceof Uint32Array ? 5125 : a instanceof Uint16Array ? 5123 : 5126);
+
 export function toGLB(doc) {
-  const pos = [], nrm = [], col = [];
-  const FACES = [
-    { n: [1, 0, 0], c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
-    { n: [-1, 0, 0], c: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
-    { n: [0, 1, 0], c: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
-    { n: [0, -1, 0], c: [[1, 0, 0], [1, 0, 1], [0, 0, 1], [0, 0, 0]] },
-    { n: [0, 0, 1], c: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]] },
-    { n: [0, 0, -1], c: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
-  ];
+  const chunks = [];
+  let offset = 0;
+  const bufferViews = [], accessors = [], materials = [], meshes = [], nodes = [];
+  const addView = (typed, target) => {
+    const bytes = new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength);
+    bufferViews.push({ buffer: 0, byteOffset: offset, byteLength: bytes.byteLength, ...(target ? { target } : {}) });
+    chunks.push(bytes);
+    offset += bytes.byteLength;
+    const pad = (4 - (offset % 4)) % 4;
+    if (pad) { chunks.push(new Uint8Array(pad)); offset += pad; }
+    return bufferViews.length - 1;
+  };
+  const addAcc = (typed, type, target, min, max) => {
+    const n = type === "VEC4" ? 4 : type === "VEC3" ? 3 : 1;
+    const a = { bufferView: addView(typed, target), componentType: compOf(typed), count: typed.length / n, type };
+    if (min) { a.min = min; a.max = max; }
+    accessors.push(a);
+    return accessors.length - 1;
+  };
+  const SOLID_MAT = addMaterial({ base: null });
+  function addMaterial({ base, emissive }) {
+    const pbr = { metallicFactor: 0, roughnessFactor: 0.85 };
+    const m = { pbrMetallicRoughness: pbr };
+    if (base) {
+      pbr.baseColorFactor = base;
+      if (emissive) {
+        m.emissiveFactor = [Math.min(1, emissive[0]), Math.min(1, emissive[1]), Math.min(1, emissive[2])];
+        // 发光强度超过 1 的部分只能靠扩展表达（emissiveFactor 各分量按规范必须 ≤ 1）
+        const strength = 1 + (emissive[3] || 0) * 1.5;
+        if (strength > 1.001) { m.extensions = { KHR_materials_emissive_strength: { emissiveStrength: +strength.toFixed(3) } }; m.__emissiveExt = true; }
+      }
+    }
+    materials.push(m);
+    return materials.length - 1;
+  }
+
+  // ---- 节点：根 → 骨骼树 → 部件 ----
+  nodes.push({ name: doc.name || "voxa", children: [] });
+  const boneNode = new Map();
+  for (const b of doc.bones) {
+    boneNode.set(b.id, nodes.length);
+    nodes.push({ name: b.name, translation: b.position.slice(), rotation: eulerToQuatXYZ(...b.rotation), scale: b.scale.slice(), children: [] });
+  }
+  for (const b of doc.bones) {
+    const parent = b.parent != null && boneNode.has(b.parent) ? nodes[boneNode.get(b.parent)] : nodes[0];
+    (parent.children || (parent.children = [])).push(boneNode.get(b.id));
+  }
+  let usedEmissiveExt = false;
   for (const p of doc.parts) {
     if (p.visible === false) continue;
-    for (const v of p.voxels) {
-      const c = colorOf(doc, v.c) || { hex: "#ffffff" };
-      const [r, g, b] = hexToRgb(c.hex);
-      for (const f of FACES) {
-        const base = pos.length / 3;
+    const prims = [];
+    const solid = { pos: [], nrm: [], col: [], idx: [] };
+    const glows = new Map();   // 颜色 id → 一套顶点（每种发光色一个 primitive，发光才不会被平均掉）
+    const quad = (rec, v, rgb, bright) => {
+      for (const f of GLB_FACES) {
+        const base = rec.pos.length / 3;
         for (const corner of f.c) {
-          pos.push(p.pos[0] + v.x + corner[0], p.pos[1] + v.y + corner[1], p.pos[2] + v.z + corner[2]);
-          nrm.push(...f.n);
-          col.push(r, g, b);
+          rec.pos.push(v.x + corner[0], v.y + corner[1], v.z + corner[2]);
+          rec.nrm.push(...f.n);
+          rec.col.push(Math.min(1, rgb[0] * bright), Math.min(1, rgb[1] * bright), Math.min(1, rgb[2] * bright));
+        }
+        rec.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    };
+    for (const v of p.voxels) {
+      const c = colorOf(doc, v.c) || { hex: "#ffffff", emissive: 0 };
+      const [r, g, b] = hexToRgb(c.hex);
+      const em = c.emissive || 0;
+      if (em > 0.02) {
+        const key = c.i;
+        const rec = glows.get(key) || { pos: [], nrm: [], col: [], idx: [], rgb: [r, g, b], em };
+        quad(rec, v, [r, g, b], 1);
+        glows.set(key, rec);
+      } else quad(solid, v, [r, g, b], 1);
+    }
+    const pushPrim = (rec, material) => {
+      if (!rec.pos.length) return;
+      const f32 = (a) => { const t = new Float32Array(a.length); a.forEach((x, i) => { t[i] = x; }); return t; };
+      const posA = f32(rec.pos);
+      const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < posA.length; i += 3) for (let a = 0; a < 3; a++) { min[a] = Math.min(min[a], posA[i + a]); max[a] = Math.max(max[a], posA[i + a]); }
+      const idxA = new Uint32Array(rec.idx);
+      const attrs = { POSITION: addAcc(posA, "VEC3", 34962, min, max), NORMAL: addAcc(f32(rec.nrm), "VEC3", 34962) };
+      if (material === SOLID_MAT) attrs.COLOR_0 = addAcc(f32(rec.col), "VEC3", 34962);
+      prims.push({ attributes: attrs, indices: addAcc(idxA, "SCALAR", 34963), material, mode: 4 });
+    };
+    pushPrim(solid, SOLID_MAT);
+    for (const rec of glows.values()) {
+      const mi = addMaterial({ base: [rec.rgb[0], rec.rgb[1], rec.rgb[2], 1], emissive: [rec.rgb[0], rec.rgb[1], rec.rgb[2], rec.em] });
+      if (materials[mi].extensions) usedEmissiveExt = true;
+      pushPrim(rec, mi);
+    }
+    if (!prims.length) continue;
+    meshes.push({ name: p.name, primitives: prims });
+    const parent = p.bone && boneNode.has(p.bone) ? nodes[boneNode.get(p.bone)] : nodes[0];
+    (parent.children || (parent.children = [])).push(nodes.length);
+    nodes.push({ name: p.name, mesh: meshes.length - 1, translation: p.pos.slice(), rotation: eulerToQuatXYZ(...p.rot), scale: p.scale.slice() });
+  }
+
+  // ---- 动画 ----
+  const animations = [];
+  const fps = ANIM_FPS;
+  const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  for (const an of doc.anims) {
+    const channels = [], samplers = [];
+    for (const [boneId, keysRaw] of Object.entries(an.tracks || {})) {
+      const node = boneNode.get(boneId);
+      const keys = (keysRaw || []).slice().sort((a, b) => a.f - b.f);
+      if (node == null || keys.length < 2) continue;
+      const times = [], T = [], R = [], S = [];
+      const put = (f, pos, rot, sc) => { times.push(f / fps); T.push(...pos); R.push(...eulerToQuatXYZ(...rot)); S.push(...sc); };
+      for (let i = 0; i + 1 < keys.length; i++) {
+        const a = keys[i], b = keys[i + 1], ease = b.ease || "normal";
+        put(a.f, a.pos, a.rot, a.scale);
+        const span = b.f - a.f;
+        if (ease === "step") {
+          // glTF 一条 sampler 只能一种插值，所以"跳变"用同一时刻补一帧旧值再给新值实现
+          put(a.f + 0.01, a.pos, a.rot, a.scale);
+          put(b.f, b.pos, b.rot, b.scale);
+          continue;
+        }
+        if (ease === "normal") continue;                 // 两端点已经进了 times，线性即可
+        for (let j = 1; j <= 3; j++) {                   // 平滑档：按 1/4 帧重采样成折线
+          const u = j / 4, e = easeFn[ease](u), f = a.f + span * u;
+          put(f, lerp3(a.pos, b.pos, e), lerp3(a.rot, b.rot, e), lerp3(a.scale, b.scale, e));
         }
       }
-      // 每个面两个三角形：0-1-2, 0-2-3
+      const last = keys[keys.length - 1];
+      put(last.f, last.pos, last.rot, last.scale);
+      if (times.length < 2) continue;
+      const tA = new Float32Array(times);
+      // 时间轴只建一份访问器，三条通道共用：每条通道各存一遍同一个 times 数组，
+      // 等于把导出文件白涨三成，而且没有哪个 glTF 工具会这么做。
+      const inAcc = addAcc(tA, "SCALAR");
+      const ch = (path, vals) => {
+        samplers.push({ input: inAcc, output: addAcc(new Float32Array(vals), "VEC" + (path === "rotation" ? "4" : "3")), interpolation: "LINEAR" });
+        channels.push({ sampler: samplers.length - 1, target: { node, path } });
+      };
+      ch("translation", T); ch("rotation", R); ch("scale", S);
     }
+    if (channels.length) animations.push({ name: an.name, channels, samplers });
   }
-  const idx = [];
-  const quads = pos.length / 12;
-  for (let q = 0; q < quads; q++) {
-    const b = q * 4;
-    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
-  }
-  const pack = (arr, Ctor) => { const a = new Ctor(arr.length); arr.forEach((v, i) => { a[i] = v; }); return a; };
-  const posA = pack(pos, Float32Array), nrmA = pack(nrm, Float32Array), colA = pack(col, Float32Array), idxA = pack(idx, Uint32Array);
-  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < posA.length; i += 3) for (let a = 0; a < 3; a++) {
-    min[a] = Math.min(min[a], posA[i + a]); max[a] = Math.max(max[a], posA[i + a]);
-  }
-  const views = [];
-  const bufs = [posA, nrmA, colA, idxA];
-  let binLen = 0;
-  const bufferViews = bufs.map((a, i) => {
-    const byteOffset = binLen;
-    binLen += a.byteLength;
-    views.push(a);
-    return { buffer: 0, byteOffset, byteLength: a.byteLength, target: i === 3 ? 34963 : 34962 };
-  });
-  const bin = new Uint8Array(binLen);
-  let off = 0;
-  for (const v of views) { bin.set(new Uint8Array(v.buffer, v.byteOffset, v.byteLength), off); off += v.byteLength; }
+
   const json = {
     asset: { version: "2.0", generator: "VOXA clone" },
+    ...(usedEmissiveExt ? { extensionsUsed: ["KHR_materials_emissive_strength"] } : {}),
     scene: 0, scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0, name: doc.name }],
-    meshes: [{
-      name: doc.name,
-      primitives: [{
-        attributes: { POSITION: 0, NORMAL: 1, COLOR_0: 2 },
-        indices: 3,
-        material: 0,
-      }],
-    }],
-    materials: [{ pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.85 } }],
-    accessors: [
-      { bufferView: 0, componentType: 5126, count: posA.length / 3, type: "VEC3", min, max },
-      { bufferView: 1, componentType: 5126, count: nrmA.length / 3, type: "VEC3" },
-      { bufferView: 2, componentType: 5126, count: colA.length / 3, type: "VEC3" },
-      { bufferView: 3, componentType: 5125, count: idxA.length, type: "SCALAR" },
-    ],
-    bufferViews,
-    buffers: [{ byteLength: binLen }],
+    nodes, meshes, materials, accessors, bufferViews,
+    buffers: [{ byteLength: offset }],
+    ...(animations.length ? { animations } : {}),
   };
   const jsonBytes = new TextEncoder().encode(JSON.stringify(json));
   const jsonPad = (4 - (jsonBytes.length % 4)) % 4;
-  const binPad = (4 - (bin.length % 4)) % 4;
-  const jsonLen = jsonBytes.length + jsonPad, binLen2 = bin.length + binPad;
-  const total = 12 + 8 + jsonLen + 8 + binLen2;
+  const padBytes = new Uint8Array(jsonPad);
+  const binLen = offset;
+  const total = 12 + 8 + jsonBytes.length + jsonPad + 8 + binLen;
   const out = new ArrayBuffer(total);
   const dv = new DataView(out);
   dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
-  dv.setUint32(12, jsonLen, true); dv.setUint32(16, 0x4E4F534A, true);
-  new Uint8Array(out, 20).set(jsonBytes);
-  const bo = 20 + jsonLen;
-  dv.setUint32(bo, binLen2, true); dv.setUint32(bo + 4, 0x004E4942, true);
-  new Uint8Array(out, bo + 8).set(bin);
+  dv.setUint32(12, jsonBytes.length + jsonPad, true); dv.setUint32(16, 0x4E4F534A, true);
+  let at = 20;
+  new Uint8Array(out, at).set(jsonBytes); at += jsonBytes.length + jsonPad;
+  dv.setUint32(at, binLen, true); dv.setUint32(at + 4, 0x004E4942, true); at += 8;
+  for (const c of chunks) { new Uint8Array(out, at).set(c); at += c.byteLength; }
   return new Blob([out], { type: "model/gltf-binary" });
 }

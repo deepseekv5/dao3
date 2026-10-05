@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   newDoc, newPart, addPart, serialize, deserialize, transformVoxels, ensureRoom,
   faceCells, fillRange, ensureColor, setVoxel, getVoxel, MAX_BOX,
+  addBone, bindPart, toGLB, eulerToQuatXYZ,
 } from "../public/js/voxa/model.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -113,6 +114,62 @@ const keysOf = (p) => new Set(p.voxels.map(key));
   transformVoxels(p, "rot", 1);
   ok("绕 Y 转 90° 交换 X/Z 框", p.size[0] === 1 && p.size[2] === 4, JSON.stringify(p.size));
   ok("转完体素数量不变", p.voxels.length === 4);
+}
+
+
+/* ---------------- glTF 导出：必须是"带骨架、带动画"的活模型 ---------------- */
+{
+  const doc = newDoc("导出测试", "free");
+  const p = newPart("Body", [4, 4, 4]);
+  doc.parts.push(p);
+  fillRange(p, [0, 0, 0], [1, 1, 1], ensureColor(doc, "#ff0000", 0));
+  fillRange(p, [3, 3, 3], [3, 3, 3], ensureColor(doc, "#00ff00", 0.6));
+  p.rot = [0, 30, 0]; p.scale = [2, 2, 2];
+  const arm = addBone(doc, "Arm", doc.bones[0]);   // addBone 收的是父骨骼对象，不是 id
+  arm.position = [1, 2, 3];
+  bindPart(doc, p, arm.id);
+  doc.anims[0].tracks[arm.id] = [
+    { f: 0, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "normal" },
+    { f: 12, pos: [4, 2, 3], rot: [0, 90, 0], scale: [1, 1, 1], op: 1, ease: "inout" },
+    { f: 24, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "step" }];
+  const buf = Buffer.from(await (await toGLB(doc)).arrayBuffer());
+  const jsonLen = buf.readUInt32LE(12);
+  const g = JSON.parse(buf.slice(20, 20 + jsonLen).toString("utf8").replace(/\0+$/, ""));
+  const names = g.nodes.map((n) => n.name);
+  ok("魔数与容器：glTF 二进制、JSON 块在前、BIN 块 4 字节对齐",
+    buf.readUInt32LE(0) === 0x46546C67 && buf.readUInt32LE(4) === 2 && buf.readUInt32LE(8) === buf.length
+    && buf.readUInt32LE(20 + jsonLen + 4) === 0x004E4942, `magic=${buf.readUInt32LE(0).toString(16)}`);
+  ok("节点树：根 → Root → Arm → 部件，部件挂在绑定它的骨骼下面",
+    names.join(",") === "导出测试,Root,Arm,Body"
+    && g.nodes[0].children.includes(1) && g.nodes[1].children.includes(2) && g.nodes[2].children.includes(3),
+    names.join(",") + " children=" + g.nodes.map((n) => (n.children || []).join("|")).join(","));
+  ok("部件节点带自己的位移/旋转/缩放（旧实现只加位移，转过的部件出去是歪的）",
+    JSON.stringify(g.nodes[3].translation) === "[0,0,0]" && g.nodes[3].scale[0] === 2
+    && Math.abs(Math.hypot(...g.nodes[3].rotation) - 1) < 1e-5, JSON.stringify(g.nodes[3].rotation));
+  const anim = (g.animations || [])[0];
+  ok("动画导出为三条通道（位移/旋转/缩放），三条共用同一条时间轴",
+    !!anim && anim.channels.map((c) => c.target.path).join(",") === "translation,rotation,scale"
+    && new Set(anim.samplers.map((x) => x.input)).size === 1        // 三条通道共用同一条时间轴
+    && new Set(anim.samplers.map((x) => x.output)).size === 3        // 但各自一份数值
+    && g.accessors[anim.samplers[0].input].count > 3
+    && anim.samplers.every((x) => g.accessors[x.output].count === g.accessors[x.input].count),
+    anim ? `keys=${g.accessors[anim.samplers[0].input].count} paths=${anim.channels.map((c) => c.target.path).join(",")} ins=${JSON.stringify(anim.samplers.map((x) => x.input))} outs=${anim.samplers.map((x) => g.accessors[x.output].count).join("/")} nodes=${anim.channels.map((c) => c.target.node).join(",")}` : "无动画");
+  const times = [...Array(g.accessors[anim.samplers[0].input].count).keys()]
+    .map((i) => buf.readFloatLE(20 + jsonLen + 8 + g.bufferViews[anim.samplers[0].input].byteOffset + i * 4));
+  ok("平滑档被重采样成折线、step 档补了跳变帧（时间轴单调不减）",
+    times.length > 3 && times.every((t, i) => i === 0 || t >= times[i - 1]) && times[times.length - 1] === 1,
+    `n=${times.length} last=${times[times.length - 1]}`);
+  ok("发光色单独成 primitive，材质带 emissiveFactor 并声明扩展",
+    g.meshes[0].primitives.length === 2 && g.extensionsUsed?.includes("KHR_materials_emissive_strength")
+    && g.materials[1].emissiveFactor?.[1] === 1
+    && g.materials[1].extensions.KHR_materials_emissive_strength.emissiveStrength > 1,
+    `prims=${g.meshes[0].primitives.length} ext=${JSON.stringify(g.extensionsUsed)}`);
+  const posAcc = g.accessors[g.meshes[0].primitives[0].attributes.POSITION];
+  ok("POSITION 带 min/max（glTF 强制要求，缺了三D 查看器会拒绝加载）",
+    posAcc.min?.length === 3 && posAcc.max?.length === 3, JSON.stringify([posAcc.min, posAcc.max]));
+  ok("欧拉角转四元数与 three 同口径：绕 Y 90° 得到 (0,0.707,0,0.707)",
+    eulerToQuatXYZ(0, 90, 0).map((v) => +v.toFixed(3)).join(",") === "0,0.707,0,0.707",
+    JSON.stringify(eulerToQuatXYZ(0, 90, 0)));
 }
 
 console.log(`\nvoxa: ${pass} passed, ${fail} failed`);

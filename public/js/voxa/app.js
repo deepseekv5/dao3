@@ -1355,8 +1355,11 @@ class VoxaApp {
         seg.style.width = Math.max(2, (c.f - a.f) * pxf) + "px";
         // 段块里画缓动曲线：官方那五档（正常/打断/缓入/缓出/缓入缓出）
         // 光看颜色分不出来，曲线形状一眼就知道这一段是怎么走的。
-        seg.innerHTML = `<svg viewBox="0 0 24 12" preserveAspectRatio="none"><path d="${EASE_PATH[a.ease] || EASE_PATH.normal}"/></svg>`;
-        seg.title = `${a.f} → ${c.f} 帧 · 缓动 ${a.ease || "normal"}`;
+        // 缓动记在**目标帧**上（sampleTrack 用的就是 b.ease），段块画的必须是它，
+        // 否则图上是一条 S 形、实际走的是匀速——这种不一致最难靠看代码发现。
+        const ease = c.ease || "normal";
+        seg.innerHTML = `<svg viewBox="0 0 24 12" preserveAspectRatio="none"><path d="${EASE_PATH[ease] || EASE_PATH.normal}"/></svg>`;
+        seg.title = `${a.f} → ${c.f} 帧 · 缓动 ${ease}`;
         lane.appendChild(seg);
       }
       keys.forEach((k, i) => {

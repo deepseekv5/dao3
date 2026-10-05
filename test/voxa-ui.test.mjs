@@ -13,7 +13,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const { port } = await launchChrome({});
 const s = await Session.open(port, { width: 1440, height: 900,
-  initScripts: ['try{localStorage.setItem("dao3_disclaimer_ack","3");localStorage.removeItem("dao3_voxa_model")}catch(e){}' ] });
+  // 必须清掉 VOXA 的自动存档键（dao3_voxa_current）：不清的话这一页是从上一次运行的
+  // 模型恢复的——多出来的部件、walk-test 那条动画全都在，症状是"同一套断言偶尔红偶尔绿"。
+  initScripts: ['try{localStorage.setItem("dao3_disclaimer_ack","3");'
+    + 'for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.indexOf("dao3_voxa")===0)localStorage.removeItem(k);}}catch(e){}' ] });
 const page = (b) => s.evaluate(`(async () => { ${b} })()`);
 const wait = async (cond, ms = 60000, label = cond) => {
   const t0 = Date.now();
@@ -128,15 +131,18 @@ ok("部件不透明度：滑杆改得动、材质跟得上、序列化带得走"
 /* ---------- 骨骼不透明度：applyPose 不能把它冲回 1 ---------- */
 const bop = await page(`
   const a = window.__voxa;
-  a.setMode ? a.setMode("anim") : document.querySelector('#vxModes [data-mode="anim"]').click();
-  const b = a.doc.bones[a.doc.bones.length - 1];
-  a.activeBone = b; a.renderProps();
+  document.querySelector('#vxModes [data-mode="anim"]').click();
+  // 按 id 取，不按引用：万一文档被换过（撤销/恢复），攥着旧对象会测出一个假通过
+  const id = a.doc.bones[a.doc.bones.length - 1].id;
+  a.activeBone = a.doc.bones.find((b) => b.id === id);
+  a.renderProps();
   const sl = document.querySelector("#vxProps input[type=range]");
   if (!sl) return { err: "动画参数面板没有不透明度滑杆" };
   sl.value = "0.25"; sl.dispatchEvent(new Event("input"));
   a.view.applyPose(a.doc, a.doc.anims[a.doc.curAnim] || null, 0);
-  const o = a.view.boneNodes.get(b.id);
-  return { model: b.op, runtime: o ? o.userData.op : null, ser: JSON.parse(JSON.stringify(a.doc)).bones.find((x) => x.id === b.id).op };`);
+  const o = a.view.boneNodes.get(id);
+  const byId = (d) => d.bones.find((x) => x.id === id).op;
+  return { model: byId(a.doc), runtime: o ? o.userData.op : null, ser: byId(JSON.parse(JSON.stringify(a.doc))) };`);
 ok("骨骼不透明度存得下、applyPose 之后还在（先前每帧被冲回 1）",
   !bop.err && bop.model === 0.25 && bop.runtime === 0.25 && bop.ser === 0.25, JSON.stringify(bop));
 
@@ -257,8 +263,18 @@ const grp = await page(`
   a.setTool("move");
   return { named: !!g, targets, before, qName: q.name };`);
 await settle();
-const gpt = await findPoint("voxel");
-await drag(gpt, { x: gpt.x + 60, y: gpt.y });
+// 合成扫描取到的点偶尔会和渲染循环抢一拍（按下那一刻射线还没命中，于是这一下什么也没拖）。
+// 真人是"看着什么点什么"，不会有这个问题；所以这里重扫重试，最多三次，并把次数报出来。
+const snap = () => page(`return window.__voxa.doc.parts.map((x) => x.pos.join(",")).join("|");`);
+const g0 = await snap();
+let gpt = await findPoint("voxel"), tries = 0;
+do {
+  await drag(gpt, { x: gpt.x + 60, y: gpt.y });
+  tries++;
+  if (await snap() !== g0) break;
+  await settle();
+  gpt = await findPoint("voxel");
+} while (tries < 3);
 console.log("LOG", await page(`return (window.__log||[]).join(" | ");`));
 const after = await page(`
   const a = window.__voxa;
@@ -275,7 +291,7 @@ ok("编组后拖一个成员，同组每个成员走的距离一样；解组后�
   grp.named && grp.targets === 2 && Object.keys(after).length === 2
   && Math.abs(moved[0] - moved[1]) < 0.01 && Math.abs(moved[0]) > 1
   && un.groups === 0 && un.targets === 1 && un.g === null,
-  JSON.stringify({ before: grp.before, after, moved, targets: grp.targets, un }));
+  JSON.stringify({ before: grp.before, after, moved, targets: grp.targets, un, tries }));
 
 /* ---------- 顶栏圆点菜单：默认必须是收起来的 ---------- */
 // 时间轴的弹出菜单一度也叫 .vx-menu，把主菜单那条 display:none 一起改掉了，
@@ -375,6 +391,47 @@ ok("帧上右键出缓动菜单（5 档 + 删除），且顶栏菜单不被带�
   !!pop.items && pop.items.length === 6 && pop.items[5] === "删除这一帧"
   && pop.topShown === false && pop.topDisplay === "none", JSON.stringify(pop));
 await page(`window.__voxa.closeMenu(); return 1;`);
+
+/* ---------- 自己导出的 .glb 要能被 GLTFLoader 读回带动画的模型 ---------- */
+// 这是"动画做完出得了编辑器"这条链的终点断言：结构对不算数，读得回来才算。
+const rt = await page(`
+  const a = window.__voxa;
+  const blob = a.doc.parts[0] ? await window.__voxa.exportGlbBlob?.() : null;
+  return blob ? blob.size : null;`).catch(() => null);
+const roundTrip = await page(`
+  const { toGLB } = await import("/js/voxa/model.js");
+  const { GLTFLoader } = await import("/vendor/three/GLTFLoader.js");
+  const blob = await toGLB(window.__voxa.doc);
+  const buf = await blob.arrayBuffer();
+  const loader = new GLTFLoader();
+  const gltf = await new Promise((res, rej) => loader.parse(buf, "", res, rej));
+  let meshCount = 0;
+  gltf.scene.traverse((o) => { if (o.isMesh) meshCount++; });
+  return { bytes: buf.byteLength, anims: gltf.animations.length,
+    firstClip: gltf.animations[0] ? gltf.animations[0].name : null,
+    tracks: gltf.animations[0] ? gltf.animations[0].tracks.length : 0,
+    dur: gltf.animations[0] ? +gltf.animations[0].duration.toFixed(2) : 0,
+    nodes: gltf.scene.children.length, meshCount,
+    names: gltf.scene.children.map((c) => c.name).join(",") };`);
+ok("导出的 .glb 用 GLTFLoader 读回来带动画剪辑（刚体绑骨走节点层级）",
+  roundTrip.bytes > 200 && roundTrip.anims >= 1 && roundTrip.tracks >= 3
+  && Math.abs(roundTrip.dur - 1) < 0.2 && roundTrip.meshCount >= 1,
+  JSON.stringify(roundTrip));
+const mixer = await page(`
+  const { toGLB } = await import("/js/voxa/model.js");
+  const THREE = await import("/vendor/three/three.module.js");
+  const { GLTFLoader } = await import("/vendor/three/GLTFLoader.js");
+  const gltf = await new Promise((res, rej) => new GLTFLoader().parse(await toGLB(window.__voxa.doc).arrayBuffer(), "", res, rej));
+  const m = new THREE.AnimationMixer(gltf.scene);
+  const action = m.clipAction(gltf.animations[0]);
+  action.play();
+  const bone = gltf.scene.getObjectByName("左臂") || gltf.scene.getObjectByName("Arm") || gltf.scene.getObjectByName("Root");
+  const before = bone ? bone.position.clone() : null;
+  m.update(0.5);                       // 第 12 帧附近
+  const after = bone ? bone.position.clone() : null;
+  return { bone: bone && bone.name, moved: before && after ? +before.distanceTo(after).toFixed(3) : -1 };`);
+ok("AnimationMixer 播得动：骨骼节点的位置确实被剪辑改了",
+  !!mixer.bone && mixer.moved > 0.01, JSON.stringify(mixer));
 
 await s.close();
 process.exit(0);

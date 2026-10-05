@@ -21,6 +21,10 @@ export class VoxaView {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
+    // 官方口径（voxels/shortcutKeys.md）：右键旋转、中键平移，左键归工具。
+    // OrbitControls 的默认映射是 LEFT=旋转 / MIDDLE=推拉 / RIGHT=平移，不覆盖的话
+    // "用工具拖一下"会同时把视角转走——底栏那句提示当时就是假的。
+    this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
     this.controls.target.set(4, 4, 4);
     this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x30323a, 1.05));
     const key = new THREE.DirectionalLight(0xffffff, 1.5);
