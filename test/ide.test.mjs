@@ -828,6 +828,133 @@ const curLine = await page(`
 ok("当前行高亮落在正确行上，且行号槽行距仍是 20px",
   curLine.ln === "4" && curLine.rowTop === "72px" && curLine.pitch === 20, JSON.stringify(curLine));
 
+/* ---------- API 补全弹窗（真实键盘） ---------- */
+// 逐字符走 Input.dispatchKeyEvent（带 text），这样插入、keydown、input 三件事的顺序
+// 和真人打字一致。用 insertText 只发得到 input，弹窗能开但键盘导航测不到。
+async function typeChar(ch) {
+  const code = ch === "." ? "Period" : /^[0-9]$/.test(ch) ? "Digit" + ch : "Key" + ch.toUpperCase();
+  const vk = ch === "." ? 190 : ch.toUpperCase().charCodeAt(0);
+  await s.send("Input.dispatchKeyEvent", { type: "keyDown", key: ch, code, windowsVirtualKeyCode: vk, text: ch, unmodifiedText: ch });
+  await s.send("Input.dispatchKeyEvent", { type: "keyUp", key: ch, code, windowsVirtualKeyCode: vk });
+  await new Promise((r) => setTimeout(r, 70));
+}
+const typeWord = async (w) => { for (const ch of w) await typeChar(ch); };
+const acState = () => page(`
+  const pop = document.querySelector(".ac-pop"), ta = document.getElementById("scriptCode");
+  const items = [...pop.querySelectorAll(".ac-it")];
+  const on = items.find((n) => n.classList.contains("on"));
+  const r = pop.getBoundingClientRect(), b = ta.getBoundingClientRect();
+  return { show: pop.classList.contains("show"), n: items.length,
+    labels: items.slice(0, 8).map((x) => x.querySelector("b").textContent),
+    sel: on ? on.querySelector("b").textContent : null,
+    doc: on ? on.querySelector(".ac-d").textContent.trim().slice(0, 40) : null,
+    foot: pop.querySelector(".ac-doc").textContent.trim().slice(0, 40),
+    left: Math.round(r.left - b.left), top: Math.round(r.top - b.top),
+    inside: r.right <= b.right + 1 && r.bottom <= b.bottom + 1 && r.left >= b.left - 1,
+    caret: ta.selectionStart, value: ta.value };`);
+
+await putCode("", 0);
+await typeWord("world");
+const acWord = await acState();
+ok("打字母就出候选：world 命中官方全局，带类型与中文说明",
+  acWord.show && acWord.sel === "world" && /游戏世界/.test(acWord.doc), JSON.stringify(acWord));
+
+await typeChar(".");
+const acDot = await acState();
+// GameWorld 有 111 个成员，一次只列 40 个：刚打完点就该看到东西（全量列出来是一堵墙），
+// 剩下的靠继续打字收窄。
+ok("world. 列出 GameWorld 的成员并截到 40 条",
+  acDot.show && acDot.n === 40 && acDot.labels.includes("createEntity"), JSON.stringify({ n: acDot.n, labels: acDot.labels }));
+
+await typeWord("onP");
+const acNarrow = await acState();
+await pressKey("ArrowDown", "ArrowDown");
+const acDown = await acState();
+await pressKey("ArrowUp", "ArrowUp");
+const acUp = await acState();
+ok("继续打字收窄，上下键在候选之间走",
+  acNarrow.show && /^onP/.test(acNarrow.sel || "") && acDown.sel !== acNarrow.sel && acUp.sel === acNarrow.sel,
+  JSON.stringify({ n: acNarrow.n, sel: acNarrow.sel, down: acDown.sel, up: acUp.sel }));
+
+const pickLabel = acNarrow.sel;      // 排序按"前缀匹配 → 短的在前"，这里不写死名字，只跟着屏幕上的选中项走
+await pressKey("Enter", "Enter");
+const acAccept = await acState();
+ok("Enter 收下候选：事件通道补成可调用形式，光标停在括号里",
+  !acAccept.show && acAccept.value === `world.${pickLabel}()` && acAccept.caret === 6 + pickLabel.length + 1,
+  JSON.stringify({ value: acAccept.value, caret: acAccept.caret, pickLabel }));
+const wrote = await page(`const f = window.__editor.state.scripts[window.__editor.__scriptIdx]; return f ? f.code : null;`);
+ok("补全走的是正常输入链路（写回当前脚本文件）",
+  new RegExp("world\\." + pickLabel + "\\(\\)").test(String(wrote)), String(wrote).slice(0, 40));
+
+// 属性不能补括号：world.url 补成 url() 就是把错代码塞进文件
+await putCode("world.u", 7);
+const acProp = await acState();
+await pressKey("Enter", "Enter");
+const acPropDone = await acState();
+ok("属性只补名字、不加括号，脚注给出完整签名",
+  acProp.sel === "url" && /url:/.test(acProp.foot) && acPropDone.value === "world.url" && acPropDone.caret === 9,
+  JSON.stringify({ sel: acProp.sel, value: acPropDone.value, caret: acPropDone.caret }));
+
+// 弹窗开着时 Tab 是"收下"，不是"缩进"：两个功能抢同一个键，必须有一个明确让位
+await putCode("wor", 3);
+await pressKey("Tab", "Tab");
+const acTab = await acState();
+ok("弹窗开着时 Tab 收候选而不是缩进", acTab.value === "world" && !acTab.show, JSON.stringify({ value: acTab.value, show: acTab.show }));
+
+await putCode("wor", 3);
+const acBeforeEsc = await acState();
+await pressKey("Escape", "Escape");
+const acEsc = await acState();
+ok("Esc 只关弹窗，不动代码", acBeforeEsc.show && !acEsc.show && acEsc.value === "wor", JSON.stringify(acEsc));
+
+// Ctrl+Space：光标前面什么前缀都没有时手动列全量（IDE 的通用键位）
+await putCode("", 0);
+const acBlank = await acState();
+await pressKey(" ", "Space", 2);
+const acManual = await acState();
+ok("Ctrl+Space 在没有前缀时列出全部全局（并且不会漏进一个空格）",
+  !acBlank.show && acManual.show && acManual.n === 40 && acManual.value === "",
+  JSON.stringify({ blank: acBlank.show, n: acManual.n, value: acManual.value }));
+
+await putCode("world.zzz", 9);
+const acNone = await acState();
+ok("收窄到没有一个候选时整块收起，不留空框", !acNone.show, JSON.stringify({ n: acNone.n }));
+
+// 纵向定位：弹窗贴在光标那一行下面。12 + (行号+1)*20，与诊断行/当前行同一套数。
+await putCode("wor", 3);
+const acPos0 = await acState();
+await putCode("aaa\nbbb\nwor", 13);
+const acPos2 = await acState();
+ok("弹窗贴在光标下面，跨两行正好差 40px",
+  acPos0.show && acPos0.top === 32 && acPos2.top === 72 && acPos2.inside,
+  JSON.stringify({ t0: acPos0.top, t1: acPos2.top, inside: acPos2.inside }));
+await putCode("wor", 3);
+const acX = await page(`
+  const pop = document.querySelector(".ac-pop"), ta = document.getElementById("scriptCode");
+  const cs = getComputedStyle(ta);
+  const s = document.createElement("span");
+  s.style.cssText = "position:absolute;left:-9999px;white-space:pre";
+  s.style.fontFamily = cs.fontFamily; s.style.fontSize = cs.fontSize;
+  s.textContent = "0".repeat(40); document.body.appendChild(s);
+  const chW = s.getBoundingClientRect().width / 40; s.remove();
+  const r = pop.getBoundingClientRect(), b = ta.getBoundingClientRect();
+  return { show: pop.classList.contains("show"), left: Math.round(r.left - b.left), want: Math.round(14 + 3 * chW), chW: +chW.toFixed(2) };`);
+ok("横向贴着光标列（14 + 列×字宽）", acX.show && Math.abs(acX.left - acX.want) <= 2, JSON.stringify(acX));
+
+// 按端裁剪：服务端脚本不该补出客户端名字，反之也一样
+await page(`window.__editor.__scriptIdx = 1; return 1;`);
+await putCode("voxels", 6);
+const acCliSrv = await acState();
+await putCode("ui", 2);
+const acCli = await acState();
+await typeChar(".");
+const acCliDot = await acState();
+ok("客户端脚本补不出 voxels，但补得出 ui 与它的成员",
+  !acCliSrv.show && acCli.sel === "ui" && acCliDot.labels.includes("findChildByName"),
+  JSON.stringify({ srv: acCliSrv.show, ui: acCli.sel, m: acCliDot.labels }));
+await page(`window.__editor.__scriptIdx = 0; return 1;`);
+await putCode("", 0);
+
 await putCode(origCode, 0, 0);
 await page(`document.querySelector('.mtab[data-menu="build"]').click(); return 1;`);
 await new Promise((r) => setTimeout(r, 500));

@@ -994,3 +994,27 @@ body.playing .view-gizmo{display:none}
 /* 已经被撤销掉的那几步：留着是为了能 redo 回来，但要先说清它们不在当前状态 */
 .hh-row.future{opacity:.4}
 .hh-empty{padding:16px 10px;margin:0;text-align:center;font-size:11.5px;color:var(--font-white-disabled)}
+
+/* ---- 脚本补全弹窗（complete.js）---- */
+/* 贴在光标下面，跟着 textarea 的 scrollLeft/scrollTop 走。
+   .ac-it 的高度由 JS 从渲染出来的那一行量（算选中项的滚动位置），改字号不用同步别处。 */
+.ac-pop{position:absolute;display:none;z-index:8;min-width:250px;max-width:min(430px,94%);
+  background:var(--glass-bg);border:1px solid var(--glass-border-hover);border-radius:var(--radius);
+  box-shadow:0 12px 34px rgba(0,0,0,.62);overflow:hidden}
+.ac-pop.show{display:block}
+.ac-list{max-height:176px;overflow-y:auto;overscroll-behavior:contain;padding:3px}
+.ac-it{display:flex;align-items:center;gap:6px;width:100%;height:22px;padding:0 6px;border:0;border-radius:var(--radius-sm);
+  background:transparent;color:var(--fg2);font-family:var(--mono);font-size:11.5px;text-align:left;cursor:pointer;white-space:nowrap}
+.ac-it .ac-k{flex:none;width:30px;font-family:var(--font);font-size:9.5px;color:var(--fg3);text-align:center;
+  border:1px solid var(--line);border-radius:var(--radius-sm)}
+.ac-it b{flex:none;max-width:150px;overflow:hidden;text-overflow:ellipsis;font-weight:500;color:var(--fg)}
+.ac-it .ac-d{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-family:var(--font);color:var(--font-white-disabled)}
+.ac-it:hover{background:rgba(255,255,255,.05)}
+.ac-it.on{background:var(--primary-dim);box-shadow:inset 2px 0 0 var(--primary)}
+.ac-it.on .ac-d{color:var(--fg3)}
+.ac-doc{padding:4px 9px 5px;border-top:1px solid var(--divider);font-size:10.5px;line-height:1.5;
+  color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-doc:empty{display:none}
+.ac-doc b{font-family:var(--mono);font-weight:500;color:var(--primary)}
+.ac-doc em,.ac-doc i{font-style:normal;margin-left:8px;color:var(--font-white-minor)}
+.ac-doc em{color:var(--fg3)}

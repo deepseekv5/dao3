@@ -426,10 +426,22 @@ const SPEC_OUT = path.join(ROOT, "public/data/api-spec.json");
     classes[cls] = { side: cls.startsWith("Ui") ? "client" : "server", kind: "class", tracked: 0, d: "", m: mm };
     merged++;
   }
-  const spec = { generated: "npm run build:api-ref", types: decls.length, members: totalMembers, merged, classes };
+  /** 脚本里直接能写的全局名字 → 它是哪个类。补全弹窗要用这份映射，而它只能从 d.ts 解析出来：
+   *  手抄一份到前端代码里就是造第二个真相，下一次 build:api-ref 之后悄悄漂移，
+   *  症状是"补全出来的成员运行时报 undefined"——比不补全难查得多。
+   *  写成具名类型（world: GameWorld）的只留类型名，成员去 classes 里查；
+   *  只有内联对象（resources、console）才把成员抄进来，否则同一份成员存两处。 */
+  const gl = [];
+  for (const g of globals) {
+    const t = (/^([A-Za-z_$][\w$]*)/.exec(g.type || "") || [])[1] || "";
+    const mm = {};
+    if (!t) for (const m of g.members || []) { if (!mm[m.name]) mm[m.name] = { s: cut(m.sig, 160), d: cut(m.doc, 110) }; }
+    gl.push({ n: g.name, side: g.file, t, fn: g.kind === "function" ? 1 : 0, d: cut(g.doc, 110), sig: cut(g.sig, 160), m: mm });
+  }
+  const spec = { generated: "npm run build:api-ref", types: decls.length, members: totalMembers, merged, classes, globals: gl };
   fs.writeFileSync(SPEC_OUT, JSON.stringify(spec));
   console.log(`api-spec.json ← ${Object.keys(classes).length} 个类 / ${totalMembers} 个成员 / `
-    + `${(fs.statSync(SPEC_OUT).size / 1024).toFixed(0)} KB`);
+    + `${gl.length} 个全局 / ${(fs.statSync(SPEC_OUT).size / 1024).toFixed(0)} KB`);
 }
 
 /* ---------------- 生成 ---------------- */

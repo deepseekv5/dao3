@@ -2836,8 +2836,7 @@ const ZERO = new GameVector3();
     this._calls.push({ key: String(key), value, tick: this.currentTick });
     return undefined;
   }
-  // 脚本属于服务端还是客户端，官方由 scriptAssets 的 type 决定（1=服务端、7=客户端）
-  _isClientScript(name, entry) {
+  static isClientScript(name, entry) {
     if (entry && typeof entry === "object") {
       if (entry.client === true) return true;
       if (entry.type === 7 || entry.type === "client") return true;
@@ -3296,7 +3295,7 @@ void main() {
   /** 编译并执行一个脚本；给了 mod 就按 CommonJS 模块跑（注入 module/exports/require）。 */
   _evalScript(name, code, entry, mod) {
     const rt = this;
-    const g = this._globals(this._isClientScript(name, entry || code));
+    const g = this._globals(GameRuntime.isClientScript(name, entry || code));
     g.require = (spec) => rt._require(name, spec);
     if (mod) { g.module = mod; g.exports = mod.exports; }
     const keys = Object.keys(g);

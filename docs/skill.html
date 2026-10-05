@@ -55,7 +55,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>拆开之后依赖方向是单向的：<b>接入层依赖编辑器的 HTTP 接口，编辑器不知道接入层存在。</b> 编辑器换版本、换目录，甚至换成官方桌面版，接入层都不用改。</p>
 <h2 id="本仓库为它提供什么">本仓库为它提供什么</h2>
 <p>接入层只依赖这三样公开接口，没有别的：</p>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>接口</th><th>用途</th></tr></thead><tbody><tr><td><code>GET/PUT /api/world/:id</code>、<code>GET /api/worlds</code></td><td>读写整份地图 payload</td></tr><tr><td><code>GET/POST/DELETE /api/world/:id/asset</code></td><td>地图资产目录</td></tr><tr><td><code>GET /data/api-spec.json</code></td><td>100 类 / 1044 成员的官方 API 规范（含中文说明与单位）</td></tr><tr><td><code>GET /data/block-atlas.json</code></td><td>383 个方块表</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>接口</th><th>用途</th></tr></thead><tbody><tr><td><code>GET/PUT /api/world/:id</code>、<code>GET /api/worlds</code></td><td>读写整份地图 payload</td></tr><tr><td><code>GET/POST/DELETE /api/world/:id/asset</code></td><td>地图资产目录</td></tr><tr><td><code>GET /data/api-spec.json</code></td><td>100 类 / 1044 成员 / 34 个全局的官方 API 规范（含中文说明与单位）；编辑器脚本页的补全弹窗读的就是这一份</td></tr><tr><td><code>GET /data/block-atlas.json</code></td><td>383 个方块表</td></tr></tbody></table></div>
 <p><code>api-spec.json</code> 由 <code>npm run build:api-ref</code> 从各篇 d.ts 的 <code>declare</code> 列表与官方中文注释合成。 它同时喂三个地方：本文档站、应用内 AI 的规范注入、以及外部接入层的知识库检索—— <b>同源，所以&quot;AI 以为有的接口&quot;和&quot;实际实现的接口&quot;不会各说一套。</b></p>
 <h2 id="快速接上">快速接上</h2>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code># 1. 起编辑器

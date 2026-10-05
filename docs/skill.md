@@ -28,7 +28,7 @@
 |---|---|
 | `GET/PUT /api/world/:id`、`GET /api/worlds` | 读写整份地图 payload |
 | `GET/POST/DELETE /api/world/:id/asset` | 地图资产目录 |
-| `GET /data/api-spec.json` | 100 类 / 1044 成员的官方 API 规范（含中文说明与单位） |
+| `GET /data/api-spec.json` | 100 类 / 1044 成员 / 34 个全局的官方 API 规范（含中文说明与单位）；编辑器脚本页的补全弹窗读的就是这一份 |
 | `GET /data/block-atlas.json` | 383 个方块表 |
 
 `api-spec.json` 由 `npm run build:api-ref` 从各篇 d.ts 的 `declare` 列表与官方中文注释合成。

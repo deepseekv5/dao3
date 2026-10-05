@@ -6,6 +6,7 @@ import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
 import { wireScriptIde } from "./script-ide.js";
+import { wireComplete } from "./complete.js";
 import { wirePalette } from "./palette.js";
 import { wirePanels } from "./panels.js";
 import { wireConsole, pushConsole, clearConsole } from "./console.js";
@@ -498,6 +499,7 @@ function wireScript() {
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); e.markDirty ? e.markDirty() : null; e.toast("脚本已记录（保存世界时一并写入）"); }
   });
   wireCodeEditing(ta);
+  wireComplete(E, ta);
   // ---- JS 语法高亮（零依赖 tokenizer，见文件底部模块级实现）----
   const render = () => renderCodeEditor();
   const syncScroll = () => syncCodeScroll();
