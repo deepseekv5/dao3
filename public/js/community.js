@@ -423,7 +423,7 @@ async function friendsView() {
   const [fr, notes] = await Promise.all([api("GET", "/api/community/friends"), api("GET", "/api/community/notifications")]);
   const tab = new URLSearchParams(location.search).get("tab") || "friends";
   const tabs = [["friends", `好友 ${fr.friends.length}`], ["requests", `请求 ${fr.incoming.length + fr.outgoing.length}`],
-    ["suggested", "可能认识"], ["notes", `通知 ${notes.unread ? "(" + notes.unread + ")" : ""}`]];
+    ["expand", "扩列"], ["suggested", "可能认识"], ["notes", `通知 ${notes.unread ? "(" + notes.unread + ")" : ""}`]];
   root.innerHTML = `<div class="cm-rows"><div class="cm-tabs">${tabs.map(([k, l]) =>
     `<button class="cm-btn ${k === tab ? "on" : ""}" data-t="${k}">${esc(l)}</button>`).join("")}</div><div id="fBody"></div></div>`;
   for (const b of root.querySelectorAll("[data-t]")) b.onclick = () => {
@@ -434,10 +434,29 @@ async function friendsView() {
   const body = $("fBody");
   const row = (u, ops) => `<div class="cm-row">${face(u)}<div class="grow"><b>${esc(u.name)}</b>
     <div class="sub">${esc(u.bio || (u.counts ? u.counts.pubs + " 张发布" : ""))}</div></div>${ops}</div>`;
+  if (tab === "expand") {
+    // 扩列的筛选与卡片全部由 social.js 出：抽屉里那一页与这一页必须是同一份实现，
+    // 否则改一处筛选参数就会有一边悄悄失效。
+    const m = await import("/js/social.js");
+    await m.renderPeopleGrid(body);
+    return;
+  }
   if (tab === "friends") {
-    body.innerHTML = fr.friends.length ? fr.friends.map((u) => row(u,
-      `<a class="cm-btn sm" href="/u/${encodeURIComponent(u.name)}">主页</a><button class="cm-btn sm" data-rm="${esc(u.name)}">解除</button>`)).join("")
-      : `<div class="cm-empty">还没有好友。去广场看看别人发布的地图，从主页上加好友。</div>`;
+    const ops = (u) => `<button class="cm-btn sm" data-dm="${esc(u.id)}" data-n="${esc(u.note || u.name)}">私聊</button>
+      <a class="cm-btn sm" href="/u/${encodeURIComponent(u.name)}">主页</a>
+      <button class="cm-btn sm" data-note="${esc(u.name)}">备注</button>
+      <button class="cm-btn sm" data-rm="${esc(u.name)}">解除</button>`;
+    body.innerHTML = fr.friends.length ? fr.friends.map((u) => `<div class="cm-row">${face(u)}
+      <div class="grow"><b>${esc(u.note || u.name)}${u.note ? ` <span class="cm-hint" style="display:inline">${esc(u.name)}</span>` : ""}</b>
+        <div class="sub">${esc(u.bio || (u.counts ? u.counts.pubs + " 张发布" : ""))}${u.online ? " · 在线" : ""}</div></div>${ops(u)}</div>`).join("")
+      : `<div class="cm-empty">还没有好友。到「扩列」那一页按地区或性格找人，或者从别人主页上加好友。</div>`;
+    const so = await import("/js/social.js");
+    for (const b of body.querySelectorAll("[data-dm]")) b.onclick = () => so.openDm({ id: b.dataset.dm, name: b.dataset.n });
+    for (const b of body.querySelectorAll("[data-note]")) b.onclick = async () => {
+      const v = window.prompt("给这个好友起的备注（留空清除）");
+      if (v == null) return;
+      try { await api("POST", "/api/community/friend/note", { name: b.dataset.note, note: v.slice(0, 20) }); friendsView(); } catch (e) { toast(e.message, true); }
+    };
     for (const b of body.querySelectorAll("[data-rm]")) b.onclick = async () => {
       await api("POST", "/api/community/friend/remove", { name: b.dataset.rm });
       toast("已解除好友"); friendsView();
@@ -488,7 +507,11 @@ async function route() {
   if (p.startsWith("/u/")) return profileView(decodeURIComponent(p.slice(3)), root, (x) => (pageTitle.textContent = x), (x) => (pageSub.textContent = x));
   if (p.startsWith("/friends")) return friendsView();
   if (p.startsWith("/me")) { if (!auth.me) { openAuth("login"); return feedView(); } return profileView(auth.me.name, root, (x) => (pageTitle.textContent = x), (x) => (pageSub.textContent = x)); }
-  if (new URLSearchParams(location.search).get("mine") && auth.me) return userView(auth.me.name);
+  // 这里以前写的是 userView()——那个名字在本文件根本不存在，
+  // 于是 /community?mine=1 一点就 ReferenceError，页面停在"读取中"。
+  if (new URLSearchParams(location.search).get("mine") && auth.me) {
+    return profileView(auth.me.name, root, (x) => (pageTitle.textContent = x), (x) => (pageSub.textContent = x));
+  }
   return feedView();
 }
 

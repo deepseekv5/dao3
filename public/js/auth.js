@@ -111,9 +111,14 @@ async function toggleMenu(anchor) {
       <a href="/community?mine=1">我的发布</a>
       <a href="/friends">好友与关注${friends.incoming.length ? `<em>${friends.incoming.length}</em>` : ""}</a>
       <a href="/friends?tab=notes">通知${notes.unread ? `<em>${notes.unread}</em>` : ""}</a>
+      <a href="#" data-x="social">好友面板 · 扩列 · 聊天</a>
     </div>
     <button class="au-out" data-x="out">退出登录</button>
   </div>`;
+  box.querySelector('[data-x="social"]').onclick = (e) => {
+    e.preventDefault(); box.remove(); menuOpen = false;
+    import("./social.js").then((m) => m.openSocial("friends")).catch(() => {});
+  };
   box.querySelector('[data-x="out"]').onclick = async () => {
     try { await api("POST", "/api/community/logout"); } catch { /* 服务端已经忘了我也行 */ }
     me = null; csrf = ""; box.remove(); menuOpen = false; paint();
@@ -135,6 +140,9 @@ function paint() {
     return;
   }
   host.innerHTML = `<button class="au-chip" title="${esc(me.name)}">${avatarHtml(me)}<b>${esc(me.name)}</b></button>`;
+  // 社交入口由 social.js 自己画：它比这一层大得多，塞进这里会变成
+  // "身份层依赖聊天实现"。动态 import 也顺带避开两个模块互相引用的环。
+  import("./social.js").then((m) => { m.initSocial(); m.paintEntry(host); }).catch(() => {});
   if (!$("auMenu")) { const m = document.createElement("div"); m.id = "auMenu"; document.body.appendChild(m); }
   host.querySelector(".au-chip").onclick = (e) => { e.stopPropagation(); toggleMenu(e.currentTarget); };
 }

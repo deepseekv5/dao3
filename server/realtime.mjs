@@ -14,8 +14,8 @@ import { reblame, rle, diffStats } from "../public/js/diff.js";
 const GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const MAX_FRAME = 32 * 1024;          // 一条状态帧几十字节；给到 32 KB 已经宽到可以当攻击面用
 const MAX_ROOM = 24;                  // 一个房间的人数上限：本地服务不是给压测用的
-const MAX_MSG = 200;                  // 聊天长度
-const CHAT_COOLDOWN = 1200;           // 同一个人两句话之间至少隔这么久
+// 聊天长度、冷却、限流这些都在 chat.mjs 里（世界频道、地图频道、私聊共用一套），
+// 这里不再自己抄一份，否则两条路的宽严会飘。
 const STATE_HZ = 12;                  // 状态转发节流：人手每秒发 12 帧足够顺滑
 const IDLE_MS = 45_000;               // 这么久没有任何动静就踢掉
 // 一条世界改动包的上限。一格是 5 个数，2000 格 ≈ 一次大挖掘；实体 500 个已经
@@ -79,7 +79,6 @@ class Peer {
     this.sock = sock; this.room = room; this.user = user; this.id = socketId;
     this.buf = Buffer.alloc(0);
     this.frag = null;                    // 分片帧的暂存
-    this.lastChat = 0;
     this.lastState = 0;
     this.lastSeen = now();
     this.dead = false;
@@ -109,6 +108,7 @@ class Peer {
 
 export function createRealtime({ community, worldExists } = {}) {
   const rooms = new Map();               // "pub:<id>" -> Set<Peer>
+  const socialPeers = new Set();         // 只挂在线状态与聊天推送、不进任何房间的连接
   const stats = { joins: 0, chat: 0, frames: 0, rejected: 0 };
 
   function roomOf(key) {
@@ -266,6 +266,10 @@ export function createRealtime({ community, worldExists } = {}) {
     stats.frames++;
     const room = peer.room;
     if (!room) return;
+    // 社区网页那条连接（room.key === "social"）不进任何房间：它只该说话、
+    // 只该收消息。状态/世界改动那些帧在这里没有落点，与其让它去碰一个
+    // 不存在的房间对象，不如直接挡掉。
+    if (room.key === "social" && m.t !== "chat" && m.t !== "dm" && m.t !== "ping") return;
 
     if (m.t === "state") {
       const dt = now() - peer.lastState;
@@ -310,18 +314,25 @@ export function createRealtime({ community, worldExists } = {}) {
     }
 
     if (m.t === "chat") {
-      const raw = String(m.m == null ? "" : m.m).slice(0, MAX_MSG * 2);
-      const clean = raw.replace(/\s+/g, " ").trim();
-      if (!clean) return;
-      const dt = now() - peer.lastChat;
-      if (dt < CHAT_COOLDOWN) { peer.send({ t: "throttle", wait: Math.ceil((CHAT_COOLDOWN - dt) / 1000) }); return; }
-      peer.lastChat = now();
-      // 聊天和社区帖子走同一道审查：能发帖不等于能对着别人脸上刷。
-      const verdict = community && community.screenText ? community.screenText(clean, { field: "chat" }) : { blocked: false, clean };
-      if (verdict.blocked) { peer.send({ t: "rejected", reason: verdict.reason || "内容不适合公开频道" }); return; }
+      // 房间里的一句话同时也是"这张图频道"的一条历史：所以发送走 chat.post，
+      // 由它落盘 + 推给订阅了这个频道的所有连接（含没进房间但订阅了世界频道的人）。
+      // 以前这里只 broadcast 给同房间、发完就丢，于是"游戏里说过、详情页看不到"。
+      const ch = room.key.startsWith("pub:") ? "map:" + room.key.slice(4)
+        : room.key === "social" ? "world" : "";
+      const r = community && community.chat
+        ? community.chat.post({ ch, user: peer.user, text: m.m, via: peer.chatSend })
+        : { error: "聊天没开" };
+      if (r.error) { peer.send({ t: "rejected", reason: r.error }); return; }
       stats.chat++;
-      // 发送者本地已经先回显过一次了，再把同一条发回去就是屏幕上两行一样的话。
-      broadcast(room, { t: "chat", id: peer.id, name: peer.user.name, m: verdict.clean.slice(0, MAX_MSG) }, peer);
+      return;
+    }
+
+    if (m.t === "dm") {
+      // 游戏内直接私聊好友：走的是同一个 chat.post，所以私聊在面板里也是同一条流
+      const r = community && community.chat
+        ? community.chat.post({ ch: "dm:" + String(m.to || ""), user: peer.user, text: m.m, via: peer.chatSend })
+        : { error: "聊天没开" };
+      if (r.error) peer.send({ t: "rejected", reason: r.error });
       return;
     }
 
@@ -338,6 +349,15 @@ export function createRealtime({ community, worldExists } = {}) {
     const peer = new Peer(sock, room, user, crypto.randomBytes(8).toString("hex"));
     room.add(peer);
     stats.joins++;
+    // 每条连接同时挂两个频道：世界频道（所有人）+ 这张图的频道（同房间的人）。
+    // 房间里的广播走的是自己的高效通道，这里挂的是"跨房间也要收到"的那一份。
+    if (community && community.chat) {
+      // 这个闭包要存下来：chat 靠"是不是同一个函数对象"判断该把发送者自己排除掉，
+      // 每次现造一个箭头函数就永远不相等，于是自己说的话会在屏幕上出现两遍。
+      peer.chatSend = (o) => peer.send(o);
+      peer.social = community.chat.attach(user, peer.chatSend);
+      peer.social.room(room.key.startsWith("pub:") ? "map:" + room.key.slice(4) : null);
+    }
 
     peer.send({
       t: "welcome", you: peer.id, room: key, t0: room.start, now: Date.now(),
@@ -371,23 +391,79 @@ export function createRealtime({ community, worldExists } = {}) {
     // 只挂 close 的话，人走了房间号还占着，列表里全是再也动不了的幽灵。
     sock.on("end", () => peer.close());
     sock.on("close", () => peer.close());
-    peer.onClose = () => { leave(peer); };
+    peer.onClose = () => {
+      // 人走了必须从在线表与频道订阅里摘掉，否则"在线"那一栏会一直挂着幽灵，
+      // 而且私聊会往一条已经断掉的连接上写。
+      if (peer.social) { try { peer.social.detach(); } catch {} peer.social = null; }
+      leave(peer);
+    };
+  }
+
+  /** 社区网页那侧的连接：不进任何房间，只为"在线"那一格绿点与实时推送
+   *  （世界频道、别人发来的私聊）。没有它，人在广场逛的时候既算离线、
+   *  也永远收不到消息，只能靠轮询等下一句。 */
+  function attachSocial(sock, user, head) {
+    const peer = new Peer(sock, { key: "social" }, user, crypto.randomBytes(8).toString("hex"));
+    socialPeers.add(peer);
+    peer.chatSend = (o) => peer.send(o);
+    peer.social = community && community.chat ? community.chat.attach(user, peer.chatSend) : null;
+    peer.onClose = () => {
+      socialPeers.delete(peer);
+      try { if (peer.social) peer.social.detach(); } catch {}
+      peer.social = null;
+    };
+    peer.send({ t: "welcome", you: peer.id, room: "social", now: now() });
+    let buf = head && head.length ? Buffer.from(head) : Buffer.alloc(0);
+    const feed = (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (buf.length > MAX_FRAME * 4) { peer.close(1009, "too big"); return; }
+      peer.lastSeen = now();
+      for (;;) {
+        const r = decodeFrame(buf);
+        if (r.bad) { peer.close(1002, r.bad); return; }
+        if (r.need) break;
+        buf = buf.subarray(r.used);
+        handleFrame(peer, r.frame);
+        if (peer.dead) return;
+      }
+    };
+    sock.on("data", feed);
+    if (buf.length) feed(Buffer.alloc(0));
+    sock.on("error", () => peer.close());
+    sock.on("end", () => peer.close());
+    sock.on("close", () => peer.close());
   }
 
   /** HTTP 升级入口：路径不对就不接管，交回原来的 server 处理。 */
   function handleUpgrade(req, socket, head) {
     let url;
     try { url = new URL(req.url, "http://localhost"); } catch { socket.destroy(); return; }
-    const seg = url.pathname.split("/").filter(Boolean);       // ["ws","play"|"edit","<id>"]
-    // 两种房间：play:<发布 id> 是"一起玩这张图"，edit:<世界 id> 是"一起改这张图"。
-    // 协作编辑要的是后者——所有人共用一份世界改动流，而不是各自本地改完再靠保存覆盖。
-    if (seg[0] !== "ws" || (seg[1] !== "play" && seg[1] !== "edit") || seg.length !== 3) { socket.destroy(); return; }
+    const seg = url.pathname.split("/").filter(Boolean);       // ["ws","play"|"edit","<id>"] 或 ["ws","social"]
     const up = String(req.headers.upgrade || "").toLowerCase();
     const conn = String(req.headers.connection || "").toLowerCase();
     const key = req.headers["sec-websocket-key"];
+    if (seg[0] !== "ws" || seg.length < 2 || seg.length > 3) { socket.destroy(); return; }
     if (up !== "websocket" || !conn.includes("upgrade") || !key) {
       socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); return;
     }
+    const user = community && community.sessionUser(req);
+    const accept = crypto.createHash("sha1").update(key + GUID).digest("base64");
+    const hello = () => socket.write(
+      "HTTP/1.1 101 Switching Protocols\r\n" +
+      "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+      `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+    // 社交连接只要登录，不需要房间
+    if (seg[1] === "social") {
+      if (seg.length !== 2) { socket.destroy(); return; }
+      if (!user) { stats.rejected++; socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); return; }
+      hello(); socket.setNoDelay(true);
+      attachSocial(socket, user, head);
+      return;
+    }
+    // 两种房间：play:<发布 id> 是"一起玩这张图"，edit:<世界 id> 是"一起改这张图"。
+    // 协作编辑要的是后者——所有人共用一份世界改动流，而不是各自本地改完再靠保存覆盖。
+    if (seg[1] !== "play" && seg[1] !== "edit" || seg.length !== 3) { socket.destroy(); return; }
     const kind = seg[1];
     const roomId = seg[2];
     const idOk = kind === "play" ? /^[0-9a-f]{12,24}$/.test(roomId) : /^[A-Za-z0-9_-]{4,32}$/.test(roomId);
@@ -400,15 +476,9 @@ export function createRealtime({ community, worldExists } = {}) {
       // 两个人的"同一张图"根本是两张图。
       stats.rejected++; socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"); return;
     }
-    const user = community && community.sessionUser(req);
     if (!user) { stats.rejected++; socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); return; }
 
-    const accept = crypto.createHash("sha1").update(key + GUID).digest("base64");
-    socket.write(
-      "HTTP/1.1 101 Switching Protocols\r\n" +
-      "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
-      `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
-    );
+    hello();
     socket.setNoDelay(true);
     attach(socket, user, (kind === "play" ? "pub:" : "edit:") + roomId, head);
   }
@@ -418,14 +488,22 @@ export function createRealtime({ community, worldExists } = {}) {
     for (const [, room] of rooms) {
       for (const p of [...room]) if (now() - p.lastSeen > IDLE_MS) p.close(1000, "idle");
     }
+    for (const p of [...socialPeers]) if (now() - p.lastSeen > IDLE_MS) p.close(1000, "idle");
   }, 15_000);
   sweeper.unref && sweeper.unref();
 
   return {
     handleUpgrade,
-    stats: () => ({ ...stats, rooms: rooms.size, online: [...rooms.values()].reduce((a, r) => a + r.size, 0) }),
+    // online 数的是"人"而不是"连接"：一个人开三个 tab 不算三个人在线
+    stats: () => ({
+      ...stats, rooms: rooms.size,
+      online: community && community.chat ? community.chat.onlineIds().length : [...rooms.values()].reduce((a, r) => a + r.size, 0),
+    }),
     /** 测试与后台用：某个房间现在有谁。 */
     room: (key) => [...(rooms.get(key) || [])].map((p) => ({ id: p.id, name: p.user.name })),
-    close: () => { clearInterval(sweeper); },
+    close: () => {
+      clearInterval(sweeper);
+      for (const p of [...socialPeers]) p.close();
+    },
   };
 }

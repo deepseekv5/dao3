@@ -6,6 +6,7 @@
 <title>老攸元宇宙 · 编辑器</title>
 <link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
 <link rel="stylesheet" href="/css/editor.css"/>
+<link rel="stylesheet" href="/css/social.css"/>
 <link rel="stylesheet" href="/css/community.css"/>
 <link rel="stylesheet" href="/css/boot.css"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
@@ -248,6 +249,10 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   <div id="chatPanel" class="chat-panel">
     <header>
       <b>聊天</b>
+      <span id="chatChips" class="cp-chips" role="tablist">
+        <button data-ch="map" class="on" role="tab">地图</button><button data-ch="world" role="tab">世界</button>
+      </span>
+      <button id="chatSocial" class="cp-friend" title="好友、扩列与私聊">好友</button>
       <span id="chatWho" class="cp-who"></span>
       <button id="chatClose" class="cp-x" aria-label="关闭">✕</button>
     </header>

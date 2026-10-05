@@ -19,6 +19,10 @@ import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
 import { blockColors, renderCover, renderModelPreview } from "./covers.mjs";
+import { createChat } from "./chat.mjs";
+// 资料字段的枚举表与前端共用一份文件：服务端只认这里列出来的 id，
+// 前端负责把 id 翻成中文。抄两份必然出现"前端能选、后端报非法"。
+import { REGIONS, GENDERS, PERSONA, LOOKING, MAX_PERSONA } from "../public/js/profile-fields.js";
 
 const PUB_ID_RE = /^[a-f0-9]{12,24}$/;
 const WORLD_ID_RE = /^[a-zA-Z0-9_-]{1,80}$/;
@@ -225,6 +229,40 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     const id = docs.users.byLower[normName(name).toLowerCase()];
     return id ? docs.users.byId[id] : null;
   };
+  /* ---------------- 资料字段 / 关系 / 聊天 ---------------- */
+  const GENDER_IDS = new Set(GENDERS.map((g) => g.id));
+  const TAG_IDS = new Set(PERSONA.map((p) => p.id));
+  const LOOK_IDS = new Set(LOOKING.map((l) => l.id));
+  /** 四档枚举资料：只认列出来的值，认不出就退回"未填"。
+   *  照单全收等于让任何人都能把主页写成广告位。 */
+  function normalizeProfile(u, body) {
+    if ("region" in body) {
+      const r = String(body.region || "").trim();
+      u.region = REGIONS.includes(r) ? r : "";
+    }
+    if ("gender" in body) { const g = String(body.gender || ""); u.gender = GENDER_IDS.has(g) ? g : ""; }
+    if ("persona" in body) {
+      const list = Array.isArray(body.persona) ? body.persona : [];
+      const out = [];
+      for (const t of list) { const id = String(t || ""); if (TAG_IDS.has(id) && !out.includes(id)) out.push(id); }
+      u.persona = out.slice(0, MAX_PERSONA);
+    }
+    if ("looking" in body) { const l = String(body.looking || ""); u.looking = LOOK_IDS.has(l) ? l : ""; }
+  }
+  const isFriend = (a, b) => !!a && !!b && docs.graph.friends.some((e) => e.k === pairKey(a, b));
+  const friendEdge = (a, b) => docs.graph.friends.find((e) => e.k === pairKey(a, b)) || null;
+  const pubLive = (id) => {
+    const p = docs.pubs.byId && docs.pubs.byId[id];
+    return p && !p.removed && p.status === "live" ? p : null;
+  };
+  const chat = createChat({
+    dataRoot: path.join(dataRoot, "chat"), screen, isFriend, livePub: pubLive,
+  });
+  /** 好友边上的"我的备注"：一条边两个人各存各的，谁加的谁叫得顺口。 */
+  function friendNote(a, b) {
+    const e = friendEdge(a, b);
+    return (e && e.notes && e.notes[a]) || "";
+  }
   const livePubs = () => Object.values(docs.pubs.byId).filter((p) => p.status === "live");
   const commentsOf = (pubId) => docs.comments.byPub[pubId] || (docs.comments.byPub[pubId] = []);
 
@@ -243,6 +281,9 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       id: u.id, name: u.name, bio: u.bio || "", createdAt: u.createdAt,
       avatar: u.avatar || null, banner: u.banner || null, skin: u.skin || null,
       role: u.role || "user",
+      // 资料四件套：主页要显示、扩列要按它筛选，所以必须是公开字段（不含任何标识符之外的东西）
+      region: u.region || "", gender: u.gender || "", persona: u.persona || [], looking: u.looking || "",
+      online: chat.isOnline(u.id),
     };
     if (!viewerId || viewerId === u.id) { if (viewerId === u.id) out.counts = countsOf(u.id); return out; }
     out.relation = {
@@ -252,6 +293,8 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       pendingOut: docs.graph.requests.some((e) => e.from === viewerId && e.to === u.id),
       pendingIn: docs.graph.requests.some((e) => e.from === u.id && e.to === viewerId),
     };
+    const note = friendNote(viewerId, u.id);
+    if (note) out.note = note;
     out.counts = countsOf(u.id);
     return out;
   }
@@ -291,9 +334,11 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     if (!s) return null;
     return s.startsWith("/api/community/uploads/") && !s.startsWith("//") ? s.slice(0, 120) : null;
   }
-  /** 站内资产路径：随包预设、用户上传、以及别的发布带进来的附件都算。
-   *  放行外链等于让每个访问者替作者去敲第三方的门，data: 则把几百 KB 塞进用户档案。 */
-  const ASSET_RE = /^\/(img\/skins\/|api\/community\/(uploads|pubs)\/|assets\/worlds\/)[A-Za-z0-9_.\/%?=&-]{1,180}$/;
+  /** 站内资产路径：随包预设、用户上传、别的发布带进来的附件，以及随包的骨骼模型目录。
+   *  放行外链等于让每个访问者替作者去敲第三方的门，data: 则把几百 KB 塞进用户档案。
+   *  /skins/ 必须在这张表里：那是随包的 CC0 机甲，「穿上默认皮肤」写的就是这个路径，
+   *  不收的话账号皮肤永远换不到那台机甲（服务端悄悄把 model 丢掉，前端只会说"没接受"）。 */
+  const ASSET_RE = /^\/(img\/skins\/|skins\/|api\/community\/(uploads|pubs)\/|assets\/worlds\/)[A-Za-z0-9_.\/%?=&-]{1,180}$/;
   const assetUrl = (v) => (typeof v === "string" && !v.startsWith("//") && ASSET_RE.test(v) ? v.slice(0, 200) : null);
   /** 账号皮肤：只留认识的键，颜色必须 #rrggbb，资产只能指向站内。 */
   function normalizeSkin(v) {
@@ -479,6 +524,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         if (k in body) u[k] = safeAssetPath(body[k]);
       }
       if ("skin" in body) u.skin = normalizeSkin(body.skin);
+      normalizeProfile(u, body);
       store.touch("users");
       reply.json(200, { user: publicUser(u, viewerId) });
       return true;
@@ -495,6 +541,8 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       const u = {
         id: newId(), name, lower: name.toLowerCase(), ...hashPassword(pw),
         bio: "", avatar: null, banner: null, skin: null,
+        // 资料四件默认全空：注册对话框不该逼人家填性别，主页空着就是"没写"
+        region: "", gender: "", persona: [], looking: "",
         role: first ? "admin" : "user", createdAt: now(),
       };
       docs.users.byId[u.id] = u;
@@ -668,7 +716,86 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         reply.json(200, { ok: true, friend: action === "accept" });
         return true;
       }
+      if (action === "note") {
+        const e = friendEdge(viewerId, target.id);
+        if (!e) { reply.fail(404, "你们不是好友，备注不了"); return true; }
+        const r = screen(body.note, { field: "备注", max: 20 });
+        if (r.blocked) { reply.fail(400, r.reason); return true; }
+        e.notes = e.notes || {};
+        const v = normName(r.clean).slice(0, 20);
+        if (v) e.notes[viewerId] = v; else delete e.notes[viewerId];
+        store.touch("graph");
+        reply.json(200, { ok: true, note: v });
+        return true;
+      }
       reply.fail(404, "好友接口没有这个动作：" + action);
+      return true;
+    });
+
+    /* ---------------- 扩列：把陌生人找出来 ---------------- */
+    // 原来只有「可能认识的人」= 好友在跟的人，硬截 12 条。想主动找人（按地区、
+    // 按性格、按"欢迎扩列"）没有入口，所以这一块是新开的读接口，不碰老逻辑。
+    if (seg[0] === "people" && method === "GET") {
+      const q = normName(url.searchParams.get("q")).toLowerCase();
+      const region = REGIONS.includes(url.searchParams.get("region")) ? url.searchParams.get("region") : "";
+      const gender = GENDER_IDS.has(url.searchParams.get("gender")) ? url.searchParams.get("gender") : "";
+      const tag = TAG_IDS.has(url.searchParams.get("tag")) ? url.searchParams.get("tag") : "";
+      const sort = ["new", "active", "name"].includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "active";
+      // 默认是"扩列"口径：写了不扩列的人不出现在这里。搜名字那种明确找人的场景
+      // 由前端带 all=1 走另一条。
+      const expand = url.searchParams.get("all") !== "1";
+      const offset = clamp(url.searchParams.get("offset"), 0, 5000);
+      const limit = clamp(url.searchParams.get("limit") || 24, 1, 60);
+      const lastPub = new Map();
+      for (const p of livePubs()) if (!lastPub.has(p.authorId) || p.created > lastPub.get(p.authorId)) lastPub.set(p.authorId, p.created);
+      let rows = Object.values(docs.users.byId)
+        .filter((u) => !u.banned && u.id !== viewerId)
+        .filter((u) => !expand || (u.looking && u.looking !== "none"))
+        .filter((u) => !region || u.region === region)
+        .filter((u) => !gender || u.gender === gender)
+        .filter((u) => !tag || (u.persona || []).includes(tag))
+        .filter((u) => !q || u.name.toLowerCase().includes(q) || (u.bio || "").toLowerCase().includes(q));
+      const act = (u) => Math.max(lastPub.get(u.id) || 0, u.createdAt || 0);
+      rows = rows.sort((a, b) => sort === "name" ? a.name.localeCompare(b.name, "zh")
+        : sort === "new" ? (b.createdAt - a.createdAt) : (act(b) - act(a)));
+      const total = rows.length;
+      const page = rows.slice(offset, offset + limit).map((u) => publicUser(u, viewerId));
+      reply.json(200, { rows: page, total, more: offset + page.length < total });
+      return true;
+    }
+
+    /* ---------------- 聊天：世界频道 / 地图频道 / 好友私聊 ---------------- */
+    if (seg[0] === "chat" && method === "GET") {
+      const h = chat.history({
+        ch: url.searchParams.get("ch"), viewerId,
+        after: url.searchParams.get("after") || 0,
+        before: url.searchParams.get("before") || 0,
+        limit: url.searchParams.get("limit") || 60,
+      });
+      if (h.error) { reply.fail(400, h.error); return true; }
+      reply.json(200, { channel: h.channel, rows: h.rows, now: now() });
+      return true;
+    }
+    if (seg[0] === "chat" && method === "POST" && seg[1] === "read") return login(() => {
+      chat.markRead(viewerId, body.ch);
+      reply.json(200, { ok: true, unread: chat.unreadOf(viewerId) });
+      return true;
+    });
+    if (seg[0] === "chat" && method === "POST") return login(() => {
+      const u = docs.users.byId[viewerId];
+      const r = chat.post({ ch: body.ch, user: u, text: body.text });
+      if (r.error) { reply.fail(r.wait ? 429 : 400, r.error + (r.wait ? `（再过 ${r.wait} 秒）` : "")); return true; }
+      reply.json(200, { ok: true, msg: r.msg });
+      return true;
+    });
+    if (seg[0] === "channels" && method === "GET") return login(() => {
+      reply.json(200, Object.assign(chat.box(viewerId, (id) => publicUser(docs.users.byId[id], viewerId)), {
+        online: chat.onlineIds().length,
+        friendsOnline: docs.graph.friends
+          .filter((e) => e.a === viewerId || e.b === viewerId)
+          .map((e) => docs.users.byId[e.a === viewerId ? e.b : e.a])
+          .filter((x) => x && chat.isOnline(x.id)).length,
+      }));
       return true;
     });
 
@@ -1179,5 +1306,10 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     /** 房间必须对应一件还在架上的作品，否则任何人都能凭空开一个频道。 */
     livePub(id) { const p = docs.pubs.byId && docs.pubs.byId[id]; return p && !p.removed ? p : null; },
     screenText: (text, opts) => screen(text, opts),
+    /** 联机层与 server.js 共用这一个聊天实例：房间里的话要落到同一份环形缓冲里，
+     *  否则"游戏里说过、详情页看不到"。 */
+    chat, isFriend,
+    /** 谁在线：面板与主页都要显示那一个小绿点。 */
+    isOnline: (id) => chat.isOnline(id),
   };
 }

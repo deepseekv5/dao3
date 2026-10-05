@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="editor.html">编辑器界面与命令</a><a href="testing.html">测试与验证</a><b class="grp">社区</b><a class="on" href="community.html">社区层</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#一句话范围">一句话范围</a><a class="t2" href="#账号与会话">账号与会话</a><a class="t2" href="#发布快照不是引用">发布：快照，不是引用</a><a class="t2" href="#皮肤社区第三种发布">皮肤社区：第三种发布</a><a class="t2" href="#前端有哪几个面">前端有哪几个面</a><a class="t2" href="#评论审查与举报">评论、审查与举报</a><a class="t2" href="#联机与聊天">联机与聊天</a><a class="t2" href="#做不到什么">做不到什么</a><a class="t2" href="#怎么验">怎么验</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#一句话范围">一句话范围</a><a class="t2" href="#账号与会话">账号与会话</a><a class="t2" href="#发布快照不是引用">发布：快照，不是引用</a><a class="t2" href="#皮肤社区第三种发布">皮肤社区：第三种发布</a><a class="t2" href="#前端有哪几个面">前端有哪几个面</a><a class="t2" href="#评论审查与举报">评论、审查与举报</a><a class="t2" href="#好友扩列与资料">好友、扩列与资料</a><a class="t2" href="#联机与聊天">联机与聊天</a><a class="t2" href="#做不到什么">做不到什么</a><a class="t2" href="#怎么验">怎么验</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/community.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -71,7 +71,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <span id="surfaces" class="anchor"></span>
 <h2 id="前端有哪几个面">前端有哪几个面</h2>
 <p>路由是同一套壳（<code>community.html</code>）按 <code>location.pathname</code> 分派，<code>popstate</code> 重跑：</p>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>路径</th><th>是什么</th></tr></thead><tbody><tr><td><code>/community</code></td><td>广场：精选位 + 导轨 + 分类 + 排序 + 搜索</td></tr><tr><td><code>/p/&lt;pubId&gt;</code></td><td>地图/模型详情：封面压标题、右栏动作与信息表、评论、&quot;接下来试试&quot;</td></tr><tr><td><code>/u/&lt;名字&gt;</code></td><td>用户主页：横幅、头像、关注/加好友、地图/模型/关注者/关注中/最近游玩五个 tab</td></tr><tr><td><code>/friends</code></td><td>好友与关注</td></tr><tr><td><code>/me</code></td><td>自己的主页（未登录会跳登录框）</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>路径</th><th>是什么</th></tr></thead><tbody><tr><td><code>/community</code></td><td>广场：精选位 + 导轨 + 分类 + 排序 + 搜索</td></tr><tr><td><code>/p/&lt;pubId&gt;</code></td><td>地图/模型详情：封面压标题、右栏动作与信息表、评论、&quot;接下来试试&quot;</td></tr><tr><td><code>/u/&lt;名字&gt;</code></td><td>用户主页：横幅、头像、皮肤卡（人偶 / 贴图 / 真模型预览）、地区·性别·性格、关注/加好友/私聊、地图/模型/关注者/关注中/最近游玩五个 tab</td></tr><tr><td><code>/friends</code></td><td>好友与关注：好友 / 请求 / 扩列 / 可能认识 / 通知</td></tr><tr><td><code>/me</code></td><td>自己的主页（未登录会跳登录框）</td></tr></tbody></table></div>
 <p>广场的卡片是<b>图占绝对主导</b>的展厅读法：标题压在封面下缘的暗带上， 相框 16:10 用 <code>contain</code>——这些封面是体素小地图，<code>cover</code> 会裁掉一圈看不出是什么， 而 1:1 方框配 16:9 原图只剩上下两道黑带。</p>
 <span id="moderation" class="anchor"></span>
 <h2 id="评论审查与举报">评论、审查与举报</h2>
@@ -79,11 +79,21 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>文本进来先过 <code>screen()</code>：<code>block</code> 词表直接拒，<code>flag</code> 词表放行但打 <code>flagged</code> 标记， 后台面板按标记排序给人看。词表在 <code>community/mute-words.json</code>，改完 <b>mtime 变了就热加载</b>， 不用重启服务。</p>
 <p>举报进 <code>reports</code> 队列，上限 500 条，超了丢最老的。后台能直接下架（<code>status</code> 从 <code>live</code> 改成别的）， 下架的发布对所有读接口立刻不可见。</p>
 <p>封面：发布时如果没带封面，服务端会用体素数据<b>离线渲染一张</b>（带邻接遮蔽的明暗）， 所以不会出现&quot;每张图都缺一个 404 占位&quot;的场面。</p>
+<span id="social" class="anchor"></span>
+<h2 id="好友扩列与资料">好友、扩列与资料</h2>
+<p>社交动作大多发生在&quot;正在做别的事&quot;的时候：逛广场看到一个人、玩图时想喊一句、 收到请求想立刻回。所以它不是一个页面，而是<b>从右侧滑出来的抽屉</b> （<code>public/js/social.js</code> + <code>css/social.css</code>），社区页与游戏内 HUD 都能开， 顶栏那颗「消息」按钮带未读角标。三页签：</p>
+<ul class="lv-0"><li><b>好友</b>：在线点、备注（一条边两个人各存各的，谁加的谁叫得顺口）、私聊、看主页、解除。 顶部直接躺着待处理请求，接受/拒绝不用换页。</li><li><b>扩列</b>：按关键词 + 地区 + 性别 + 性格标签找人，卡片上就写着这些，不用点进主页才知道是谁。 默认口径是&quot;愿意被扩列的人&quot;（<code>looking</code> 为 <code>none</code> 的不出现），明确搜名字时带 <code>all=1</code> 才全给。 <code>/friends</code> 那一页的「扩列」页签用的是<b>同一个渲染函数</b>（<code>renderPeopleGrid</code>），不抄第二份。</li><li><b>消息</b>：世界频道、当前这张图的地图频道、以及所有有往来的私聊会话（带未读）。</li></ul>
+<p>资料字段是四件：<b>地区</b>（34 个省级 + 港澳台 + 海外，只能选不能填）、 <b>性别</b>（男 / 女 / 其他 / 不展示，没有默认值）、<b>性格标签</b>（12 选最多 6）、 <b>扩列状态</b>（欢迎扩列 / 找固定队友 / 只聊天 / 不扩列）。 枚举表在 <code>public/js/profile-fields.js</code> 一份，服务端 import 它做校验、前端 import 它做渲染—— 抄两份必然出现&quot;前端能选、后端报非法&quot;。默认全空：注册框不该逼人家填性别。</p>
+<p>用户主页（<code>/u/&lt;名字&gt;</code>）显示一张皮肤卡：六块配色是纯 CSS 人偶、MC 展开图裁正脸、 骨骼皮肤（那台 CC0 机甲）用 <code>skin-rig.js</code> 起一个小 WebGL 预览并跟着走路循环； 旁边是地区 / 性别 / 扩列状态与性格标签。别人看你的主页，看到的就是你进图时那身。</p>
 <span id="realtime" class="anchor"></span>
 <h2 id="联机与聊天">联机与聊天</h2>
 <p><code>server/realtime.mjs</code>，原生 WebSocket，零依赖。一个 <code>pubId</code> 一个房间， <b>房间上限 24 人</b>——本地服务不是给压测用的，超了就明确拒绝而不是悄悄丢消息。</p>
-<p>同房间同步：加入/离开、位置与朝向、名字与外观、聊天消息。 协作编辑房（<code>edit:&lt;世界 id&gt;</code>）另走一条权威流：方块改动、实体变换、脚本内容、 以及<b>环境标量（昼夜 / 天气）</b>——所有人共用服务端定的顺序， 没有&quot;我先改所以我对&quot;。环境用白名单 + 取值域校验，越界的 <code>dayNight</code> 会让光照算出 NaN。</p>
-<p>聊天是房间内的临时广播，<b>不落库</b>。聊天记录不是社区内容，不该进广场。</p>
+<p>聊天分<b>三种频道</b>，都在 <code>server/chat.mjs</code> 里，一份实现三种用法：</p>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>频道</th><th>谁能看见</th><th>谁能在里面说话</th></tr></thead><tbody><tr><td><code>world</code> 世界频道</td><td>所有在线的人，不管在不在某张图里</td><td>登录用户</td></tr><tr><td><code>map:&lt;pubId&gt;</code> 地图频道</td><td>这张图的玩家 + 详情页上的人</td><td>登录用户</td></tr><tr><td><code>dm:&lt;对方 id&gt;</code> 私聊</td><td>只有那两个人</td><td><b>必须是好友</b>（服务端判，不是界面藏按钮）</td></tr></tbody></table></div>
+<ul class="lv-0"><li>频道 key 由服务端算：私聊那一对是排序后的 id 拼接，客户端只能报&quot;我要跟谁说话&quot;， 报不出&quot;任意字符串&quot;。地图频道必须对应一件还在架上的作品，凭空开的一律拒。</li><li>消息<b>落盘</b>（<code>server/data/chat/chat.json</code>，原子写），是<b>有界环形缓冲</b>： 世界 200 条、每张图 120 条、每对私聊 200 条，图最多留 80 张、私聊最多留 300 对，按最后发言时间淘汰。</li><li>未读只算私聊。公共频道给每个人挂红点是噪音，不是消息。</li><li>传输两条路、发送一条路：<code>POST /api/community/chat</code> 进来 → 存 → 推给订阅了这个频道的连接。 游戏内的房间 socket 与社区页的 <code>/ws/social</code> 都算订阅者；没 socket 时靠 <code>after</code> 游标轮询兜底。 同一条消息可能从两条路都到，所以前端按消息 id 去重。</li><li>审查与社区帖子同一道 <code>screen()</code>，限流是&quot;同一人同一频道 900ms 冷却 + 每分钟 25 条&quot;。</li></ul>
+<p><code>/ws/social</code> 是一条<b>不进任何房间</b>的连接：社区页开着就算在线，主页上那个绿点、 别人发来的私聊推送都挂它上头。没登录连不上（401）。</p>
+<p>游戏内的聊天面板有「地图 / 世界」两档：地图那档走房间 socket（同图的人）， 世界那档走 HTTP。私聊<b>不进</b>这个面板——那是一对一的，混进公共流等于把别人的对话念出来， 要看不如打开右侧的社交抽屉。</p>
+<p>房间同步本身照旧：加入/离开、位置与朝向、名字与外观。 协作编辑房（<code>edit:&lt;世界 id&gt;</code>）另走一条权威流：方块改动、实体变换、脚本内容、 以及<b>环境标量（昼夜 / 天气）</b>——所有人共用服务端定的顺序， 没有&quot;我先改所以我对&quot;。环境用白名单 + 取值域校验，越界的 <code>dayNight</code> 会让光照算出 NaN。</p>
 <span id="limits" class="anchor"></span>
 <h2 id="做不到什么">做不到什么</h2>
 <p>写下来，免得被当成&quot;再改改就有&quot;：</p>

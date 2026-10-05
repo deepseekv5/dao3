@@ -563,6 +563,15 @@ body.chat-open #gameVitals{bottom:auto;top:64px}
 .chat-panel>header{display:flex;align-items:center;gap:8px;padding:9px 11px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.03)}
 .chat-panel>header b{font-size:12.5px;font-weight:600;color:#fff}
 .cp-who{margin-left:auto;font-size:11px;color:var(--fg3);font-family:var(--mono)}
+/* 聊天频道：地图（同图的人）与世界（所有人）。一格一档，不做大下拉。 */
+.cp-chips{display:flex;gap:3px;padding:2px;border-radius:7px;background:rgba(0,0,0,.32)}
+.cp-chips button{padding:3px 9px;border:0;border-radius:5px;background:none;color:var(--fg3);
+  font-size:11.5px;cursor:pointer;transition:.14s var(--ease)}
+.cp-chips button:hover{color:#fff}
+.cp-chips button.on{background:var(--primary);color:var(--on-accent);font-weight:600}
+.cp-friend{padding:3px 9px;border:1px solid var(--line2);border-radius:6px;background:none;color:var(--fg2);
+  font-size:11.5px;cursor:pointer}
+.cp-friend:hover{color:var(--primary);border-color:var(--primary)}
 .cp-x{background:none;border:0;color:var(--fg3);font-size:13px;cursor:pointer;padding:2px 5px;border-radius:5px;line-height:1}
 .cp-x:hover{background:rgba(255,255,255,.09);color:#fff}
 .cp-log{flex:1;min-height:0;overflow-y:auto;padding:9px 11px;display:flex;flex-direction:column;gap:5px;overscroll-behavior:contain}

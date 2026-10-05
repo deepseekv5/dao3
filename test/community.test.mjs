@@ -511,6 +511,60 @@ try {
   ok("皮肤里的外部模型地址被丢掉", skin.data.user.skin.model === undefined, JSON.stringify(skin.data.user.skin));
   const badAvatar = await A.call("PATCH", "/api/community/me", { avatar: "https://evil.example/a.png" });
   ok("头像只认站内上传路径", badAvatar.status === 200 && badAvatar.data.user.avatar === null, JSON.stringify(badAvatar.data.user.avatar));
+  // 随包那台 CC0 机甲就在 /skins/ 下：它不是外链。以前白名单只认 img/skins、uploads、
+  // pubs、assets/worlds 四种前缀，于是「穿上默认皮肤」写进去的 model 被服务端悄悄丢掉，
+  // 用户点完只看到一句"服务端没接受这个模型路径"。
+  const bones12 = { hips: "pelvis", torso: "chest", head: "head", leftUpperArm: "upper_armL", rightUpperArm: "upper_armR", leftLowerArm: "forearmL",
+    rightLowerArm: "forearmR", leftUpperLeg: "thighL", rightUpperLeg: "thighR", leftLowerLeg: "shinL", rightLowerLeg: "shinR", leftFoot: "footL" };
+  const mech = await A.call("PATCH", "/api/community/me", { skin: { kind: "rig", model: "/skins/atlas-09.glb", bones: bones12 } });
+  ok("随包的 CC0 机甲能当账号皮肤（/skins/ 属于站内路径）",
+    mech.status === 200 && mech.data.user.skin.model === "/skins/atlas-09.glb" && mech.data.user.skin.kind === "rig",
+    JSON.stringify(mech.data.user && mech.data.user.skin).slice(0, 160));
+
+  /* ---------- 15b. 资料四件：只认列出来的枚举值 ---------- */
+  const prof = await A.call("PATCH", "/api/community/me", {
+    region: "广东", gender: "f", looking: "open", persona: ["funny", "craft", "不存在的标签", "funny"],
+  });
+  ok("地区 / 性别 / 扩列状态 / 性格都收下了",
+    prof.data.user.region === "广东" && prof.data.user.gender === "f" && prof.data.user.looking === "open"
+    && prof.data.user.persona.join(",") === "funny,craft", JSON.stringify(prof.data.user.persona));
+  const junk = await A.call("PATCH", "/api/community/me", { region: "广告推广", gender: "x", looking: "zzz", persona: ["a", "b", "c", "d", "e", "f", "g", "h"] });
+  ok("不在枚举里的值一律退回未填，性格标签封顶 6 个",
+    junk.data.user.region === "" && junk.data.user.gender === "" && junk.data.user.looking === ""
+    && junk.data.user.persona.length === 0, JSON.stringify(junk.data.user).slice(0, 200));
+  await A.call("PATCH", "/api/community/me", { region: "广东", looking: "open", persona: ["funny"] });
+  const peek = await C.call("GET", "/api/community/users/" + encodeURIComponent("改名后" + suffix));
+  ok("别人主页拿得到这四个字段（主页要显示皮肤、地区、性别、性格）",
+    peek.data.user.region === "广东" && peek.data.user.looking === "open" && peek.data.user.persona.includes("funny"),
+    JSON.stringify(peek.data.user).slice(0, 200));
+  const foundMe = await C.call("GET", "/api/community/people?region=广东&tag=funny&sort=active");
+  ok("扩列接口能按地区 + 性格搜到人",
+    (foundMe.data.rows || []).some((u) => u.name === "改名后" + suffix && u.region === "广东" && u.persona.includes("funny")),
+    JSON.stringify((foundMe.data.rows || []).map((u) => u.name)));
+  const noSelf = await A.call("GET", "/api/community/people?all=1");
+  ok("扩列列表里没有我自己（找人的人不该看到镜子）",
+    !(noSelf.data.rows || []).some((u) => u.name === "改名后" + suffix), JSON.stringify((noSelf.data.rows || []).map((u) => u.name)));
+  const paged = await A.call("GET", "/api/community/people?all=1&limit=1&offset=0");
+  ok("扩列支持分页（limit 生效、more 说真话）",
+    paged.data.rows.length === 1 && paged.data.more === true && paged.data.total >= 2,
+    JSON.stringify({ n: paged.data.rows.length, more: paged.data.more, total: paged.data.total }));
+
+  /* ---------- 15c. 三种频道：世界 / 地图 / 私聊 ---------- */
+  const worldMsg = RUN + " 世界频道一句话";
+  const sent = await A.call("POST", "/api/community/chat", { ch: "world", text: worldMsg });
+  ok("世界频道发得出去", sent.status === 200 && sent.data.msg.ch === "world", JSON.stringify(sent.data).slice(0, 160));
+  const anonRead = await client().call("GET", "/api/community/chat?ch=world");
+  ok("世界频道不登录也能读（它是公共频道）",
+    anonRead.status === 200 && (anonRead.data.rows || []).some((x) => x.text === worldMsg), JSON.stringify(anonRead.status));
+  const fast = await A.call("POST", "/api/community/chat", { ch: "world", text: "紧接着第二句" });
+  ok("同一个人两句话之间有冷却", fast.status === 429 || fast.status === 400, JSON.stringify(fast.data));
+  const fakeMap = await A.call("POST", "/api/community/chat", { ch: "map:ffffffffffffffff", text: "凭空开的频道" });
+  ok("地图频道必须是还在架上的作品", fakeMap.status === 400, JSON.stringify(fakeMap.data));
+  const fakeCh = await A.call("POST", "/api/community/chat", { ch: "admin-only", text: "不存在的频道" });
+  ok("不认识的频道一律拒绝，不会顺手开一个新的", fakeCh.status === 400, JSON.stringify(fakeCh.data));
+  const dmNoFriend = await C.call("POST", "/api/community/chat", { ch: "dm:" + (await A.call("GET", "/api/community/me")).data.user.id, text: "陌生人私聊" });
+  ok("非好友发不出私聊（先加好友这条规矩在服务端）",
+    dmNoFriend.status === 401 || dmNoFriend.status === 400 || dmNoFriend.status === 403, JSON.stringify(dmNoFriend.data));
 
   /* ---------- 16. 限流是真的在数次数 ---------- */
   let blocked = 0;

@@ -17,6 +17,7 @@ const ICON = {
   people: S('<circle cx="9" cy="8" r="3.1"/><path d="M3.6 19c0-3 2.4-5 5.4-5s5.4 2 5.4 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.6 14.3c2.5.3 4.6 2 4.6 4.4"/>', 'stroke-linecap="round"'),
   cube: S('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>', 'stroke-linejoin="round"'),
   vox: S('<path d="M4 20h6v-6H4zM10 14h6V8h-6zM16 8h4V4h-4z"/>', 'stroke-linejoin="round"'),
+  chat: S('<path d="M4 5.5h16v10.5H9.5L4 20z"/><path d="M8 9h8M8 12h5"/>', 'stroke-linejoin="round" stroke-linecap="round"'),
   doc: S('<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9.5 12.5h5M9.5 16h4"/>', 'stroke-linecap="round" stroke-linejoin="round"'),
   book: S('<path d="M11 4H5.8C5 4 4.3 4.7 4.3 5.5v13c0 .8.7 1.5 1.5 1.5H11zM13 4h5.2c.8 0 1.5.7 1.5 1.5v13c0 .8-.7 1.5-1.5 1.5H13z"/><path d="M11 4v16h2V4z"/>', 'stroke-linejoin="round"'),
   code: S('<path d="M8.4 8 4.4 12l4 4M15.6 8l4 4-4 4M13.4 5.2l-2.8 13.6"/>', 'stroke-linecap="round" stroke-linejoin="round"'),
@@ -27,6 +28,7 @@ const ICON = {
 const ITEMS = [
   { href: "/", label: "工作台", title: "工作台", icon: "home", on: (p) => p === "/" },
   { href: "/community", label: "社区", title: "社区广场", icon: "people", on: (p) => p.startsWith("/community") || p.startsWith("/p/") || p.startsWith("/u/") },
+  { href: "/friends", label: "好友", title: "好友、扩列与通知", icon: "chat", on: (p) => p.startsWith("/friends") },
   { href: EDITOR_HREF, label: "编辑器", title: "编辑器", icon: "cube", on: (p) => p.startsWith("/edit") },
   { href: "/voxa", label: "建模", title: "VOXA 体素建模", icon: "vox", on: (p) => p.startsWith("/voxa") },
   { href: "/admin", label: "后台", title: "管理后台（仅管理员可见）", icon: "gear", on: (p) => p.startsWith("/admin"), admin: true },

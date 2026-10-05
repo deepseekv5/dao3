@@ -226,18 +226,26 @@ ok("非数字或越界的坐标不会被广播出去", badSeen.length === 0, JSO
 
 c1.send({ t: "chat", m: "你那边能看到我了吗" });
 const chat = await c2.until((m) => m.t === "chat" && m.name === A.name);
-ok("聊天以发送者的昵称播出", !!chat && chat.m === "你那边能看到我了吗", JSON.stringify(chat));
+ok("聊天以发送者的昵称播出", !!chat && chat.text === "你那边能看到我了吗", JSON.stringify(chat));
+ok("聊天带着频道走：房间里的话属于这张图的频道", !!chat && chat.ch === "map:" + pubId, chat && chat.ch);
 ok("发送者不会收到自己那条的回声", !c1.msgs.some((m) => m.t === "chat"), JSON.stringify(c1.msgs.filter((m) => m.t === "chat")));
 
 c1.send({ t: "chat", m: "第二句" });
-const th = await c1.until((m) => m.t === "throttle");
-ok("连发会被限流并告知要等多久", !!th && th.wait >= 1, JSON.stringify(th));
+const th = await c1.until((m) => m.t === "rejected");
+ok("连发会被限流并告知原因", !!th && /太快/.test(th.reason || ""), JSON.stringify(th));
 
 await sleep(1400);
 c1.send({ t: "chat", m: "<script>alert(1)</script>" });
-const rej = await c1.until((m) => m.t === "rejected");
+const rej = await c1.until((m) => m.t === "rejected" && /太快/.test(m.reason || "") === false);
 ok("夹带标签的聊天被挡下且不广播", !!rej, JSON.stringify(c1.msgs.slice(-3)));
-ok("被挡的那条没进同伴的屏幕", !c2.msgs.some((m) => m.t === "chat" && /alert/.test(m.m || "")));
+ok("被挡的那条没进同伴的屏幕", !c2.msgs.some((m) => m.t === "chat" && /alert/.test(m.text || "")));
+
+// 房间里说的话现在必须留得下来：以前 broadcast 完就丢，详情页与之后进来的人看不见历史
+const hist = await call("GET", `/api/community/chat?ch=map:${pubId}`, undefined, B.cookie);
+const lines = (hist.json && hist.json.rows) || [];
+ok("地图频道的聊天会落盘，之后还能翻到历史",
+  lines.some((x) => x.text === "你那边能看到我了吗") && !lines.some((x) => /alert/.test(x.text)),
+  JSON.stringify(lines.map((x) => x.text)));
 
 c2.close();
 const gone = await c1.until((m) => m.t === "leave");
@@ -283,9 +291,20 @@ const pipelined = new Promise((res, rej) => {
   res(s);
 });
 await pipelined;
-const first = await listener.until((m) => m.t === "chat" && /同一个包里的第一句话/.test(m.m || ""));
+const first = await listener.until((m) => m.t === "chat" && /同一个包里的第一句话/.test(m.text || ""));
 ok("和握手挤在同一个包里的第一帧不会丢", !!first, JSON.stringify(listener.msgs.filter((m) => m.t === "chat")));
 listener.close();
+
+/* ---------------- 社交通道：不进房间也要在线、也要收到世界频道 ---------------- */
+const social = await wsConnect("/ws/social", B.cookie);
+const sw = await social.until((m) => m.t === "welcome");
+ok("社区页那条连接能握上手（它不进任何房间）", !!sw && sw.room === "social", JSON.stringify(sw));
+await call("POST", "/api/community/chat", { ch: "world", text: "全世界都听得见我" }, A.cookie, A.csrf);
+const wpush = await social.until((m) => m.t === "chat" && m.ch === "world");
+ok("世界频道的消息会推给不在图里的人", !!wpush && /全世界/.test(wpush.text || ""), JSON.stringify(wpush));
+const noSoc = await wsConnect("/ws/social", "").then(() => null, (e) => e);
+ok("没登录连不上社交通道", !!noSoc && noSoc.status === "401", String(noSoc && noSoc.status));
+social.close();
 
 c1.close(); c2.close();
 /* ---------------- 世界改动：服务端定序，落到所有人身上 ---------------- */

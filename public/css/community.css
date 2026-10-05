@@ -403,3 +403,46 @@
 .pf-mc-up { height: 28px; }
 /* 预览人偶的头：贴图时盖一层正脸，颜色仍留着当"没贴图会是什么样"的底 */
 .pf-doll .d-face { position: absolute; z-index: 1; left: 27px; top: 10px; width: 28px; height: 26px; border-radius: 3px; image-rendering: pixelated; }
+
+/* ---------- 主页：皮肤卡与资料 ---------- */
+/* 头像右下角那颗在线点：社区页与好友面板说的是同一件事，样式也同一套语言 */
+.pf-avatar { position: relative; }
+.pf-online { position: absolute; right: -1px; bottom: 4px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--ok); border: 2px solid var(--bg1); box-shadow: 0 0 8px rgba(57, 255, 20, .7); }
+.pf-online.off { background: var(--fg3); box-shadow: none; }
+.pf-card { display: flex; gap: 22px; align-items: stretch; margin: 14px 0 18px; padding: 16px 20px;
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background:
+    radial-gradient(58% 120% at 12% 50%, rgba(0, 229, 255, .07), transparent 70%), var(--glass-bg); }
+.pf-dollbox { flex: none; width: 190px; min-height: 220px; display: flex; align-items: center; justify-content: center;
+  border-right: 1px solid var(--line); }
+.pf-dollbox .pf-doll { margin: 0 auto; transform: scale(1.35); }
+.pf-rigbox { width: 172px; height: 220px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-md); background: radial-gradient(80% 46% at 50% 92%, rgba(0, 229, 255, .14), transparent 72%); }
+/* 模型真画出来了就把"载入中"那行字让位，不然它会一直杵在 canvas 边上 */
+.pf-rigbox:has(canvas) .pf-rigload { display: none; }
+.pf-rigload, .pf-rigfail { font-size: 11.5px; color: var(--fg3); }
+.pf-facts { flex: 1; min-width: 0; align-self: center; }
+.pf-facts > b { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg3); margin-bottom: 12px; }
+.pf-factsrow { display: flex; flex-wrap: wrap; gap: 9px; }
+.pf-fact { display: inline-flex; align-items: baseline; gap: 7px; padding: 7px 12px; border-radius: var(--radius-md);
+  background: var(--bg2); border: 1px solid var(--line); }
+.pf-fact i { font-style: normal; font-size: 11px; color: var(--fg3); }
+.pf-fact b { font-size: 13px; color: var(--fg); font-weight: 600; }
+.pf-tagline { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+.pf-notag { font-size: 11.5px; color: var(--fg3); }
+/* 编辑资料里那排性格标签：选中态与主页展示用同一个 class，别再画第二套 */
+.pf-tag { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line2); background: var(--bg2);
+  color: var(--fg2); font-size: 11.5px; cursor: pointer; transition: .14s var(--ease); }
+.pf-tag:hover { color: var(--fg); border-color: var(--glass-border-hover); }
+.pf-tag.on { color: var(--on-accent); background: var(--primary); border-color: transparent; font-weight: 600; }
+.pf-tag.shake { animation: pfShake .26s var(--ease); }
+@keyframes pfShake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+.pf-factgrid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.pf-factgrid label { flex: 1 1 108px; font-size: 11.5px; color: var(--fg3); }
+.pf-factgrid select { width: 100%; height: 30px; margin-top: 4px; padding: 0 8px; border-radius: var(--radius-md);
+  border: 1px solid var(--line2); background: var(--bg1); color: var(--fg); font-size: 12.5px; }
+.pf-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+@media (max-width: 760px) {
+  .pf-card { flex-direction: column; align-items: stretch; gap: 14px; }
+  .pf-dollbox { width: 100%; border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+}

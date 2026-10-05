@@ -5,6 +5,7 @@
 import * as auth from "/js/auth.js";
 import { cardHtml, bindCards, face, hue } from "/js/pubs.js";
 import { MC_PRESETS, presetUrl, facePreview, readSkinFile, skinNameFrom } from "/js/skin-sheet.js";
+import { REGIONS, GENDERS, PERSONA, LOOKING, genderLabel, personaLabel, lookingLabel, MAX_PERSONA } from "/js/profile-fields.js";
 
 const { api, esc } = auth;
 const $ = (id) => document.getElementById(id);
@@ -123,6 +124,20 @@ function openEditor(u, onSaved) {
           <label class="pf-file">横幅<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" id="eBanner"/></label>
           <span class="pf-hint">图片最大 3 MB，只存本机</span>
         </div>
+        <div class="pf-factgrid">
+          <label>地区<select id="eRegion">
+            <option value="">不展示</option>${REGIONS.map((r) => `<option value="${esc(r)}" ${u.region === r ? "selected" : ""}>${esc(r)}</option>`).join("")}
+          </select></label>
+          <label>性别<select id="eGender">
+            ${GENDERS.map((g) => `<option value="${esc(g.id)}" ${(u.gender || "") === g.id ? "selected" : ""}>${esc(g.label)}</option>`).join("")}
+          </select></label>
+          <label>扩列状态<select id="eLooking">
+            <option value="">不展示</option>${LOOKING.map((l) => `<option value="${esc(l.id)}" ${u.looking === l.id ? "selected" : ""}>${esc(l.label)}</option>`).join("")}
+          </select></label>
+        </div>
+        <div class="pf-tags" id="eTags" title="最多挑 6 个：别人在「扩列」里就是按这些找到你的">
+          ${PERSONA.map((p) => `<button type="button" class="pf-tag${(u.persona || []).includes(p.id) ? " on" : ""}" data-tag="${esc(p.id)}">${esc(p.label)}</button>`).join("")}
+        </div>
       </div>
       <div>
         <h4 title="配色会带进你游玩的每一张地图；模型皮肤在 VOXA 里发布后选择。">角色皮肤</h4>
@@ -238,6 +253,17 @@ function openEditor(u, onSaved) {
   }
   paintMc();
 
+  // 性格标签：多选但封顶 6 个。封顶要在界面上就拦掉，而不是等保存时服务端报错——
+  // 那时候人已经填完一整屏了。
+  const picked = new Set(u.persona || []);
+  for (const b of box.querySelectorAll("[data-tag]")) b.onclick = () => {
+    const id = b.dataset.tag;
+    if (picked.has(id)) picked.delete(id);
+    else if (picked.size >= MAX_PERSONA) { b.classList.add("shake"); setTimeout(() => b.classList.remove("shake"), 260); return; }
+    else picked.add(id);
+    b.classList.toggle("on", picked.has(id));
+  };
+
   for (const [id, kind] of [["eAvatar", "avatar"], ["eBanner", "banner"]]) {
     box.querySelector("#" + id).onchange = async (e) => {
       const f = e.target.files[0];
@@ -262,6 +288,10 @@ function openEditor(u, onSaved) {
         name: box.querySelector("#eName").value.trim(),
         bio: box.querySelector("#eBio").value.trim(),
         skin: draft,
+        region: box.querySelector("#eRegion").value,
+        gender: box.querySelector("#eGender").value,
+        looking: box.querySelector("#eLooking").value,
+        persona: [...picked],
       });
       // 服务端会丢掉它不认的 texture。它丢了却说"已保存"，用户进图才发现还是那张
       // 纯色人偶，只会以为是我们没接上——所以按返回值说。
@@ -275,6 +305,26 @@ function openEditor(u, onSaved) {
 }
 
 /* ---------------- 页面 ---------------- */
+const factCell = (k, v) => `<span class="pf-fact"><i>${esc(k)}</i><b>${esc(v)}</b></span>`;
+
+// 一台机甲 6.9 MB，绝不该在每页都开一份 WebGL 上下文：切页时把上一个预览停掉并释放。
+let rigLive = null;
+/** 皮肤预览分三条路：六块配色（纯 CSS 人偶）、MC 展开图（CSS + 裁出来的正脸）、
+ *  骨骼皮肤（真模型，要 three）。前两条不引依赖，只有真是 rig 才动态 import。 */
+async function mountSkinPreview(u, host) {
+  if (rigLive) { try { rigLive.stop(); } catch {} rigLive = null; }
+  const s = u.skin || {};
+  if (!(s.kind === "rig" && s.model && host)) return;
+  host.innerHTML = `<div class="pf-rigbox"><span class="pf-rigload">载入皮肤模型…</span></div>`;
+  try {
+    const { previewRig } = await import("/js/skin-rig.js");
+    rigLive = previewRig(host.firstChild, { model: s.model, bones: s.bones, axes: s.axes, scale: s.scale, flip: s.flip },
+      { w: 172, h: 220 });
+  } catch (e) {
+    host.innerHTML = `<div class="pf-rigbox"><span class="pf-rigfail">模型读不出来</span></div>`;
+  }
+}
+
 export async function profileView(name, root, setTitle, setSub) {
   let d;
   try { d = await api("GET", "/api/community/users/" + encodeURIComponent(name)); }
@@ -291,13 +341,27 @@ export async function profileView(name, root, setTitle, setSub) {
   root.innerHTML = `<div class="pf-wrap">
     <div class="pf-banner" ${bstyle}>${banner}</div>
     <div class="pf-head">
-      <div class="pf-avatar">${face(u)}</div>
+      <div class="pf-avatar">${face(u)}${u.online ? '<i class="pf-online" title="在线"></i>' : '<i class="pf-online off" title="离线"></i>'}</div>
       <div class="pf-id">
         <h2>${esc(u.name)}${u.role === "admin" ? '<span class="pf-role">管理员</span>' : ""}</h2>
         <p class="pf-bio">${esc(u.bio || "")}</p>
         <p class="pf-meta">加入于 ${esc(new Date(u.createdAt).toLocaleDateString())} · ${c.pubs || 0} 张发布 · ${c.friends || 0} 好友 · ${c.followers || 0} 关注者</p>
       </div>
       <div class="pf-acts" id="pfActs"></div>
+    </div>
+    <div class="pf-card">
+      <div class="pf-dollbox" id="pfSkin">${previewHtml(u.skin || {})}</div>
+      <div class="pf-facts">
+        <b>${esc(mine ? "你现在穿的皮肤" : "这个人的皮肤")}</b>
+        <div class="pf-factsrow">
+          ${factCell("地区", u.region || "未填")}
+          ${factCell("性别", u.gender ? genderLabel(u.gender) : "未填")}
+          ${factCell("扩列", u.looking ? lookingLabel(u.looking) : "未填")}
+        </div>
+        <div class="pf-tagline">${(u.persona || []).length
+          ? (u.persona || []).map((t) => `<span class="pf-tag on">${esc(personaLabel(t))}</span>`).join("")
+          : '<span class="pf-notag">没填性格标签</span>'}</div>
+      </div>
     </div>
     <div class="cm-tabs" id="pfTabs">
       <button class="cm-btn on" data-t="map">地图</button>
@@ -308,6 +372,8 @@ export async function profileView(name, root, setTitle, setSub) {
     </div>
     <div id="pfBody"></div>
   </div>`;
+  paintFace(root);
+  mountSkinPreview(u, $("pfSkin"));
 
   const acts = $("pfActs");
   if (mine) {
@@ -317,7 +383,14 @@ export async function profileView(name, root, setTitle, setSub) {
   } else {
     const rel = u.relation || {};
     acts.innerHTML = `<button class="cm-btn ${rel.following ? "" : "primary"}" id="pfFollow">${rel.following ? "已关注" : "关注"}</button>
-      <button class="cm-btn" id="pfFriend">${rel.friend ? "已是好友" : rel.pendingOut ? "等待回应" : rel.pendingIn ? "接受好友请求" : "加好友"}</button>`;
+      <button class="cm-btn" id="pfFriend">${rel.friend ? "已是好友" : rel.pendingOut ? "等待回应" : rel.pendingIn ? "接受好友请求" : "加好友"}</button>
+      ${rel.friend ? '<button class="cm-btn" id="pfDm">私聊</button>' : ""}`;
+    if (rel.friend) {
+      acts.querySelector("#pfDm").onclick = async () => {
+        const m = await import("/js/social.js");
+        m.openDm({ id: u.id, name: u.name, note: u.note });
+      };
+    }
     acts.querySelector("#pfFollow").onclick = async () => {
       if (!auth.me) return auth.openAuth("login");
       const r = await api("POST", "/api/community/follow", { name: u.name });

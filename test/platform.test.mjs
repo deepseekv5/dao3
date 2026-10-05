@@ -148,7 +148,12 @@ await sleep(150);
 await A.evaluate(`document.querySelector('#eSkin [data-p="shirt"]').click()`);
 await sleep(150);
 await A.evaluate(`document.querySelector('#eSkin [data-c="#e8604c"]').click()`);
-const doll = await A.evaluate(`(document.querySelector(".pf-doll .d-torso")||{getAttribute:()=>""}).getAttribute("style")`);
+// 主页上现在有两份预览人偶：一张是主页自己的皮肤卡（只读），一张在编辑弹窗里。
+// 选择器必须锁在弹窗那一份上，否则querySelector 拿到的是皮肤卡，
+// 于是"改了配色人偶不动"这种断言会红在测试自己身上。
+ok("主页皮肤卡里也有一份人偶预览（别人不用点开编辑就能看到你的配色）",
+  await until(A, `!!document.querySelector(".pf-card .pf-doll")`, { tries: 6, ms: 250 }));
+const doll = await A.evaluate(`(document.querySelector(".pf-skinrow .pf-doll .d-torso")||{getAttribute:()=>""}).getAttribute("style")`);
 ok("皮肤调色板即时反映到预览人偶", /e8604c/i.test(String(doll)), doll);
 // 每一格给自己的色板：拿挑上衣的十色去挑脸，怎么选都像贴了块塑料。
 const palOf = (p) => A.evaluate(`(() => {
@@ -164,7 +169,7 @@ const nPreset = await A.evaluate(`document.querySelectorAll("#eSkin [data-o]").l
 ok("皮肤有成套预设可选", nPreset >= 6, String(nPreset));
 await A.evaluate(`document.querySelector('#eSkin [data-o][title="夜行"]').click()`);
 const presetDoll = await A.evaluate(`(() => ({
-  torso: getComputedStyle(document.querySelector(".pf-doll .d-torso")).backgroundColor,
+  torso: getComputedStyle(document.querySelector(".pf-skinrow .pf-doll .d-torso")).backgroundColor,
   chip: getComputedStyle(document.querySelector('#eSkin [data-p="shirt"] span')).backgroundColor,
   on: !!document.querySelector('#eSkin [data-o].on'),
 }))()`);
@@ -176,7 +181,7 @@ const kept = await A.evaluate(`(async () => {
   const el = document.getElementById("eCustom");
   el.value = "#12b5c9"; el.dispatchEvent(new Event("input", { bubbles: true }));
   await new Promise((r) => setTimeout(r, 60));
-  return { same: el === document.getElementById("eCustom"), torso: getComputedStyle(document.querySelector(".pf-doll .d-torso")).backgroundColor };
+  return { same: el === document.getElementById("eCustom"), torso: getComputedStyle(document.querySelector(".pf-skinrow .pf-doll .d-torso")).backgroundColor };
 })()`);
 ok("自定义取色器拖动过程中不会被重建", kept.same, JSON.stringify(kept));
 ok("自定义颜色立刻贴到人偶上", kept.torso === "rgb(18, 181, 201)", JSON.stringify(kept));
@@ -475,6 +480,36 @@ if (!heard) {
   console.log("      server: " + boot.join("").slice(-600));
 }
 ok("B 说的话出现在 A 的聊天条上", heard);
+
+/* 游戏内的频道选择与社交抽屉：地图（同图的人）/ 世界（所有人）/ 好友抽屉。
+   判据落在"切档之后该改的真的改了"，不是"按钮存在"。 */
+const chips = await B.evaluate(`(() => {
+  const g = window.__game, bs = [...document.querySelectorAll("#chatChips [data-ch]")];
+  return JSON.stringify({ n: bs.length, on: (bs.find((b) => b.classList.contains("on")) || {}).dataset,
+    ph: document.getElementById("chatBox").placeholder }); })()`);
+const CH = JSON.parse(chips);
+ok("聊天面板有「地图 / 世界」两档，默认停在地图", CH.n === 2 && CH.on && CH.on.ch === "map", chips);
+await B.evaluate(`document.querySelector('#chatChips [data-ch="world"]').click()`);
+const worldOn = await until(B, `(() => { const b = document.querySelector('#chatChips [data-ch="world"]');
+  return b.classList.contains("on") && /所有在线的人/.test(document.getElementById("chatBox").placeholder); })()`, { tries: 6, ms: 300 });
+ok("切到世界之后按钮亮起、输入框提示跟着改口", !!worldOn,
+  await B.evaluate(`document.getElementById("chatBox").placeholder`));
+await B.evaluate(`window.__game.sendChat("世界档发的一句")`);
+// 先验发送者自己：世界档的回显用的是服务端返回的那一条，所以"自己看得见"
+// 就等于"HTTP 这条路通了"。少了这一层，下一条失败分不清是没发出去还是没收到。
+const bEcho = await until(B, `(() => { const t = document.getElementById("gameChat").textContent
+  + document.getElementById("chatLog").textContent;
+  return /【世界】.*世界档发的一句/.test(t); })()`, { tries: 8, ms: 400 });
+ok("世界档的话以服务端返回的那一条回显（带【世界】前缀，只有一遍）", !!bEcho,
+  await B.evaluate(`JSON.stringify({ strip: document.getElementById("gameChat").textContent.slice(0,120), errs: (window.__errs||[]).slice(0,2) })`));
+const worldSeen = await until(A, `(() => { const g = window.__game;
+  return [...document.querySelectorAll("#chatLog .cp-line, #gameChat div")].some((e) => /世界档发的一句/.test(e.textContent)); })()`, { tries: 20, ms: 500 });
+ok("世界频道发出去的话，另一个在线的人看得见", worldSeen,
+  await A.evaluate(`document.getElementById("gameChat").textContent.slice(0,120)`));
+await B.evaluate(`document.getElementById("chatSocial").click()`);
+const drawerIn = await until(B, `!!(document.getElementById("soDrawer") && document.getElementById("soDrawer").classList.contains("on"))`, { tries: 10, ms: 400 });
+ok("游戏里那颗「好友」直接开出社交抽屉（不用跳出这张图）", !!drawerIn);
+await B.shot(path.join(ROOT, "tmp/ui-social-ingame.png"));
 await A.shot(path.join(ROOT, "tmp/ui-multiplayer.png"));
 
 // 真人离开是关标签页，不是去调 stop()。走 target 关闭才碰到服务端那条 end 分支。

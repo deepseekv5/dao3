@@ -4,8 +4,12 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>社区 · 老攸元宇宙</title>
+<!-- 主页上那台骨骼皮肤预览要真模型：GLTFLoader 按裸名 "three" 引依赖，
+     没有这张映射表它就报"模块找不到"，而页面只会安静地少一块图。 -->
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js"}}</script>
 <meta name="description" content="老攸元宇宙社区：别人发布的世界、好友与关注、地图评论。地图快照存在本机，游玩前会先取回本地。"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
+<link rel="stylesheet" href="/css/social.css"/>
 <link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
 <link rel="stylesheet" href="/css/tokens.css"/>
 <link rel="stylesheet" href="/css/home.css"/>

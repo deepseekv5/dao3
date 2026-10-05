@@ -4,14 +4,24 @@
 所以本项目的回归套件是驱动真页面的，截图和断言同源。
 
 ```bash
-npm start &                      # 起本地服务
-npm test                         # test/runtime_parity.mjs · 77 条断言
-npm run test:e2e                 # test/e2e.mjs · 39 条端到端断言（截图落在 test/out/）
-npm run test:ide                 # test/ide.test.mjs · 编辑器外壳 22 条（走 test/cdp.mjs，不需要 playwright）
+npm start &                      # 起本地服务（测试自己另起端口的也有）
+
+# —— 不需要 playwright、真的跑得起来的 ——
+npm run test:ide                 # test/ide.test.mjs · 编辑器外壳与脚本补全
+npm run test:voxa                # test/voxa.test.mjs · VOXA 模型层纯函数（裸 Node）
+npm run test:voxa-ui             # test/voxa-ui.test.mjs · VOXA 交互层（真指针 + 真 DOM）
+npm run test:community           # test/community.test.mjs · 社区后端 HTTP 全量
+npm run test:realtime            # test/realtime.test.mjs · 手写 WebSocket 客户端打房间
+npm run test:social              # test/social.test.mjs · 两个浏览器会话对打社交层
+npm run test:skin                # test/skin.test.mjs · 骨骼皮肤重定向
+npm run test:skin3d              # test/skin3d.test.mjs · MC 展开图与皮肤库
+npm run test:pause               # test/pause.test.mjs · 运行态暂停与单步
+npm run test:api                 # test/api.test.mjs · API 运行时对账
+npm run check:dist               # 分发内容审计（授权、凭据、必需文件）
 ```
 
-套件需要 `playwright-core` + 一个 Chromium。它**不是**项目依赖
-（运行时零依赖是硬要求），测试自己可移植地找：
+`test/runtime_parity.mjs`（`npm test`）与 `test/e2e.mjs` 需要 `playwright-core` + 一个 Chromium，
+本机没装时它们打印 SKIP 并退出 0——**别把 SKIP 当成通过**。
 
 ```bash
 npm i -D playwright-core && npx playwright install chromium

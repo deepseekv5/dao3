@@ -570,7 +570,7 @@ export class GameRuntime {
             }
           },
           world: (m) => this._netApplyWorld(m),
-          chat: (m) => this._chatLine(`${m.name}: ${m.m}`, "#bfe0ff"),
+          chat: (m) => this._netChat(m),
           throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#8fe3ef", "sys"),
           rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3", "sys"),
           status: (s) => {
@@ -4170,14 +4170,63 @@ void main() {
     this.setChatPanel(false);
   }
   // 官方聊天链路：本地发送 → player.onChat + world.onChat → 屏幕回显 → 房间里广播
-  sendChat(text) {
+  async sendChat(text) {
     const msg = String(text).slice(0, 200);
     const ev = { tick: this.currentTick, entity: this.playerEntity, message: msg };
     if (this.player) this.player._channels.Chat.fire(ev);
     this._channels.Chat.fire(ev);
+    if (this._chatCh === "world") {
+      // 世界频道走社区那套 HTTP：它要落盘、要限流、要让没在这张图里的人也看得见。
+      // 房间 socket 只负责"同一张图"这一件事，硬塞进去等于再造一套聊天。
+      // 回显用服务端返回的那一条并把 id 记进去：HTTP 发送没有"排除自己"这条通道，
+      // 自己再画一遍就是屏幕上两行一样的话。
+      try {
+        const { chatSend } = await import("./social.js");
+        const r = await chatSend("world", msg);
+        if (r && r.msg) { if (!this._chatSeen) this._chatSeen = new Set(); this._chatSeen.add(r.msg.id); this._netChat(r.msg); }
+        else this._chatLine(`${this.player ? this.player.name : "玩家"}: ${msg}`, "#ffffff");
+      } catch (e) { this._chatLine("世界频道没发出去：" + e.message, "#ffb3b3", "sys"); }
+      return;
+    }
     this._chatLine(`${this.player ? this.player.name : "玩家"}: ${msg}`, "#ffffff");
     // 本地回显先出来，房间那条由服务端审查后再发回给别人；自己不该看到两条。
     if (this._net && this._net.live) this._net.chat(msg);
+    else this._chatLine("这张图里现在只有你：想让别人听见，切到上面那格「世界」。", "#8fe3ef", "sys");
+  }
+  /** 聊天频道：地图（同图的人，走房间 socket）与世界（所有人，走 HTTP）。
+   *  私聊不进这个面板——那是一对一的，混进公共流里等于把别人的对话念出来。 */
+  setChatChannel(ch) {
+    this._chatCh = ch === "world" ? "world" : "map";
+    for (const b of document.querySelectorAll("#chatChips [data-ch]")) b.classList.toggle("on", b.dataset.ch === this._chatCh);
+    const box = this.hud && this.hud.chatBox;
+    if (box) box.placeholder = this._chatCh === "world" ? "说给所有在线的人听…" : "说点什么…";
+    clearInterval(this._worldPoll);
+    if (this._chatCh === "world") {
+      this._pullWorld();
+      this._worldPoll = setInterval(() => this._pullWorld(), 5000);
+    }
+  }
+  async _pullWorld() {
+    try {
+      const { chatPull } = await import("./social.js");
+      const rows = await chatPull("world", this._worldAfter || 0, 40);
+      for (const m of rows) {
+        this._worldAfter = Math.max(this._worldAfter || 0, m.ts);
+        this._netChat(m);
+      }
+    } catch { /* 没登录或网断了：世界频道暂时看不见，不该把游戏一起拖住 */ }
+  }
+  /** 一条从 socket 或轮询进来的聊天。两条路可能送到同一条，所以按 id 去重。 */
+  _netChat(m) {
+    if (!m || !m.text) return;
+    if (!this._chatSeen) this._chatSeen = new Set();
+    if (m.id) {
+      if (this._chatSeen.has(m.id)) return;
+      this._chatSeen.add(m.id);
+      if (this._chatSeen.size > 400) this._chatSeen.clear();
+    }
+    const world = m.ch === "world";
+    this._chatLine(world ? `【世界】${m.name}: ${m.text}` : `${m.name}: ${m.text}`, world ? "#ffd7a8" : "#bfe0ff");
   }
   /** 一条消息同时进两个地方：左下角的窄条（最近三条，会自己淡掉）
       和聊天面板里的完整历史（能往上翻，不自动清）。
@@ -4533,6 +4582,7 @@ void main() {
       chatBox: $("chatBox"), chatInput: $("gameChatInput"), dead: $("gameDead"), respawn: $("btnRespawn"),
       storeBtn: $("gameStoreBtn"), store: $("gameStore"), lockHint: $("gameLockHint"),
       chatPanel: $("chatPanel"), chatLog: $("chatLog"), chatWho: $("chatWho"), chatBadge: $("chatBadge"),
+      chatChips: $("chatChips"), chatSocial: $("chatSocial"),
       chatBtn: $("chatToggle"), qualityBtn: $("qualityToggle"), qualityPanel: $("qualityPanel"),
       qualityList: $("qualityList"), qualityLabel: $("qualityLabel"),
       pauseBtn: $("pePause"), stepBtn: $("peStep"), tickEl: $("peTick"), playBar: document.querySelector(".hud-play"),
@@ -4551,6 +4601,16 @@ void main() {
     if (this.hud.chatPanel) {
       const x = this.hud.chatPanel.querySelector("#chatClose");
       if (x) x.onclick = () => this.setChatPanel(false);
+    }
+    // 频道那一格默认停在「地图」：进来先跟同图的人说话，才是联机该有的样子
+    for (const b of document.querySelectorAll("#chatChips [data-ch]")) b.onclick = () => this.setChatChannel(b.dataset.ch);
+    this.setChatChannel("map");
+    if (this.hud.chatSocial) {
+      this.hud.chatSocial.onclick = async () => {
+        if (!window.__me) { const a = await import("./auth.js"); a.openAuth("login"); return; }
+        const m = await import("./social.js");
+        m.openSocial("messages");
+      };
     }
     if (this.hud.qualityBtn) this.hud.qualityBtn.onclick = () => this.toggleQualityPanel();
     if (this.hud.qualityPanel) {
