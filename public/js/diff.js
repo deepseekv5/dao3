@@ -65,7 +65,7 @@ export function unrle(pairs) {
 
 /** 作者 → 颜色。在线列表、改动流、行号上色必须用同一个函数：
  *  两处各写一遍的话，"甲的行"和"甲的名字"在屏幕上就是两种颜色，标注等于没标。 */
-const AUTHOR_COLORS = ["#00e5ff", "#f2c14e", "#9b7bff", "#46d27f", "#ff8f6b", "#5fb0ff", "#e2705f", "#ffd166"];
+const AUTHOR_COLORS = ["#e3a63c", "#f2c14e", "#9b7bff", "#46d27f", "#ff8f6b", "#5fb0ff", "#e2705f", "#ffd166"];
 export function authorColor(id) {
   let h = 0;
   for (const ch of String(id == null ? "" : id)) h += ch.charCodeAt(0);

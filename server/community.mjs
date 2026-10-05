@@ -345,7 +345,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     const src = v && typeof v === "object" ? v : {};
     const hex = (x, d) => (/^#[0-9a-fA-F]{6}$/.test(String(x)) ? String(x).toLowerCase() : d);
     const out = {
-      skin: hex(src.skin, "#ffd7b0"), shirt: hex(src.shirt, "#5aa8e8"), pants: hex(src.pants, "#5b6c8e"),
+      skin: hex(src.skin, "#ffd7b0"), shirt: hex(src.shirt, "#c9714f"), pants: hex(src.pants, "#6b625a"),
       hair: hex(src.hair, "#6b4630"), shoe: hex(src.shoe, "#7b5441"),
     };
     const model = assetUrl(src.model);
@@ -388,9 +388,9 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     const out = { name: String(src.name || "未命名皮肤").trim().slice(0, 24) || "未命名皮肤" };
     const six = src.skin && typeof src.skin === "object" ? src.skin : {};
     out.skin = {
-      head: hex(six.head, "#ffd7b0"), body: hex(six.body, "#5aa8e8"),
-      armL: hex(six.armL, "#5aa8e8"), armR: hex(six.armR, "#5aa8e8"),
-      legL: hex(six.legL, "#5b6c8e"), legR: hex(six.legR, "#48566f"),
+      head: hex(six.head, "#ffd7b0"), body: hex(six.body, "#c9714f"),
+      armL: hex(six.armL, "#c9714f"), armR: hex(six.armR, "#c9714f"),
+      legL: hex(six.legL, "#6b625a"), legR: hex(six.legR, "#524a44"),
     };
     // 资产本体（贴图 PNG / 骨骼 GLB）不进这条记录：发布时按 base64 附件收进
     // 这份快照自己的 .assets/ 目录，记录里只留指回它的站内路径。

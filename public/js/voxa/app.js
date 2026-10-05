@@ -2212,8 +2212,8 @@ function skinSixColors(doc) {
   const face = mode(vox("头")) || "#ffd7b0";
   const top = head ? head.voxels.filter((v) => v.y >= head.size[1] - 2) : [];
   const hair = mode(top.filter((v) => hexOf(v.c) !== face)) || "#6b4630";
-  const shirt = mode(vox("躯干", "上臂")) || "#5aa8e8";
-  const pants = mode(vox("骨盆", "大腿")) || "#5b6c8e";
+  const shirt = mode(vox("躯干", "上臂")) || "#c9714f";
+  const pants = mode(vox("骨盆", "大腿")) || "#6b625a";
   return {
     skin: face, shirt, pants, hair, shoe: mode(vox("脚")) || "#7b5441",
     six: { head: face, body: shirt, armL: shirt, armR: shirt, legL: pants, legR: pants },

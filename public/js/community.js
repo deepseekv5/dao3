@@ -416,8 +416,16 @@ async function friendsView() {
   pageSub.textContent = "谁在跟你一起玩，谁在等你回应";
   root.innerHTML = `<div class="cm-empty">读取中…</div>`;
   if (!auth.me) {
-    root.innerHTML = `<div class="cm-empty"><b>先登录</b>好友、关注与通知都要先有个账号。<button class="cm-btn primary" id="fLogin" style="margin-top:12px">登录 / 注册</button></div>`;
+    // 未登录也给内容，而不是一句"先登录"占满整屏：扩列读的是公开资料，
+    // 这一页空着看起来像坏了。
+    root.innerHTML = `<div class="cm-rows"><div class="cm-locked">
+        <b>登录后才能加好友、发私聊。</b>
+        <span>下面这些人是公开的，先看看有没有眼熟的。</span>
+        <button class="cm-btn primary" id="fLogin">登录 / 注册</button>
+      </div><div id="fBody"></div></div>`;
     $("fLogin").onclick = () => openAuth("login");
+    const m = await import("/js/social.js");
+    await m.renderPeopleGrid($("fBody"));
     return;
   }
   const [fr, notes] = await Promise.all([api("GET", "/api/community/friends"), api("GET", "/api/community/notifications")]);

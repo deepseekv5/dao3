@@ -172,6 +172,6 @@ export const MD_CSS = `
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#ffd9a0}
 .md .md-pre code{background:none;padding:0;color:#c8d4e4}
 .md a{color:#7fb3ff;text-decoration:underline;cursor:pointer}
-.md strong{color:#f2f6fb}
+.md strong{color:#f6f1e8}
 .md em{color:#b9c7da}
 `;

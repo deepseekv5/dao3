@@ -152,10 +152,10 @@ function gl(w, hgt) {
     };
     _gl.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     _gl.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    const hemi = new THREE.HemisphereLight(0xdfe8ff, 0x30323a, 1.15);
+    const hemi = new THREE.HemisphereLight(0xe8e2d8, 0x3a3632, 1.15);
     const key = new THREE.DirectionalLight(0xffffff, 1.5);
     key.position.set(2.6, 4.2, 3.4);
-    const fill = new THREE.DirectionalLight(0xbfd4ff, 0.5);
+    const fill = new THREE.DirectionalLight(0xc2c6c4, 0.5);
     fill.position.set(-3, 1.6, -2.2);
     _gl.scene.add(hemi, key, fill);
   }
@@ -188,9 +188,9 @@ export function renderDoll(colors, { w = 220, h = 200 } = {}) {
     return mesh;
   };
   const C = {
-    head: colors.head || "#ffd7b0", body: colors.body || "#5aa8e8",
-    armL: colors.armL || colors.body || "#5aa8e8", armR: colors.armR || colors.body || "#5aa8e8",
-    legL: colors.legL || "#5b6c8e", legR: colors.legR || colors.legL || "#5b6c8e",
+    head: colors.head || "#ffd7b0", body: colors.body || "#c9714f",
+    armL: colors.armL || colors.body || "#c9714f", armR: colors.armR || colors.body || "#c9714f",
+    legL: colors.legL || "#6b625a", legR: colors.legR || colors.legL || "#6b625a",
   };
   const hair = shade(C.head, 0.34), collar = tint(C.body, 0.72), cuff = shade(C.body, 0.74);
   const eye = "#2f2c39", sole = "#2c2a2e", hand = tint(C.head, 1.02);

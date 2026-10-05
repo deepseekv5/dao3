@@ -9,7 +9,7 @@
 //   2. 推送 + 轮询双轨：/ws/social 掉线时消息不能就此看不见，抽屉开着时每 5 秒
 //      按 after 游标补一次增量。
 //   3. 消息按 id 去重：游戏里同时有房间 socket 与社交 socket，同一条会来两次。
-import { me, api, openAuth, esc, onLogin } from "./auth.js";
+import { me, api, openAuth, esc, onLogin, avatarBg } from "./auth.js";
 import { REGIONS, GENDERS, PERSONA, genderLabel, personaLabel, lookingLabel } from "./profile-fields.js";
 
 const TABS = [["friends", "好友"], ["expand", "扩列"], ["messages", "消息"]];
@@ -37,9 +37,8 @@ const timeAgo = (ts) => {
 };
 const face = (u) => {
   const src = typeof u.avatar === "string" && u.avatar.startsWith("/") && !u.avatar.startsWith("//") ? u.avatar : null;
-  const bg = (() => { let h = 0; for (const c of String(u.name || "?")) h = (h * 31 + c.charCodeAt(0)) % 360; return 196 + (h % 74); })();
   return src ? `<img class="so-face" src="${esc(src)}" alt=""/>`
-    : `<span class="so-face so-init" style="background:linear-gradient(140deg,hsl(${bg} 92% 66%),hsl(${bg - 30} 84% 55%))">${esc(u.name ? [...u.name][0] : "?")}</span>`;
+    : `<span class="so-face so-init" style="background:${avatarBg()}">${esc(u.name ? [...u.name][0] : "?")}</span>`;
 };
 const dot = (u) => `<i class="so-dot ${u.online ? "on" : ""}" title="${u.online ? "在线" : "离线"}"></i>`;
 /** 资料小标签：地区 / 性别 / 性格。空值不显示，主页与列表用同一套，别两处各写一遍。 */
@@ -69,6 +68,9 @@ function toast(msg, bad) {
 export function paintEntry(host) {
   if (!host) return;
   if (!me) return;
+  // 幂等：auth.js 每次重画身份区都会再调一次，不去重就会攒出好几个入口，
+  // 而且它们是同一个 id—— getElementById 只会点着第一个。
+  host.querySelectorAll(".so-entry").forEach((n) => n.remove());
   host.insertAdjacentHTML("afterbegin",
     `<button class="so-entry" id="soEntry" title="好友、扩列与聊天">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

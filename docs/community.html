@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="editor.html">编辑器界面与命令</a><a href="testing.html">测试与验证</a><b class="grp">社区</b><a class="on" href="community.html">社区层</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#一句话范围">一句话范围</a><a class="t2" href="#账号与会话">账号与会话</a><a class="t2" href="#发布快照不是引用">发布：快照，不是引用</a><a class="t2" href="#皮肤社区第三种发布">皮肤社区：第三种发布</a><a class="t2" href="#前端有哪几个面">前端有哪几个面</a><a class="t2" href="#评论审查与举报">评论、审查与举报</a><a class="t2" href="#好友扩列与资料">好友、扩列与资料</a><a class="t2" href="#联机与聊天">联机与聊天</a><a class="t2" href="#做不到什么">做不到什么</a><a class="t2" href="#怎么验">怎么验</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#一句话范围">一句话范围</a><a class="t2" href="#账号与会话">账号与会话</a><a class="t2" href="#发布快照不是引用">发布：快照，不是引用</a><a class="t2" href="#皮肤社区第三种发布">皮肤社区：第三种发布</a><a class="t2" href="#前端有哪几个面">前端有哪几个面</a><a class="t2" href="#评论审查与举报">评论、审查与举报</a><a class="t2" href="#好友扩列与资料">好友、扩列与资料</a><a class="t2" href="#联机与聊天">联机与聊天</a><a class="t2" href="#接口一览">接口一览</a><a class="t2" href="#做不到什么">做不到什么</a><a class="t2" href="#怎么验">怎么验</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/community.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -60,7 +60,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <span id="publish" class="anchor"></span>
 <h2 id="发布快照不是引用">发布：快照，不是引用</h2>
 <p>这是社区层最重要的一个决定。</p>
-<p><b>发布不指向世界，而是把世界复制出去。</b> <code>POST /api/community/publish</code> 会把 <code>payload</code>、实体、脚本、素材目录整个拷进 <code>community/pubs/&lt;pubId&gt;/</code>，之后作者改自己的图， 别人点进去看到的还是发布那一刻的样子。</p>
+<p><b>发布不指向世界，而是把世界复制出去。</b> <code>POST /api/community/publish</code> 会把 <code>payload</code>、实体、脚本、素材目录整个拷进 <code>community/pubs/&lt;pubId&gt;.json.gz</code>（一个扁平文件， 封面与素材是它的同名旁文件），之后作者改自己的图，别人点进去看到的还是发布那一刻的样子。</p>
 <p>代价是磁盘：一张 4.5 MB 的图发一次就占 4.5 MB。换来的是两件更要紧的事：</p>
 <ol class="lv-0"><li>玩家点「开始游玩」不会拿到一张作者改到一半、正在报错的图。</li><li>作者删掉本地世界，社区里那张图不会跟着变成 404。</li></ol>
 <p>再往上就是<b>版本</b>：重复发布同一个 <code>worldId</code> 会把上一份归档进 <code>versions</code>， <code>version</code> 自增，详情页显示&quot;版本 N&quot;和每条更新说明（≤200 字）。 不做 diff、不做回滚合并——快照链已经够用，diff 会引入一套自己的正确性负担。</p>
@@ -75,7 +75,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>广场的卡片是<b>图占绝对主导</b>的展厅读法：标题压在封面下缘的暗带上， 相框 16:10 用 <code>contain</code>——这些封面是体素小地图，<code>cover</code> 会裁掉一圈看不出是什么， 而 1:1 方框配 16:9 原图只剩上下两道黑带。</p>
 <span id="moderation" class="anchor"></span>
 <h2 id="评论审查与举报">评论、审查与举报</h2>
-<p>评论 500 字上限，一层楼中楼（回复带 <code>to</code>），点赞去重按用户。 <b>未登录也给出一个禁用的输入框</b>，而不是&quot;登录后才能评论&quot;一句话—— 位置先占住，用户知道这里能写。</p>
+<p>评论 500 字上限，一层平铺（没有楼中楼：记录里只有 <code>pubId / userId / body / likes</code>， 歪楼在一张地图的评论区里只会让顺序更难读），点赞去重按用户。 <b>未登录也给出一个禁用的输入框</b>，而不是&quot;登录后才能评论&quot;一句话—— 位置先占住，用户知道这里能写。</p>
 <p>文本进来先过 <code>screen()</code>：<code>block</code> 词表直接拒，<code>flag</code> 词表放行但打 <code>flagged</code> 标记， 后台面板按标记排序给人看。词表在 <code>community/mute-words.json</code>，改完 <b>mtime 变了就热加载</b>， 不用重启服务。</p>
 <p>举报进 <code>reports</code> 队列，上限 500 条，超了丢最老的。后台能直接下架（<code>status</code> 从 <code>live</code> 改成别的）， 下架的发布对所有读接口立刻不可见。</p>
 <p>封面：发布时如果没带封面，服务端会用体素数据<b>离线渲染一张</b>（带邻接遮蔽的明暗）， 所以不会出现&quot;每张图都缺一个 404 占位&quot;的场面。</p>
@@ -83,7 +83,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h2 id="好友扩列与资料">好友、扩列与资料</h2>
 <p>社交动作大多发生在&quot;正在做别的事&quot;的时候：逛广场看到一个人、玩图时想喊一句、 收到请求想立刻回。所以它不是一个页面，而是<b>从右侧滑出来的抽屉</b> （<code>public/js/social.js</code> + <code>css/social.css</code>），社区页与游戏内 HUD 都能开， 顶栏那颗「消息」按钮带未读角标。三页签：</p>
 <ul class="lv-0"><li><b>好友</b>：在线点、备注（一条边两个人各存各的，谁加的谁叫得顺口）、私聊、看主页、解除。 顶部直接躺着待处理请求，接受/拒绝不用换页。</li><li><b>扩列</b>：按关键词 + 地区 + 性别 + 性格标签找人，卡片上就写着这些，不用点进主页才知道是谁。 默认口径是&quot;愿意被扩列的人&quot;（<code>looking</code> 为 <code>none</code> 的不出现），明确搜名字时带 <code>all=1</code> 才全给。 <code>/friends</code> 那一页的「扩列」页签用的是<b>同一个渲染函数</b>（<code>renderPeopleGrid</code>），不抄第二份。</li><li><b>消息</b>：世界频道、当前这张图的地图频道、以及所有有往来的私聊会话（带未读）。</li></ul>
-<p>资料字段是四件：<b>地区</b>（34 个省级 + 港澳台 + 海外，只能选不能填）、 <b>性别</b>（男 / 女 / 其他 / 不展示，没有默认值）、<b>性格标签</b>（12 选最多 6）、 <b>扩列状态</b>（欢迎扩列 / 找固定队友 / 只聊天 / 不扩列）。 枚举表在 <code>public/js/profile-fields.js</code> 一份，服务端 import 它做校验、前端 import 它做渲染—— 抄两份必然出现&quot;前端能选、后端报非法&quot;。默认全空：注册框不该逼人家填性别。</p>
+<p>资料字段是四件：<b>地区</b>（35 项 = 31 个省级 + 香港 / 澳门 / 台湾 + 海外，只能选不能填）、 <b>性别</b>（男 / 女 / 其他 / 不展示，没有默认值）、<b>性格标签</b>（12 选最多 6）、 <b>扩列状态</b>（欢迎扩列 / 找固定队友 / 只聊天 / 不扩列）。 枚举表在 <code>public/js/profile-fields.js</code> 一份，服务端 import 它做校验、前端 import 它做渲染—— 抄两份必然出现&quot;前端能选、后端报非法&quot;。默认全空：注册框不该逼人家填性别。</p>
 <p>用户主页（<code>/u/&lt;名字&gt;</code>）显示一张皮肤卡：六块配色是纯 CSS 人偶、MC 展开图裁正脸、 骨骼皮肤（那台 CC0 机甲）用 <code>skin-rig.js</code> 起一个小 WebGL 预览并跟着走路循环； 旁边是地区 / 性别 / 扩列状态与性格标签。别人看你的主页，看到的就是你进图时那身。</p>
 <span id="realtime" class="anchor"></span>
 <h2 id="联机与聊天">联机与聊天</h2>
@@ -94,6 +94,12 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p><code>/ws/social</code> 是一条<b>不进任何房间</b>的连接：社区页开着就算在线，主页上那个绿点、 别人发来的私聊推送都挂它上头。没登录连不上（401）。</p>
 <p>游戏内的聊天面板有「地图 / 世界」两档：地图那档走房间 socket（同图的人）， 世界那档走 HTTP。私聊<b>不进</b>这个面板——那是一对一的，混进公共流等于把别人的对话念出来， 要看不如打开右侧的社交抽屉。</p>
 <p>房间同步本身照旧：加入/离开、位置与朝向、名字与外观。 协作编辑房（<code>edit:&lt;世界 id&gt;</code>）另走一条权威流：方块改动、实体变换、脚本内容、 以及<b>环境标量（昼夜 / 天气）</b>——所有人共用服务端定的顺序， 没有&quot;我先改所以我对&quot;。环境用白名单 + 取值域校验，越界的 <code>dayNight</code> 会让光照算出 NaN。</p>
+<p>三条 socket 路径，都在 <code>server/realtime.mjs</code> 里按路径前缀分派：</p>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>路径</th><th>房间</th><th>用途</th></tr></thead><tbody><tr><td><code>/ws/play/&lt;pubId&gt;</code></td><td><code>play:&lt;pubId&gt;</code></td><td>游玩同一张图的人</td></tr><tr><td><code>/ws/edit/&lt;worldId&gt;</code></td><td><code>edit:&lt;worldId&gt;</code></td><td>编辑器协作（权威流）</td></tr><tr><td><code>/ws/social</code></td><td>不进房间</td><td>在线状态 + 世界频道 / 私聊推送</td></tr></tbody></table></div>
+<span id="api" class="anchor"></span>
+<h2 id="接口一览">接口一览</h2>
+<p>HTTP 全在 <code>/api/community/</code> 下（<code>server/community.mjs</code>）。标 ★ 的要先登录， 且写操作要带 <code>x-csrf-token</code>（与 <code>ly_csrf</code> cookie 双提交比对）。</p>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>路径</th><th>方法</th><th>做什么</th></tr></thead><tbody><tr><td><code>me</code></td><td>GET / PATCH ★</td><td>当前用户；PATCH 收 <code>name / bio / avatar / banner / skin</code> 与四件资料字段</td></tr><tr><td><code>register</code> <code>login</code> <code>logout</code></td><td>POST</td><td>账号与会话（<code>ly_session</code>，HttpOnly，30 天）</td></tr><tr><td><code>upload?kind=</code></td><td>POST ★</td><td>图片上传，kind ∈ cover / avatar / banner / preview / skin</td></tr><tr><td><code>uploads</code></td><td>GET</td><td>列自己传过的图</td></tr><tr><td><code>users/...</code></td><td>GET</td><td>公开主页数据（按 id 或 <code>?name=</code>）；<code>?all=1</code> 才带出&quot;不扩列&quot;的人</td></tr><tr><td><code>follow</code></td><td>POST ★</td><td>关注 / 取关</td></tr><tr><td><code>friends</code></td><td>GET ★</td><td>好友、待处理请求、可能认识</td></tr><tr><td>`friend/request\</td><td>accept\</td><td>decline\</td><td>remove\</td><td>note`</td><td>POST ★</td><td>好友关系；<code>note</code> 写<b>单向备注</b>（只有你自己看得到）</td></tr><tr><td><code>people</code></td><td>GET</td><td>扩列发现：按地区 / 性别 / 性格筛，默认只给&quot;愿意被扩列&quot;的</td></tr><tr><td><code>chat</code></td><td>GET / POST ★</td><td>读频道历史（<code>?ch=&amp;after=</code>）/ 发一条</td></tr><tr><td><code>chat/read</code></td><td>POST ★</td><td>把某个频道的未读清零</td></tr><tr><td><code>channels</code></td><td>GET ★</td><td>抽屉一次拿全：各频道未读数 + 私聊会话列表</td></tr><tr><td><code>feed</code></td><td>GET</td><td>广场分页，`kind=map\</td><td>model\</td><td>skin<code>、</code>cat<code>、</code>sort=new\</td><td>hot\</td><td>following`</td></tr><tr><td><code>publish</code></td><td>POST ★</td><td>发布快照（地图 / 模型 / 皮肤）</td></tr><tr><td><code>pubs/...</code></td><td>GET / PATCH / DELETE ★</td><td>作品详情（按 id）、改标题简介标签、下架；<code>/skin</code> 子路径取皮肤包</td></tr><tr><td><code>comments/...</code></td><td>POST</td><td>点赞（按用户去重）/ 举报</td></tr><tr><td><code>notifications</code></td><td>GET ★</td><td>通知列表 + 未读数</td></tr><tr><td><code>stats</code></td><td>GET</td><td>广场顶部那几个计数</td></tr><tr><td><code>admin/*</code></td><td>★</td><td>后台：用户、审查队列、封禁，只放行管理员角色</td></tr></tbody></table></div>
 <span id="limits" class="anchor"></span>
 <h2 id="做不到什么">做不到什么</h2>
 <p>写下来，免得被当成&quot;再改改就有&quot;：</p>

@@ -11,7 +11,7 @@
   border-radius:8px;background:var(--accent2);color:#fff;font-size:10px;font-style:normal;line-height:15px;text-align:center}
 
 /* ---------- 抽屉与遮罩 ---------- */
-.so-scrim{position:fixed;inset:0;background:rgba(2,2,10,.55);backdrop-filter:blur(1.5px);
+.so-scrim{position:fixed;inset:0;background:rgba(6,6,5,.55);backdrop-filter:blur(1.5px);
   opacity:0;pointer-events:none;transition:opacity .2s var(--ease);z-index:900}
 .so-scrim.on{opacity:1;pointer-events:auto}
 .so-drawer{position:fixed;top:0;right:0;bottom:0;width:352px;max-width:100vw;z-index:901;
@@ -39,7 +39,7 @@
   border:1px solid transparent;background:var(--bg2);margin-bottom:6px;transition:.14s var(--ease)}
 .so-row:hover{border-color:var(--glass-border-hover);background:var(--glass-bg-hover)}
 .so-face{width:32px;height:32px;flex:none;border-radius:var(--radius-md);object-fit:cover}
-.so-init{display:inline-flex;align-items:center;justify-content:center;color:#04202a;font-weight:700;font-size:14px}
+.so-init{display:inline-flex;align-items:center;justify-content:center;color:#e8d9bd;font-weight:700;font-size:14px}
 .so-main{flex:1;min-width:0}
 .so-main b{display:block;font-size:13px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .so-main b i{font-style:normal;font-weight:400;color:var(--fg3);font-size:11px;margin-left:5px}
@@ -52,10 +52,11 @@
 .so-ib{padding:4px 6px;border-radius:var(--radius-sm);border:1px solid var(--line);background:var(--bg3);
   color:var(--fg2);font-size:11px;cursor:pointer;text-decoration:none;line-height:1.3;transition:.14s var(--ease)}
 .so-ib:hover{color:var(--primary);border-color:var(--glass-border-hover)}
-.so-ib.ok{color:var(--primary);border-color:rgba(0,229,255,.35)}
+.so-ib.ok{color:var(--primary);border-color:rgba(227, 166, 60, .35)}
 .so-ib.warn:hover{color:var(--bad);border-color:var(--bad)}
-/* 在线点钉在头像右下角：以前用 margin 硬推，行高一变它就飘到卡片外面去了 */
-.so-dot{position:absolute;left:30px;top:30px;width:9px;height:9px;border-radius:50%;
+/* 在线点钉在头像右下角。头像在行里是垂直居中的，所以纵向要用 50% 而不是固定值：
+   固定 top 在行高一变（未读徽标、两行简介）时就会压到字母上或飘出卡片。 */
+.so-dot{position:absolute;left:31px;top:calc(50% + 7px);width:9px;height:9px;border-radius:50%;
   background:var(--fg3);border:2px solid var(--bg2);z-index:1}
 .so-dot.on{background:var(--ok);box-shadow:0 0 6px rgba(57,255,20,.8)}
 .so-unread{margin-left:auto;font-style:normal;font-size:10px;font-weight:700;color:#fff;
@@ -91,7 +92,7 @@ button.so-thread{width:100%;text-align:left;cursor:pointer;font:inherit}
   border:1px solid var(--line);font-size:12.5px;color:var(--fg);line-height:1.5;word-break:break-word}
 .so-bubble b{display:block;font-size:10px;color:var(--fg3);font-weight:500;margin-bottom:2px}
 .so-bubble i{display:block;font-style:normal;font-size:10px;color:var(--fg3);margin-top:3px;text-align:right}
-.so-msg.mine .so-bubble{background:var(--primary-dim);border-color:rgba(0,229,255,.4)}
+.so-msg.mine .so-bubble{background:var(--primary-dim);border-color:rgba(227, 166, 60, .4)}
 .so-send{display:flex;gap:6px;padding-top:8px;border-top:1px solid var(--line)}
 .so-send input{flex:1;min-width:0;padding:7px 9px;border-radius:var(--radius-md);border:1px solid var(--line);
   background:var(--bg1);color:var(--fg);font-size:12.5px}

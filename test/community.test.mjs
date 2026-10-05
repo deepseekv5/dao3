@@ -435,7 +435,7 @@ try {
   const badRec = await (await fetch(BASE + "/api/community/pubs/" + bad.data.pub.id + "/skin")).json();
   ok("外链资产、坏颜色、坏轴向、离谱缩放全被白名单挡掉",
     !badRec.model && !badRec.kind && !badRec.axes && !badRec.scale
-    && badRec.skin.head === "#ffd7b0" && badRec.skin.body === "#5aa8e8", JSON.stringify(badRec).slice(0, 200));
+    && badRec.skin.head === "#ffd7b0" && badRec.skin.body === "#c9714f", JSON.stringify(badRec).slice(0, 200));
   // 穿到账号上：账号皮肤是"进任何一张图都这一身"，所以映射必须跟着账号走
   const worn = await A.call("PATCH", "/api/community/me", {
     skin: { skin: "#112233", shirt: "#0a0a0a", pants: "#222222", hair: "#6b4630", shoe: "#111111",

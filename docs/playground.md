@@ -9,9 +9,21 @@
 ## 一条命令构建
 
 ```bash
-npm run build:play        # → play/（82 个文件，约 8.4 MB）
-npm run test:play         # 真浏览器回归：桌面 + 手机 + CDN 解压，38 条断言
+npm run build:play        # → play/（约 8.5 MB）
+npm run test:play         # 真浏览器回归：桌面 + 手机 + CDN 解压，跑完自报条数
 ```
+
+> **已知问题：`npm run build:play` 现在过不了自己的审查（46 处）。**
+> 根因不是路径写错，而是体验版**不该带上"跳到社区另一张图"这条路**：
+> `game.js` 的世界之门分支里有一句 `await import("./pubs.js")`，闭包会照着它把
+> `pubs.js` 整个拉进产物，而 `pubs.js` 走的是 `/api/community/...` 与
+> `/assets/worlds/...` —— 静态托管的 `dao3play` 上这两样都不存在。
+> 审查之所以设计上"连动态 import 一起跟"（见 `scripts/build-play.mjs` 开头），
+> 就是为了不让这种"构建绿了、线上一按就 404"的口子悄悄合上。所以现在报的是真问题。
+>
+> 影响面：`play/` 里现存的是最后一次通过的构建（2026-10-03），此后 `public/js` 的改动没进体验版。
+> 修法是给世界之门在体验版里降级（提示"体验版不能跳社区地图"），
+> 而不是放宽审查。这条与配色无关，是皮肤社区那一轮引入的。
 
 `play/` 是**产物**，已进 `.gitignore`：源码在 `play-src/` 与 `scripts/build-play.mjs`。
 它单独发布到 `deepseekv5/dao3play`，Pages 的构建源就是仓库根，
@@ -38,10 +50,11 @@ atlas.load("./data") → new VoxelRenderer(canvas, atlas) → 材质接上图集
 只拷贝真正被引用的模块：
 
 ```
-运行时（import 闭包，共 8 个模块）
-   js/atlas.js  js/clientui.js  js/game.js  js/gapi.js
-   js/renderer.js  js/world.js
+运行时（import 闭包：10 个 js + 4 个 vendor）
+   js/atlas.js  js/clientui.js  js/game.js  js/gapi.js  js/net.js
+   js/play.js   js/playshell.js js/renderer.js  js/sun.js  js/world.js
    vendor/three/three.module.js  vendor/three/OrbitControls.js
+   vendor/three/GLTFLoader.js    vendor/utils/BufferGeometryUtils.js
 ```
 
 `io.js`（打 `/api/`）、`ui.js`、`features.js`、`main.js`、整个 `voxa/` 因此**自然落选**——
@@ -101,10 +114,10 @@ atlas.load("./data") → new VoxelRenderer(canvas, atlas) → 材质接上图集
 
 | 项 | 值 |
 |---|---|
-| 产物 | 82 个文件 / 8.36 MB |
+| 产物 | 最后一次通过审查的构建：85 个文件 / 8.47 MB（当前 `build:play` 见上面的已知问题） |
 | 地图载荷 | `world.json.gz` 2,780 KB → 解压 19 MB → 1,523,592 格 / 199 实体 |
 | 本地首屏到可进入 | 2.0~2.2 秒 |
-| 回归 | 38 条断言：桌面 + 手机 + CDN 已解压三轮 |
+| 回归 | 桌面 + 手机 + CDN 已解压三轮，条数由 `npm run test:play` 自己报 |
 | 网络面 | 17 个请求，零 4xx、零 `/api/`、零未捕获异常 |
 | 移动速度 | 按住 Shift+W 走 6.86 格 / 19 tick = 0.361 格/tick，按官方 64ms tick 折算是 ≈5.6 格/秒 |
 

@@ -8,7 +8,7 @@ Windows 分支**没有在真实 Windows 机器上实跑过**。下面区分三�
 
 | 检查项 | 结论 |
 |---|---|
-| `server.js` 依赖 | 只有 `node:http/fs/path/zlib/url` 内置模块，无原生扩展、无 shell 调用 |
+| `server.js` 依赖 | 只有 `node:http/fs/path/zlib/url/os` 内置模块，无原生扩展、无 shell 调用 |
 | 路径拼接 | 全部走 `path.join`，没有手写 `/` 分隔符 |
 | 路径越界防护 | `filePath.startsWith(PUBLIC)`——`path.join` 在 Windows 上同样产出反斜杠，比较一致 |
 | MIME / 扩展名 | `path.extname().toLowerCase()`，Windows 大小写不敏感反而更安全 |
@@ -74,9 +74,10 @@ powershell -ExecutionPolicy Bypass -File run-win.ps1
 2. **`run.sh` 在 Windows 上不可用**，这是设计如此（它依赖 POSIX 工具）。
    请走 `.bat` 或 `.ps1`。Git Bash 下能跑，但 `lsof` 通常缺失，
    顶多导致"没停掉旧进程"，不影响启动。
-3. **字体渲染**：界面字体栈是 `Rubik, MiSans, Montserrat, PingFang SC,
-   noto-sans-sc, Microsoft YaHei`。Windows 上会落到 `Microsoft YaHei`，
-   字宽与 macOS 略有差异，个别密集面板（属性卡、玩家面板）可能需要微调。
+3. **字体渲染**：界面字体栈是 `--font: MiSans, "PingFang SC", "Microsoft YaHei",
+   "Noto Sans SC", system-ui, …`（`public/css/tokens.css`）。Windows 上会落到
+   `Microsoft YaHei`，字宽与 macOS 略有差异，个别密集面板（属性卡、玩家面板）可能需要微调。
+   `Rubik` / `Montserrat` 只剩两张遮罩在用（`disclaimer.css`、`boot.css`），不是界面主字体。
 4. **`chcp 65001`** 在极老的 Windows 7 中文环境下可能仍显示异常；
    Win10 1803+ 无此问题。
 5. **鼠标指针锁定**（运行模式转视角）依赖浏览器实现，Chrome/Edge on Windows

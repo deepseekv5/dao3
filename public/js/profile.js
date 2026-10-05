@@ -3,7 +3,7 @@
 // 皮肤为什么在账号上而不是地图里：角色外观是"我是谁"，不是"这张图长什么样"，
 // 换图、进别人发的图都应该带着走。运行时会读 auth.me.skin 贴到人偶上。
 import * as auth from "/js/auth.js";
-import { cardHtml, bindCards, face, hue } from "/js/pubs.js";
+import { cardHtml, bindCards, face } from "/js/pubs.js";
 import { MC_PRESETS, presetUrl, facePreview, readSkinFile, skinNameFrom } from "/js/skin-sheet.js";
 import { REGIONS, GENDERS, PERSONA, LOOKING, genderLabel, personaLabel, lookingLabel, MAX_PERSONA } from "/js/profile-fields.js";
 
@@ -18,11 +18,11 @@ const timeAgo = (t) => {
   return new Date(t).toLocaleDateString();
 };
 
-const SKIN_DEFAULT = { skin: "#ffd7b0", shirt: "#5aa8e8", pants: "#5b6c8e", hair: "#6b4630", shoe: "#7b5441" };
+const SKIN_DEFAULT = { skin: "#ffd7b0", shirt: "#c9714f", pants: "#6b625a", hair: "#6b4630", shoe: "#7b5441" };
 const SKIN_PARTS = [
   ["shirt", "上衣"], ["pants", "裤子"], ["skin", "皮肤"], ["hair", "头发"], ["shoe", "鞋子"],
 ];
-const SWATCHES = ["#5aa8e8", "#e8604c", "#4ecb8d", "#f2c14e", "#a06bff", "#ff7ab8", "#2f3b52", "#e8e6e1", "#6b4630", "#12b5c9"];
+const SWATCHES = ["#c9714f", "#e8604c", "#5aa8e8", "#4ecb8d", "#f2c14e", "#a06bff", "#ff7ab8", "#2f3b52", "#e8e6e1", "#6b4630", "#12b5c9"];
 // 皮肤那一格给的是肤色梯度，不是通用色板：拿挑上衣的十色去挑脸，怎么选都像贴了块塑料。
 const TONES = ["#f6d7bd", "#eab98f", "#d3925f", "#a96a3d", "#7b4a28", "#4e2f1c"];
 const HAIRS = ["#1c1c1e", "#3b2a1c", "#6b4630", "#a86a2f", "#c9a227", "#8c8c90", "#b4483c", "#4a63c9"];
@@ -337,7 +337,7 @@ export async function profileView(name, root, setTitle, setSub) {
   const banner = u.banner
     ? `<img src="${esc(u.banner)}" alt=""/>`
     : "";
-  const bstyle = u.banner ? "" : `style="background-image:radial-gradient(120% 90% at 16% 0%,hsl(${190 + (hue(u.id) % 90)} 80% 30%),transparent 60%),linear-gradient(120deg,#101726,#1a1330)"`;
+  const bstyle = u.banner ? "" : `style="background-image:radial-gradient(120% 90% at 16% 0%,#4a3d28,transparent 60%),linear-gradient(120deg,#1b1917,#2a2118)"`;
   root.innerHTML = `<div class="pf-wrap">
     <div class="pf-banner" ${bstyle}>${banner}</div>
     <div class="pf-head">

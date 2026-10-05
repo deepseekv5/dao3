@@ -36,7 +36,7 @@ export class VoxaView {
     // "用工具拖一下"会同时把视角转走——底栏那句提示当时就是假的。
     this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
     this.controls.target.set(4, 4, 4);
-    this.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x30323a, 1.05));
+    this.scene.add(new THREE.HemisphereLight(0xe8e2d8, 0x3a3632, 1.05));
     const key = new THREE.DirectionalLight(0xffffff, 1.5);
     key.position.set(30, 50, 20);
     this.scene.add(key, new THREE.AmbientLight(0xffffff, 0.35));
@@ -57,8 +57,8 @@ export class VoxaView {
     this.pivotMarker = new THREE.AxesHelper(2.6);
     this.pivotMarker.visible = false;
     this.scene.add(this.pivotMarker);
-    this.hoverMesh = this._marker(0x66ccff, 0.45, HOVER_MAX);
-    this.selMesh = this._marker(0x00e5ff, 0.35, SEL_MAX);
+    this.hoverMesh = this._marker(0xf0d08a, 0.45, HOVER_MAX);
+    this.selMesh = this._marker(0xe3a63c, 0.35, SEL_MAX);
     this.scene.add(this.hoverMesh, this.selMesh);
     this.raycaster = new THREE.Raycaster();
     this.ortho = false;

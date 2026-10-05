@@ -72,7 +72,7 @@ index = x + y * X + z * X * Y          // X=shape[0], Y=shape[1]
 |---|---|---|
 | `name` / `displayName` / `description` | string | 地图名、展示名、简介 |
 | `terrain` | object | 本地地形/天空/雾/曝光的合并表（11 个本地字段） |
-| `worldSettings` | object | 官方世界设置，16 键：`gravity -0.1`、`useOBB false`、`airFriction 0.01`、`drawDistance 1024` 等 |
+| `worldSettings` | object | 官方世界设置，18 键：`gravity -0.1`、`useOBB false`、`airFriction 0.01`、`drawDistance 1024` 等 |
 | `physics`（在 `worldSettings` 内） | — | 见[项目包](#project-json)一节的三键表 |
 | `scripts` | `[{name, code}]` | 多文件脚本表。模板里 `index.js` 8367 字节、`clientIndex.js` 空 |
 | `entities` | object[] | **实体表，本实现唯一的一份**，见下一节 |
@@ -171,9 +171,10 @@ environment features info physics player prevHash scriptAssets scriptIndex
 storageMode timestamp type uiTree version voxels zones
 ```
 
-其中 **13 个键的值是 CIDv0**（指向同目录的 `<key>.raw`），8 个是字面值：
-`committerId: 0`、`scriptIndex: "index.js"`、`storageMode: "sqlite"`、
-`timestamp`（ISO 串）、`type: "project"`、`version: "0.3.23"`、`prevHash`、`features`。
+其中 **13 个键的值是 CIDv0**（指向同目录的 `<key>.raw`，`prevHash` 也算——它指向上一版
+project.json 自己的 CID，首版是一个真实的空内容 CID 而不是零串），8 个是字面值：
+`collisionFilter`、`committerId: 0`、`features`、`scriptIndex: "index.js"`、
+`storageMode: "sqlite"`、`timestamp`（ISO 串）、`type: "project"`、`version: "0.3.23"`。
 
 `features` 实测只有一个键：`{ enableTriggerAPI: true }`。
 
@@ -209,9 +210,10 @@ storageMode timestamp type uiTree version voxels zones
 | `3` | 27 | `lut/` 滤镜 |
 | `4` | 10 | `part/` 部件 |
 | `6` | 40 | `audio/` 音频（正好是模板的 40 个音效） |
-| `7` | 2 | 脚本（出现在 `scriptAssets`） |
+| `7` | 1 | 客户端脚本（`scriptAssets` 里的 `clientIndex.js`） |
+| `1` | 1 | 服务端脚本（`scriptAssets` 里的 `index.js`） |
 
-`0/1/2/5` 在模板里没出现，**不做推测**。导出时本实现按同一套数字写
+`0/2/5` 在模板里没出现，**不做推测**。导出时本实现按同一套数字写
 （`io.js` 的 `type: 6 / 3 / 4`），所以官方编辑器能认。
 
 ### `map.json`

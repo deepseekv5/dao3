@@ -5,7 +5,8 @@
 本项目存在的唯一原因是 [dao3.fun（神奇代码岛）](https://dao3.fun) 把一套
 "用方块写游戏"的编辑器做成了网页端能跑的东西，并且**把接口面公开了出来**：
 
-- `GameAPI.d.ts` 与 `ClientAPI.d.ts`——329 个可调用成员、41 键的 `player` 结构、
+- `GameAPI.d.ts` 与 `ClientAPI.d.ts`——四个核心类（GameWorld / GameEntity / GamePlayer / GameVoxels）
+  共 329 个成员（全站 81 个类型 805 个成员、其中可调用方法 261 个）、41 键的 `player` 结构、
   全部 `Game*` 值类型与事件通道。逐字段对账的可能，来自这份声明是公开的。
 - [box3-product-document](https://github.com/box3lab/box3-product-document)——玩法语义
   （玻璃挡人、`sunPhase` 的 0..1 口径、`say` 不进聊天频道）在这里能查到官方说法。

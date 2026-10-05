@@ -21,6 +21,6 @@
 .ad-table a { color: var(--fg); text-decoration: none; }
 .ad-table a:hover { color: var(--primary); }
 .ad-table .ops { display: flex; gap: 6px; flex-wrap: wrap; }
-.ad-ban { color: #ffb4b4; background: rgba(239,90,90,.14); border: 1px solid rgba(239,90,90,.34); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
-.cm-btn.danger { color: #ffb4b4; border-color: rgba(239,90,90,.4); }
+.ad-ban { color: #f0b8bd; background: rgba(217, 79, 95, .14); border: 1px solid rgba(217, 79, 95, .34); padding: 1px 6px; border-radius: 5px; font-size: 11px; }
+.cm-btn.danger { color: #f0b8bd; border-color: rgba(217, 79, 95, .4); }
 .cm-btn.danger:hover { border-color: var(--bad); color: #ffd7d7; }

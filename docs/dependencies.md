@@ -33,6 +33,7 @@ three.js 用 `importmap` 以 `three` 裸模块名引入，不做打包、不改�
 node:fs            node:path           node:url
 node:zlib          node:http           node:child_process
 node:os            node:net            node:crypto
+node:sqlite        （`server/sql.mjs` 动态 import，跑 db.sql 才加载）
 ```
 
 要求 **Node ≥ 18**：`node:` 前缀导入、顶层 `await`、`fs.cpSync`、
@@ -55,7 +56,7 @@ COOP/COEP 响应头——那会让本地起的服务在多核机器上直接白�
 
 | 依赖 | 版本 | 说明 |
 |---|---|---|
-| `playwright-core` | 1.59.1 | 驱动真浏览器跑 103 条断言。**不是** `dependencies`，装不到就打印 SKIP 并退出 0 |
+| `playwright-core` | 不锁版本（`devDependencies` 是空的） | 驱动真浏览器跑 `test/e2e.mjs` 与 `test/runtime_parity.mjs`。**装不到就打印 SKIP 并退出 0**，所以它缺席不影响其余套件 |
 | Chromium | 系统 Chrome 或 `npx playwright install chromium` | 同上 |
 
 `test/browser.mjs` 会按 `CHROME` → 各平台常见安装路径 → `PLAYWRIGHT_MODULE` →
@@ -70,7 +71,7 @@ COOP/COEP 响应头——那会让本地起的服务在多核机器上直接白�
 | 仓库 | 授权 | 本项目怎么用 |
 |---|---|---|
 | `box3lab/Box3Blocks-unityPackage` | Apache-2.0 © 2026 神岛实验室 | 方块 ID 主表 / 渲染规则 / 2000+ 张 16×16 纹理 → 构建期合成图集 |
-| `box3lab/ArenaPro-CLI` | Apache-2.0 | `GameAPI.d.ts` / `ClientAPI.d.ts` 是 329 个成员的契约来源 |
+| `box3lab/ArenaPro-CLI` | Apache-2.0 | `GameAPI.d.ts` / `ClientAPI.d.ts` 是 805 个成员（其中可调用 261）的契约来源 |
 | `box3lab/box3-product-document` | Apache-2.0 | 产品与 API 文档，玩法语义对照 |
 | `box3lab/engine-openapi-mcp` | **仓库内没有 LICENSE 文件** | 只读参考，不复制任何内容 |
 | `box3lab/statistics-mcp` | **仓库内没有 LICENSE 文件** | 只读参考，不复制任何内容 |

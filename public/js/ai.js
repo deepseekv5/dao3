@@ -341,13 +341,13 @@ const STYLE = `
 .ai-row{display:flex;flex-direction:column;gap:4px;margin-bottom:11px}
 .ai-row label{color:#a9b6c8;font-size:12px}
 .ai-row input,.ai-row select,.ai-row textarea{background:#0d1117;border:1px solid #2a3444;border-radius:6px;color:#e6edf6;padding:7px 9px;font-size:13px;font-family:inherit}
-.ai-row input:focus,.ai-row textarea:focus{outline:none;border-color:#00e5ff}
+.ai-row input:focus,.ai-row textarea:focus{outline:none;border-color:var(--primary)}
 .ai-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ai-note{background:#101823;border-left:3px solid #3f5170;padding:8px 10px;color:#9fb0c6;line-height:1.65;font-size:12px;border-radius:0 6px 6px 0}
 .ai-warn{border-left-color:#c98a2b;background:#1a1610;color:#d8bd8e}
 .ai-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
 .ai-acts button{background:#222c3a;border:1px solid #33415a;color:#dfe6f0;border-radius:6px;padding:7px 13px;cursor:pointer;font-size:13px}
-.ai-acts button.primary{background:#00e5ff;border-color:#00e5ff;color:#14100a;font-weight:600}
+.ai-acts button.primary{background:var(--primary);border-color:var(--primary);color:var(--on-accent);font-weight:600}
 .ai-acts button:disabled{opacity:.5;cursor:default}
 .ai-stat{font-size:12px;margin-right:auto;align-self:center}
 .ai-stat.ok{color:#6fd08c}.ai-stat.bad{color:#ff8f8f}

@@ -41,13 +41,14 @@
   border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; margin-bottom: 20px;
   background: var(--elevated); box-shadow: var(--shadow-card);
 }
-.cm-feature-art { position: relative; min-height: 268px; cursor: pointer; background: #050510 center/contain no-repeat; }
+.cm-feature-art { position: relative; min-height: 268px; cursor: pointer; background: #0d0c0b center/contain no-repeat; }
 .cm-feature-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.cm-feature-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, transparent 45%, rgba(8, 10, 16, .85)); }
+.cm-feature-scrim { position: absolute; inset: 0; background: linear-gradient(90deg, transparent 45%, rgba(19, 18, 17, .85)); }
 .cm-feature-body { padding: 22px 22px 20px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
 .cm-feature-kicker { font: 600 10.5px/1 var(--mono); letter-spacing: 1.2px; color: var(--primary); text-transform: uppercase; }
 .cm-feature-body h2 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: .2px; }
 .cm-feature-body p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--fg2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cm-feature-none { color: var(--fg3); }
 .cm-feature-stats { display: flex; flex-wrap: wrap; gap: 14px; font: 11.5px/1 var(--mono); color: var(--fg3); }
 .cm-feature-stats span { display: inline-flex; align-items: center; gap: 5px; }
 .cm-feature-stats svg { width: 13px; height: 13px; opacity: .8; }
@@ -81,7 +82,7 @@
 .cm-card { display: flex; flex-direction: column; gap: 7px; cursor: pointer; }
 .cm-thumb {
   position: relative; aspect-ratio: 16 / 10; border-radius: 11px; overflow: hidden;
-  background: radial-gradient(120% 90% at 50% 0%, #12151d, #05070c) center/contain no-repeat;
+  background: radial-gradient(120% 90% at 50% 0%, #1a1816, #100e0d) center/contain no-repeat;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .05); transition: transform .16s, box-shadow .16s;
 }
 .cm-card:hover .cm-thumb { transform: translateY(-3px); box-shadow: inset 0 0 0 1px var(--primary), 0 10px 22px rgba(0, 0, 0, .45), var(--glow); }
@@ -99,12 +100,12 @@
 .cm-thumb:has(img) .cm-glyph { display: none; }
 .cm-scrim {
   position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 8px;
-  background: linear-gradient(transparent, rgba(4, 6, 10, .88));
+  background: linear-gradient(transparent, rgba(13, 12, 11, .88));
 }
 .cm-scrim .cm-t { display: block; font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cm-play {
   position: absolute; left: 50%; top: 46%; width: 42px; height: 42px; margin: -21px 0 0 -21px;
-  display: grid; place-items: center; border-radius: 50%; background: rgba(8, 10, 16, .62);
+  display: grid; place-items: center; border-radius: 50%; background: rgba(19, 18, 17, .62);
   color: #fff; opacity: 0; transform: scale(.86); transition: .16s; backdrop-filter: blur(2px);
 }
 .cm-play svg { width: 19px; height: 19px; fill: currentColor; stroke: none; }
@@ -136,7 +137,7 @@
 
 /* ---------- 小头像 ---------- */
 .au-face { width: 22px; height: 22px; border-radius: 7px; object-fit: cover; flex: none; display: grid; place-items: center; }
-.au-init { color: #08081a; font-weight: 700; font-size: 12px; }
+.au-init { color: #e8d9bd; font-weight: 700; font-size: 12px; }
 .au-face.lg { width: 54px; height: 54px; border-radius: 15px; font-size: 26px; }
 
 /* ---------- 详情页 ---------- */
@@ -144,11 +145,11 @@
 .cm-hero { border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; background: var(--elevated); box-shadow: var(--shadow-card); }
 /* 封面高度要压住：16:9 在 1000px 宽的左栏里会长到 560px 高，
    标题被推到首屏之外，整页看着就是"一张大图 + 一堆空白"。 */
-.cm-hero .pic { position: relative; aspect-ratio: 16 / 7; max-height: 380px; background: #050510 center/cover no-repeat; display: grid; place-items: center; overflow: hidden; }
+.cm-hero .pic { position: relative; aspect-ratio: 16 / 7; max-height: 380px; background: #0d0c0b center/cover no-repeat; display: grid; place-items: center; overflow: hidden; }
 .cm-hero .pic .glyph { font-size: 96px; font-weight: 700; color: rgba(255, 255, 255, .13); }
 .cm-hero .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 /* 标题压在封面下缘的暗带上，和广场卡片一个读法 */
-.cm-hero .pic .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 46px 20px 14px; background: linear-gradient(transparent, rgba(4, 5, 14, .9)); pointer-events: none; }
+.cm-hero .pic .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 46px 20px 14px; background: linear-gradient(transparent, rgba(13, 12, 11, .9)); pointer-events: none; }
 .cm-hero .pic .cap h2 { margin: 0; font-size: 22px; letter-spacing: .2px; text-shadow: 0 2px 12px rgba(0, 0, 0, .8); }
 .cm-hero .pic .cap .kind { margin-top: 4px; font: 11.5px/1 var(--mono); color: var(--fg2); }
 .cm-hero .meta { padding: 14px 18px 16px; }
@@ -175,7 +176,7 @@
 .cm-cmts h3 .cm-cmt-n { color: var(--fg3); font-weight: 400; font: 11.5px/1 var(--mono); }
 
 .cm-coverbox { display: flex; align-items: center; gap: 10px; margin: -2px 0 10px; }
-.cm-coverbox img { width: 132px; height: 74px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line2); background: #05070c; }
+.cm-coverbox img { width: 132px; height: 74px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line2); background: #100e0d; }
 .cm-coverbox[hidden] { display: none; }
 
 /* ---------- 评论 ---------- */
@@ -220,6 +221,12 @@
 .cm-empty { padding: 54px 20px; text-align: center; color: var(--fg3); font-size: 13px; line-height: 1.8; }
 .cm-empty b { display: block; color: var(--fg2); font-size: 15px; margin-bottom: 6px; }
 .cm-load { display: block; margin: 22px auto 0; }
+/* 未登录的好友页：一句提示 + 公开可看的扩列列表，别把整屏留白 */
+.cm-locked { display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 12px 14px; margin-bottom: 14px; border-radius: 10px;
+  background: var(--primary-dim); border: 1px solid var(--glass-border-hover); font-size: 13px; }
+.cm-locked b { color: var(--fg); }
+.cm-locked span { color: var(--fg2); flex: 1 1 220px; }
 
 /* ---------- 顶栏身份区 ---------- */
 .wb-auth { display: flex; align-items: center; gap: 8px; }
@@ -243,7 +250,7 @@
 .au-menu .au-out:hover { color: var(--bad); }
 
 /* ---------- 弹层 ---------- */
-.cm-modal { position: fixed; inset: 0; background: rgba(4, 5, 8, .72); display: none; place-items: center; z-index: 900; padding: 20px; }
+.cm-modal { position: fixed; inset: 0; background: rgba(13, 12, 11, .72); display: none; place-items: center; z-index: 900; padding: 20px; }
 .cm-modal.show { display: grid; }
 .cm-mbox {
   width: min(520px, 100%); background: var(--bg1); border: 1px solid var(--line2); border-radius: 15px;
@@ -269,10 +276,10 @@
 
 .cm-toast {
   position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 950;
-  background: rgba(18, 20, 26, .96); border: 1px solid var(--line2); color: var(--fg);
+  background: rgba(27, 25, 23, .96); border: 1px solid var(--line2); color: var(--fg);
   padding: 9px 15px; border-radius: 10px; font-size: 12.5px; box-shadow: 0 12px 30px rgba(0, 0, 0, .5);
 }
-.cm-toast.bad { border-color: rgba(239, 90, 90, .6); color: #ffd7d7; }
+.cm-toast.bad { border-color: rgba(217, 79, 95, .6); color: #ffd7d7; }
 
 /* 窄屏：详情侧栏落到主列下面，广场变两列再变一列 */
 @media (max-width: 1080px) {
@@ -289,7 +296,7 @@
 .pf-wrap { max-width: 1080px; }
 .pf-banner {
   position: relative; height: 168px; border-radius: 14px; overflow: hidden;
-  background: #101726 center/cover no-repeat; border: 1px solid var(--line);
+  background: #161412 center/cover no-repeat; border: 1px solid var(--line);
 }
 .pf-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .pf-banner::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 62px;
@@ -313,7 +320,7 @@
   display: flex; align-items: center; gap: 12px; padding: 11px 13px; text-decoration: none; color: inherit;
   background: var(--bg1); border: 1px solid var(--line); border-radius: 11px; transition: .13s;
 }
-.pf-rrow:hover { border-color: rgba(0, 229, 255,.5); background: var(--bg2); }
+.pf-rrow:hover { border-color: rgba(227, 166, 60, .5); background: var(--bg2); }
 .pf-rtitle { font-size: 13px; font-weight: 600; }
 .pf-rmeta { margin-left: auto; font-size: 11.5px; color: var(--fg3); font-family: var(--mono); }
 
@@ -412,12 +419,12 @@
 .pf-online.off { background: var(--fg3); box-shadow: none; }
 .pf-card { display: flex; gap: 22px; align-items: stretch; margin: 14px 0 18px; padding: 16px 20px;
   border: 1px solid var(--line); border-radius: var(--radius-lg); background:
-    radial-gradient(58% 120% at 12% 50%, rgba(0, 229, 255, .07), transparent 70%), var(--glass-bg); }
+    radial-gradient(58% 120% at 12% 50%, rgba(227, 166, 60, .07), transparent 70%), var(--glass-bg); }
 .pf-dollbox { flex: none; width: 190px; min-height: 220px; display: flex; align-items: center; justify-content: center;
   border-right: 1px solid var(--line); }
 .pf-dollbox .pf-doll { margin: 0 auto; transform: scale(1.35); }
 .pf-rigbox { width: 172px; height: 220px; display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-md); background: radial-gradient(80% 46% at 50% 92%, rgba(0, 229, 255, .14), transparent 72%); }
+  border-radius: var(--radius-md); background: radial-gradient(80% 46% at 50% 92%, rgba(227, 166, 60, .14), transparent 72%); }
 /* 模型真画出来了就把"载入中"那行字让位，不然它会一直杵在 canvas 边上 */
 .pf-rigbox:has(canvas) .pf-rigload { display: none; }
 .pf-rigload, .pf-rigfail { font-size: 11.5px; color: var(--fg3); }

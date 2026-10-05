@@ -26,7 +26,7 @@ const state = {
   currentBlock: 127, // grass
   selection: null,
   clipboard: null,
-  terrain: { skyTop: 0x2f6fb0, skyBottom: 0xbfe0ff, fogDensity: 0.006, sunIntensity: 2.4, ambient: 0.22, hemi: 0.65, shadows: true, grid: true, glow: 0.9, dayNight: 0.35, exposure: 1.12 },
+  terrain: { skyTop: 0x43688f, skyBottom: 0xe4ddd0, fogDensity: 0.006, sunIntensity: 2.4, ambient: 0.22, hemi: 0.65, shadows: true, grid: true, glow: 0.9, dayNight: 0.35, exposure: 1.12 },
   dirty: false,
   meta: { name: "新建世界" },
   scripts: [],
@@ -674,7 +674,7 @@ async function boot() {
       ctx.pick = renderer.pick(0, 0);
       updateCoords(ctx.pick);
       const p = ctx.pick;
-      if (p && state.tool === "place") renderer.setGhost(p.ax, p.ay, p.az, 0x66ccff);
+      if (p && state.tool === "place") renderer.setGhost(p.ax, p.ay, p.az, 0xf0bd5e);
       else { renderer.setGhost(null); }
     }
   };

@@ -171,8 +171,8 @@ function avatarPalette(override) {
   const C = {
     skin: 0xffd7b0, skinShade: 0xeab88e, blush: 0xe9ac96, hair: 0x6b4630, hairDeep: 0x54372a,
     eye: 0x3a3644, shine: 0xffffff, lip: 0xc0705f,
-    shirt: 0x5aa8e8, shirtDeep: 0x3d7cba, collar: 0xf2f6fb, button: 0xe6eef8,
-    pants: 0x5b6c8e, pantsDeep: 0x48566f, belt: 0x5b4636, buckle: 0xd9b45e,
+    shirt: 0xc9714f, shirtDeep: 0x9c5740, collar: 0xf6f1e8, button: 0xece2d2,
+    pants: 0x6b625a, pantsDeep: 0x524a44, belt: 0x5b4636, buckle: 0xd9b45e,
     shoe: 0x7b5441, sole: 0x332a2b,
   };
   for (const [key, base] of [["skin", "skin"], ["shirt", "shirt"], ["pants", "pants"], ["hair", "hair"], ["shoe", "shoe"]]) {
@@ -571,7 +571,7 @@ export class GameRuntime {
           },
           world: (m) => this._netApplyWorld(m),
           chat: (m) => this._netChat(m),
-          throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#8fe3ef", "sys"),
+          throttle: (m) => this._chatLine(`说太快了，${m.wait} 秒后再发`, "#e0b968", "sys"),
           rejected: (m) => this._chatLine(`这条没发出去：${m.reason}`, "#ffb3b3", "sys"),
           status: (s) => {
             if (s.connected) {
@@ -579,7 +579,7 @@ export class GameRuntime {
               // 连上就先报一次坐标：否则别人在那 16ms 的间隔里看到的是你站在世界原点。
               const me = this.playerEntity;
               if (me) { const lk = this._lookCode(); this._net.state([me.position.x, me.position.y, me.position.z], me._obj.rotation.y, lk.a, lk); }
-            } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#8fe3ef", "sys");
+            } else if (s.closed && this._netPeers.size) this._chatLine("与房间的连接断了，正在重连…", "#e0b968", "sys");
           },
         },
       });
@@ -2363,7 +2363,7 @@ const ZERO = new GameVector3();
     ent.hp = ent.maxHp;
     p.dead = false;
     this._playAt(p.spawnSound, ent.position);
-    this._chatLine(reason === "死亡" ? "你倒下了，已回到出生点" : reason === "手动" ? "已回到出生点" : "掉出世界，已回到出生点", "#8fe3ef", "sys");
+    this._chatLine(reason === "死亡" ? "你倒下了，已回到出生点" : reason === "手动" ? "已回到出生点" : "掉出世界，已回到出生点", "#e0b968", "sys");
     const ev = { tick: this.currentTick, entity: ent };
     p._channels.Respawn.fire(ev);
     this._channels.Respawn.fire(ev);
@@ -2451,7 +2451,7 @@ const ZERO = new GameVector3();
     // 后面那个兜底色永远不会生效。水下全黑就是这么来的。
     const fb = headId ? this._block(baseId(headId)) : null;
     const raw = fb && fb.fluidColor ? fb.fluidColor : null;
-    r.setUnderwater && r.setUnderwater(this._underWater, raw ? liftTint(raw) : 0x1b6f8f);
+    r.setUnderwater && r.setUnderwater(this._underWater, raw ? liftTint(raw) : 0x2b6f78);
   }
   raycastFromEyes(maxDist) {
     const r = this.e.renderer;
@@ -4191,7 +4191,7 @@ void main() {
     this._chatLine(`${this.player ? this.player.name : "玩家"}: ${msg}`, "#ffffff");
     // 本地回显先出来，房间那条由服务端审查后再发回给别人；自己不该看到两条。
     if (this._net && this._net.live) this._net.chat(msg);
-    else this._chatLine("这张图里现在只有你：想让别人听见，切到上面那格「世界」。", "#8fe3ef", "sys");
+    else this._chatLine("这张图里现在只有你：想让别人听见，切到上面那格「世界」。", "#e0b968", "sys");
   }
   /** 聊天频道：地图（同图的人，走房间 socket）与世界（所有人，走 HTTP）。
    *  私聊不进这个面板——那是一对一的，混进公共流里等于把别人的对话念出来。 */
@@ -4226,7 +4226,7 @@ void main() {
       if (this._chatSeen.size > 400) this._chatSeen.clear();
     }
     const world = m.ch === "world";
-    this._chatLine(world ? `【世界】${m.name}: ${m.text}` : `${m.name}: ${m.text}`, world ? "#ffd7a8" : "#bfe0ff");
+    this._chatLine(world ? `【世界】${m.name}: ${m.text}` : `${m.name}: ${m.text}`, world ? "#ffd7a8" : "#e8d9bd");
   }
   /** 一条消息同时进两个地方：左下角的窄条（最近三条，会自己淡掉）
       和聊天面板里的完整历史（能往上翻，不自动清）。

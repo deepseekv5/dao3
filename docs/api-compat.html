@@ -52,7 +52,7 @@ vendor/ArenaPro-CLI/client/types/ClientAPI.d.ts   UiNode 树 · InputSystem · C
 <h2 id="怎么保证没漏而不是看着不少">怎么保证&quot;没漏&quot;而不是&quot;看着不少&quot;</h2>
 <p>静态扫一遍 d.ts 是<b>会骗人</b>的：<code>api-audit.mjs</code> 一开始报了约 64 个&quot;缺失成员&quot;， 全是 <code>on*/next*</code> 事件通道——它们由 <code>attachChannels</code> 在运行时动态挂上去，静态读对象读不到。</p>
 <p>所以分两步：</p>
-<ol class="lv-0"><li><code>scripts/api-audit.mjs</code> 从 d.ts 抽出成员清单，产出两份：<ul class="lv-1"><li><code>public/data/api-members.json</code> — 全部成员（71 个游戏类型 / 751 个成员，两端都算）</li><li><code>public/data/api-methods.json</code> — 其中可调用的方法</li></ul></li><li><code>public/js/api-probe.js</code> 在<b>真实运行时</b>上逐个探面（含动态挂载的通道）， 并检查&quot;名字对但类型错&quot;的情况（把属性当函数暴露也是不兼容）： 报告里的 <code>badKind</code> 必须是 0。</li></ol>
+<ol class="lv-0"><li><code>scripts/api-audit.mjs</code> 从 d.ts 抽出成员清单，产出两份：<ul class="lv-1"><li><code>public/data/api-members.json</code> — 全部成员（81 个游戏类型 / 805 个成员，两端都算）</li><li><code>public/data/api-methods.json</code> — 其中可调用的方法</li></ul></li><li><code>public/js/api-probe.js</code> 在<b>真实运行时</b>上逐个探面（含动态挂载的通道）， 并检查&quot;名字对但类型错&quot;的情况（把属性当函数暴露也是不兼容）： 报告里的 <code>badKind</code> 必须是 0。</li></ol>
 <div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run build:api-ref     # 重新抽清单 + 生成 API 参考
 npm run test:api          # 真实运行时对账（CDP，不需要 playwright）
 # 合计 107 个游戏类型 / 81 个有成员级声明，805 个官方成员，静态比对到 805（覆盖 100.0%）
@@ -62,7 +62,7 @@ npm run test:api          # 真实运行时对账（CDP，不需要 playwright�
 <p>同类还有一个坑，这次是<b>分母</b>错：<code>declare type GameHttpHandler = (\n  request: …,\n  response: …)</code> 里那些两空格缩进的参数会被&quot;看到顶格 <code>}</code> 才停&quot;的扫描当成类成员收进来， 于是凭空多出 <code>GameHttpRequest.response</code> 这样的&quot;官方成员&quot;，再报成&quot;本地缺失&quot;。 现在按括号深度收成员，并且只有 <code>onX</code> 与 <code>nextX</code> <b>两边都声明了</b>才算一个事件通道 （<code>GameGUI.onMessage</code> 官方就没有 <code>nextMessage</code>，<code>world.nextPage</code> 是翻页方法不是事件）。</p>
 <h3 id="db.sql官方标了-@deprecated但仍然给">db.sql：官方标了 @deprecated，但仍然给</h3>
 <p><code>declare const db: GameDatabase</code> 的注释是&quot;旧代编辑器使用的数据库接口，已弃用， 请改用 GameDataStorage&quot;，文档站也没有 GameDatabase 这一页。但以前 <code>db</code> 被我们 直接做成键值存储的别名，脚本按 d.ts 写 <code>db.sql(&quot;select …&quot;)</code> 拿到的是 <code>undefined</code>—— &quot;官方建议别用&quot;和&quot;我们给了个 undefined&quot;是两件事。</p>
-<p>现在 <code>db.sql</code> 是真能跑的：语句与参数分开送到本地服务，由 Node 自带的 <code>node:sqlite</code> 执行（每个世界一个 <code>server/data/worlds/&lt;id&gt;.sqlite</code>）， 返回值 <code>GameQueryResult</code> 既能 <code>await</code> 直接拿整批 rows，也能 <code>for await</code> 逐行取， 两种用法共用同一次执行（各跑一遍的话 insert 会被执行两次）。 键值那套 <code>db.get/set/…</code> 原样留着，存量脚本不因此失效。</p>
+<p>现在 <code>db.sql</code> 是真能跑的：语句与参数分开送到本地服务（<code>POST /api/db/:id</code>， 实现在 <code>server/sql.mjs</code>），由 Node 自带的 <code>node:sqlite</code> 执行（每个世界一个 <code>server/data/worlds/&lt;id&gt;.sqlite</code>）， 返回值 <code>GameQueryResult</code> 既能 <code>await</code> 直接拿整批 rows，也能 <code>for await</code> 逐行取， 两种用法共用同一次执行（各跑一遍的话 insert 会被执行两次）。 键值那套 <code>db.get/set/…</code> 原样留着，存量脚本不因此失效。</p>
 <p>三条边界说清楚：</p>
 <ul class="lv-0"><li><b>要本地服务在跑。</b> 编辑器与便携包都自带；直接双击 <code>public/editor.html</code> 打开时 没有 SQL 引擎，这时 <code>db.sql</code> 抛的是&quot;需要本地服务在跑&quot;，不是静默返回空数组。</li><li><b>Node 要 22.5+</b>（<code>node:sqlite</code> 从这版起才有）。不满足时只有这一条接口不可用， 服务照常起。</li><li><b>库不随地图走。</b> 项目包导出与社区发布快照带的是世界存档与脚本，不含 <code>.sqlite</code>； 删世界会把它的库一起删掉，免得同 id 重建时继承上一张图的表。 新写玩法请优先用 <code>storage.getDataStorage(name)</code>——那才是官方推荐的那条路。</li></ul>
 <p>逐成员的签名、官方中文说明与单位，以及本地到位还是缺口，见 <a href="api-reference.html">API 参考</a>（生成物）。</p>

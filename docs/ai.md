@@ -1,7 +1,7 @@
 # AI 能力：写脚本与生成体素模型
 
 这篇讲两件事：**怎么配**，以及**你交给它的密钥会经过哪些手**。
-所有数字都是本机实测的（`node test/ai.mjs` 27 条 + `test/e2e.mjs` 里代理那 6 条），
+所有数字都是本机实测的（`node test/ai.mjs` 94 条 + `test/e2e.mjs` 里代理那 6 条），
 不是照着设计稿写的。
 
 > AI 是**可选**能力。不填接口，编辑器一切功能照旧；填了也不会多出任何官方 API——
@@ -138,7 +138,9 @@ openai 兼容端点。填完点「测试连接」，它发一句"只回复两个
 动作名一律是 `<组>.<动词>`：`project.info` / `project.create` / `map.save` /
 `map.resource` / `script.list|get|upload|rename` / `storage.set|get|list|remove` /
 `blocks.edit` / `model.build` / `entity.add` / `build.check` /
-`runtime.start|status|logs|stop` / `scene.capture` / `package.export` / `finish`。
+`runtime.start|status|logs|stop` / `scene.capture` / `project.export` / `plan.set` / `finish`。
+另有五个社区动作不走 `apc` 命名（官方 CLI 没有这一层）：
+`community.who` / `community.publish` / `community.feed` / `community.comment`，它们只碰本地社区。
 
 依据是官方 CLI 的 `apc script upload <project> <side> <entry>`、`apc storage`、
 `apc runtime start|logs`、`apc scene capture`、`apc project info`，
@@ -274,8 +276,8 @@ project.info → plan.set → 动手（blocks.edit / model.build / script.upload
 ## 自己验一遍
 
 ```bash
-node test/ai.mjs          # 80 条：解析、校验、展开、配额、规范、动作协议，纯离线不联网
-npm run test:e2e          # AI 那 43 条：代理 6 + 走真实 UI 的规范 15 + Agent 小窗 22
+node test/ai.mjs          # 94 条：解析、校验、展开、配额、规范、动作协议，纯离线不联网
+npm run test:e2e          # 另外那批要真浏览器：代理 6 条 + 走真实 UI 的规范与 Agent 小窗
 ```
 
 代理那 6 条不需要真密钥：测试自己在一个随机端口上起一个假的

@@ -15,7 +15,7 @@ vendor/ArenaPro-CLI/client/types/ClientAPI.d.ts   UiNode 树 · InputSystem · C
 所以分两步：
 
 1. `scripts/api-audit.mjs` 从 d.ts 抽出成员清单，产出两份：
-   - `public/data/api-members.json` — 全部成员（71 个游戏类型 / 751 个成员，两端都算）
+   - `public/data/api-members.json` — 全部成员（81 个游戏类型 / 805 个成员，两端都算）
    - `public/data/api-methods.json` — 其中可调用的方法
 2. `public/js/api-probe.js` 在**真实运行时**上逐个探面（含动态挂载的通道），
    并检查"名字对但类型错"的情况（把属性当函数暴露也是不兼容）：
@@ -56,7 +56,8 @@ e2e 依赖 `playwright-core`——本机没装，它整批 `SKIP` 然后 exit 0�
 直接做成键值存储的别名，脚本按 d.ts 写 `db.sql("select …")` 拿到的是 `undefined`——
 "官方建议别用"和"我们给了个 undefined"是两件事。
 
-现在 `db.sql` 是真能跑的：语句与参数分开送到本地服务，由 Node 自带的
+现在 `db.sql` 是真能跑的：语句与参数分开送到本地服务（`POST /api/db/:id`，
+实现在 `server/sql.mjs`），由 Node 自带的
 `node:sqlite` 执行（每个世界一个 `server/data/worlds/<id>.sqlite`），
 返回值 `GameQueryResult` 既能 `await` 直接拿整批 rows，也能 `for await` 逐行取，
 两种用法共用同一次执行（各跑一遍的话 insert 会被执行两次）。

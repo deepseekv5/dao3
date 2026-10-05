@@ -30,12 +30,15 @@ function save(sizes) {
   try { localStorage.setItem(KEY, JSON.stringify(sizes)); } catch { /* 隐私模式下存不进，不影响本次会话 */ }
 }
 
-const root = document.documentElement;
+// 这一层在浏览器里是"import 完就把尺寸贴上"，但 ai-agent.js 的导入链会把它带进
+// 裸 Node（test/ai.mjs 要在 Node 里探 Agent 的动作协议）。所以 DOM 一律先判存在：
+// 没有 DOM 时这些函数就是空操作，而不是把整个测试进程撞死在 import 阶段。
+const root = typeof document === "undefined" ? null : document.documentElement;
 const sizes = load();
 // 上限不是"能给多宽"，是"画布还剩多少"：面板拖到吃掉半个视口就不叫调布局了。
 const cap = (k) => Math.max(MIN[k], Math.min(MAX[k], Math.floor(window.innerWidth * (k === "console" ? 0.55 : 0.42))));
 const clamp = (k, v) => Math.round(Math.min(cap(k), Math.max(MIN[k], v)));
-const put = (k) => root.style.setProperty(VAR[k], clamp(k, sizes[k]) + "px");
+const put = (k) => { if (root) root.style.setProperty(VAR[k], clamp(k, sizes[k]) + "px"); };
 
 // 尺寸在模块加载时就贴上去，不等 initFeatures：后者要等 150 万格的默认图 load 完
 // （冷启动实测 60s 开外），那段时间里布局是默认值，然后"啪"地跳一下——

@@ -95,7 +95,7 @@ project/compat.json         本地扩展（官方清单里没有的）</code></p
 <p>导入 zip 时，模型与图片会落到 <code>public/assets/worlds/&lt;id&gt;/</code> 下， 编辑器按 <code>meta.assetRoot</code> 懒加载。<b>图片保留 <code>picture/</code> 目录层级</b>， 这样 <code>resources.ls(&quot;picture&quot;)</code> 返回的路径和 <code>UiImage.image</code> 写的路径能对上。</p>
 <h2 id="这些格式的来源与边界">这些格式的来源与边界</h2>
 <p><code>.gz</code> 的 payload 形状、<code>block-id.json</code> / <code>block-spec.json</code> 的字段， 来自官方 Apache-2.0 的 <code>Box3Blocks-unityPackage</code>； <code>project.json</code> 的 21 键与 <code>player</code> 的 41 键，来自官方公开的项目数据结构。</p>
-<p><b>官方 <code>chunks/&lt;CID&gt;</code> 是长方体游程编码，不是逐体素列表</b>： 72 个非空块合计只有 23,997 字节，而地图有 1,523,592 格非空格——约 63.5 格每字节。 这个比值一度被当成&quot;不可能解出方块表&quot;的证据，那是误判：一个 16×16×16 的实心块 只花 3 个 varint 就表达 4096 格，几十格每字节正是长方体 RLE 的必然结果。 真实格式是 32³ 分块 + 调色板 + 起点 zigzag 差分 + x/y/z 三位交错，已解通并能量产出方块表。 判据、逐条反证与字段级取值域见<a href="map-format.html">标准地图格式</a>。</p>
+<p><b>官方 <code>chunks/&lt;CID&gt;</code> 是长方体游程编码，不是逐体素列表</b>： 73 个非空块合计只有 23,997 字节，而地图有 1,523,592 格非空格——约 63.5 格每字节。 这个比值一度被当成&quot;不可能解出方块表&quot;的证据，那是误判：一个 16×16×16 的实心块 只花 3 个 varint 就表达 4096 格，几十格每字节正是长方体 RLE 的必然结果。 真实格式是 32³ 分块 + 调色板 + 起点 zigzag 差分 + x/y/z 三位交错，已解通并能量产出方块表。 判据、逐条反证与字段级取值域见<a href="map-format.html">标准地图格式</a>。</p>
     <nav class="pager"><a href="api-reference.html"><small>上一篇</small><b>API 参考</b></a><a class="next" href="map-format.html"><small>下一篇</small><b>标准地图格式</b></a></nav>
   </article>
 </main>

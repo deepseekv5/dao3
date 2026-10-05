@@ -3,11 +3,14 @@
 ## 一条命令生成
 
 ```bash
-npm run package                       # → ../DAO3-便携包/  （约 4.5MB）
+npm run package                       # → ../DAO3-便携包/（约 24 MB，压成 zip 约 12 MB）
 npm run package -- /path/to/out       # 指定输出目录
 ```
 
 打包逻辑在 `scripts/build-portable.mjs`，是**白名单**而不是"排除一堆东西"。
+体积的大头不是代码：官方赛车模板的 `racing-template.json.gz`（2.8 MB）与
+`racing-assets/`（20 个 `.gltf` + 40 个 `.mp3`，3.7 MB）必须在包里，
+缺任何一项 `build-portable.mjs` 直接失败——便携包解压后跑不起来比包大一点严重得多。
 原因见下。
 
 ## 为什么必须白名单：素材分三种处置
@@ -110,7 +113,7 @@ cd .. && zip -qr DAO3-便携包.zip DAO3-便携包
 
 | 产物 | 由谁产出 | 为什么 |
 |---|---|---|
-| `DAO3-portable-v{{VER}}.zip` | `build-portable.mjs` → `zip-dir.mjs` | 三端通用，解压即用；保留不动 |
+| `DAO3-便携包-v{{VER}}.zip` | `build-portable.mjs` → `zip-dir.mjs` | 三端通用，解压即用；保留不动 |
 | `DAO3-{{VER}}.dmg` | `build-installers.mjs` 用系统 `hdiutil` | macOS 用户习惯挂载磁盘镜像而不是解压 |
 | `DAO3-Setup-{{VER}}.exe` | Inno Setup 6，**只在 CI 的 windows-latest 上编译** | Inno Setup 没有 macOS 版；在 mac 上"生成" .exe 只能是假的 |
 
@@ -145,10 +148,11 @@ npm i -g @deepseekv5/dao3-editor-clone       # 装成全局命令 dao3-editor
 
 ```bash
 npm run check:dist
-# ok   git 跟踪的文件:      498 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
-# ok   npm tarball:         492 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
-# ok   便携包目录:          501 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
-# ok   网页体验版 play/:     18 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# 下面这几个"多少个文件"跟着内容走，不是契约；看的是每一行的后三项都是 0
+# ok   git 跟踪的文件:      677 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   npm tarball:         639 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   便携包目录:          670 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
+# ok   网页体验版 play/:     85 个文件 | 素材越界 0 | 疑似凭据 0 | 缺必需文件 0
 ```
 
 第四个面是公开托管，尺度比前三处更严：只允许 `world.json.gz` 一个例外，
@@ -164,7 +168,7 @@ npm run check:dist
 发布前建议跑一遍：
 
 ```bash
-npm test && npm run test:e2e     # 77 + 35 条断言
+npm test && npm run test:e2e     # 内核对账 + 端到端（跑完各自打印条数）
 npm run package                  # 便携包 + zip
 npm run installers               # .dmg（macOS 上）+ dao3.iss
 npm run check:dist               # 三处分发面一起审

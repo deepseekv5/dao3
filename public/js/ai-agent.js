@@ -512,7 +512,7 @@ const CSS = `
 #aiAgent .ag-plan li{display:flex;gap:6px;align-items:baseline;color:#a9b6c8;font-size:12px;line-height:1.45}
 #aiAgent .ag-plan li.done{color:#6fd08c}#aiAgent .ag-plan li.doing{color:#ffc46b}#aiAgent .ag-plan li.skip{color:#5d6b7f;text-decoration:line-through}
 #aiAgent .ag-row{display:grid;grid-template-columns:14px 1fr;column-gap:6px}
-#aiAgent .ag-bul{color:#00e5ff;line-height:1.5;font-weight:700}
+#aiAgent .ag-bul{color:var(--primary);line-height:1.5;font-weight:700}
 #aiAgent .ag-run .ag-bul::after{content:"◐";animation:agSpin 1s linear infinite;display:inline-block}
 @keyframes agSpin{to{transform:rotate(360deg)}}
 #aiAgent .ag-tool{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#e6edf6;line-height:1.5;word-break:break-word}
@@ -536,7 +536,7 @@ const CSS = `
 #aiAgent .dl{display:block}#aiAgent .dl.add{color:#6fd08c}#aiAgent .dl.del{color:#e0596a}#aiAgent .dl.ctx{color:#5d6b7f}
 #aiAgent .ag-acts{display:flex;gap:7px;padding:9px 12px;border-top:1px solid #232c3a;flex-wrap:wrap;align-items:center}
 #aiAgent .ag-acts button{background:#222c3a;border:1px solid #33415a;color:#dfe6f0;border-radius:6px;padding:6px 11px;cursor:pointer;font-size:12.5px}
-#aiAgent .ag-acts button.primary{background:#00e5ff;border-color:#00e5ff;color:#14100a;font-weight:600}
+#aiAgent .ag-acts button.primary{background:var(--primary);border-color:var(--primary);color:var(--on-accent);font-weight:600}
 #aiAgent .ag-acts button:disabled{opacity:.45;cursor:default}
 #aiAgent .ag-budget{margin-left:auto;color:#8b98ab;font-size:11.5px;font-variant-numeric:tabular-nums}
 #aiAgent .ag-budget.ok{color:#6fd08c}#aiAgent .ag-budget.err{color:#ff8f8f}

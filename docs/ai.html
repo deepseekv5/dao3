@@ -46,7 +46,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
   <article class="doc-body">
     <p class="crumb"><a href="./">概览</a> / <a href="documentation.html">文档中心</a> / <span>AI 能力：写脚本与生成体素模型</span></p>
     <h1>AI 能力：写脚本与生成体素模型</h1>
-<p>这篇讲两件事：<b>怎么配</b>，以及<b>你交给它的密钥会经过哪些手</b>。 所有数字都是本机实测的（<code>node test/ai.mjs</code> 27 条 + <code>test/e2e.mjs</code> 里代理那 6 条）， 不是照着设计稿写的。</p>
+<p>这篇讲两件事：<b>怎么配</b>，以及<b>你交给它的密钥会经过哪些手</b>。 所有数字都是本机实测的（<code>node test/ai.mjs</code> 94 条 + <code>test/e2e.mjs</code> 里代理那 6 条）， 不是照着设计稿写的。</p>
 <blockquote><p>AI 是<b>可选</b>能力。不填接口，编辑器一切功能照旧；填了也不会多出任何官方 API——</p><p>它只是把自然语言翻译成官方那套脚本接口，产出仍然要你自己看懂、自己负责。</p></blockquote>
 <h2 id="三个入口">三个入口</h2>
 <div class="tbl-wrap"><table class="tbl"><thead><tr><th>在哪</th><th>做什么</th><th>产出落在哪</th></tr></thead><tbody><tr><td>顶部「脚本」→ 右上「AI 生成」</td><td>按需求写一份地图脚本，或改写当前这份</td><td>点「新建文件 / 写入当前文件」才进 <code>meta.scripts</code></td></tr><tr><td>顶部「脚本」→ 右上「AI Agent」</td><td>给一个目标，它自己规划、动手、验证、按报错自修，跑完整条链</td><td>每一步都直接改工程，但<b>全部进撤销栈</b></td></tr><tr><td>VOXA 菜单 → 「AI 生成模型…」</td><td>按描述拼一个体素模型</td><td>点「写进工程」才加部件（先 <code>snapshot</code> 进撤销栈）</td></tr></tbody></table></div>
@@ -80,7 +80,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h2 id="ai-agent-全自动小窗">AI Agent 全自动小窗</h2>
 <p>脚本界面的<b>AI Agent</b> 是另一档：你给一个目标，它自己规划、自己动手、自己验证、 按报错自己修，跑完再交小结。它是一个<b>可拖动的浮层</b>，不是全屏抽屉—— 一跑就是十几轮、几十秒到几分钟，你得能同时看到世界在长出什么，也要能随时中止。</p>
 <h3 id="动作面照官方-apc-的命名">动作面照官方 <code>apc</code> 的命名</h3>
-<p>动作名一律是 <code>&lt;组&gt;.&lt;动词&gt;</code>：<code>project.info</code> / <code>project.create</code> / <code>map.save</code> / <code>map.resource</code> / <code>script.list|get|upload|rename</code> / <code>storage.set|get|list|remove</code> / <code>blocks.edit</code> / <code>model.build</code> / <code>entity.add</code> / <code>build.check</code> / <code>runtime.start|status|logs|stop</code> / <code>scene.capture</code> / <code>package.export</code> / <code>finish</code>。</p>
+<p>动作名一律是 <code>&lt;组&gt;.&lt;动词&gt;</code>：<code>project.info</code> / <code>project.create</code> / <code>map.save</code> / <code>map.resource</code> / <code>script.list|get|upload|rename</code> / <code>storage.set|get|list|remove</code> / <code>blocks.edit</code> / <code>model.build</code> / <code>entity.add</code> / <code>build.check</code> / <code>runtime.start|status|logs|stop</code> / <code>scene.capture</code> / <code>project.export</code> / <code>plan.set</code> / <code>finish</code>。 另有五个社区动作不走 <code>apc</code> 命名（官方 CLI 没有这一层）： <code>community.who</code> / <code>community.publish</code> / <code>community.feed</code> / <code>community.comment</code>，它们只碰本地社区。</p>
 <p>依据是官方 CLI 的 <code>apc script upload &lt;project&gt; &lt;side&gt; &lt;entry&gt;</code>、<code>apc storage</code>、 <code>apc runtime start|logs</code>、<code>apc scene capture</code>、<code>apc project info</code>， 以及官方 <code>engine-openapi-mcp</code> 的 <code>script.saveOrUpdate</code> / <code>storage.*</code> 那套工具名。 <b>只对齐命名与参数形状，不搬它们的代码</b>（engine-openapi-mcp 仓库没有 LICENSE）。</p>
 <h3 id="交付核对">交付核对</h3>
 <p><code>finish</code> 那一行下面会自动附一段<b>程序自己量出来的</b>清单，不是模型的小结：</p>
@@ -123,8 +123,8 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h2 id="网页体验版没有-ai">网页体验版没有 AI</h2>
 <p><code>/dao3play</code> 是静态托管，没有 <code>server.js</code>，所以没有 <code>/api/ai/chat</code> 代理，AI 入口也不在。 这是刻意的：体验版只跑官方赛车模板，没有编辑需求，而少了服务端就绝不该假装能调用。 缺代理时前端给的是能照着修的一句话，不是静默失败。</p>
 <h2 id="自己验一遍">自己验一遍</h2>
-<div class="code code-bash"><span class="code-lang">bash</span><pre><code>node test/ai.mjs          # 80 条：解析、校验、展开、配额、规范、动作协议，纯离线不联网
-npm run test:e2e          # AI 那 43 条：代理 6 + 走真实 UI 的规范 15 + Agent 小窗 22</code></pre></div>
+<div class="code code-bash"><span class="code-lang">bash</span><pre><code>node test/ai.mjs          # 94 条：解析、校验、展开、配额、规范、动作协议，纯离线不联网
+npm run test:e2e          # 另外那批要真浏览器：代理 6 条 + 走真实 UI 的规范与 Agent 小窗</code></pre></div>
 <p>代理那 6 条不需要真密钥：测试自己在一个随机端口上起一个假的 <code>/v1/chat/completions</code>，故意让它在 401 里回显 <code>Authorization</code>， 再断言回到前端的文本里只剩 <code>Bearer ••••</code>。</p>
 <p>规范那 15 条同样不联网：起一个只记录请求体的本地 mock，从编辑器里点真实的 「AI 生成」→「看规范」→「生成」，然后核对<b>模型侧收到的 system 消息</b>与界面显示的那份 逐字相同、user 消息带了端与需求、密钥没有混进 messages。</p>
     <nav class="pager"><a href="physics.html"><small>上一篇</small><b>物理与单位制</b></a><a class="next" href="skill.html"><small>下一篇</small><b>AI 接入（Skill / MCP）</b></a></nav>

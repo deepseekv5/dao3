@@ -37,8 +37,8 @@
 这是社区层最重要的一个决定。
 
 **发布不指向世界，而是把世界复制出去。** `POST /api/community/publish` 会把
-`payload`、实体、脚本、素材目录整个拷进 `community/pubs/<pubId>/`，之后作者改自己的图，
-别人点进去看到的还是发布那一刻的样子。
+`payload`、实体、脚本、素材目录整个拷进 `community/pubs/<pubId>.json.gz`（一个扁平文件，
+封面与素材是它的同名旁文件），之后作者改自己的图，别人点进去看到的还是发布那一刻的样子。
 
 代价是磁盘：一张 4.5 MB 的图发一次就占 4.5 MB。换来的是两件更要紧的事：
 
@@ -88,7 +88,8 @@
 <a id="moderation"></a>
 ## 评论、审查与举报
 
-评论 500 字上限，一层楼中楼（回复带 `to`），点赞去重按用户。
+评论 500 字上限，一层平铺（没有楼中楼：记录里只有 `pubId / userId / body / likes`，
+歪楼在一张地图的评论区里只会让顺序更难读），点赞去重按用户。
 **未登录也给出一个禁用的输入框**，而不是"登录后才能评论"一句话——
 位置先占住，用户知道这里能写。
 
@@ -117,7 +118,7 @@
   `/friends` 那一页的「扩列」页签用的是**同一个渲染函数**（`renderPeopleGrid`），不抄第二份。
 - **消息**：世界频道、当前这张图的地图频道、以及所有有往来的私聊会话（带未读）。
 
-资料字段是四件：**地区**（34 个省级 + 港澳台 + 海外，只能选不能填）、
+资料字段是四件：**地区**（35 项 = 31 个省级 + 香港 / 澳门 / 台湾 + 海外，只能选不能填）、
 **性别**（男 / 女 / 其他 / 不展示，没有默认值）、**性格标签**（12 选最多 6）、
 **扩列状态**（欢迎扩列 / 找固定队友 / 只聊天 / 不扩列）。
 枚举表在 `public/js/profile-fields.js` 一份，服务端 import 它做校验、前端 import 它做渲染——
@@ -162,6 +163,42 @@
 协作编辑房（`edit:<世界 id>`）另走一条权威流：方块改动、实体变换、脚本内容、
 以及**环境标量（昼夜 / 天气）**——所有人共用服务端定的顺序，
 没有"我先改所以我对"。环境用白名单 + 取值域校验，越界的 `dayNight` 会让光照算出 NaN。
+
+三条 socket 路径，都在 `server/realtime.mjs` 里按路径前缀分派：
+
+| 路径 | 房间 | 用途 |
+|---|---|---|
+| `/ws/play/<pubId>` | `play:<pubId>` | 游玩同一张图的人 |
+| `/ws/edit/<worldId>` | `edit:<worldId>` | 编辑器协作（权威流） |
+| `/ws/social` | 不进房间 | 在线状态 + 世界频道 / 私聊推送 |
+
+<a id="api"></a>
+## 接口一览
+
+HTTP 全在 `/api/community/` 下（`server/community.mjs`）。标 ★ 的要先登录，
+且写操作要带 `x-csrf-token`（与 `ly_csrf` cookie 双提交比对）。
+
+| 路径 | 方法 | 做什么 |
+|---|---|---|
+| `me` | GET / PATCH ★ | 当前用户；PATCH 收 `name / bio / avatar / banner / skin` 与四件资料字段 |
+| `register` `login` `logout` | POST | 账号与会话（`ly_session`，HttpOnly，30 天） |
+| `upload?kind=` | POST ★ | 图片上传，kind ∈ cover / avatar / banner / preview / skin |
+| `uploads` | GET | 列自己传过的图 |
+| `users/...` | GET | 公开主页数据（按 id 或 `?name=`）；`?all=1` 才带出"不扩列"的人 |
+| `follow` | POST ★ | 关注 / 取关 |
+| `friends` | GET ★ | 好友、待处理请求、可能认识 |
+| `friend/request\|accept\|decline\|remove\|note` | POST ★ | 好友关系；`note` 写**单向备注**（只有你自己看得到） |
+| `people` | GET | 扩列发现：按地区 / 性别 / 性格筛，默认只给"愿意被扩列"的 |
+| `chat` | GET / POST ★ | 读频道历史（`?ch=&after=`）/ 发一条 |
+| `chat/read` | POST ★ | 把某个频道的未读清零 |
+| `channels` | GET ★ | 抽屉一次拿全：各频道未读数 + 私聊会话列表 |
+| `feed` | GET | 广场分页，`kind=map\|model\|skin`、`cat`、`sort=new\|hot\|following` |
+| `publish` | POST ★ | 发布快照（地图 / 模型 / 皮肤） |
+| `pubs/...` | GET / PATCH / DELETE ★ | 作品详情（按 id）、改标题简介标签、下架；`/skin` 子路径取皮肤包 |
+| `comments/...` | POST | 点赞（按用户去重）/ 举报 |
+| `notifications` | GET ★ | 通知列表 + 未读数 |
+| `stats` | GET | 广场顶部那几个计数 |
+| `admin/*` | ★ | 后台：用户、审查队列、封禁，只放行管理员角色 |
 
 <a id="limits"></a>
 ## 做不到什么

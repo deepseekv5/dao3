@@ -82,8 +82,10 @@ const afterLogin = [];
 export const onLogin = (fn) => afterLogin.push(fn);
 
 /* ---------------- 头像与菜单 ---------------- */
-// 与 pubs.js 的 avatarBg 同一条色带：顶栏与列表里的同一个人应当是同一个颜色
-const avatarBg = (name) => { let h = 0; for (const c of String(name || "?")) h = (h * 31 + c.charCodeAt(0)) % 360; h = 196 + (h % 74); return `linear-gradient(140deg,hsl(${h} 92% 66%),hsl(${h - 30} 84% 55%))`; };
+// 没有头像就是首字缩写 + 一块中性暖石色。以前这里按名字取一段青→紫渐变，
+// 于是每个默认头像都是"同一种不同深浅的品牌色"，一眼就是生成的；
+// 真人论坛的默认头像从来不做渐变。 pubs.js / social.js 共用这一个实现。
+export const avatarBg = () => "#3a332a";
 // 头像只认站内相对路径：//host 是协议相对（会跳出本站），javascript: 与 data: 一律不要
 const safeAvatar = (u) => (typeof u === "string" && u.startsWith("/") && !u.startsWith("//") ? u : null);
 const avatarHtml = (u) => {

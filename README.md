@@ -16,7 +16,7 @@
 | **网页体验版** | <https://deepseekv5.github.io/dao3play/> — 不装 Node、不下载包，浏览器里直接跑官方赛车模板（手机可玩） |
 | 运行时要求 | Node.js ≥ 18，**零第三方依赖**（只用 Node 内置模块） |
 | 授权 | Apache-2.0（代码）· 素材来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
-| 社区层 | 账号 / 关注 / 好友 / 发布快照 / 评论，服务端持久化，`node test/community.test.mjs` 68 条断言 |
+| 社区层 | 账号 / 关注 / 好友 / 发布快照 / 评论 / 世界与私聊频道，服务端持久化，`node test/community.test.mjs` 跑完自报条数 |
 | 与官方关系 | 无任何隶属、授权或背书关系；社区是本机社区，不接任何官方平台接口 |
 
 ---
@@ -57,7 +57,7 @@ node start.mjs --port=5173 --no-open
 | | |
 |---|---|
 | ![搭建模式](docs/img/editor-build.png) | ![运行模式](docs/img/editor-run.png) |
-| 搭建：383 种方块、选区镜像/旋转、模型摆放 | 运行：20 TPS 定步长物理、第三人称、HUD 与聊天 |
+| 搭建：383 种方块、选区镜像/旋转、模型摆放 | 运行：64ms 定步长物理（15.625 tick/秒）、第三人称、HUD 与聊天 |
 | ![脚本](docs/img/editor-script.png) | ![界面编辑器](docs/img/editor-ui.png) |
 | 多文件脚本，服务端 GameAPI / 客户端 ClientAPI | 拖放控件，运行时由 `world.onUIPress` 响应 |
 | ![玩家设置](docs/img/editor-player.png) | ![VOXA](docs/img/voxa.png) |
@@ -68,7 +68,7 @@ node start.mjs --port=5173 --no-open
 ## 它到底"兼容"到什么程度
 
 不是"看着像"，是有断言可查的。`test/runtime_parity.mjs` 用真实浏览器驱动运行时，
-**175 条断言全绿**（parity 77 + e2e 39 + play 38 + packaging 21），覆盖：
+**回归套件覆盖**（内核对账 + 端到端 + 体验版 + 打包，条数由各套件自己报），覆盖：
 
 - **单位制**：官方 `walkSpeed 0.22 格/tick`、`64ms/tick`、`gravity -0.1`、
   `jumpPower 0.96`——在现搭的确定性平台上量出来的位移/跳跃高度必须落在官方量级
@@ -86,17 +86,20 @@ node start.mjs --port=5173 --no-open
   导出→导入回环不丢字段
 
 另外 `scripts/api-audit.mjs` 从官方 `GameAPI.d.ts` / `ClientAPI.d.ts` 抽出
-**329 个可调用成员**，`public/js/api-probe.js` 在真实运行时上逐个探面对账。
+**81 个类型 / 805 个成员（其中可调用方法 261 个）**，`public/js/api-probe.js` 在真实运行时上逐个探面对账。
 
 ```bash
-npm test          # 77 条断言（需先起服务）
-npm run test:e2e  # 39 条端到端断言（免责声明门禁、建图、运行模式、每页返回主界面）
-npm run test:play # 38 条断言：网页体验版在拟真 Pages 子路径下的桌面 + 手机真浏览器回归
+npm test          # 内核对账：物理、方块、玩家、相机、世界、客户端 UI（需先起服务）
+npm run test:e2e  # 端到端：免责声明门禁、建图、运行模式、每页返回主界面
+npm run test:play # 网页体验版在拟真 Pages 子路径下的桌面 + 手机真浏览器回归
 npm run audit:api # 官方 API 面覆盖率
 ```
 
+前两条要 `playwright-core` + Chromium；本机没装时它们打印 SKIP 并退出 0，
+**别把 SKIP 当成通过**。不需要 playwright 的那批见 [docs/testing.md](docs/testing.md)。
+
 两个浏览器套件都会**自己找本地服务在哪个端口**：`start.mjs` 首选 5173，
-被别的项目占用时会顺延（它只回收指纹匹配 `dao3-editor-clone` 的旧实例，绝不动别人的服务），
+被别的项目占用时会顺延（它只回收指纹匹配 `laoyou-metaverse` 的旧实例，绝不动别人的服务），
 所以写死端口会一路红——`test/browser.mjs` 的 `resolveBase()` 读 `run.out`
 再用 `/api/whoami` 确认是本项目才用。找不到就 SKIP，不是 FAIL。
 
@@ -172,7 +175,7 @@ docs/          介绍站、文档中心与开发文档（GitHub Pages 源）
 ## 开发文档
 
 **文档中心**：<https://deepseekv5.github.io/dao3/documentation.html>
-——独立落地页，侧边栏在每一页都常驻，下面的 9 篇按「入门 / 内核 / 交付」三组列出、
+——独立落地页，侧边栏在每一页都常驻，下面的 17 篇按「入门 / 社区 / 内核 / 交付」四组列出、
 每篇一句话摘要，并给出源码仓库与 Releases 入口。它由 `docs/documentation.src.html` 生成，
 侧边栏与摘要在 `scripts/build-docs.mjs` 里从文档清单注入，不要直接编辑生成出来的 `documentation.html`。
 
@@ -185,7 +188,7 @@ docs/          介绍站、文档中心与开发文档（GitHub Pages 源）
 
 **内核**
 
-- [官方 API 兼容层](docs/api-compat.md) — 329 个成员怎么对账，哪些语义容易踩错
+- [官方 API 兼容层](docs/api-compat.md) — 805 个成员怎么逐个对账，哪些语义容易踩错
 - [数据格式](docs/data-format.md) — `.gz` payload、`project.json` 21 键、`compat.json` 的边界
 - [物理与单位制](docs/physics.md) — 为什么是"格/tick"，碰撞判据的官方依据
 
@@ -221,8 +224,9 @@ npm run package       # 生成便携包
 再分发时必须一并保留。
 
 方块贴图、方块 ID 表、地图数据、模型与音频素材的**著作权归 box3lab 及其权利人所有**。
-本仓库不含音频与赛道模型；官方赛车模板地图数据虽随包分发，但**默认不启用**，
-需使用者在应用内确认自己有权使用后才落地。取回与确认后的内容仅限本地学习与兼容性研究，
+官方赛车模板的地图数据与那 20 个模型 / 40 个音效**随仓库分发**（`official-project/`），
+但**默认不启用**：服务端先查 `server/data/consent.json`，要使用者在应用内确认
+自己有权使用之后才放行这些请求。取回与确认后的内容仅限本地学习与兼容性研究，
 不得用于商业分发、公开镜像或冒充官方产品。
 
 本项目与 box3lab / 神奇代码岛官方无任何隶属、授权或背书关系。

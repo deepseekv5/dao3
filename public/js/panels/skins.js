@@ -27,7 +27,7 @@ const PART_SLOTS = {
   legL: ["leftUpperLeg", "leftLowerLeg", "leftFoot"],
   legR: ["rightUpperLeg", "rightLowerLeg", "rightFoot"],
 };
-const DEFAULT_COLORS = { head: "#ffd7b0", body: "#5aa8e8", armL: "#5aa8e8", armR: "#5aa8e8", legL: "#5b6c8e", legR: "#48566f" };
+const DEFAULT_COLORS = { head: "#ffd7b0", body: "#c9714f", armL: "#c9714f", armR: "#c9714f", legL: "#6b625a", legR: "#524a44" };
 const SORTS = [["edited", "最近编辑"], ["created", "创建时间"], ["name", "名称"]];
 
 // 预览图渲染一次就缓存：卡片可能几十张，每次刷新都重建一遍人偶会把主线程吃干净

@@ -226,7 +226,7 @@ async function boot_() {
     selection: null,
     clipboard: null,
     terrain: Object.assign({
-      skyTop: 0x2f6fb0, skyBottom: 0xbfe0ff, fogDensity: 0.006, sunIntensity: 2.4, ambient: 0.22,
+      skyTop: 0x43688f, skyBottom: 0xe4ddd0, fogDensity: 0.006, sunIntensity: 2.4, ambient: 0.22,
       hemi: 0.65, shadows: true, grid: true, glow: 0.9, dayNight: 0.35, exposure: 1.12,
     }, payload.meta.terrain || {}),
     dirty: false,

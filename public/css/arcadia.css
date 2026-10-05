@@ -18,12 +18,12 @@ body.lm-page {
   background-attachment: fixed;
 }
 
-::selection { background: rgba(0, 229, 255, .3); color: var(--fg); }
-* { scrollbar-width: thin; scrollbar-color: rgba(0, 229, 255, .25) transparent; }
+::selection { background: rgba(227, 166, 60, .3); color: var(--fg); }
+* { scrollbar-width: thin; scrollbar-color: rgba(227, 166, 60, .25) transparent; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, .25); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, .45); }
+::-webkit-scrollbar-thumb { background: rgba(227, 166, 60, .25); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(227, 166, 60, .45); }
 
 /* 顶栏：半透明 + 模糊，滚动时内容从下面穿过去而不是被切断 */
 .lm-nav {

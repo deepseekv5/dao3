@@ -5,15 +5,15 @@
   "height": 900
  },
  "scale": 1,
- "captured": "2026-10-05T03:51:00.298Z",
+ "captured": "2026-10-05T19:09:48.436Z",
  "shots": [
   {
    "name": "workbench",
-   "kb": 253
+   "kb": 281
   },
   {
    "name": "editor-build",
-   "kb": 478
+   "kb": 472
   },
   {
    "name": "block-library",
@@ -21,35 +21,35 @@
   },
   {
    "name": "editor-model",
-   "kb": 334
+   "kb": 331
   },
   {
    "name": "editor-script",
-   "kb": 222
+   "kb": 227
   },
   {
    "name": "editor-ui",
-   "kb": 85
+   "kb": 137
   },
   {
    "name": "editor-player",
-   "kb": 168
+   "kb": 170
   },
   {
    "name": "editor-run",
-   "kb": 136
+   "kb": 116
   },
   {
    "name": "run-store",
-   "kb": 231
+   "kb": 120
   },
   {
    "name": "voxa",
-   "kb": 178
+   "kb": 184
   },
   {
    "name": "editor-palette",
-   "kb": 204
+   "kb": 225
   },
   {
    "name": "editor-pack",
@@ -57,7 +57,7 @@
   },
   {
    "name": "editor-rotate",
-   "kb": 340
+   "kb": 337
   }
  ],
  "pageErrors": []

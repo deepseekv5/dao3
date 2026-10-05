@@ -35,7 +35,7 @@ export function wireGizmo(E) {
   if (!r || !r.scene || !THREE.Vector3) return null;
 
   const AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
-  const COLOR = { x: 0xff5b5b, y: 0x7ee06a, z: 0x5aa8ff };
+  const COLOR = { x: 0xff5b5b, y: 0x7ee06a, z: 0x4b93c9 };
   // 环按"它绕哪根轴转"上色，环面由另外两根轴张成；(u, v, n) 保持右手系，
   // 这样 atan2(v, u) 的增大方向就是绕 n 的正方向，跟手判定只需一次符号翻转。
   const RINGS = [
@@ -90,7 +90,7 @@ export function wireGizmo(E) {
     gRot.add(line);
   }
   // 外圈贴在屏幕上，绕视线轴转——三个世界环侧过来变成一条线时靠它继续能转。
-  const outer = tag(new THREE.LineLoop(circleGeo, lineMat(0xb9b9e6)), "rot:outer");
+  const outer = tag(new THREE.LineLoop(circleGeo, lineMat(0xb8b2a8)), "rot:outer");
   // 三个世界环共用 gRot 的半径，外圈要再大一圈才不会被它们盖住：
   // 用局部 scale 撑开，几何还是同一个单位圆，不多花一份顶点。
   outer.scale.setScalar(ROT_OUT_PX / ROT_R_PX);
@@ -251,8 +251,8 @@ export function wireGizmo(E) {
       const t = mesh.userData.tag;
       if (t.slice(0, t.indexOf(":")) !== mode) continue;
       const on = t === live;
-      const baseColor = t.endsWith("center") ? 0xe8e8ff
-        : t.startsWith("rot:outer") ? 0xb9b9e6
+      const baseColor = t.endsWith("center") ? 0xf2ede6
+        : t.startsWith("rot:outer") ? 0xb8b2a8
           : COLOR[t.split(":")[1]];
       mesh.material.color.setHex(on ? 0xffffff : baseColor);
       mesh.material.opacity = on ? 1 : (t.startsWith("rot:") ? 0.88 : 0.9);

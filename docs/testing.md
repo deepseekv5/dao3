@@ -11,14 +11,21 @@ npm run test:ide                 # test/ide.test.mjs · 编辑器外壳与脚本
 npm run test:voxa                # test/voxa.test.mjs · VOXA 模型层纯函数（裸 Node）
 npm run test:voxa-ui             # test/voxa-ui.test.mjs · VOXA 交互层（真指针 + 真 DOM）
 npm run test:community           # test/community.test.mjs · 社区后端 HTTP 全量
+npm run test:platform            # test/platform.test.mjs · 社区前端与游玩外壳（真浏览器）
 npm run test:realtime            # test/realtime.test.mjs · 手写 WebSocket 客户端打房间
 npm run test:social              # test/social.test.mjs · 两个浏览器会话对打社交层
 npm run test:skin                # test/skin.test.mjs · 骨骼皮肤重定向
 npm run test:skin3d              # test/skin3d.test.mjs · MC 展开图与皮肤库
 npm run test:pause               # test/pause.test.mjs · 运行态暂停与单步
 npm run test:api                 # test/api.test.mjs · API 运行时对账
+npm run test:vox                 # test/vox.test.mjs · .vox 导入导出
+npm run test:pkg                 # test/packaging.mjs · 项目包导出/回环导入
 npm run check:dist               # 分发内容审计（授权、凭据、必需文件）
 ```
+
+每条套件跑完会自己打印 `N passed, M failed`。**这里不抄这些数字**：
+抄过一次，之后每次加断言都要记得回来改文档，改漏一次就是一个假数——
+而"测试有多少条"本来就该由测试自己回答。
 
 `test/runtime_parity.mjs`（`npm test`）与 `test/e2e.mjs` 需要 `playwright-core` + 一个 Chromium，
 本机没装时它们打印 SKIP 并退出 0——**别把 SKIP 当成通过**。
@@ -81,7 +88,7 @@ playwright 每次给的是干净 `localStorage`，于是免责声明遮罩会挡
 断言可用 → 点掉 → 断言遮罩移除且 `localStorage` 记住 → reload 断言不再打扰。
 6 条断言，顺带把后面所有点击的路径清干净。
 
-## 77 + 35 条断言覆盖什么
+## 断言覆盖什么
 
 | 组 | 内容 |
 |---|---|
@@ -112,5 +119,5 @@ playwright 每次给的是干净 `localStorage`，于是免责声明遮罩会挡
 ```bash
 node -e "const z=require('zlib'),f=require('fs');const j=JSON.parse(z.gunzipSync(f.readFileSync('server/data/worlds/216d665d3ca92bd1b9a2.json.gz')));
 const m=j.meta;console.log({entities:(m.entities||[]).length,collision:(m.entities||[]).filter(e=>e.collision).length,gameRules:m.gameRules,products:(m.products||[]).length})"
-# 期望：199 / 0 / undefined / 0
+# 期望：199 / 0 / {} / 0 —— 与 official-project/racing-template.json.gz 逐项相同
 ```

@@ -121,7 +121,7 @@ export async function importCommunitySkin(pub, E) {
   const wid = (E && E.worldId) || null;
   const out = {
     name: String(doc.name || pub.title || "社区皮肤").slice(0, 24),
-    skin: Object.assign({ head: "#ffd7b0", body: "#5aa8e8", armL: "#5aa8e8", armR: "#5aa8e8", legL: "#5b6c8e", legR: "#48566f" }, doc.skin || {}),
+    skin: Object.assign({ head: "#ffd7b0", body: "#c9714f", armL: "#c9714f", armR: "#c9714f", legL: "#6b625a", legR: "#524a44" }, doc.skin || {}),
     created: Date.now(), edited: Date.now(), from: pub.id,
   };
   if (doc.kind === "rig") out.kind = "rig";

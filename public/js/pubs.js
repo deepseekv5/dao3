@@ -59,11 +59,9 @@ export function modal(html, onMount) {
 export const face = (u, cls = "") => u && u.avatar && String(u.avatar).startsWith("/") && !u.avatar.startsWith("//")
   ? `<img class="au-face ${cls}" src="${esc(u.avatar)}" alt=""/>`
   : `<span class="au-face au-init ${cls}" style="background:${avatarBg(u && u.name)}">${esc(u && u.name ? [...u.name][0] : "?")}</span>`;
-export function hue(s) { let h = 0; for (const c of String(s || "?")) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
-/** 没有头像就是 initials：一块中性石墨 + 首字。
-    以前这里按名字取一段青→紫渐变，于是每个默认头像都是"同一种不同深浅的品牌色"，
-    一眼就是生成的。真人论坛的默认头像从来不做渐变。 */
-export const avatarBg = () => "#16162e";
+/** 没有头像就是首字缩写：一块中性暖石色，实现与顶栏共用一个（auth.js）。
+    以前这里按名字取一段青→紫渐变，于是每个默认头像都是"同一种不同深浅的品牌色"。 */
+export const avatarBg = auth.avatarBg;
 /** 缺封面时不再画渐变——服务端已经会用这张图自己的体素画一张小地图，
     走到这里说明那张图真的是空的。空的就该看起来是空的：一张没落笔的方格纸。 */
 export const coverArt = () => "background-color:#161616;"
@@ -144,7 +142,10 @@ export function heroHtml(p) {
     <div class="cm-feature-body">
       <span class="cm-feature-kicker">${isModel ? "精选模型" : "精选地图"}</span>
       <h2>${esc(p.title)}</h2>
-      ${p.desc ? `<p>${esc(p.desc).slice(0, 150)}</p>` : ""}
+      ${p.desc ? `<p>${esc(p.desc).slice(0, 150)}</p>`
+        : (p.tags && p.tags.length ? `<div class="cm-tags">${p.tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>`
+          // 没简介也没标签：留一行诚实的话，而不是让右栏空出一大块看起来像坏了
+          : `<p class="cm-feature-none">作者没写简介 —— 直接开一局看看是什么。</p>`)}
       <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span>
         <em>· ${esc(timeAgo(p.updated || p.created))}发布</em></div>
       <div class="cm-feature-stats">

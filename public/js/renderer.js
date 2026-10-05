@@ -250,14 +250,14 @@ export class VoxelRenderer {
     this.sun.shadow.camera.near = 1; this.sun.shadow.camera.far = 600;
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.02;
     this.scene.add(this.sun); this.scene.add(this.sun.target);
-    this.fill = new THREE.DirectionalLight(0xbcd4ff, 0.5);
+    this.fill = new THREE.DirectionalLight(0xc2c6c4, 0.5);
     this.scene.add(this.fill);
-    this.hemi = new THREE.HemisphereLight(0xbcd4ff, 0x6b5a44, 0.65);
+    this.hemi = new THREE.HemisphereLight(0xc2c6c4, 0x6b5a44, 0.65);
     this.scene.add(this.hemi);
     this.ambient = new THREE.AmbientLight(0xffffff, 0.22);
     // 视角补光：跟着镜头走，专门负责"背对太阳的那一面"。
     // 没有它，官方那种大结构体的背面只剩环境光，直接糊成一块黑。
-    this.viewLight = new THREE.DirectionalLight(0xdce8ff, 0.42);
+    this.viewLight = new THREE.DirectionalLight(0xdad6cf, 0.42);
     this.scene.add(this.viewLight);
     this.scene.add(this.ambient);
 
@@ -274,7 +274,7 @@ export class VoxelRenderer {
     // DoubleSide 是必须的：水与水之间的面会被剔掉，水面那层法线朝上（+Y），
     // 单面材质从下往上看是背面 → 直接透明，潜到水下抬头等于没有水面。
     // 水面也吃顶点色：湖底与岸壁的接缝没有 AO 会像贴了一张塑料膜
-    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x8fd0ff, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false, side: THREE.DoubleSide, vertexColors: true });
+    this.waterMat = new THREE.MeshStandardMaterial({ color: 0x9cc9cf, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false, side: THREE.DoubleSide, vertexColors: true });
     this.glowMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     // 空气墙材质：编辑器半透明绿罩（运行时整层隐藏，见 setBarriersVisible）
     this.barrierMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.28, color: 0x6fdc7f, depthWrite: false });
@@ -301,7 +301,9 @@ export class VoxelRenderer {
     this.skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false,
       uniforms: {
-        top: { value: new THREE.Color(0x2f6fb0) }, bot: { value: new THREE.Color(0xbfe0ff) },
+        // 白天天空：饱和度压低、天底往暖白走。原来 top #2f6fb0 / bot #bfe0ff 是
+        // 一整片高饱和蓝，编辑器里它占 80% 面积，看久了比任何 UI 色都累眼。
+        top: { value: new THREE.Color(0x43688f) }, bot: { value: new THREE.Color(0xe4ddd0) },
         sunDir: { value: new THREE.Vector3(0.4, 0.6, 0.3) }, sunCol: { value: new THREE.Color(0xfff2cc) },
         night: { value: 0.0 }, uTime: { value: 0 },
       },
@@ -355,7 +357,7 @@ export class VoxelRenderer {
     });
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(1800, 32, 16), this.skyMat);
     this.scene.add(this.sky);
-    this.scene.fog = new THREE.Fog(0xbfe0ff, 120, 520);
+    this.scene.fog = new THREE.Fog(0xe4ddd0, 120, 520);
 
     // 拾取
     this.raycaster = new THREE.Raycaster();
@@ -458,7 +460,7 @@ vec2 fxTileRect(float t){
     const span = (v, d) => (Number.isFinite(+v) && +v > 0 ? +v : d);
     if (this._rain) {
       const R = this._rain;
-      R.pts.material.color.copy(colorOf(X.rainColor, 0xa8c8ff));
+      R.pts.material.color.copy(colorOf(X.rainColor, 0xbfc9cc));
       R.pts.material.size = span(X.rainSizeLo, 0.07);
       R.pts.material.opacity = clamp01(0.45 + this.weather.rain * 0.5);
       this._setPointCount(R, Math.round(200 + this.weather.rain * 2400));
@@ -495,7 +497,7 @@ vec2 fxTileRect(float t){
       this.scene.add(pts);
       return { pts, pos, geo, n, max: n };
     };
-    this._rain = mk(1800, 0.07, 0xa8c8ff, 0.8);
+    this._rain = mk(1800, 0.07, 0xbfc9cc, 0.8);
     this._snow = mk(1400, 0.16, 0xffffff, 0.95);
     this._rainPts = this._rain.pts; this._snowPts = this._snow.pts;
   }
@@ -574,7 +576,7 @@ vec2 fxTileRect(float t){
     const arr = [];
     for (let i = 0; i < pts.length - 1; i++) arr.push(...pts[i], ...pts[i + 1]);
     g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
-    const bolt = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xcfe8ff, transparent: true, opacity: 0.95 }));
+    const bolt = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xf2ede6, transparent: true, opacity: 0.95 }));
     this.scene.add(bolt);
     setTimeout(() => { this.scene.remove(bolt); g.dispose(); bolt.material.dispose(); }, 220);
   }
@@ -975,10 +977,10 @@ vec2 fxTileRect(float t){
       const z0 = Math.min(b.min[2], b.max[2]), z1 = Math.max(b.min[2], b.max[2]);
       const w = Math.max(0.02, x1 - x0), h = Math.max(0.02, y1 - y0), d = Math.max(0.02, z1 - z0);
       const geo = new THREE.BoxGeometry(w, h, d);
-      const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x4cc2ff, transparent: true, opacity: 0.1, depthWrite: false }));
+      const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xd94f5f, transparent: true, opacity: 0.1, depthWrite: false }));
       fill.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
       fill.renderOrder = 5;
-      const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x4cc2ff, transparent: true, opacity: 0.85 }));
+      const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xd94f5f, transparent: true, opacity: 0.85 }));
       edge.position.copy(fill.position);
       g.add(fill); g.add(edge);
     }
@@ -990,7 +992,7 @@ vec2 fxTileRect(float t){
     this._underwater = on;
     const f = this.scene.fog;
     if (on) {
-      const c = color == null ? 0x1b6f8f : color;
+      const c = color == null ? 0x2b6f78 : color;
       this._fogSave = f ? { hex: f.color.getHex(), near: f.near, far: f.far } : null;
       this._bgSave = this.scene.background;
       if (f) { f.color.setHex(c); f.near = 0.2; f.far = 34; }
@@ -1034,7 +1036,7 @@ vec2 fxTileRect(float t){
   }
 
   // 幽灵预览方块
-  setGhost(x, y, z, color = 0x66ccff) {
+  setGhost(x, y, z, color = 0xf0bd5e) {
     if (x == null) { if (this._ghost) this._ghost.visible = false; return; }
     if (!this._ghost) {
       this._ghost = new THREE.Mesh(new THREE.BoxGeometry(1.001, 1.001, 1.001),
@@ -1056,7 +1058,7 @@ vec2 fxTileRect(float t){
     if (!min) { if (this._sel) this._sel.visible = false; return; }
     if (!this._sel) {
       this._sel = new THREE.LineSegments(new THREE.BufferGeometry(),
-        new THREE.LineBasicMaterial({ color: 0x00e0ff, depthTest: false }));
+        new THREE.LineBasicMaterial({ color: 0xf0bd5e, depthTest: false }));
       this._sel.renderOrder = 6; this.scene.add(this._sel);
     }
     const [a, b] = [min, max];
