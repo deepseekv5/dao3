@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="editor.html">编辑器界面与命令</a><a href="testing.html">测试与验证</a><b class="grp">社区</b><a href="community.html">社区层</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a class="on" href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#感谢-box3lab-神奇代码岛">感谢 box3lab / 神奇代码岛</a><a class="t2" href="#感谢-three.js">感谢 three.js</a><a class="t2" href="#感谢-node-的标准库">感谢 Node 的标准库</a><a class="t2" href="#关于本项目与官方的关系">关于本项目与官方的关系</a><a class="t2" href="#也想感谢这几件具体的事">也想感谢这几件具体的事</a><a class="t2" href="#贡献">贡献</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#感谢-box3lab-神奇代码岛">感谢 box3lab / 神奇代码岛</a><a class="t2" href="#感谢-three.js">感谢 three.js</a><a class="t2" href="#感谢-cc0-的那台机甲">感谢 CC0 的那台机甲</a><a class="t2" href="#感谢-node-的标准库">感谢 Node 的标准库</a><a class="t2" href="#关于本项目与官方的关系">关于本项目与官方的关系</a><a class="t2" href="#也想感谢这几件具体的事">也想感谢这几件具体的事</a><a class="t2" href="#贡献">贡献</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/credits.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -52,6 +52,9 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>这三个仓库都是 Apache-2.0。<b>这不是&quot;抄了没关系&quot;的意思</b>：本仓库没有复制、 没有反编译任何官方源代码，实现全部是自己写的；官方开源的部分按 Apache-2.0 保留 LICENSE 并在 <a href="https://github.com/deepseekv5/dao3/blob/main/THIRD_PARTY_NOTICES.html" target="_blank" rel="noopener">THIRD_PARTY_NOTICES</a> 里逐条声明。</p>
 <h2 id="感谢-three.js">感谢 three.js</h2>
 <p><a href="https://github.com/mrdoob/three.js" target="_blank" rel="noopener">r160</a> 是本仓库唯一随包分发的第三方代码， MIT 授权。WebGL 那一层几乎所有麻烦——图集接缝、序列帧动画、实例化网格、 glTF 往返——它都已经解决过了。</p>
+<h2 id="感谢-cc0-的那台机甲">感谢 CC0 的那台机甲</h2>
+<p>「骨骼皮肤」这一类皮肤需要一台<b>真的带骨架</b>的人形模型来把链路跑通。 <a href="https://github.com/RamonLinares/atlas-09" target="_blank" rel="noopener">RamonLinares/atlas-09</a> 的七台机甲是 CC0 1.0（模型、贴图、骨架、动画全部 CC0，代码是 MIT），README 原话是 &quot;free for everyone to use, modify, redistribute, and sell… No attribution required&quot;。 本仓库带其中一台（<code>public/skins/atlas-09.glb</code>，授权全文在同目录）， 它的 18 根关节正好对上官方 <code>GameBodyPart</code> 的形状。</p>
+<p>不需要署名，但还是写在这里：没有这台模型，&quot;把经典人偶的姿态写到别人的骨架上&quot; 这件事就只能停在纸面上。</p>
 <h2 id="感谢-node-的标准库">感谢 Node 的标准库</h2>
 <p><code>node:http</code> + <code>node:zlib</code> + <code>node:fs</code> 就够撑起一个带持久化 REST API 的本地服务。 &quot;零第三方依赖&quot;能成立，是因为 Node 的内置面这些年确实够用了。</p>
 <h2 id="关于本项目与官方的关系">关于本项目与官方的关系</h2>

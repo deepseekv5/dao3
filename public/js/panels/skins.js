@@ -95,6 +95,12 @@ function applySkin(E, skin, notify) {
   // 六面体还是细节人偶，所以"设默认"必须把它一起写过去；而选中一套没贴图的皮肤
   // 时必须清掉——不然切过去还是上一张脸。
   if (skin.texture) cur.texture = skin.texture; else delete cur.texture;
+  // 骨骼皮肤同理：kind + 映射表 + 轴向 + 缩放是一组，缺一个就得整组清掉，
+  // 否则运行时会拿着上一台机甲的关节名去驱动这一台。
+  if (skin.kind === "rig" && skin.model) {
+    cur.kind = "rig"; cur.model = skin.model; cur.bones = skin.bones || {}; cur.axes = skin.axes || {};
+    if (skin.scale) cur.scale = skin.scale; else delete cur.scale;
+  } else { delete cur.kind; delete cur.model; delete cur.bones; delete cur.axes; delete cur.scale; }
   for (const s of E.state.meta.skins) s.default = s === skin;
   E.markDirty && E.markDirty();
   // 玩家面板的取色器要重新灌一次值，否则它显示的还是上一套皮肤
@@ -108,6 +114,39 @@ function previewOf(skin) {
   let url = _previewCache.get(key);
   if (!url) { url = renderDoll(skin.skin, { w: 210, h: 190 }); _previewCache.set(key, url); }
   return url;
+}
+
+/** 发布时随记录一起送出去的封面图：三类皮肤各有各的渲染器，取哪张算哪张。 */
+async function coverFor(s) {
+  if (s.cover) return s.cover;
+  if (s.texture) { try { return (await facePreview(s.texture)) || null; } catch { return null; } }
+  return previewOf(s);
+}
+
+/** 从皮肤社区取回一套：记录与资产都复制进本地，作者之后下架不影响这张图。 */
+async function importFromCommunity(E, skins, refresh, notify) {
+  const m = await import("../publish-skin.js");
+  let rows;
+  try { rows = await m.listCommunitySkins(); } catch (err) { notify(`皮肤社区读取失败：${String((err && err.message) || err)}`, true); return; }
+  if (!rows.length) { notify("皮肤社区还空着——先在任意一张卡的「⋯」里发布你的第一套"); return; }
+  listDialog({
+    title: "皮肤社区",
+    items: rows.map((p) => ({
+      label: p.title, hint: `${p.author ? p.author.name : "匿名"} · ${p.likes} 赞 · ${p.comments} 评论`, value: p,
+    })),
+    onPick: async (pub) => {
+      notify("正在取回这套皮肤…");
+      try {
+        const rec = await m.importCommunitySkin(pub, E);
+        const hit = skins.find((s) => s.from === pub.id && s.name === rec.name);
+        if (hit) Object.assign(hit, rec, { edited: Date.now() });
+        else skins.push(Object.assign(rec, { name: uniqueName(skins, rec.name) }));
+        E.markDirty && E.markDirty();
+        notify(`已取回「${rec.name}」`);
+        refresh();
+      } catch (err) { notify("取回失败：" + String((err && err.message) || err), true, 5000); }
+    },
+  });
 }
 
 function renderSkinPanel(ctx, skins) {
@@ -145,17 +184,26 @@ function renderSkinPanel(ctx, skins) {
   }
 
   function card(s) {
-    const img = h("img", { class: "pm-card-preview", src: s.texture ? FACE_PLACEHOLDER : previewOf(s), alt: s.name, loading: "lazy" });
-    if (s.texture) {
+    // 骨骼皮肤（机甲那类）的缩略图是导入时预览画布抓下来的一张 PNG；配色皮肤
+    // 由 WebGL 人偶现渲；贴图皮肤取展开图的正脸。三条各有各的渲染器，不能互相喂。
+    const img = h("img", { class: "pm-card-preview", src: s.cover || (s.texture ? FACE_PLACEHOLDER : previewOf(s)), alt: s.name, loading: "lazy" });
+    if (s.texture && !s.cover) {
       // 贴图皮肤用展开图的正脸当缩略图：WebGL 人偶渲染器只吃颜色，喂不出这张脸
       img.classList.add("is-mc");
       img.title = "Minecraft 皮肤 · 预览取展开图的正脸";
       facePreview(s.texture).then((url) => { if (url) img.src = url; });
+    } else if (s.kind === "rig") {
+      img.classList.add("is-rig");
+      img.title = "骨骼皮肤 · 关节映射见导入对话框";
     }
     const menuBtn = h("button", { class: "pm-card-more", type: "button", title: "更多操作", text: "⋮" });
     menuBtn.onclick = () => popMenu(menuBtn, [
       ["设为本图默认", () => { applySkin(E, s, notify); refresh(); }],
       ["重命名", () => renameSkin(E, skins, s, refresh, notify)],
+      ["发布到皮肤社区", async () => {
+        const c = await coverFor(s);
+        import("../publish-skin.js").then((m) => m.openSkinPublishDialog(Object.assign({}, s, { cover: c }), notify));
+      }],
       ["删除", () => {
         const i = skins.indexOf(s);
         if (i >= 0) skins.splice(i, 1);
@@ -191,6 +239,22 @@ function renderSkinPanel(ctx, skins) {
       h("button", {
         class: "pm-btn", type: "button", text: "上传皮肤图", title: "64×64 的 MC 皮肤展开图（PNG）",
         onclick: () => uploadSkinTexture(E, skins, refresh, notify),
+      }),
+      h("button", {
+        class: "pm-btn", type: "button", text: "骨骼皮肤", title: "带骨架的 .glb 模型（机甲那类），导入时把关节映射到官方 18 个 GameBodyPart",
+        onclick: () => importRigSkin(E, skins, refresh, notify),
+      }),
+      h("button", {
+        class: "pm-btn", type: "button", text: "内置机甲", title: "随包附带的 CC0 机甲骨骼皮肤，直接穿上",
+        onclick: () => listDialog({
+          title: "内置骨骼皮肤",
+          items: BUILTIN_RIGS.map((p) => ({ label: p.name, hint: p.hint, value: p })),
+          onPick: (p) => addBuiltinRig(E, skins, refresh, notify, p),
+        }),
+      }),
+      h("button", {
+        class: "pm-btn", type: "button", text: "皮肤社区", title: "浏览别人发布的皮肤，取回一套进本图库",
+        onclick: () => importFromCommunity(E, skins, refresh, notify),
       }),
       dirBtn, sortSel, search,
     ]),
@@ -362,6 +426,143 @@ function colorsFromVoxa(doc) {
     legR: pick(0, 0.42, 1) || DEFAULT_COLORS.legR,
   };
   return out;
+}
+
+/* ------------------------------ 骨骼皮肤（机甲那类） ------------------------------ */
+/** 导入一台带骨架的 glTF：存进本图资产 → 认关节 → 映射表 + 走路预览 → 进皮肤库。
+ *  预览必须是走路的：静着一张图，"前后摆"和"左右劈"看起来一模一样，
+ *  映射错了当时看不出来，进游戏才发现角色在横着劈叉走路。 */
+async function importRigSkin(E, skins, refresh, notify) {
+  const R = await import("../skin-rig.js");
+  const input = document.createElement("input");
+  input.type = "file"; input.accept = ".glb,.gltf,model/gltf-binary";
+  input.onchange = async () => {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    const wid = E.worldId || (E.state && E.state.meta && E.state.meta.id);
+    if (!wid) { notify("先打开一张图再导入骨骼皮肤：模型要存进这张图的资产目录", true); return; }
+    notify("正在把模型存进本图资产…");
+    let url;
+    try {
+      const buf = await f.arrayBuffer();
+      if (buf.byteLength > 24 * 1024 * 1024) throw new Error("模型超过 24 MB 上限");
+      const rel = "models/" + String(f.name).replace(/[^\w.\-一-龥]+/g, "_");
+      const r = await fetch(`/api/world/${wid}/asset?path=${encodeURIComponent(rel)}`, { method: "POST", body: buf });
+      if (!r.ok) throw new Error("资产写入失败：" + r.status);
+      url = `/assets/worlds/${wid}/${rel}`;
+    } catch (err) { notify("导入失败：" + String((err && err.message) || err), true, 5200); return; }
+    let scene, names, map;
+    try {
+      scene = await R.loadRigScene(url);
+      names = R.boneNames(scene);
+      map = R.autoMap(names);
+    } catch (err) { notify("这个 glb 读不出骨架：" + String((err && err.message) || err), true, 5200); return; }
+    rigDialog(E, skins, refresh, notify, R, { url, names, map, fileName: f.name });
+  };
+  input.click();
+}
+
+function rigDialog(E, skins, refresh, notify, R, init) {
+  const { url, names, fileName } = init;
+  const map = Object.assign({}, init.map);
+  let flip = 0, preview = null;
+  const ov = overlay();
+  const host = ov.box;
+  const nameInp = h("input", { class: "pm-input", type: "text", value: uniqueName(skins, String(fileName).replace(/\.(glb|gltf)$/i, "") || "机甲皮肤") });
+  const grid = h("div", { class: "pm-rigmap" });
+  const stage = h("div", { class: "pm-rigstage" });
+  const stat = h("div", { class: "pm-rigstat" });
+  const SLOT_LABEL = {
+    hips: "髋", torso: "胸/腰", neck: "颈", head: "头",
+    leftShoulder: "左肩", leftUpperArm: "左上臂", leftLowerArm: "左小臂", leftHand: "左手",
+    rightShoulder: "右肩", rightUpperArm: "右上臂", rightLowerArm: "右小臂", rightHand: "右手",
+    leftUpperLeg: "左大腿", leftLowerLeg: "左小腿", leftFoot: "左脚",
+    rightUpperLeg: "右大腿", rightLowerLeg: "右小腿", rightFoot: "右脚",
+  };
+  const rec = () => ({ model: url, bones: map, flip, scale: 1 });
+  const repaint = () => {
+    if (preview) preview.stop();
+    stage.replaceChildren();
+    preview = R.previewRig(stage, rec(), { w: 220, h: 250 });
+    const miss = R.missingJoints(map);
+    stat.replaceChildren(h("span", {
+      text: miss.length ? `还缺：${miss.join("、")}——缺的那段不会跟着动作走` : "十个驱动挂点全部认到了，走路/跑步/腾空都会跟着动",
+    }));
+    for (const sel of grid.querySelectorAll("select")) sel.value = map[sel.dataset.slot] || "";
+  };
+  for (const slot of R.SLOTS) {
+    const sel = h("select", { class: "pm-select", dataset: { slot } });
+    sel.appendChild(h("option", { value: "", text: "（不映射）" }));
+    for (const n of names) sel.appendChild(h("option", { value: n, text: n }));
+    sel.value = map[slot] || "";
+    sel.onchange = () => { map[slot] = sel.value; repaint(); };
+    grid.appendChild(h("label", { class: "pm-rigrow" }, [h("span", { text: SLOT_LABEL[slot] || slot }), sel]));
+  }
+  const flipBtn = h("button", { class: "pm-btn", type: "button", text: "朝向反了？翻 180°" });
+  flipBtn.onclick = () => { flip = flip ? 0 : -1; flipBtn.classList.toggle("on", !!flip); repaint(); };
+  host.replaceChildren(
+    h("div", { class: "pm-h small", text: "骨骼皮肤：关节映射" }),
+    h("div", { class: "pm-rigwrap" }, [grid, h("div", { class: "pm-rigside" }, [stage, stat, flipBtn])]),
+    h("label", { class: "pm-field" }, [h("span", { text: "皮肤名称" }), nameInp]),
+    h("div", { class: "pm-dialog-actions" }, [
+      h("button", { class: "pm-btn", type: "button", text: "取消", onclick: () => { if (preview) preview.stop(); ov.close(); } }),
+      h("button", {
+        class: "pm-btn primary", type: "button", text: "装进皮肤库",
+        onclick: () => {
+          const cover = preview ? preview.snap() : null;
+          if (preview) preview.stop();
+          const skin = makeSkin(uniqueName(skins, String(nameInp.value || "机甲皮肤").trim()), { ...DEFAULT_COLORS }, {
+            kind: "rig", model: url, bones: { ...map }, flip: flip || undefined, cover: cover || undefined,
+          });
+          skins.push(skin);
+          E.markDirty && E.markDirty();
+          ov.close();
+          notify(`已加入骨骼皮肤「${skin.name}」`);
+          refresh();
+        },
+      }),
+    ]),
+  );
+  repaint();
+}
+
+/* ------------------------------ 内置骨骼皮肤 ------------------------------ */
+// CC0 机甲（来源与授权见 THIRD_PARTY_NOTICES.md 与 docs/credits.md）。
+// 这份关节映射是实测出来的：这台模型没有 neck，其余十七个槽位一一对上，
+// 走路姿态下左右脚/左右手的位移方向与经典人偶同向（tmp/rig-probe.mjs 量的）。
+const BUILTIN_RIGS = [{
+  name: "ATLAS-09 机甲",
+  model: "/skins/atlas-09.glb",
+  hint: "CC0 · 18 关节 · 6.9 MB",
+  bones: {
+    hips: "pelvis", torso: "chest", head: "head",
+    leftShoulder: "shoulderL", leftUpperArm: "upper_armL", leftLowerArm: "forearmL", leftHand: "handL",
+    rightShoulder: "shoulderR", rightUpperArm: "upper_armR", rightLowerArm: "forearmR", rightHand: "handR",
+    leftUpperLeg: "thighL", leftLowerLeg: "shinL", leftFoot: "footL",
+    rightUpperLeg: "thighR", rightLowerLeg: "shinR", rightFoot: "footR",
+  },
+}];
+
+async function addBuiltinRig(E, skins, refresh, notify, preset) {
+  const hit = skins.find((s) => s.model === preset.model && String(s.name).startsWith(preset.name));
+  const skin = hit || makeSkin(uniqueName(skins, preset.name), { ...DEFAULT_COLORS },
+    { kind: "rig", model: preset.model, bones: Object.assign({}, preset.bones) });
+  if (!hit) { skins.push(skin); touch(skin); E.markDirty && E.markDirty(); }
+  applySkin(E, skin, notify);
+  refresh();
+  if (skin.cover) return;
+  // 缩略图异步补：先让它上身，再等一张走路预览的截图。
+  // 为了等预览而卡住点击，手感上就等于"按钮没反应"。
+  const R = await import("../skin-rig.js");
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-9999px;top:0";
+  document.body.appendChild(host);
+  const pv = R.previewRig(host, skin, { w: 210, h: 190 });
+  setTimeout(() => {
+    const url = pv.snap();
+    pv.stop(); host.remove();
+    if (url) { skin.cover = url; refresh(); }
+  }, 1200);
 }
 
 /* ------------------------------ 通用小弹窗 ------------------------------ */

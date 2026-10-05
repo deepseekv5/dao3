@@ -50,7 +50,24 @@ Apache-2.0 的上游仓库，可再分发；音频与赛道模型不随仓库分
       npm run build:atlas
 
 
-4. 随仓库分发、但需应用内确认才启用的官方内容
+4. CC0 机甲模型（骨骼皮肤预设）
+----------------------------------------
+    atlas-09   © Ramon Linares   CC0 1.0 Universal
+      https://github.com/RamonLinares/atlas-09
+
+    随仓库分发：public/skins/atlas-09.glb（6.9 MB，18 关节 skinned mesh + 10 条自带剪辑）
+    与 public/skins/LICENSE.CC0.txt（授权全文）。上游 README 原文：
+    "All seven mecha models are free for everyone to use, modify, redistribute, and sell,
+    for commercial or noncommercial purposes. No attribution or permission required."
+    模型 CC0、代码 MIT；本仓库只用模型，不引入它的查看器代码。
+
+    它作为「骨骼皮肤」这一类皮肤预设存在（玩家 → 项目皮肤库 → 内置机甲），
+    关节名与官方 18 个 GameBodyPart 的映射见 public/js/skin-rig.js 的说明与
+    test/skin.test.mjs 的实测断言。同一目录还能按上游 README 取另外六台，
+    用「骨骼皮肤」按钮自行导入即可，本仓库不预先塞 40 MB 进包里。
+
+
+5. 随仓库分发、但需应用内确认才启用的官方内容
 --------------------------------------------
 下列素材来自 dao3.fun 的内容服务（`static.dao3.fun/block/<CID>`），属于在线游戏内容，
 **不在任何开源许可之下**，版权归 box3lab 及其权利人。
@@ -99,7 +116,7 @@ sha256 → base58btc 重算 CID 校验内容一致（校验实现已用官方音
     未授权导致"读不到"时，实体仍会原样保存在地图里——读不到素材不会把数据弄丢。
 
 
-5. 与官方的关系
+6. 与官方的关系
 --------------
 本项目与 box3lab / 神奇代码岛（dao3.fun）官方**无任何隶属、授权或背书关系**。
 站点内每次首次进入都会展示同一份免责声明。

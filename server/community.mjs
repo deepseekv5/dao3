@@ -22,6 +22,14 @@ import { blockColors, renderCover, renderModelPreview } from "./covers.mjs";
 
 const PUB_ID_RE = /^[a-f0-9]{12,24}$/;
 const WORLD_ID_RE = /^[a-zA-Z0-9_-]{1,80}$/;
+// 官方 GameBodyPart 的 18 个槽位：骨骼皮肤那份"我们的槽 → 对方关节名"的映射表按它收。
+const SKIN_SLOT_NAMES = ["hips", "torso", "neck", "head",
+  "leftShoulder", "leftUpperArm", "leftLowerArm", "leftHand",
+  "rightShoulder", "rightUpperArm", "rightLowerArm", "rightHand",
+  "leftUpperLeg", "leftLowerLeg", "leftFoot",
+  "rightUpperLeg", "rightLowerLeg", "rightFoot"];
+// 运行时真正被姿态驱动的十个挂点（六块 + 四个二级关节），轴向覆盖表按它收。
+const SKIN_AXIS_NAMES = ["head", "body", "armL", "armR", "legL", "legR", "elbowL", "elbowR", "kneeL", "kneeR"];
 // 广场的主导航按玩法分，不按"精选/热门/新作"那种运营位分：
 // 玩家找的是"有没有能跑一圈的图"，不是被推荐。
 const CATEGORIES = ["竞速", "跑酷", "解谜", "生存", "角色扮演", "模拟经营", "创造", "对战", "恐怖", "休闲"];
@@ -100,6 +108,7 @@ function createStore(root) {
     pubCover: (id) => path.join(pubs, `${id}.cover.png`),
     pubPreview: (id) => path.join(pubs, `${id}.preview.png`),
     pubModelFile: (id) => path.join(pubs, `${id}.voxa.json`),
+    pubSkinFile: (id) => path.join(pubs, `${id}.skin.json`),
     pubAssets: (id) => path.join(pubs, `${id}.assets`),
   };
 }
@@ -282,7 +291,11 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     if (!s) return null;
     return s.startsWith("/api/community/uploads/") && !s.startsWith("//") ? s.slice(0, 120) : null;
   }
-  /** 皮肤：只留认识的键，颜色必须 #rrggbb，模型只能指向站内资产。 */
+  /** 站内资产路径：随包预设、用户上传、以及别的发布带进来的附件都算。
+   *  放行外链等于让每个访问者替作者去敲第三方的门，data: 则把几百 KB 塞进用户档案。 */
+  const ASSET_RE = /^\/(img\/skins\/|api\/community\/(uploads|pubs)\/|assets\/worlds\/)[A-Za-z0-9_.\/%?=&-]{1,180}$/;
+  const assetUrl = (v) => (typeof v === "string" && !v.startsWith("//") && ASSET_RE.test(v) ? v.slice(0, 200) : null);
+  /** 账号皮肤：只留认识的键，颜色必须 #rrggbb，资产只能指向站内。 */
   function normalizeSkin(v) {
     const src = v && typeof v === "object" ? v : {};
     const hex = (x, d) => (/^#[0-9a-fA-F]{6}$/.test(String(x)) ? String(x).toLowerCase() : d);
@@ -290,16 +303,78 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       skin: hex(src.skin, "#ffd7b0"), shirt: hex(src.shirt, "#5aa8e8"), pants: hex(src.pants, "#5b6c8e"),
       hair: hex(src.hair, "#6b4630"), shoe: hex(src.shoe, "#7b5441"),
     };
-    if (typeof src.model === "string" && !src.model.startsWith("//")
-      && /^(\/assets\/worlds\/|\/api\/community\/)[A-Za-z0-9_.\/%-]{1,160}$/.test(src.model)) out.model = src.model.slice(0, 160);
+    const model = assetUrl(src.model);
+    if (model) out.model = model;
     // MC 贴图皮肤：只认站内路径（随包预设 /img/skins/、用户上传 /api/community/uploads/）。
-    // 放行外链等于让每个账号访问别人主页时把自己的 IP 发给第三方，也让我们的
-    // WebGL 上下文去加载任意图；data: 则会把几百 KB 塞进用户档案，一并拒掉。
-    if (typeof src.texture === "string" && !src.texture.startsWith("//")
-      && /^\/(img\/skins\/|api\/community\/uploads\/)[A-Za-z0-9_.\/%-]{1,160}\.(png|jpe?g|webp)$/.test(src.texture)) {
-      out.texture = src.texture.slice(0, 180);
-    }
+    const texture = assetUrl(src.texture);
+    if (texture && /\.(png|jpe?g|webp)$/i.test(texture)) out.texture = texture;
     if (typeof src.name === "string") out.name = String(src.name).slice(0, 24);
+    // 骨骼皮肤（机甲那类）：kind + 关节映射 + 每根关节的摆动轴。运行时按它把人偶
+    // 的姿态写到对方骨架上，所以这三样必须能跟着账号走、也能从联机那边透传。
+    // 认不全关节（<6 根）就整组不当它是骨骼皮肤：半台机甲只躯干跟着动，比没有更难看。
+    if (out.model && src.kind === "rig") {
+      const bones = src.bones && typeof src.bones === "object" ? src.bones : {};
+      const map = {};
+      for (const k of SKIN_SLOT_NAMES) {
+        const v2 = String(bones[k] || "").slice(0, 48);
+        if (v2) map[k] = v2;
+      }
+      if (Object.keys(map).length >= 6) {
+        out.kind = "rig";
+        out.bones = map;
+        const axes = src.axes && typeof src.axes === "object" ? src.axes : {};
+        const amap = {};
+        for (const k of SKIN_AXIS_NAMES) {
+          const a = axes[k];
+          if (a && ["x", "y", "z"].includes(a.ax)) amap[k] = { ax: a.ax, sign: a.sign < 0 ? -1 : 1 };
+        }
+        if (Object.keys(amap).length) out.axes = amap;
+        const sc = Number(src.scale);
+        if (Number.isFinite(sc) && sc > 0.02 && sc < 50) out.scale = +sc.toFixed(4);
+        if (Number(src.flip) < 0) out.flip = -1;    // 手动把推导出来的朝向翻 180°
+      }
+    }
+    return out;
+  }
+  /** 皮肤库里那条记录（六块色 + 可选贴图/骨骼），发布到皮肤社区时吃这个。 */
+  function normalizeSkinDoc(v) {
+    const src = v && typeof v === "object" ? v : {};
+    const hex = (x, d) => (/^#[0-9a-fA-F]{6}$/.test(String(x)) ? String(x).toLowerCase() : d);
+    const out = { name: String(src.name || "未命名皮肤").trim().slice(0, 24) || "未命名皮肤" };
+    const six = src.skin && typeof src.skin === "object" ? src.skin : {};
+    out.skin = {
+      head: hex(six.head, "#ffd7b0"), body: hex(six.body, "#5aa8e8"),
+      armL: hex(six.armL, "#5aa8e8"), armR: hex(six.armR, "#5aa8e8"),
+      legL: hex(six.legL, "#5b6c8e"), legR: hex(six.legR, "#48566f"),
+    };
+    // 资产本体（贴图 PNG / 骨骼 GLB）不进这条记录：发布时按 base64 附件收进
+    // 这份快照自己的 .assets/ 目录，记录里只留指回它的站内路径。
+    const tex = assetUrl(src.texture);
+    if (tex && /\.(png|jpe?g|webp)$/i.test(tex)) out.texture = tex;
+    const mdl = assetUrl(src.model);
+    if (mdl && /\.(glb|gltf)$/i.test(mdl)) out.model = mdl;
+    // 骨骼那一大段必须"有模型 + 认得出至少 6 根关节"才成立，否则整组丢掉：
+    // kind 留着而 model/bones 空着，运行时读出来就是一个既不是人偶也不是机甲的怪胎。
+    const bones = src.bones && typeof src.bones === "object" ? src.bones : {};
+    const bmap = {};
+    for (const k of SKIN_SLOT_NAMES) {
+      const b = String(bones[k] || "").slice(0, 48);
+      if (b) bmap[k] = b;
+    }
+    if (src.kind === "rig" && out.model && Object.keys(bmap).length >= 6) {
+      out.kind = "rig";
+      out.bones = bmap;
+      const axes = src.axes && typeof src.axes === "object" ? src.axes : {};
+      const amap = {};
+      for (const k of SKIN_AXIS_NAMES) {
+        const a = axes[k];
+        if (a && ["x", "y", "z"].includes(a.ax)) amap[k] = { ax: a.ax, sign: a.sign < 0 ? -1 : 1 };
+      }
+      if (Object.keys(amap).length) out.axes = amap;
+      const sc = Number(src.scale);
+      if (Number.isFinite(sc) && sc > 0.02 && sc < 50) out.scale = +sc.toFixed(4);
+      if (Number(src.flip) < 0) out.flip = -1;
+    }
     return out;
   }
   const commentCard = (c, viewerId) => {
@@ -606,7 +681,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       const cat = CATEGORIES.includes(url.searchParams.get("cat")) ? url.searchParams.get("cat") : "";
       // 地图和模型混在一条流里时，模型永远排在后面：它没有"游玩"这个动作，
       // 热度天然低一截。给一个按类型切的开关，两边才谈得上都能被看到、被评论。
-      const kind = ["map", "model"].includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "";
+      const kind = ["map", "model", "skin"].includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "";
       let rows = livePubs();
       if (kind) rows = rows.filter((p) => (p.kind || "map") === kind);
       if (cat) {
@@ -631,7 +706,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     }
 
     if (seg[0] === "publish" && method === "POST") return login(() => {
-      const kind = body.kind === "model" ? "model" : "map";
+      const kind = body.kind === "model" ? "model" : body.kind === "skin" ? "skin" : "map";
       const t = screen(body.title, { field: "标题", max: 60 });
       const d = screen(body.desc, { field: "简介", max: 2000 });
       if (t.blocked) { reply.fail(400, t.reason); return true; }
@@ -642,6 +717,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         .map((x) => screen(x, { field: "标签", max: 16 }).clean.trim().slice(0, 16)).filter(Boolean).slice(0, 6);
 
       let shape = null, srcFile = null, bytes = 0, key = "";
+      let skinDoc = null, skinAttach = null;
       if (kind === "map") {
         const wid = String(body.worldId || "");
         if (!WORLD_ID_RE.test(wid)) { reply.fail(400, "worldId 不合法"); return true; }
@@ -650,6 +726,22 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         try { shape = JSON.parse(zlib.gunzipSync(fs.readFileSync(src))).shape || null; }
         catch { reply.fail(400, "世界存档读不出来，发布先取消"); return true; }
         srcFile = src; key = "map:" + wid;
+      } else if (kind === "skin") {
+        skinDoc = normalizeSkinDoc(body.skin);
+        const json = JSON.stringify(skinDoc);
+        if (json.length > 64 * 1024) { reply.fail(413, "皮肤记录太大（64 KB 上限）"); return true; }
+        // 贴图 PNG 与骨骼 GLB 走 base64 附件（和模型发布同一条通道）。
+        // 上限分开：一张 64×64 展开图几十 KB，而一台机甲是几 MB。
+        const b64size = (v) => (typeof v === "string" && v ? Math.floor(v.length * 3 / 4) : 0);
+        skinAttach = {
+          texture: typeof body.textureB64 === "string" && body.textureB64 ? body.textureB64 : null,
+          model: typeof body.modelB64 === "string" && body.modelB64 ? body.modelB64 : null,
+        };
+        if (b64size(skinAttach.texture) > 3 * 1024 * 1024) { reply.fail(413, "贴图超过 3 MB"); return true; }
+        if (b64size(skinAttach.model) > 24 * 1024 * 1024) { reply.fail(413, "骨骼模型超过 24 MB"); return true; }
+        key = "skin:" + String(body.slug || skinDoc.name).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").slice(0, 40);
+        bytes = Buffer.byteLength(json);
+        srcFile = { text: json, doc: skinDoc };
       } else {
         // 模型发布：VOXA 文档 + 可选 glb/vox 附件，都走 base64（同一个 JSON 通道，省一套 multipart）
         const doc = body.doc;
@@ -671,6 +763,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         const archive = store.verFile(id, v);
         if (kind === "map" && fs.existsSync(store.pubFile(id))) fs.copyFileSync(store.pubFile(id), archive);
         if (kind === "model" && fs.existsSync(store.pubModelFile(id))) fs.copyFileSync(store.pubModelFile(id), store.verFile(id, v) + ".voxa.json");
+        if (kind === "skin" && fs.existsSync(store.pubSkinFile(id))) fs.copyFileSync(store.pubSkinFile(id), store.verFile(id, v) + ".skin.json");
         versions.push({ v, ts: prev.updated || prev.created, note: String(body.note || "").slice(0, 200), bytes: prev.bytes, kind });
       }
       if (kind === "map") {
@@ -690,6 +783,25 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
           }
         }
         bytes = fs.statSync(store.pubFile(id)).size;
+      } else if (kind === "skin") {
+        // 附件先落盘，再把记录里的 texture/model 改写成指回这份快照自己的资产。
+        // 不改写的话，别人下载到的皮肤指向作者本机路径，装上去是空的。
+        const dir = store.pubAssets(id);
+        fs.mkdirSync(dir, { recursive: true });
+        const rec = Object.assign({}, srcFile.doc);
+        if (skinAttach.texture) {
+          fs.writeFileSync(path.join(dir, "texture.png"), Buffer.from(skinAttach.texture, "base64"));
+          rec.texture = `/api/community/pubs/${id}/asset?path=texture.png`;
+        }
+        if (skinAttach.model) {
+          fs.writeFileSync(path.join(dir, "model.glb"), Buffer.from(skinAttach.model, "base64"));
+          rec.model = `/api/community/pubs/${id}/asset?path=model.glb`;
+          rec.kind = "rig";        // 有 glb 附件才谈得上骨骼皮肤；下面那次白名单会再验一遍关节数
+        }
+        const json = JSON.stringify(normalizeSkinDoc(rec));      // 改写后再过一次白名单
+        fs.writeFileSync(store.pubSkinFile(id), json);
+        srcFile.text = json; srcFile.doc = JSON.parse(json);
+        bytes = Buffer.byteLength(json);
       } else {
         fs.writeFileSync(store.pubModelFile(id), srcFile.text);
         // 模型也要有预览：官方模型展厅里每张卡都是模型自己的 3D 渲染居中放在黑底上，
@@ -723,7 +835,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         plays: prev ? prev.plays || 0 : 0, likes: prev ? prev.likes || [] : [],
         version: prev ? (prev.version || 1) + 1 : 1, status: "live",
         bytes, shape, hasCover: fs.existsSync(store.pubCover(id)),
-        assets: prev ? prev.assets || 0 : (kind === "map" ? listFiles(store.pubAssets(id)).length : 0),
+        assets: prev && kind !== "skin" ? prev.assets || 0 : (kind === "map" || kind === "skin" ? listFiles(store.pubAssets(id)).length : 0),
         flagged: !!flagged,
       });
       docs.pubs.byId[id] = rec;
@@ -828,7 +940,13 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         reply.raw(200, fs.readFileSync(f), { "Content-Type": "application/json", "Cache-Control": "no-store" });
         return true;
       }
-
+      // 皮肤记录：广场的「应用到我的角色」和皮肤库的「下载」都读这一份
+      if (sub === "skin" && method === "GET") {
+        const f = store.pubSkinFile(p.id);
+        if (!fs.existsSync(f)) { reply.fail(404, "这不是皮肤发布"); return true; }
+        reply.raw(200, fs.readFileSync(f), { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        return true;
+      }
       // 快照按世界原格式送出：存的就是 gzip(JSON)，加上 Content-Encoding 让浏览器自己解
       if (sub === "world" && method === "GET") {
         const f = store.pubFile(p.id);
@@ -855,7 +973,8 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         if (!f.startsWith(dir + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { reply.fail(404, "快照里没有这个文件"); return true; }
         const ext = path.extname(f).toLowerCase();
         reply.raw(200, fs.readFileSync(f), {
-          "Content-Type": ext === ".png" ? "image/png" : ext === ".json" || ext === ".gltf" ? "application/json" : "application/octet-stream",
+          "Content-Type": ext === ".png" ? "image/png" : ext === ".glb" ? "model/gltf-binary"
+            : ext === ".json" || ext === ".gltf" ? "application/json" : "application/octet-stream",
           "Cache-Control": "public, max-age=3600",
         });
         return true;
@@ -965,6 +1084,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
           flagged: { pubs: pubs.filter((p) => p.flagged).length, comments: Object.values(docs.comments.byPub).flat().filter((c) => c.flagged).length },
           totals: {
             users: Object.keys(docs.users.byId).length, pubs: pubs.length, models: pubs.filter((p) => p.kind === "model").length,
+            skins: pubs.filter((p) => p.kind === "skin").length,
             comments: Object.values(docs.comments.byPub).reduce((a, v) => a + v.length, 0),
             plays: pubs.reduce((a, p) => a + (p.plays || 0), 0), reports: docs.reports.list.length,
             bytes: pubs.reduce((a, p) => a + (p.bytes || 0), 0),

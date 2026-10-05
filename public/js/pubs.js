@@ -99,20 +99,22 @@ const kfmt = (n) => {
 };
 export function cardHtml(p) {
   const isModel = p.kind === "model";
+  const isSkin = p.kind === "skin";
   // 卡片是可点的东西，就得能用键盘点到：role/tabindex + Enter，焦点环交给 CSS。
   return `<article class="cm-card" data-id="${esc(p.id)}" role="link" tabindex="0" aria-label="${esc(p.title)}">
     <div class="cm-thumb" ${p.hasCover || isModel ? "" : `style="${coverArt()}"`}>
       ${coverHtml(p)}
       <span class="cm-glyph">${esc((p.title || "?").slice(0, 1))}</span>
       ${isModel ? `<span class="cm-badge">模型</span>` : ""}
-      ${p.shape && !isModel ? `<span class="cm-shape">${esc(p.shape.join("×"))}</span>` : ""}
-      <span class="cm-play">${PLAY}</span>
+      ${isSkin ? `<span class="cm-badge">皮肤</span>` : ""}
+      ${p.shape && !isModel && !isSkin ? `<span class="cm-shape">${esc(p.shape.join("×"))}</span>` : ""}
+      ${isSkin || isModel ? "" : `<span class="cm-play">${PLAY}</span>`}
       <span class="cm-scrim"><span class="cm-t">${esc(p.title)}</span></span>
     </div>
     <div class="cm-lines">
       <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span></div>
       <div class="cm-views">
-        <span title="游玩">${EYE}${kfmt(p.plays)}</span>
+        <span title="${isSkin ? "取用" : "游玩"}">${EYE}${kfmt(p.plays)}</span>
         <span title="点赞">${HEART}${kfmt(p.likes)}</span>
         <span title="评论">${CHAT}${kfmt(p.comments)}</span>
       </div>

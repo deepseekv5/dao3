@@ -23,6 +23,18 @@
 MIT 授权。WebGL 那一层几乎所有麻烦——图集接缝、序列帧动画、实例化网格、
 glTF 往返——它都已经解决过了。
 
+## 感谢 CC0 的那台机甲
+
+「骨骼皮肤」这一类皮肤需要一台**真的带骨架**的人形模型来把链路跑通。
+[RamonLinares/atlas-09](https://github.com/RamonLinares/atlas-09) 的七台机甲是
+CC0 1.0（模型、贴图、骨架、动画全部 CC0，代码是 MIT），README 原话是
+"free for everyone to use, modify, redistribute, and sell… No attribution required"。
+本仓库带其中一台（`public/skins/atlas-09.glb`，授权全文在同目录），
+它的 18 根关节正好对上官方 `GameBodyPart` 的形状。
+
+不需要署名，但还是写在这里：没有这台模型，"把经典人偶的姿态写到别人的骨架上"
+这件事就只能停在纸面上。
+
 ## 感谢 Node 的标准库
 
 `node:http` + `node:zlib` + `node:fs` 就够撑起一个带持久化 REST API 的本地服务。

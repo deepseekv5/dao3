@@ -394,6 +394,61 @@ try {
   const onlyMap = await (await fetch(BASE + "/api/community/feed?sort=new&kind=map")).json();
   ok("广场能只看模型", onlyModel.rows.length > 0 && onlyModel.rows.every((r) => r.kind === "model"), JSON.stringify(onlyModel.rows.map((r) => r.kind)));
   ok("广场能只看地图", onlyMap.rows.length > 0 && onlyMap.rows.every((r) => !r.kind || r.kind === "map"), JSON.stringify(onlyMap.rows.map((r) => r.kind)));
+  /* ---------- 皮肤社区：发布 / 附件改写 / 分类 / 穿到账号上 ---------- */
+  const PNG1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const six = { head: "#112233", body: "#0a0a0a", armL: "#0b0b0b", armR: "#0c0c0c", legL: "#222222", legR: "#333333" };
+  const bones18 = { hips: "pelvis", torso: "chest", head: "head",
+    leftUpperArm: "upper_arm.L", rightUpperArm: "upper_arm.R", leftLowerArm: "forearm.L", rightLowerArm: "forearm.R",
+    leftHand: "hand.L", rightHand: "hand.R", leftUpperLeg: "thigh.L", rightUpperLeg: "thigh.R",
+    leftLowerLeg: "shin.L", rightLowerLeg: "shin.R", leftFoot: "foot.L", rightFoot: "foot.R" };
+  const skinPub = await A.call("POST", "/api/community/publish", {
+    kind: "skin", title: RUN + " 夜行机甲", slug: "night-mecha", desc: "把 CC0 机甲改成夜行色",
+    skin: { name: "夜行机甲", kind: "rig", model: "/assets/worlds/some/models/mecha.glb", skin: six, bones: bones18,
+      axes: { legL: { ax: "y", sign: -1 } }, scale: 0.8, flip: -1 },
+    textureB64: PNG1, modelB64: Buffer.from("glTF-fake-bytes").toString("base64"),
+  });
+  ok("皮肤能发布（第三类发布，不是把皮肤塞进模型流里）",
+    skinPub.status === 200 && skinPub.data.pub.kind === "skin", JSON.stringify(skinPub.data).slice(0, 160));
+  const skinId = skinPub.data.pub?.id;
+  const rec = await (await fetch(BASE + "/api/community/pubs/" + skinId + "/skin")).json();
+  // 附件必须落进这份快照自己的 .assets/，记录里那条路径也得改指回它自己：
+  // 不改写的话别人下载到的皮肤指向作者本机的世界目录，作者一删图就 404。
+  ok("皮肤记录里的资产路径被改写到自己这份快照上",
+    rec.model === `/api/community/pubs/${skinId}/asset?path=model.glb`
+    && rec.texture === `/api/community/pubs/${skinId}/asset?path=texture.png`, JSON.stringify(rec).slice(0, 200));
+  ok("骨骼皮肤的映射表整套往返：关节映射、摆动轴、缩放、朝向翻转都在",
+    rec.kind === "rig" && Object.keys(rec.bones).length === 15 && rec.axes.legL.ax === "y"
+    && rec.axes.legL.sign === -1 && rec.scale === 0.8 && rec.flip === -1, JSON.stringify(rec).slice(0, 220));
+  const glb = await fetch(BASE + `/api/community/pubs/${skinId}/asset?path=model.glb`);
+  ok("附件能取回，glb 的 Content-Type 不是 octet-stream",
+    glb.status === 200 && glb.headers.get("content-type") === "model/gltf-binary", glb.status + " " + glb.headers.get("content-type"));
+  const onlySkin = await (await fetch(BASE + "/api/community/feed?sort=new&kind=skin")).json();
+  ok("广场能只看皮肤", onlySkin.rows.length > 0 && onlySkin.rows.every((r) => r.kind === "skin"), JSON.stringify(onlySkin.rows.map((r) => r.kind)));
+  const mapSkin = await fetch(BASE + "/api/community/pubs/" + pubId + "/skin");
+  ok("地图发布没有皮肤记录，读它是 404 而不是空对象", mapSkin.status === 404, String(mapSkin.status));
+  // 越界与超大一律丢掉，但发布本身不能失败：静默改数据比报错更坏，所以前端会按返回值说
+  const bad = await A.call("POST", "/api/community/publish", {
+    kind: "skin", title: RUN + " 越界皮肤", slug: "bad-skin",
+    skin: { name: "越界", kind: "rig", model: "//evil.example.com/x.glb", skin: { head: "red", body: "#zzz" },
+      bones: { hips: "a" }, axes: { legL: { ax: "w", sign: 9 } }, scale: 1e9 },
+  });
+  const badRec = await (await fetch(BASE + "/api/community/pubs/" + bad.data.pub.id + "/skin")).json();
+  ok("外链资产、坏颜色、坏轴向、离谱缩放全被白名单挡掉",
+    !badRec.model && !badRec.kind && !badRec.axes && !badRec.scale
+    && badRec.skin.head === "#ffd7b0" && badRec.skin.body === "#5aa8e8", JSON.stringify(badRec).slice(0, 200));
+  // 穿到账号上：账号皮肤是"进任何一张图都这一身"，所以映射必须跟着账号走
+  const worn = await A.call("PATCH", "/api/community/me", {
+    skin: { skin: "#112233", shirt: "#0a0a0a", pants: "#222222", hair: "#6b4630", shoe: "#111111",
+      kind: "rig", model: `/api/community/pubs/${skinId}/asset?path=model.glb`, bones: bones18, scale: 0.8 },
+  });
+  ok("账号能穿骨骼皮肤（kind/model/bones 跟着账号走，联机也透传这一份）",
+    worn.data.user.skin.kind === "rig" && worn.data.user.skin.model.includes("model.glb")
+    && Object.keys(worn.data.user.skin.bones).length === 15, JSON.stringify(worn.data.user.skin).slice(0, 180));
+  const rigNoBones = await A.call("PATCH", "/api/community/me", {
+    skin: { kind: "rig", model: `/api/community/pubs/${skinId}/asset?path=model.glb`, bones: { hips: "pelvis" } },
+  });
+  ok("认不全关节（映射少于 6 根）就不认它是骨骼皮肤：宁可退回纯色，也不要半台机甲",
+    !rigNoBones.data.user.skin.kind && !rigNoBones.data.user.skin.bones, JSON.stringify(rigNoBones.data.user.skin).slice(0, 160));
   // 用 C：B 在上面那节刚登出过，到 414 行才重新登录
   const mCmt = await C.call("POST", `/api/community/pubs/${modelId}/comments`, { body: "这个模型的关节做得不错" });
   ok("模型也能被评论", mCmt.status === 200 && mCmt.data.row.body === "这个模型的关节做得不错", JSON.stringify(mCmt.data).slice(0, 140));
@@ -467,6 +522,7 @@ try {
 
   /* ---------- 收尾：把测试造的一次性世界删掉，测试发布下架 ---------- */
   await A.call("DELETE", `/api/community/pubs/${pubId}`);
+  for (const id of [skinId, bad.data.pub.id]) await A.call("DELETE", `/api/community/pubs/${id}`);
   for (const id of [TW, TW2, TW3]) await fetch(`${BASE}/api/world/${id}`, { method: "DELETE" });
   const gone = await (await fetch(BASE + "/api/worlds")).json();
   ok("一次性世界已清理", ![TW, TW2].some((id) => gone.worlds.some((w) => w.id === id)), TW);

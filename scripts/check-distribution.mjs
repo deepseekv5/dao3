@@ -26,8 +26,12 @@ const SHIPPED_MAP = "official-project/racing-template.json.gz";
 // 里面出现任何 .mp3/.gltf 依旧算越界，防止"顺手把别处的素材也带上"。
 const SHIPPED_ASSETS = "official-project/racing-assets/";
 // cids.json 是 824B 的哈希索引，.gitkeep 是空占位目录——都不是素材本体
+// public/skins/ 是第二类例外：CC0 的骨骼皮肤模型（授权全文就在同目录）。
+// 它必须随包，否则「内置机甲」这个入口在装完之后是空的；
+// 但例外只开这一个前缀，别处再冒出 .glb 依旧算越界。
+const SHIPPED_MODELS = "public/skins/";
 const OK_OVERRIDE = (p) => p.endsWith("cids.json") || p.endsWith(".gitkeep")
-  || p === SHIPPED_MAP || p.startsWith(SHIPPED_ASSETS);
+  || p === SHIPPED_MAP || p.startsWith(SHIPPED_ASSETS) || p.startsWith(SHIPPED_MODELS);
 
 const SECRET_RES = [
   /ghp_[A-Za-z0-9]{20,}/,
@@ -85,6 +89,7 @@ const REQUIRED = [
   "public/vendor/three/three.module.js", "public/vendor/three/GLTFLoader.js",
   "public/vendor/three/GLTFExporter.js", "public/vendor/three/OrbitControls.js",
   "public/vendor/three/LICENSE", "public/vendor/utils/BufferGeometryUtils.js",
+  "public/skins/atlas-09.glb",
   "public/data/block-atlas.png", "public/data/block-atlas.json",
   "public/data/api-members.json", "public/data/api-methods.json", "public/data/api-impl.json",
   // AI 写代码的规范正文就从这一份里取签名与官方中文说明；丢了它前端会退到

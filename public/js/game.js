@@ -607,6 +607,9 @@ export class GameRuntime {
     // 必须挂到 ent._avatar：_updateAvatar 是按这个字段找骨架的。以前只 add 进 _obj
     // 就完事，于是别人的分身从头到尾一根手指都没动过——联机时"我走路他站着"就是这么来的。
     ent._avatar = avatar;
+    // 别人穿的是骨骼皮肤时同样要换下来：联机传的是账号皮肤整份记录，
+    // 只认经典人偶的话，机甲只有作者自己看得见，队友看到的还是默认小人。
+    if (p.skin && p.skin.kind === "rig" && p.skin.model) this._mountRig(ent, p.skin, avatar);
     ent._netAnim = typeof p.a === "string" && p.a ? p.a : "idle";
     ent._obj.rotation.y = Number(p.r) || 0;
     const peer = { ent, tx: at.slice(), ry: 0, anim: ent._netAnim,
@@ -1130,11 +1133,12 @@ export class GameRuntime {
     return look;
   }
 
-  /** 装角色：贴图和纯色是两套几何（MC 展开图贴到圆角细节人偶上会挤变形），
-   *  所以换皮肤时整个换掉，而不是改材质。 */
+  /** 装角色：贴图、纯色、骨骼（机甲那类）是三套几何，换皮肤时整个换掉而不是改材质。 */
   _mountAvatar(ent, look) {
     if (ent._avatar) {
-      ent._avatar.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+      if (!ent._avatar.userData.rigSkin) {
+        ent._avatar.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+      }
       ent._obj.remove(ent._avatar);
     }
     const avatar = makeAvatar(look);
@@ -1148,7 +1152,23 @@ export class GameRuntime {
     ent._avatar = avatar;
     ent._skinTexture = String((look && look.texture) || "");
     this._frameScaleCache = null;   // 身形换了，之前量的包围盒作废
+    // 骨骼皮肤要异步取模型：先让经典人偶站着，加载完再换下来。
+    // 反过来（先空着等模型）的话，网络一慢角色就凭空消失几秒，看着像游戏坏了。
+    if (look && look.kind === "rig" && look.model) this._mountRig(ent, look, avatar);
     return avatar;
+  }
+  async _mountRig(ent, look, placeholder) {
+    const R = await import("./skin-rig.js").catch(() => null);
+    if (!R) return;
+    let av = null;
+    try { av = await R.buildRigAvatar(look); } catch (e) { console.warn("[skin] 骨骼皮肤加载失败", e && e.message); return; }
+    if (!av || ent._avatar !== placeholder) return;   // 期间又换了一次皮肤或重生了，这一份作废
+    ent._obj.remove(placeholder);
+    placeholder.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+    av.rotation.y = Math.PI;                          // 与经典人偶同一套"背对镜头"约定
+    ent._obj.add(av);
+    ent._avatar = av;
+    this._frameScaleCache = null;
   }
 
   // 「玩家」面板存的是官方字段名与单位；须在脚本执行前套用，让脚本拥有最终覆盖权
@@ -3011,6 +3031,9 @@ const ZERO = new GameVector3();
   // 把 skin / skinInvisible 两份官方状态真正落到人偶的 6 块挂点上
   _applySkinLook(p, ent) {
     const av = ent && ent._avatar;
+    // 骨骼皮肤（机甲）不参与分部位染色：它的颜色是模型自己的材质，
+    // 而 parts 里放的是姿态代理、不是 Object3D，往下走会在 node.traverse 上抛错。
+    if (av && av.userData.rigSkin) return;
     const parts = av && av.userData && av.userData.parts;
     if (!parts) return;
     const cc = p && p.color ? colorTriple(p.color) : null;

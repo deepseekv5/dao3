@@ -48,7 +48,7 @@
 | 脚本 | 多文件 JS 编辑 + 诊断 + 控制台 + AI | [ai](ai.md) |
 | 界面 | 客户端 UI 树（官方 ClientAPI 那套节点） | [api-compat](api-compat.md) |
 | 商城 | 商品表：名称/价格/发放内容 | [api-compat](api-compat.md) |
-| 玩家 | 出生点、外观、皮肤库、14 个玩家音效、虚拟按键 | [physics](physics.md) |
+| 玩家 | 出生点、外观、皮肤库（纯色 / MC 贴图 / 骨骼机甲三类）、14 个玩家音效、虚拟按键 | [community](community.md) |
 | 代码包 | 项目包文件视图：从 CID 取回、逐文件读写 | [skill](skill.md) |
 
 ## VOXA 建模器：模型工作区里那四块

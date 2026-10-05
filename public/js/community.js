@@ -14,7 +14,8 @@ const $ = (id) => document.getElementById(id);
 /* ---------------- 广场 ---------------- */
 const FEED_TABS = [["new", "最新"], ["hot", "最热"], ["following", "关注"]];
 // 不写"全部"那一格：上面那行分类已经有一个"全部"了，同一屏出现两个同义词的开关，谁都要想一下。
-const FEED_KINDS = [["map", "地图"], ["model", "模型"]];
+const FEED_KINDS = [["map", "地图"], ["model", "模型"], ["skin", "皮肤"]];
+const KIND_NOUN = { map: "地图", model: "模型", skin: "皮肤" };
 let feed = { sort: "new", cat: "", kind: "", q: "", offset: 0, total: 0, rows: [], cats: [] };
 
 async function feedView() {
@@ -78,7 +79,7 @@ async function loadFeed(reset) {
   feed.total = r.total;
   feed.rows = feed.rows.concat(r.rows);
   feed.offset = r.rows.length;
-  const noun = feed.kind === "model" ? "模型" : feed.kind === "map" ? "地图" : "作品";
+  const noun = KIND_NOUN[feed.kind] || "作品";
   const title = $("cmSectTitle");
   if (title) title.textContent = feed.cat ? `${feed.cat} · ${noun}` : (feed.q ? `“${feed.q}”的搜索结果` : `全部${noun}`);
   grid.innerHTML = feed.rows.length ? feed.rows.map(cardHtml).join("") : `<div class="cm-empty" style="grid-column:1/-1">
@@ -102,6 +103,50 @@ async function loadFeed(reset) {
 }
 
 
+/* ---------------- 皮肤社区：取用 ---------------- */
+/** 社区那份皮肤记录 → 账号皮肤（五键 + 骨骼扩展键）。
+ *  只有记录里有的来源才覆盖：六块色里没有"头发"这一格，硬覆盖会把用户的头发刷成默认棕。 */
+function toAccountSkin(cur, doc) {
+  const six = (doc && doc.skin) || {};
+  const out = Object.assign({}, cur || {});
+  if (six.head) out.skin = six.head;
+  if (six.body) out.shirt = six.body;
+  if (six.legL) out.pants = six.legL;
+  if (six.legR) out.shoe = six.legR;
+  if (doc.texture) out.texture = doc.texture; else delete out.texture;
+  if (doc.model) out.model = doc.model; else delete out.model;
+  if (doc.kind === "rig") { out.kind = "rig"; out.bones = doc.bones || {}; out.axes = doc.axes || {}; if (doc.scale) out.scale = doc.scale; }
+  else delete out.kind;
+  out.name = String(doc.name || "").slice(0, 24);
+  return out;
+}
+
+/** 应用到账号：进任何一张图都穿着它，联机时别人看你也是这一身。 */
+async function applyCommunitySkin(p, btn) {
+  if (!requireLogin()) return;
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  btn.textContent = "正在取用…";
+  try {
+    const r = await fetch(`/api/community/pubs/${p.id}/skin`);
+    if (!r.ok) throw new Error(r.status === 404 ? "这份发布不是皮肤" : "皮肤记录读不出来");
+    const doc = await r.json();
+    const res = await api("PATCH", "/api/community/me", { skin: toAccountSkin(auth.me && auth.me.skin, doc) });
+    auth.setMe(res.user);
+    // 服务端会丢掉它不认的键（越界路径、超大映射表）。丢了却说"已应用"，
+    // 用户进图才发现还是原来那张脸，只会以为我们没接上。
+    const lost = (doc.model && !res.user.skin.model) || (doc.texture && !res.user.skin.texture);
+    toast(lost ? `已应用配色，但资产没被接受（只认站内路径）` : `已穿上「${doc.name || p.title}」`, lost, 4200);
+    api("POST", `/api/community/pubs/${p.id}/play`).catch(() => { });
+    btn.innerHTML = label;
+    btn.disabled = false;
+  } catch (e) {
+    toast("应用失败：" + (e.message || e), true, 4200);
+    btn.innerHTML = label;
+    btn.disabled = false;
+  }
+}
+
 /* ---------------- 详情页 ---------------- */
 async function pubView(id) {
   root.innerHTML = `<div class="cm-empty">正在读取这张地图…</div>`;
@@ -117,7 +162,7 @@ async function pubView(id) {
     <div>
       <section class="cm-hero">
         <div class="pic${p.hasCover ? "" : " none"}"${p.hasCover ? "" : ` style="${coverArt(p)}"`}>${coverHtml(p)}<span class="glyph">${esc((p.title || "?").slice(0, 1))}</span>
-          <div class="cap"><h2>${esc(p.title)}</h2><div class="kind">${p.kind === "model" ? "模型" : "地图"} · ${esc(timeAgo(p.created))}发布</div></div>
+          <div class="cap"><h2>${esc(p.title)}</h2><div class="kind">${esc(KIND_NOUN[p.kind] || "地图")} · ${esc(timeAgo(p.created))}发布</div></div>
         </div>
         <div class="meta">
           ${p.desc ? `<p class="lead">${esc(p.desc)}</p>` : `<p class="lead none">作者没写简介。进去跑一圈比看文字快。</p>`}
@@ -140,15 +185,19 @@ async function pubView(id) {
         ${a ? `<div class="cm-acts" id="cmAuthorActs"></div>` : ""}
       </div>
       <div class="cm-panel">
-        <h4>这张地图</h4>
+        <h4>这张${KIND_NOUN[p.kind] || "地图"}</h4>
         <div class="cm-acts" id="cmPubActs">
-          <button class="cm-btn primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>
+          ${p.kind === "skin"
+            ? `<button class="cm-btn primary" id="cmApply" title="写进你的账号皮肤：进任何一张图都穿着它，别人看你也是">${icons.HEART}应用到我的角色</button>`
+            : `<button class="cm-btn primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>`}
           <button class="cm-btn ${p.likedByMe ? "on" : ""}" id="cmLike">${icons.HEART}点赞 <b>${p.likes}</b></button>
           ${p.kind === "model"
             ? `<button class="cm-btn" id="cmPull">${icons.DOWN}取回到模型库</button>`
-            : `<button class="cm-btn" id="cmFork">${icons.DOWN}存为我的地图</button>`}
+            : p.kind === "skin"
+              ? `<button class="cm-btn" id="cmDl">${icons.DOWN}下载皮肤文件</button>`
+              : `<button class="cm-btn" id="cmFork">${icons.DOWN}存为我的地图</button>`}
           ${d.canEdit ? `<button class="cm-btn" id="cmEdit">编辑简介</button><button class="cm-btn" id="cmUnpub">下架</button>` : ""}
-          ${d.canEdit ? "" : `<button class="cm-report" id="cmReport">举报这张${p.kind === "model" ? "模型" : "地图"}</button>`}
+          ${d.canEdit ? "" : `<button class="cm-report" id="cmReport">举报这张${KIND_NOUN[p.kind] || "地图"}</button>`}
         </div>
         ${p.version > 1 ? `<div style="margin-top:10px"><h4 style="margin:0 0 4px;font-size:11px;color:var(--fg3)">版本 ${p.version}</h4><div class="cm-ver" id="cmVer"></div></div>` : ""}
       </div>
@@ -175,11 +224,28 @@ async function pubView(id) {
     const host = $("cmAlso");
     if (host && rows.length) { host.innerHTML = railHtml("接下来试试", rows); bindCards(host); }
   }).catch(() => { });
-  $("cmPlay").onclick = () => playPub(p);
+  const playBtn = $("cmPlay");
+  if (playBtn) playBtn.onclick = () => playPub(p);
   const fork = $("cmFork");
   if (fork) fork.onclick = () => materialize(p, { keep: true });
   const pull = $("cmPull");
   if (pull) pull.onclick = () => pullModel(p, pull);
+  const apply = $("cmApply");
+  if (apply) apply.onclick = () => applyCommunitySkin(p, apply);
+  const dl = $("cmDl");
+  if (dl) dl.onclick = async () => {
+    dl.disabled = true;
+    try {
+      const r = await fetch(`/api/community/pubs/${p.id}/skin`);
+      if (!r.ok) throw new Error(await r.text());
+      const blob = new Blob([await r.text()], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = (p.title || "skin") + ".skin.json"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      api("POST", `/api/community/pubs/${p.id}/play`).catch(() => { });
+    } catch (e) { toast("下载失败：" + e.message, true); }
+    dl.disabled = false;
+  };
   $("cmLike").onclick = async () => {
     if (!requireLogin()) return;
     try {
