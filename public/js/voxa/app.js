@@ -173,6 +173,18 @@ class VoxaApp {
     // 高亮层容量有限，超出时由渲染层回一句，别让用户自己猜"是不是没选中"
     this.view.onClamp = (total, drawn) => this.tip(`选区 ${total} 格，高亮只画前 ${drawn} 格（选中的都还在，操作照常）`);
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
+    // 官方三篇 shortcutKeys 整篇讲的都是鼠标右键：未选中时右键是创建菜单，
+    // 选中时是部件编辑菜单，骨骼列表右键有"添加子骨骼"。我们以前只 preventDefault，
+    // 于是那套交互模型整个不存在。右键同时是"转视角"，所以按着拖过就不算要菜单。
+    let rmb = null;
+    cv.addEventListener("pointerdown", (e) => { if (e.button === 2) rmb = { x: e.clientX, y: e.clientY }; });
+    cv.addEventListener("pointerup", (e) => {
+      if (e.button !== 2 || !rmb) return;
+      const moved = Math.hypot(e.clientX - rmb.x, e.clientY - rmb.y);
+      rmb = null;
+      if (moved > 4) return;
+      this.contextMenu(e);
+    });
     cv.addEventListener("pointerdown", (e) => this.onDown(e));
     cv.addEventListener("pointermove", (e) => this.onMove(e));
     window.addEventListener("pointerup", (e) => this.onUp(e));
@@ -702,7 +714,11 @@ class VoxaApp {
       // 快照必须拍在改动之前。以前拍在 onUp（也就是改动之后），
       // 于是"撤销一步"回到的是拖完的状态，要撤两步才回到拖之前——读起来就是撤销不干净。
       this.snapshot(this.tool === "move" ? "移动部件" : this.tool === "rot" ? "旋转部件" : "缩放部件");
-      this.drag = { kind: this.tool, part: hit.part, x: e.clientX, y: e.clientY, pos: hit.part.pos.slice(), rot: hit.part.rot.slice(), scale: hit.part.scale.slice() };
+      // 编组必须真的整组变换，否则它只是个标签：命中一个成员，同组的一起跟着走
+      const parts = this.dragTargets(hit.part);
+      this.drag = { kind: this.tool, part: hit.part,
+        parts: parts.map((q) => ({ p: q, pos: q.pos.slice(), rot: q.rot.slice(), scale: q.scale.slice() })),
+        x: e.clientX, y: e.clientY, pos: hit.part.pos.slice(), rot: hit.part.rot.slice(), scale: hit.part.scale.slice() };
       this.renderParts();
       return;
     }
@@ -749,31 +765,41 @@ class VoxaApp {
       this.view.showSelection(this.selection);
       return;
     }
+    const each = (fn) => { for (const it of (d.parts || [{ p: d.part, pos: d.pos, rot: d.rot, scale: d.scale }])) fn(it); };
     if (d.kind === "move") {
       const dx = (e.clientX - d.x) * 0.08, dy = (e.clientY - d.y) * 0.08;
-      if (this.space === "world") {
-        // 世界系：屏幕位移加在"世界读数"上，再换算回部件局部值。
-        // 部件绑在转过/移过的骨骼上时，这两种拖法的结果明显不同——那才是这个开关的意义。
-        const w = d.world || (d.world = this.view.partWorldPos(d.part));
-        d.part.pos = this.view.partPosFromWorld(d.part, [w[0] + dx, w[1] - dy, w[2]]);
-      } else {
-        d.part.pos = [+(d.pos[0] + dx).toFixed(2), +(d.pos[1] - dy).toFixed(2), d.pos[2]];
-      }
-      this.view.applyPartTransform(d.part);
+      each((it) => {
+        if (this.space === "world") {
+          // 世界系：屏幕位移加在"世界读数"上，再换算回部件局部值。
+          // 部件绑在转过/移过的骨骼上时，这两种拖法的结果明显不同——那才是这个开关的意义。
+          const w = it.world || (it.world = this.view.partWorldPos(it.p));
+          it.p.pos = this.view.partPosFromWorld(it.p, [w[0] + dx, w[1] - dy, w[2]]);
+        } else {
+          it.p.pos = [+(it.pos[0] + dx).toFixed(2), +(it.pos[1] - dy).toFixed(2), it.pos[2]];
+        }
+        this.view.applyPartTransform(it.p);
+      });
       this.view.rebuildBoxes();
       this.syncPropVecs();
       return;
     }
     if (d.kind === "rot") {
-      d.part.rot = [d.rot[0], +(d.rot[1] + (e.clientX - d.x) * 0.6).toFixed(1), d.rot[2]];
-      this.view.applyPartTransform(d.part);
+      const dz = (e.clientX - d.x) * 0.6;
+      each((it) => {
+        it.p.rot = [it.rot[0], +(it.rot[1] + dz).toFixed(1), it.rot[2]];
+        this.view.applyPartTransform(it.p);
+      });
+      this.view.rebuildBoxes();
       this.syncPropVecs();
       return;
     }
     if (d.kind === "scale") {
-      const s = clamp(d.scale[0] * (1 + (e.clientX - d.x) * 0.004), 0.05, 20);
-      d.part.scale = [s, s, s];
-      this.view.applyPartTransform(d.part);
+      const k = 1 + (e.clientX - d.x) * 0.004;
+      each((it) => {
+        it.p.scale = it.scale.map((v) => clamp(+(v * k).toFixed(3), 0.05, 20));
+        this.view.applyPartTransform(it.p);
+      });
+      this.view.rebuildBoxes();
       this.syncPropVecs();
       return;
     }
@@ -910,6 +936,19 @@ class VoxaApp {
         this.view.setActivePart(p);
         this.renderParts(); this.renderProps();
       };
+      row.oncontextmenu = (e) => {
+        e.preventDefault();
+        this.activePart = p; this.view.setActivePart(p); this.renderParts(); this.renderProps();
+        const g = this.groupOf(p);
+        this.menuAt(e.clientX, e.clientY, [
+          { label: "编辑部件（进体素）", run: () => this.setInPart(true) },
+          { label: "复制部件", run: () => { this.picked.clear(); this.picked.add(p); $("vxDupPart").click(); } },
+          { label: "重命名", run: () => this.renamePart(p) },
+          g ? { label: `解组「${g.name}」`, run: () => this.ungroup(p) } : { label: "编组（先按住 ⌘/Ctrl 点选）", run: () => $("vxGroup").click() },
+          { sep: true },
+          { label: "删除部件", danger: true, run: () => this.removePart(p) },
+        ]);
+      };
       row.ondblclick = () => {
         const inp = row.querySelector(".vi-name");
         // 撤销要拍在改名**之前**：先改再拍，按一次 Ctrl+Z 撤回来的已经是改完的名字了
@@ -935,9 +974,21 @@ class VoxaApp {
           <button class="vb-child" title="添加子骨骼">＋</button><button class="vi-del">✕</button>`;
         row.onclick = (e) => {
           if (e.target.classList.contains("vb-child")) { this.snapshot("子骨骼"); const nb = addBone(this.doc, "Bone", b); this.activeBone = nb; this.view.buildBones(); this.renderBones(); return; }
-          if (e.target.classList.contains("vi-del")) { this.snapshot("删除骨骼"); removeBone(this.doc, b.id); this.activeBone = this.doc.bones[0]; this.view.buildBones(); this.renderAll(); return; }
+          if (e.target.classList.contains("vi-del")) return this.removeBone(b);
           this.activeBone = b;
           this.renderBones(); this.renderProps();
+        };
+        // 官方骨骼列表右键（截图 232039）：添加子骨骼 / 复制 / 重命名 / 删除
+        row.oncontextmenu = (e) => {
+          e.preventDefault();
+          this.activeBone = b; this.renderBones(); this.renderProps();
+          this.menuAt(e.clientX, e.clientY, [
+            { label: "添加子骨骼", run: () => { this.snapshot("子骨骼"); const nb = addBone(this.doc, "Bone", b); this.activeBone = nb; this.view.buildBones(); this.renderBones(); this.dirty(); } },
+            { label: "复制骨骼", run: () => this.cloneBone(b) },
+            { label: "重命名", run: () => this.renameBone(b) },
+            { sep: true },
+            { label: "删除骨骼", danger: true, run: () => this.removeBone(b) },
+          ]);
         };
         row.ondblclick = () => {
           const el = row.querySelector(".vb-name");
@@ -1377,6 +1428,107 @@ class VoxaApp {
     this.renderTimeline();
     this.dirty();
     if (n === 1) this.view.resetPose();
+  }
+  /** 编组要真的能整组变换，否则它只是个标签。
+   *  命中一个成员就把同组可见成员一起带上；参数面板仍显示被点的那个。 */
+  dragTargets(p) {
+    if (!p || !p.group) return [p];
+    const g = (this.doc.groups || []).find((x) => x.id === p.group);
+    if (!g) return [p];
+    const ids = new Set(g.partIds);
+    const list = this.doc.parts.filter((x) => ids.has(x.id) && x.visible !== false);
+    return list.length ? list : [p];
+  }
+  groupOf(p) { return p && p.group && (this.doc.groups || []).find((g) => g.id === p.group); }
+  ungroup(p) {
+    const g = this.groupOf(p);
+    if (!g) return this.tip("这个部件不在任何组里");
+    this.snapshot("解组");
+    for (const x of this.doc.parts) if (x.group === g.id) x.group = null;
+    this.doc.groups = (this.doc.groups || []).filter((x) => x !== g);
+    this.renderParts(); this.dirty();
+    this.tip(`已解组「${g.name}」`);
+  }
+  /** 改名一律复用列表行上的就地编辑，不再做第二个输入框 */
+  renamePart(p) {
+    this.activePart = p; this.renderParts();
+    const row = [...document.querySelectorAll("#vxParts .vx-item")][this.doc.parts.indexOf(p)];
+    const nm = row && row.querySelector(".vi-name");
+    if (!nm) return;
+    this.snapshot("重命名");
+    nm.contentEditable = "true"; nm.focus();
+    nm.onblur = () => { p.name = nm.textContent.trim() || p.name; nm.contentEditable = "false"; this.renderParts(); this.renderProps(); };
+  }
+  cloneBone(b) {
+    this.snapshot("复制骨骼");
+    const c = addBone(this.doc, b.name + "-copy", b.parent);
+    c.position = b.position.slice(); c.rotation = b.rotation.slice(); c.scale = b.scale.slice();
+    this.activeBone = c;
+    this.view.buildBones(); this.renderAll(); this.dirty();
+    return c;
+  }
+  renameBone(b) {
+    this.activeBone = b; this.renderBones();
+    const row = [...document.querySelectorAll("#vxBones .vx-item")][this.doc.bones.indexOf(b)];
+    // 骨骼行用的是 .vb-name（部件行才是 .vi-name），两处都试一下，别静默什么都不做
+    const nm = row && (row.querySelector(".vb-name") || row.querySelector(".vi-name"));
+    if (!nm) return;
+    this.snapshot("重命名骨骼");
+    nm.contentEditable = "true"; nm.focus();
+    nm.onblur = () => { b.name = nm.textContent.trim() || b.name; nm.contentEditable = "false"; this.renderAll(); };
+  }
+  removeBone(b) {
+    if (b.id === "root") return this.tip("Root 骨骼不能删");
+    const kids = childBones(this.doc, b.id).length;
+    const bound = this.doc.parts.filter((p) => p.bone === b.id).length;
+    if (!confirm(`删除骨骼「${b.name}」？` + (kids ? ` ${kids} 根子骨骼` : "") + (bound ? `、${bound} 个部件的绑定` : "") + "会一起处理掉。")) return;
+    this.snapshot("删除骨骼");
+    removeBone(this.doc, b.id);
+    this.activeBone = this.doc.bones[0];
+    this.view.buildBones(); this.renderAll(); this.dirty();
+  }
+  /** 视口右键：官方是"未选中=创建菜单，命中部件=部件菜单，动画模式命中骨骼=骨骼菜单" */
+  contextMenu(e) {
+    const bone = this.mode === "anim" ? this.view.pickBone(e) : null;
+    const hit = this.view.pickVoxel(e);
+    if (bone) {
+      this.activeBone = bone; this.renderBones(); this.renderProps();
+      return this.menuAt(e.clientX, e.clientY, [
+        { label: "添加子骨骼", run: () => { this.snapshot("新建子骨骼"); const c = addBone(this.doc, "Bone", bone.id); this.activeBone = c; this.view.buildBones(); this.renderAll(); this.dirty(); } },
+        { label: "复制骨骼", run: () => this.cloneBone(bone) },
+        { label: "重命名", run: () => this.renameBone(bone) },
+        { sep: true },
+        { label: "删除骨骼", danger: true, run: () => this.removeBone(bone) },
+      ]);
+    }
+    if (hit && hit.part) {
+      const p = hit.part;
+      this.activePart = p; this.view.setActivePart(p); this.renderParts(); this.renderProps();
+      const g = this.groupOf(p);
+      return this.menuAt(e.clientX, e.clientY, [
+        { label: "添加部件", run: () => $("vxAddPart").click() },
+        { label: "编辑部件（进体素）", run: () => { this.setInPart(true); this.activePart = p; } },
+        { label: "复制部件", run: () => { this.picked.clear(); this.picked.add(p); $("vxDupPart").click(); } },
+        { label: "重命名", run: () => this.renamePart(p) },
+        g ? { label: `解组「${g.name}」`, run: () => this.ungroup(p) }
+          : { label: (this.picked.size > 1 ? `编组（已挑 ${this.picked.size} 个）` : "编组（先按住 ⌘/Ctrl 点选多个部件）"), run: () => $("vxGroup").click() },
+        { sep: true },
+        { label: "删除部件", danger: true, run: () => this.removePart(p) },
+      ]);
+    }
+    this.menuAt(e.clientX, e.clientY, [
+      { label: "添加部件", run: () => $("vxAddPart").click() },
+      { label: "创建骨骼", run: () => $("vxAddBone").click() },
+      { label: "选中整个模型", run: () => { this.picked.clear(); for (const p of this.doc.parts) this.picked.add(p); this.renderParts(); this.tip(`已挑 ${this.picked.size} 个部件`); } },
+    ]);
+  }
+  removePart(p) {
+    if (!confirm(`删除部件「${p.name}」？它身上的 ${p.voxels.length} 个体素会一起没。`)) return;
+    this.snapshot("删除部件");
+    this.picked.delete(p);
+    this.doc.parts = this.doc.parts.filter((x) => x !== p);
+    this.activePart = this.doc.parts[0] || null;
+    this.view.rebuild(); this.renderAll(); this.dirty();
   }
   /** 一个很小的弹出菜单：时间轴先用，视口右键菜单（部件/骨骼）复用同一套 */
   menuAt(x, y, items) {

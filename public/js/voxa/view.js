@@ -186,6 +186,7 @@ export class VoxaView {
     for (const m of [mesh, emissive]) {
       if (!m) continue;
       m.material.userData.baseOpacity = op;
+      m.material.userData.baseTransparent = op < 0.999;
       m.material.transparent = op < 0.999;
       m.material.opacity = op;
     }
@@ -289,8 +290,12 @@ export class VoxaView {
     this.ghost = !!on;
     for (const n of this.partNodes.values()) {
       if (!n.mesh) continue;
-      n.mesh.material.transparent = this.ghost || n.mesh.material.userData?.baseTransparent || false;
-      n.mesh.material.opacity = this.ghost ? 0.42 : (n.mesh.material.userData?.baseOpacity ?? 1);
+      // 半透明开关必须跟着"基础不透明度"走：只认 baseTransparent（没人写过它）
+      // 会让幽灵态退出时把 transparent 冲回 false——opacity 还是 0.4，
+      // 但材质没开混合，于是部件不透明度看着"设上了却没效果"。
+      const base = n.mesh.material.userData?.baseOpacity ?? 1;
+      n.mesh.material.transparent = this.ghost || base < 0.999;
+      n.mesh.material.opacity = this.ghost ? 0.42 : base;
       n.mesh.material.needsUpdate = true;
       if (n.emissive) { n.emissive.visible = !this.ghost; }
     }

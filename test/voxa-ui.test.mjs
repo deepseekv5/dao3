@@ -44,6 +44,19 @@ const findPoint = (kind) => page(`
   }
   return null;`);
 
+/** 等相机停住：OrbitControls 开了阻尼，上一次右键的余量还会继续漂一秒上下。
+ *  漂着的时候取到的命中点，下一次 evaluate 就已经打不中了——测试会以为拖拽没生效。 */
+async function settle(maxMs = 2500) {
+  let last = null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    const now = await page(`const c = window.__voxa.view.camera.position; return [c.x, c.y, c.z].map((v) => v.toFixed(3)).join(",");`);
+    if (last !== null && now === last) return true;
+    last = now;
+    await sleep(150);
+  }
+  return false;
+}
 async function drag(from, to) {
   await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: from.x, y: from.y });
   await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: from.x, y: from.y, button: "left", buttons: 1, clickCount: 1 });
@@ -59,6 +72,7 @@ const partPos = () => page(`return window.__voxa.doc.parts[0].pos.slice();`);
 /* ---------- 部件拖拽：一步一撤 ---------- */
 await page(`window.__voxa.setTool("move"); window.__voxa.undoStack.length = 0; return 1;`);
 const p0 = await partPos();
+await settle();
 const hit = await findPoint("voxel");
 ok("视口里能找到可命中的体素点（否则下面几条测不到）", !!hit, JSON.stringify(hit));
 await drag(hit, { x: hit.x + 120, y: hit.y - 70 });
@@ -87,6 +101,7 @@ await page(`window.__voxa.setInPart(true); window.__voxa.setTool("select"); retu
 await sleep(200);
 const inPart = await page(`return window.__voxa.inPart;`);
 if (inPart) {
+  await settle();
   const a = await findPoint("voxel");
   await drag(a, { x: a.x + 90, y: a.y + 60 });
   const sel = await page(`const v = window.__voxa.view; return { n: window.__voxa.selection.length, drawn: v.selMesh.count, cap: v.selMesh.instanceMatrix.count };`);
@@ -147,6 +162,7 @@ await page(`const a = window.__voxa; a.undoStack.length = 0; return 1;`);
 // 拾取到的不一定是我预埋那根骨骼（Root 的标记也在指针下面），
 // 所以先把每根骨骼的起点记下来，再按"实际被拖走的那根"来判定。
 const bonesBefore = await page(`return window.__voxa.doc.bones.map((b) => ({ id: b.id, pos: b.position.slice() }));`);
+await settle();
 const bp = await findPoint("bone");
 if (bp) {
   await drag(bp, { x: bp.x + 100, y: bp.y });
@@ -164,7 +180,12 @@ if (bp) {
   ok("视口里能找到可命中的骨骼点", false, "扫描 15×15 个点都没命中骨骼");
 }
 
-/* ---------- 参数面板：官方那"三个独立数字格 + 单位" ---------- */
+const setMode = (m) => page(`document.querySelector('#vxModes [data-mode="${m}"]').click(); return window.__voxa.mode = "${m}";`);
+/* 骨骼不透明度与骨骼拖拽那两节把模式留在了 anim，后面几节要的是部件层，
+   模式不显式切回去就会测到另一套面板与另一条分支（右键会弹骨骼菜单）。 */
+await setMode("model");
+await page(`const a = window.__voxa; a.activePart = a.doc.parts[0]; a.view.setActivePart(a.doc.parts[0]); a.renderProps(); return 1;`);
+await sleep(200);
 const axis = await page(`
   const rows = [...document.querySelectorAll("#vxProps .vx-axis2")];
   return { n: rows.length,
@@ -200,6 +221,62 @@ const palDel = await page(`
 ok("色板里的空闲颜色可删除，删除走撤销栈",
   palDel.after === palDel.before - 1, JSON.stringify(palDel));
 
+/* ---------- 右键菜单（官方三篇 shortcutKeys 讲的全是右键） ---------- */
+await setMode("model");
+await settle();
+const rp = await findPoint("voxel");
+await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: rp.x, y: rp.y, button: "right", buttons: 2, clickCount: 1 });
+await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: rp.x, y: rp.y, button: "right", buttons: 0 });
+await sleep(250);
+const cm = await page(`
+  const m = document.querySelector(".vx-pop");
+  const p = document.getElementById("vxMenuPanel");
+  return { mode: window.__voxa.mode, items: m ? [...m.querySelectorAll("button")].map((b) => b.textContent) : null, topShown: p.classList.contains("show") };`);
+ok("命中部件时右键出部件菜单（添加/编辑/复制/重命名/编组/删除）",
+  !!cm.items && cm.items.length === 6 && cm.items.includes("编辑部件（进体素）") && cm.items.includes("删除部件")
+  && cm.topShown === false, JSON.stringify(cm));
+
+// 菜单还开着的话，它就压在画布上方——下一次按下只会先把它关掉（这是对的交互），
+// 但那样就测不到拖拽了，所以这里显式收起。
+await page(`window.__voxa.closeMenu(); return 1;`);
+
+/* ---------- 编组要真的整组变换，解组要真的散开 ---------- */
+await setMode("model");
+const grp = await page(`
+  const a = window.__voxa, doc = a.doc, p1 = doc.parts[0];
+  a.setInPart(true); a.setTool("build"); a.activePart = p1; a.placeOrErase([0, 0, 0], true); a.setInPart(false);
+  document.getElementById("vxAddPart").click();
+  const q = doc.parts[doc.parts.length - 1];
+  a.setInPart(true); a.activePart = q; a.placeOrErase([0, 0, 0], true); a.setInPart(false);
+  q.pos = [10, 0, 0]; a.view.applyPartTransform(q);
+  a.picked.clear(); a.picked.add(p1); a.picked.add(q);
+  document.getElementById("vxGroup").click();
+  const g = a.groupOf(p1);
+  const before = [p1.pos.slice(), q.pos.slice()];
+  const targets = a.dragTargets(p1).length;
+  a.setTool("move");
+  return { named: !!g, targets, before, qName: q.name };`);
+await settle();
+const gpt = await findPoint("voxel");
+await drag(gpt, { x: gpt.x + 60, y: gpt.y });
+console.log("LOG", await page(`return (window.__log||[]).join(" | ");`));
+const after = await page(`
+  const a = window.__voxa;
+  const ids = ((a.doc.groups || [])[0] || {}).partIds || [];
+  const out = {}; for (const id of ids) { const p = a.doc.parts.find((x) => x.id === id); if (p) out[id] = p.pos.slice(); }
+  return out;`);
+const un = await page(`
+  const a = window.__voxa, p1 = a.doc.parts[0];
+  a.ungroup(p1);
+  return { groups: (a.doc.groups || []).length, targets: a.dragTargets(p1).length, g: p1.group };`);
+// 按部件 id 比"各自走了多远"，不数下标：前面的测试已经往 doc.parts 里加过部件
+const moved = Object.values(after).map((p, i) => p[0] - grp.before[Math.min(i, 1)][0]);
+ok("编组后拖一个成员，同组每个成员走的距离一样；解组后回到只拖一个",
+  grp.named && grp.targets === 2 && Object.keys(after).length === 2
+  && Math.abs(moved[0] - moved[1]) < 0.01 && Math.abs(moved[0]) > 1
+  && un.groups === 0 && un.targets === 1 && un.g === null,
+  JSON.stringify({ before: grp.before, after, moved, targets: grp.targets, un }));
+
 /* ---------- 顶栏圆点菜单：默认必须是收起来的 ---------- */
 // 时间轴的弹出菜单一度也叫 .vx-menu，把主菜单那条 display:none 一起改掉了，
 // 症状是"顶栏摊开一大块菜单、把色板压住"。两边类名分家后这条要钉住。
@@ -210,36 +287,38 @@ ok("顶栏圆点菜单默认收起（display:none）",
   topMenu.cls.includes("vx-topmenu") && topMenu.display === "none" && topMenu.shown === false, JSON.stringify(topMenu));
 
 /* ---------- 时间轴：每根骨骼一行、段块带缓动曲线、能拖能删能缩放 ---------- */
+// ---------- 时间轴：官方那一整块"骨骼 × 帧"的网格 ----------
+// 自己建一条动画来测：前面几节（骨骼不透明度、骨骼拖拽）会往默认 idle 里留下键，
+// 共用它的话"文档里有几帧"就成了历史累积的结果，测不到渲染本身。
 await page(`
   const a = window.__voxa, doc = a.doc;
   document.querySelector('#vxModes [data-mode="anim"]').click();
-  doc.bones.push({ id: "tl-b", name: "左臂", parent: "root", position: [1, 2, 3], rotation: [0, 0, 0], scale: [1, 1, 1], op: 1 });
-  doc.anims[doc.curAnim].tracks["tl-b"] = [
-    { f: 0, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "normal" },
-    { f: 12, pos: [2, 4, 3], rot: [0, 30, 0], scale: [1, 1, 1], op: 1, ease: "in" },
-    { f: 30, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "out" }];
-  doc.anims[doc.curAnim].tracks.root = [
-    { f: 0, pos: [0, 0, 0], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "step" },
-    { f: 24, pos: [0, 1, 0], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "step" }];
+  if (!doc.bones.some((b) => b.id === "arm")) {
+    doc.bones.push({ id: "arm", name: "左臂", parent: "root", position: [1, 2, 3], rotation: [0, 0, 0], scale: [1, 1, 1], op: 1 });
+  }
+  const K = (f, ease) => ({ f, pos: [f / 10, 2, 3], rot: [0, f, 0], scale: [1, 1, 1], op: 1, ease });
+  doc.anims.push({ id: "walk", name: "walk-test", fps: 24, tracks: {
+    root: [K(0, "step"), K(24, "step")],
+    arm: [K(0, "normal"), K(12, "in"), K(30, "out")] } });
+  doc.curAnim = doc.anims.length - 1;
   a.renderTimeline();
   return 1;`);
-await sleep(300);
-const tl = await page(`
+await settle();   // 相机阻尼没停的话，下面取键的屏幕坐标会漂
+const counts = () => page(`
+  const a = window.__voxa, an = a.doc.anims[a.doc.curAnim] || a.doc.anims[0];
+  let keys = 0, segs = 0;
+  for (const t of Object.values(an.tracks)) { keys += t.length; segs += Math.max(0, t.length - 1); }
   const rows = [...document.querySelectorAll("#vxTracks .tl-row")];
-  return { rows: rows.length, labels: rows.map((r) => r.querySelector(".tl-bone").textContent),
-    segs: document.querySelectorAll(".tl-seg").length, keys: document.querySelectorAll(".tl-key").length,
-    curves: [...document.querySelectorAll(".tl-seg path")].map((p) => p.getAttribute("d")),
-    laneW: document.querySelector(".tl-lane").style.width,
-    rulerW: document.getElementById("vxRuler").style.width,
-    bones: window.__voxa.doc.bones.length };`);
-// 行数是几完全由骨骼数决定（前面几条测试会往里加探针骨骼），
-// 所以断言"行数 == 骨骼数"而不是写死一个数：没打键的骨骼也必须有一行。
+  return { rows: rows.length, bones: a.doc.bones.length, labels: rows.map((r) => r.querySelector(".tl-bone").textContent),
+    keys: document.querySelectorAll(".tl-key").length, segs: document.querySelectorAll(".tl-seg").length,
+    wantKeys: keys, wantSegs: segs, curves: [...document.querySelectorAll(".tl-seg path")].map((x) => x.getAttribute("d")) };`);
+const c0 = await counts();
 ok("时间轴每根骨骼一条轨道，没打键的也列出来",
-  tl.rows === tl.bones && tl.labels.some((x) => x.startsWith("左臂")) && tl.labels.some((x) => x.startsWith("Root")),
-  JSON.stringify({ rows: tl.rows, bones: tl.bones, labels: tl.labels }));
-ok("键与键之间画成段块，段块里带缓动曲线形状",
-  tl.segs === 3 && tl.keys === 5 && tl.curves.length === 3 && new Set(tl.curves).size >= 3,
-  JSON.stringify({ segs: tl.segs, keys: tl.keys, curves: [...new Set(tl.curves)] }));
+  c0.rows === c0.bones && c0.labels.some((x) => x.startsWith("左臂")) && c0.labels.some((x) => x.startsWith("Root")),
+  JSON.stringify({ rows: c0.rows, bones: c0.bones, labels: c0.labels }));
+ok("键与键之间画成段块，段块里带缓动曲线形状（DOM 数量与文档一致）",
+  c0.keys === c0.wantKeys && c0.segs === c0.wantSegs && c0.wantKeys === 5 && c0.wantSegs === 3 && new Set(c0.curves).size >= 3,
+  JSON.stringify(c0));
 
 /** 按骨骼名找键，不按行号：前面的测试会往 doc.bones 里加骨骼，行号会漂 */
 const keyPt = (boneName, keyIdx) => page(`
@@ -248,7 +327,7 @@ const keyPt = (boneName, keyIdx) => page(`
   const k = row && row.querySelectorAll(".tl-key")[${keyIdx}];
   if (!k) return null;
   const r = k.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`);
-const framesOf = () => page(`const a = window.__voxa; return (a.doc.anims[a.doc.curAnim].tracks["tl-b"] || []).map((k) => k.f);`);
+const framesOf = () => page(`const an = window.__voxa.doc.anims[window.__voxa.doc.curAnim]; return (an.tracks.arm || []).map((k) => k.f);`);
 const kf0 = await framesOf();
 const kp = await keyPt("左臂", 1);
 await drag(kp, { x: kp.x + 42, y: kp.y });
@@ -262,12 +341,12 @@ ok("拖动关键帧改时间（12 → 18）并且能撤销回来",
 
 const del = await page(`
   const a = window.__voxa, an = a.doc.anims[a.doc.curAnim];
-  a.activeBone = a.doc.bones.find((b) => b.id === "tl-b");
-  const before = an.tracks["tl-b"].map((k) => k.f).join(",");
-  a.deleteKey(an, a.activeBone, an.tracks["tl-b"][1]);
-  const after = (a.doc.anims[a.doc.curAnim].tracks["tl-b"] || []).map((k) => k.f).join(",");
+  a.activeBone = a.doc.bones.find((b) => b.id === "arm");
+  const before = an.tracks.arm.map((k) => k.f).join(",");
+  a.deleteKey(an, a.activeBone, an.tracks.arm[1]);
+  const after = ((a.doc.anims[a.doc.curAnim].tracks.arm) || []).map((k) => k.f).join(",");
   a.undo();
-  const back = ((a.doc.anims[a.doc.curAnim].tracks["tl-b"]) || []).map((k) => k.f).join(",");
+  const back = ((a.doc.anims[a.doc.curAnim].tracks.arm) || []).map((k) => k.f).join(",");
   return { before, after, back };`);
 ok("删除单帧生效，且删得掉也撤得回",
   del.before === "0,12,30" && del.after === "0,30" && del.back === "0,12,30", JSON.stringify(del));
@@ -276,13 +355,12 @@ const zoomed = await page(`
   const before = document.querySelector(".tl-lane").style.width;
   const z = document.getElementById("vxTlZoom"); z.value = "20"; z.dispatchEvent(new Event("input"));
   return { before, after: document.querySelector(".tl-lane").style.width,
-    ruler: document.getElementById("vxRuler").style.width,
-    head: document.getElementById("playhead").style.left };`);
-ok("缩放时间轴：轨道宽度与播放头位置跟着每帧像素走",
+    ruler: document.getElementById("vxRuler").style.width };`);
+ok("缩放时间轴：轨道宽度跟着每帧像素走，刻度尺比轨道更宽一格",
   zoomed.before === "222px" && zoomed.after === "612px" && parseInt(zoomed.ruler, 10) > parseInt(zoomed.after, 10),
   JSON.stringify(zoomed));
 
-// 右键一个关键帧：弹出的是 .vx-pop（五档缓动 + 删除），顶栏菜单必须仍然收着
+await settle();
 const kp2 = await keyPt("左臂", 1);
 await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: kp2.x, y: kp2.y, button: "right", buttons: 2, clickCount: 1 });
 await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: kp2.x, y: kp2.y, button: "right", buttons: 0 });
