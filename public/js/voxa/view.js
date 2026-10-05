@@ -1,7 +1,7 @@
 // voxa/view.js — VOXA 视口：部件实例化渲染、骨骼层级与绑定、拾取、选择高亮、动画播放。
 import * as THREE from "../../vendor/three/three.module.js";
 import { OrbitControls } from "../../vendor/three/OrbitControls.js";
-import { colorOf, hexToRgb, partIndex, bindDoc, invalidateIndex } from "./model.js";
+import { colorOf, hexToRgb, partIndex, bindDoc, invalidateIndex, contourEdges } from "./model.js";
 
 const CUBE = new THREE.BoxGeometry(1, 1, 1);
 const HOVER_MAX = 64, SEL_MAX = 4000;   // 高亮层容量：改这里要同时改 _marker 的分配
@@ -44,6 +44,10 @@ export class VoxaView {
     this.scene.add(this.boneHelpers);
     this.boxHelpers = new THREE.Group();
     this.scene.add(this.boxHelpers);
+    // 模型中心点标记（官方全局工具栏"调整模型中心点"）：三轴小箭头 + 一颗点
+    this.pivotMarker = new THREE.AxesHelper(2.6);
+    this.pivotMarker.visible = false;
+    this.scene.add(this.pivotMarker);
     this.hoverMesh = this._marker(0x66ccff, 0.45, HOVER_MAX);
     this.selMesh = this._marker(0x00e5ff, 0.35, SEL_MAX);
     this.scene.add(this.hoverMesh, this.selMesh);
@@ -142,6 +146,7 @@ export class VoxaView {
       if (n.group.parent) n.group.parent.remove(n.group);
       n.mesh && n.mesh.dispose();
       n.emissive && n.emissive.dispose();
+      this.dropContour(n);
     }
     const group = new THREE.Group();
     group.name = part.name;
@@ -196,8 +201,10 @@ export class VoxaView {
     }
     // 边缘线 / 发光显隐是视口级偏好，而这里每次都新建材质，
     // 所以必须把当前开关重新贴上去——否则放一个体素就把用户设的边缘线悄悄关掉了
-    if (mesh) mesh.material.wireframe = !!this._edges;
-    if (emissive) { emissive.material.wireframe = !!this._edges; emissive.visible = this._glowOn !== false; }
+    const wire = this.edgeMode === "all";
+    if (mesh) mesh.material.wireframe = wire;
+    if (emissive) { emissive.material.wireframe = wire; emissive.visible = this._glowOn !== false; }
+    if (this.edgeMode === "contour") this.rebuildContourFor(part);
     this.applyPartTransform(part);
     group.visible = part.visible !== false;
   }
@@ -252,7 +259,12 @@ export class VoxaView {
         new THREE.EdgesGeometry(new THREE.BoxGeometry(p.size[0], p.size[1], p.size[2])),
         // 官方部件框是细白线（选中态更亮），不是实心块
         new THREE.LineBasicMaterial({ color: p === this.activePart ? 0xe8e8e8 : 0x565656 }));
-      box.position.set(p.pos[0] + p.size[0] / 2, p.pos[1] + p.size[1] / 2, p.pos[2] + p.size[2] / 2);
+      // 框必须跟着部件自己的旋转/缩放走：只摆位置的话，把部件转 90° 之后
+      // 屏幕上那根框还停在原地，"选没选中"就变成猜。
+      const sc = [p.scale[0] || 1, p.scale[1] || 1, p.scale[2] || 1];
+      box.position.set(p.pos[0] + p.size[0] / 2 * sc[0], p.pos[1] + p.size[1] / 2 * sc[1], p.pos[2] + p.size[2] / 2 * sc[2]);
+      box.rotation.set(p.rot[0] * Math.PI / 180, p.rot[1] * Math.PI / 180, p.rot[2] * Math.PI / 180);
+      box.scale.set(sc[0], sc[1], sc[2]);
       box.userData.partId = p.id;
       const bone = p.bone && this.boneNodes.get(p.bone);
       (bone || this.root).add(box);
@@ -288,6 +300,52 @@ export class VoxaView {
     return [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
   }
   setBoneVisible(on) { this.showBones = on; this.boneHelpers.visible = on; }
+  /** 边缘线三档（官方 auxiliaryToolbar.md 里它是下拉框，不是二值开关）：
+   *    hide     不画
+   *    contour  只画"暴露面的外边界"——官方截图里那种干净的格子线
+   *    all      每个立方体的 12 条棱全画（含被挡住的内部面），就是原来的 wireframe
+   *  以前只有 wireframe 一档：内部面全画出来，密一点的模型糊成一片噪点。 */
+  setEdgeMode(mode) {
+    this.edgeMode = mode === "all" || mode === "contour" ? mode : "hide";
+    for (const n of this.partNodes.values()) {
+      if (n.mesh) n.mesh.material.wireframe = this.edgeMode === "all";
+      if (n.emissive) n.emissive.material.wireframe = this.edgeMode === "all";
+    }
+    if (this.edgeMode === "contour") this.rebuildContours();
+    else this.dropContours();
+  }
+  dropContours() {
+    for (const n of this.partNodes.values()) this.dropContour(n);
+  }
+  dropContour(n) {
+    if (!n || !n.contour) return;
+    n.contour.parent && n.contour.parent.remove(n.contour);
+    n.contour.geometry.dispose();
+    n.contour.material.dispose();
+    n.contour = null;
+  }
+  /** 轮廓线段数据在 model.contourEdges（纯函数，能在裸 Node 里单测）；这里只负责贴到场景上 */
+  contourGeometry(part) { return contourEdges(part); }
+  rebuildContours() {
+    for (const p of this.doc.parts) this.rebuildContourFor(p);
+  }
+  /** 单个部件重算：放一个体素就重建整模型的所有轮廓线，128 部件时会明显卡手 */
+  rebuildContourFor(part) {
+    const n = this.partNodes.get(part.id);
+    if (!n) return;
+    this.dropContour(n);
+    if (this.edgeMode !== "contour" || part.visible === false) return;
+    const arr = this.contourGeometry(part);
+    if (!arr.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+    // 挂在部件自己的 group 下：轮廓线用的是部件局部坐标，挂到场景根上就等于
+    // 无视部件的位置/旋转/缩放——部件一挪，线就留在原地。
+    const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x101018 }));
+    line.userData.partId = part.id;
+    n.group.add(line);
+    n.contour = line;
+  }
   setBoxesVisible(on) { this.showBoxes = on; this.boxHelpers.visible = on; }
   /** 物理界面：官方把模型画成半透明，好让人看清碰撞盒与模型的关系 */
   setGhostMode(on) {

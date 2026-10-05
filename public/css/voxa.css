@@ -97,7 +97,6 @@ body.voxa{
 #vxTip{position:absolute;right:12px;bottom:10px;max-width:34%;padding:3px 9px;border-radius:4px;
   background:rgba(20,20,20,.9);border:1px solid #232345;color:#7d8a80;font-size:11px;text-align:right}
 #vxTip.flash{color:var(--vx-accent);border-color:var(--vx-accent)}
-#vxGizmo{display:none}
 
 /* ─────────────── ④ 右侧三段可折叠面板 ─────────────── */
 #vxRight{background:var(--vx-panel);border-left:1px solid var(--vx-line);box-shadow:inset 1px 0 0 var(--vx-div);
@@ -278,14 +277,6 @@ body.voxa{
 .tl-scrub:hover{opacity:.7}   /* 刻度尺已经能直接拨播放头，这条留作兜底，不该抢视线 */
 .tl-zoom{display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--vx-fg3);flex:0 0 auto}
 .tl-zoom input{width:64px;accent-color:var(--vx-accent)}
-
-/* 物理界面浮层 */
-#vxPhysics{position:absolute;right:12px;top:12px;display:none;flex-direction:column;gap:7px;width:242px;
-  padding:10px;border-radius:6px;background:rgba(24,24,24,.96);border:1px solid #333;box-shadow:0 8px 26px rgba(0,0,0,.6)}
-#vxPhysics.show{display:flex}
-.ph-row{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#c4c8dc}
-.ph-row label{width:30px;color:var(--vx-fg2);flex:0 0 auto}
-.ph-tip{color:var(--vx-fg3);font-size:10.5px;line-height:1.6}
 
 /* 图标基线 */
 .ti{display:inline-flex;width:15px;height:15px;flex:0 0 auto}

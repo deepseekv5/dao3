@@ -114,6 +114,7 @@ class VoxaApp {
     this.picked = new Set();   // Cmd/Ctrl 挑中的部件，编组用
     this.frame = 0;
     this.tl = { pxf: 7 };   // 时间轴：每帧多少像素（缩放滑条改的就是它）
+    this.pivotMode = false;   // 中心点编辑态（顶栏那颗按钮开）
     this.playing = 0;
     this.speed = 1;
     this.undoStack = [];
@@ -241,9 +242,6 @@ class VoxaApp {
     $("vxPalExport").onclick = () => this.exportPalette();
     $("vxPalImport").onclick = () => $("vxPalFile").click();
     $("vxPalFile").onchange = (e) => this.importPalette(e.target.files && e.target.files[0]);
-    $("phMode").onchange = () => { this.doc.physics.mode = $("phMode").value; refreshPhysics(this.doc); this.renderPhysics(); };
-    $("phPos").onchange = () => { this.doc.physics.center = parseVec($("phPos").value, this.doc.physics.center); this.dirty(); };
-    $("phSize").onchange = () => { this.doc.physics.size = parseVec($("phSize").value, this.doc.physics.size); this.dirty(); };
     $("vxAnimNew").onclick = () => { this.snapshot("新建动画"); this.doc.anims.push(newAnim("anim" + (this.doc.anims.length + 1))); this.doc.curAnim = this.doc.anims.length - 1; this.renderTimeline(); this.dirty(); };
     $("vxAnimDel").onclick = () => {
       if (this.doc.anims.length <= 1) return;
@@ -309,7 +307,7 @@ class VoxaApp {
         e.preventDefault();
         this.setFrame(clamp(this.frame + (k === "arrowright" ? 1 : -1), 0, Number($("vxScrub").max) || 0));
       }
-      if (k === "escape") { if (this.inPart) this.setInPart(false); else if (this.selection.length) { this.selection = []; this.view.showSelection([]); } }
+      if (k === "escape") { if (this.pivotMode) { this.setPivotMode(false); return; } if (this.inPart) this.setInPart(false); else if (this.selection.length) { this.selection = []; this.view.showSelection([]); } }
     });
     window.addEventListener("resize", () => this.view.resize());
   }
@@ -352,7 +350,6 @@ class VoxaApp {
       b.onclick = () => {
         this.doc.physics.mode = b.dataset.ph;
         refreshPhysics(this.doc);
-        $("phMode") && ($("phMode").value = b.dataset.ph);
         $("grpPhMode").querySelectorAll("button[data-ph]").forEach((x) => x.classList.toggle("on", x === b));
         this.renderPhysics(); this.renderProps(); this.dirty();
       };
@@ -372,6 +369,7 @@ class VoxaApp {
       $("propSpace").textContent = s === "local" ? "局" : "世";
       this.renderProps();
     };
+    $("vxPivot").onclick = () => this.setPivotMode(!this.pivotMode);
     $("spLocal").onclick = () => setSpace("local");
     $("spWorld").onclick = () => setSpace("world");
     $("propSpace").onclick = () => setSpace(this.space === "local" ? "world" : "local");
@@ -380,7 +378,7 @@ class VoxaApp {
     $("uUndo").onclick = () => this.undo();
     $("uRedo").onclick = () => this.redo();
     $("vxProj").onchange = () => this.view.setOrtho($("vxProj").value === "ortho");
-    $("vxEdge").onchange = () => this.setEdges($("vxEdge").value === "show");
+    $("vxEdge").onchange = () => this.setEdges($("vxEdge").value);
     // 绑定完立刻把 DOM 上的初值推给渲染层：以前只有点击才会推，于是
     // "下拉框写着显示边缘线而画面上没有线"、"发光按钮没亮而自发光在渲染"，
     // 用户读到的是"要点两下才生效"——看起来就是功能坏了。
@@ -392,7 +390,7 @@ class VoxaApp {
     };
     // 下拉框没有 class 可同步，单独推一次：默认值写着"显示边缘线"而 view 里是
     // undefined，症状同样是"要点两下才生效"。
-    this.setEdges($("vxEdge").value === "show");
+    this.setEdges($("vxEdge").value);
     tgl("uBone", (on) => this.view.setBoneVisible(on));
     tgl("uBox", (on) => this.view.setBoxesVisible(on));
     tgl("uGrid", (on) => { this.view.grid.visible = on; });
@@ -525,7 +523,6 @@ class VoxaApp {
       case "toggleBoxes": this.view.setBoxesVisible(!this.view.showBoxes); break;
       case "grid": this.view.grid.visible = !this.view.grid.visible; break;
       case "resetView": this.view.focus(); break;
-      case "lang": this.tip("当前语言：简体中文"); break;
     }
   }
   pickFile(accept, cb) {
@@ -539,7 +536,6 @@ class VoxaApp {
     const vox = this.mode === "model" && this.inPart;
     $("vxTimeline").classList.toggle("show", anim);
     // 官方物理界面：模式在顶栏，参数在右侧「参数」面板，没有浮层
-    $("vxPhysics").style.display = "none";
     $("grpPhMode").hidden = !phys;
     for (const id of ["grpMirror", "grpRotate", "grpFlip", "grpSize"]) $(id).hidden = !vox;
     $("grpSpace").hidden = vox || phys || anim;
@@ -571,6 +567,9 @@ class VoxaApp {
     this.tip(type === "skin" ? "已新建换肤作品（类型不可更改）" : "已新建自由模式作品");
   }
   applyDocType() {
+    // 官方：换肤模式下"调整模型中心点"置灰
+    const pv = $("vxPivot");
+    if (pv) { pv.disabled = this.doc.type === "skin"; pv.classList.toggle("dim", pv.disabled); }
     const skin = this.doc.type === "skin";
     const b = $("vxTypeBadge");
     b.textContent = skin ? "换肤模式" : "自由模式";
@@ -663,16 +662,12 @@ class VoxaApp {
     this.tip(on ? "已进入部件：" + this.activePart.name : "已返回部件列表");
   }
   setTool(id) { this.tool = id; this.buildTools(); this.tip(TOOLS[id] ? TOOLS[id].hint : id); }
-  setEdges(on) {
+  /** 三档：hide / contour（只画暴露面的外边界）/ all（每个立方体 12 条棱） */
+  setEdges(mode) {
     // 状态记在 view 上：rebuildPart 每次都会新建材质，只往旧节点上写一遍是留不住的
-    this.view._edges = !!on;
-    for (const n of this.view.partNodes.values()) {
-      if (!n.mesh) continue;
-      n.mesh.material.wireframe = this.view._edges;
-      if (n.emissive) n.emissive.material.wireframe = this.view._edges;
-    }
+    this.view.setEdgeMode(mode);
   }
-  toggleEdges() { this.setEdges(!this.view._edges); }
+  toggleEdges() { this.setEdges(this.view.edgeMode === "hide" ? "contour" : "hide"); }
   /** 底栏的发光开关：隐藏 emissive 层即可实时看到关掉自发光的效果 */
   setGlow(on) {
     this.view._glowOn = !!on;
@@ -693,6 +688,11 @@ class VoxaApp {
         this.drag = { kind: "phboxScale", x: e.clientX, y: e.clientY, s: ph.size.slice() };
       }
       this.snapshot("碰撞盒");
+      return;
+    }
+    if (this.pivotMode) {
+      this.snapshot("移动中心点");
+      this.drag = { kind: "pivot", x: e.clientX, y: e.clientY, p: (this.doc.pivot || [0, 0, 0]).slice() };
       return;
     }
     const hit = this.view.pickVoxel(e);
@@ -763,6 +763,12 @@ class VoxaApp {
       const end = hit ? hit.cell : this.view.pickPlane(e, this.activePart ? this.activePart.size[1] / 2 : 0) || d.start;
       this.selection = rangeCells(d.start, end);
       this.view.showSelection(this.selection);
+      return;
+    }
+    if (d.kind === "pivot") {
+      const dx = (e.clientX - d.x) * 0.08, dy = (e.clientY - d.y) * 0.08;
+      this.doc.pivot = [+(d.p[0] + dx).toFixed(2), +(d.p[1] - dy).toFixed(2), d.p[2]];
+      this.syncPivotMarker(); this.renderProps(); this.dirty();
       return;
     }
     const each = (fn) => { for (const it of (d.parts || [{ p: d.part, pos: d.pos, rot: d.rot, scale: d.scale }])) fn(it); };
@@ -892,7 +898,7 @@ class VoxaApp {
   }
 
   /* ---------------- 面板渲染 ---------------- */
-  renderAll() { this.renderParts(); this.renderBones(); this.renderPalette(); this.renderProps(); this.renderVoxOps(); this.renderTools(); this.renderStat(); this.renderTimeline(); }
+  renderAll() { this.renderParts(); this.renderBones(); this.renderPalette(); this.renderProps(); this.renderVoxOps(); this.renderTools(); this.renderStat(); this.renderTimeline(); this.syncPivotMarker(); }
   renderTools() { this.buildTools(); }
   renderStat() {
     const s = stats(this.doc);
@@ -1195,6 +1201,17 @@ class VoxaApp {
       host.appendChild(btnRow([["◆ 创建帧", () => this.keyframe()]]));
       return;
     }
+    if (this.pivotMode) {
+      host.appendChild(section("模型中心点", [
+        axisRow("锚点", this.doc.pivot || [0, 0, 0], (v) => { this.doc.pivot = v; this.syncPivotMarker(); this.dirty(); },
+          { snap: () => this.snapshot("改中心点") }),
+      ]));
+      const t = document.createElement("div");
+      t.className = "vx-empty";
+      t.textContent = "拖视口或改这三个数都行。中心点决定实体在游戏里挂在哪、旋转绕哪；换肤模式下它固定不可改。";
+      host.appendChild(t);
+      return;
+    }
     const p = this.activePart;
     if (!p) { host.innerHTML = '<div class="vx-empty">未选中部件</div>'; this._vecSrc = null; return; }
     const world = this.space === "world";
@@ -1271,9 +1288,8 @@ class VoxaApp {
   }
   renderPhysics() {
     const ph = this.doc.physics;
-    $("phMode").value = ph.mode;
-    $("phPos").value = ph.center.map((v) => +v.toFixed(2)).join(", ");
-    $("phSize").value = ph.size.map((v) => +v.toFixed(2)).join(", ");
+    // 顶栏那对 默认/自定义 按钮是唯一的入口：以前还有一块 #vxPhysics 浮层，
+    // 被 applyMode 无条件隐藏、却仍被这里写值——纯死代码，删了。
     $("grpPhMode").querySelectorAll("button[data-ph]").forEach((b) => b.classList.toggle("on", b.dataset.ph === ph.mode));
   }
   renderTimeline() {
@@ -1431,6 +1447,21 @@ class VoxaApp {
     this.renderTimeline();
     this.dirty();
     if (n === 1) this.view.resetPose();
+  }
+  /** 中心点编辑态：底栏那排开关让位给这颗锚点，左键拖的就是它自己。
+   *  官方在换肤模式下把这个按钮置灰——皮肤部件的锚点是固定的。 */
+  setPivotMode(on) {
+    if (on && this.doc.type === "skin") return this.tip("换肤模式下中心点固定，不能调整");
+    this.pivotMode = !!on;
+    $("vxPivot").classList.toggle("on", this.pivotMode);
+    this.view.pivotMarker.visible = this.pivotMode;
+    this.syncPivotMarker();
+    this.renderProps();
+    if (this.pivotMode) this.tip("左键拖动中心点，Esc 退出");
+  }
+  syncPivotMarker() {
+    const pv = this.doc.pivot || [0, 0, 0];
+    this.view.pivotMarker.position.set(pv[0], pv[1], pv[2]);
   }
   /** 编组要真的能整组变换，否则它只是个标签。
    *  命中一个成员就把同组可见成员一起带上；参数面板仍显示被点的那个。 */

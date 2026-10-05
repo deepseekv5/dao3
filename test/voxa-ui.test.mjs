@@ -28,15 +28,51 @@ await s.goto("http://127.0.0.1:5173/voxa", { settleMs: 5000 });
 await wait(`!!window.__voxa && !!window.__voxa.doc && window.__voxa.doc.parts.length > 0`, 90000, "VOXA 就绪");
 
 /* ---------- 底栏初值：DOM 说开着，画面就得是开着 ---------- */
-const boot = await page(`const a = window.__voxa;
-  return { edges: a.view._edges, glow: a.view._glowOn,
-    edgeSel: document.getElementById("vxEdge").value,
+const boot = await page(`const a = window.__voxa, v = a.view;
+  const nodes = [...v.partNodes.values()];
+  return { mode: v.edgeMode, wire: nodes.some((n) => n.mesh && n.mesh.material.wireframe),
+    contourParts: nodes.filter((n) => n.contour).length, voxelParts: nodes.filter((n) => n.part.voxels.length).length,
+    glow: v._glowOn, edgeSel: document.getElementById("vxEdge").value,
     statOn: document.getElementById("uStat").classList.contains("on"),
     statShown: getComputedStyle(document.getElementById("vxStat")).display !== "none",
     glowBtn: document.getElementById("uGlow").classList.contains("on") };`);
 ok("底栏开关的初值与渲染状态一致（不用点两下才生效）",
-  boot.edges === true && boot.glow === true && boot.statOn === boot.statShown && boot.glowBtn === boot.glow,
+  boot.mode === boot.edgeSel && boot.mode === "contour" && boot.wire === false
+  && boot.contourParts === boot.voxelParts && boot.glow === true
+  && boot.statOn === boot.statShown && boot.glowBtn === boot.glow,
   JSON.stringify(boot));
+
+/* ---------- 边缘线三档：下拉框的每一档都得真的改变画面 ---------- */
+const edge = await page(`
+  const a = window.__voxa, v = a.view, sel = document.getElementById("vxEdge");
+  const wp = (n) => { n.contour.updateWorldMatrix(true, false); const e = n.contour.matrixWorld.elements;
+    return [+e[12].toFixed(2), +e[13].toFixed(2), +e[14].toFixed(2)]; };
+  const snap = () => { const ns = [...v.partNodes.values()];
+    return { mode: v.edgeMode,
+      wire: ns.filter((n) => n.mesh && n.mesh.material.wireframe).length,
+      lines: ns.filter((n) => n.contour).length,
+      segs: ns.reduce((s, n) => s + (n.contour ? n.contour.geometry.attributes.position.count / 2 : 0), 0),
+      inGroup: ns.filter((n) => n.contour && n.contour.parent === n.group).length }; };
+  const set = (m) => { sel.value = m; sel.dispatchEvent(new Event("change")); return snap(); };
+  const out = { hide: set("hide"), all: set("all"), contour: set("contour") };
+  // 轮廓线挂在部件自己的 group 下才会跟着部件走；挂到场景根上，部件一挪线就留在原地
+  const p = a.doc.parts.find((q) => q.voxels.length);
+  const n = v.partNodes.get(p.id);
+  out.w0 = wp(n);
+  p.pos = [p.pos[0] + 10, p.pos[1], p.pos[2]]; v.applyPartTransform(p);
+  out.w1 = wp(n);
+  out.follow = [0, 1, 2].map((i) => +(out.w1[i] - out.w0[i]).toFixed(1));
+  p.pos = [p.pos[0] - 10, p.pos[1], p.pos[2]]; v.applyPartTransform(p);
+  sel.value = "contour"; sel.dispatchEvent(new Event("change"));
+  return out;`);
+ok("边缘线是三档：隐藏什么都不画、全部棱线走 wireframe、轮廓线走独立线段",
+  edge.hide.mode === "hide" && edge.hide.lines === 0 && edge.hide.wire === 0
+  && edge.all.mode === "all" && edge.all.lines === 0 && edge.all.wire > 0
+  && edge.contour.mode === "contour" && edge.contour.wire === 0 && edge.contour.lines > 0,
+  JSON.stringify(edge));
+ok("轮廓线挂在部件自己的 group 下：部件挪 10 格，线跟着走 10 格",
+  edge.contour.inGroup === edge.contour.lines && edge.follow[0] === 10 && edge.follow[1] === 0 && edge.follow[2] === 0,
+  JSON.stringify({ follow: edge.follow, inGroup: edge.contour.inGroup, lines: edge.contour.lines }));
 
 /** 找一个真的能命中部件 / 骨骼的屏幕点：坐标由渲染层自己算，不在测试里猜 */
 const findPoint = (kind) => page(`
@@ -392,12 +428,76 @@ ok("帧上右键出缓动菜单（5 档 + 删除），且顶栏菜单不被带�
   && pop.topShown === false && pop.topDisplay === "none", JSON.stringify(pop));
 await page(`window.__voxa.closeMenu(); return 1;`);
 
+/* ---------- 模型中心点：能开、能拖、能撤，最后真的进 glTF ---------- */
+// 官方全局工具栏第 6 项。这颗点决定游戏里模型挂在哪个坐标、绕哪儿转，
+// 没有它，创作者就只能靠"实体偏移"反过来凑。
+await setMode("model");
+await page(`window.__voxa.undoStack.length = 0; window.__voxa.setPivotMode(true); return 1;`);
+await sleep(150);
+const pvOn = await page(`const a = window.__voxa, v = a.view;
+  return { btn: document.getElementById("vxPivot").classList.contains("on"), marker: v.pivotMarker.visible,
+    mpos: [v.pivotMarker.position.x, v.pivotMarker.position.y, v.pivotMarker.position.z],
+    pivot: a.doc.pivot.slice(), part0: a.doc.parts[0].pos.slice(),
+    panel: /模型中心点/.test(document.getElementById("vxProps").textContent) };`);
+ok("开中心点：按钮亮起、视口出现三轴标记、右侧出现锚点数值行",
+  pvOn.btn && pvOn.marker && pvOn.panel && JSON.stringify(pvOn.pivot) === "[0,0,0]"
+  && JSON.stringify(pvOn.mpos) === "[0,0,0]", JSON.stringify(pvOn));
+await settle();
+const cv = await page(`const r = document.getElementById("vxCanvas").getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`);
+await drag(cv, { x: cv.x + 50, y: cv.y - 25 });
+const pvDrag = await page(`const a = window.__voxa;
+  return { pivot: a.doc.pivot.slice(), part0: a.doc.parts[0].pos.slice(),
+    mpos: [a.view.pivotMarker.position.x, a.view.pivotMarker.position.y, a.view.pivotMarker.position.z] };`);
+ok("中心点模式下拖动改的是中心点，部件位置一动不动",
+  Math.abs(pvDrag.pivot[0] - 4) < 0.6 && Math.abs(pvDrag.pivot[1] - 2) < 0.6
+  && JSON.stringify(pvDrag.part0) === JSON.stringify(pvOn.part0)
+  && pvDrag.mpos[0] === pvDrag.pivot[0], JSON.stringify({ before: pvOn.pivot, after: pvDrag }));
+await page(`window.__voxa.undo(); return 1;`);
+await sleep(120);
+const pvUndo = await page(`return window.__voxa.doc.pivot.slice();`);
+ok("移动中心点进得了撤销栈（拖之前拍快照）",
+  JSON.stringify(pvUndo) === "[0,0,0]", JSON.stringify(pvUndo));
+await page(`window.__voxa.setPivotMode(true);
+  const r = document.getElementById("vxCanvas").getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`);
+await drag(cv, { x: cv.x + 60, y: cv.y });
+await page(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); return 1;`);
+await sleep(120);
+const pvEsc = await page(`const a = window.__voxa;
+  return { mode: a.pivotMode, btn: document.getElementById("vxPivot").classList.contains("on"),
+    marker: a.view.pivotMarker.visible, pivot: a.doc.pivot.slice() };`);
+ok("Esc 退出中心点模式：标记收起来，但设好的中心点留着",
+  pvEsc.mode === false && pvEsc.btn === false && pvEsc.marker === false && pvEsc.pivot[0] > 3,
+  JSON.stringify(pvEsc));
+const pvNum = await page(`
+  const a = window.__voxa; a.setPivotMode(true); a.renderProps();
+  const before = a.doc.pivot.slice();
+  const row = [...document.querySelectorAll("#vxProps .vx-axis2")].find((r) => r.querySelector("label").textContent === "锚点");
+  if (!row) return { missing: document.getElementById("vxProps").textContent.slice(0, 60) };
+  const box = row.querySelector("input[type=number]");
+  box.value = "7.5"; box.dispatchEvent(new Event("change"));
+  const after = a.doc.pivot.slice(), mpos = a.view.pivotMarker.position.x;
+  a.undo();
+  return { before, after, mpos, back: a.doc.pivot.slice(), mpos2: +a.view.pivotMarker.position.x.toFixed(2) };`);
+ok("锚点能直接填小数，改完一步撤得回、视口标记跟着数字走",
+  pvNum.after[0] === 7.5 && pvNum.mpos === 7.5
+  && JSON.stringify(pvNum.back) === JSON.stringify(pvNum.before) && pvNum.mpos2 === pvNum.back[0],
+  JSON.stringify(pvNum));
+await page(`window.__voxa.setPivotMode(false); return 1;`);
+
+/* ---------- 死 UI 清干净：界面上不留点了没反应的控件 ---------- */
+const dead = await page(`
+  const ids = ["vxGizmo", "vxPhysics", "vxPaletteRow"];
+  const css = [...document.styleSheets].flatMap((s) => { try { return [...s.cssRules].map((r) => r.cssText || ""); } catch { return []; } });
+  return { present: ids.filter((i) => document.getElementById(i)),
+    lang: [...document.querySelectorAll("[data-act]")].filter((e) => e.dataset.act === "lang").length,
+    staleCss: css.filter((t) => /#vxGizmo|#vxPhysics|\\.ph-(row|box)/.test(t)).length };`);
+ok("删掉的死控件与它的样式一起清掉了（不留点不动的按钮）",
+  dead.present.length === 0 && dead.lang === 0 && dead.staleCss === 0, JSON.stringify(dead));
+
 /* ---------- 自己导出的 .glb 要能被 GLTFLoader 读回带动画的模型 ---------- */
 // 这是"动画做完出得了编辑器"这条链的终点断言：结构对不算数，读得回来才算。
-const rt = await page(`
-  const a = window.__voxa;
-  const blob = a.doc.parts[0] ? await window.__voxa.exportGlbBlob?.() : null;
-  return blob ? blob.size : null;`).catch(() => null);
 const roundTrip = await page(`
   const { toGLB } = await import("/js/voxa/model.js");
   const { GLTFLoader } = await import("/vendor/three/GLTFLoader.js");
@@ -407,7 +507,13 @@ const roundTrip = await page(`
   const gltf = await new Promise((res, rej) => loader.parse(buf, "", res, rej));
   let meshCount = 0;
   gltf.scene.traverse((o) => { if (o.isMesh) meshCount++; });
-  return { bytes: buf.byteLength, anims: gltf.animations.length,
+  // 期望时长从文档自己算（这段测试前面往 walk-test 里打到第 30 帧，硬编码 1 秒就错了）
+  const doc = window.__voxa.doc, an = doc.anims[doc.curAnim] || doc.anims[0];
+  let maxF = 0;
+  for (const keys of Object.values(an.tracks)) for (const k of keys) maxF = Math.max(maxF, k.f);
+  return { bytes: buf.byteLength, anims: gltf.animations.length, wantDur: +(maxF / (an.fps || 24)).toFixed(2),
+    pivot: (gltf.userData || {}).voxaPivot || null,
+    rootT: gltf.scene.children[0] ? gltf.scene.children[0].position.toArray() : null,
     firstClip: gltf.animations[0] ? gltf.animations[0].name : null,
     tracks: gltf.animations[0] ? gltf.animations[0].tracks.length : 0,
     dur: gltf.animations[0] ? +gltf.animations[0].duration.toFixed(2) : 0,
@@ -415,23 +521,34 @@ const roundTrip = await page(`
     names: gltf.scene.children.map((c) => c.name).join(",") };`);
 ok("导出的 .glb 用 GLTFLoader 读回来带动画剪辑（刚体绑骨走节点层级）",
   roundTrip.bytes > 200 && roundTrip.anims >= 1 && roundTrip.tracks >= 3
-  && Math.abs(roundTrip.dur - 1) < 0.2 && roundTrip.meshCount >= 1,
+  && Math.abs(roundTrip.dur - roundTrip.wantDur) < 0.02 && roundTrip.meshCount >= 1,
   JSON.stringify(roundTrip));
+const pvNow = await page(`return window.__voxa.doc.pivot.slice();`);
+ok("中心点真的出了编辑器：.glb 根节点位移 = −锚点，文件带 voxaPivot 标记（世界加载认它才不按包围盒重新居中）",
+  !!roundTrip.pivot && Math.abs(roundTrip.pivot[0] - pvNow[0]) < 0.01
+  && Math.abs(roundTrip.rootT[0] + roundTrip.pivot[0]) < 1e-6,
+  JSON.stringify({ doc: pvNow, inFile: roundTrip.pivot, rootT: roundTrip.rootT }));
 const mixer = await page(`
   const { toGLB } = await import("/js/voxa/model.js");
   const THREE = await import("/vendor/three/three.module.js");
   const { GLTFLoader } = await import("/vendor/three/GLTFLoader.js");
-  const gltf = await new Promise((res, rej) => new GLTFLoader().parse(await toGLB(window.__voxa.doc).arrayBuffer(), "", res, rej));
+  const buf = await toGLB(window.__voxa.doc).arrayBuffer();
+  const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
   const m = new THREE.AnimationMixer(gltf.scene);
-  const action = m.clipAction(gltf.animations[0]);
+  const clip = gltf.animations[0];
+  if (!clip) return { noClip: true };
+  const action = m.clipAction(clip);
   action.play();
-  const bone = gltf.scene.getObjectByName("左臂") || gltf.scene.getObjectByName("Arm") || gltf.scene.getObjectByName("Root");
+  // 轨道名是 "<节点名>.position"，节点名是我们按 doc 里的骨骼名写的，所以从剪辑里取，不在测试里猜
+  const t0 = clip.tracks[0].name;
+  const nodeName = t0.slice(0, t0.lastIndexOf("."));
+  const bone = gltf.scene.getObjectByName(nodeName);
   const before = bone ? bone.position.clone() : null;
-  m.update(0.5);                       // 第 12 帧附近
+  m.update(0.5);                       // 播到剪辑中段
   const after = bone ? bone.position.clone() : null;
-  return { bone: bone && bone.name, moved: before && after ? +before.distanceTo(after).toFixed(3) : -1 };`);
+  return { node: nodeName, tracks: clip.tracks.length, moved: before && after ? +before.distanceTo(after).toFixed(3) : -1 };`);
 ok("AnimationMixer 播得动：骨骼节点的位置确实被剪辑改了",
-  !!mixer.bone && mixer.moved > 0.01, JSON.stringify(mixer));
+  !!mixer.node && mixer.tracks >= 3 && mixer.moved > 0.01, JSON.stringify(mixer));
 
 await s.close();
 process.exit(0);

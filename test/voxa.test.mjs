@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import {
   newDoc, newPart, addPart, serialize, deserialize, transformVoxels, ensureRoom,
   faceCells, fillRange, ensureColor, setVoxel, getVoxel, MAX_BOX,
-  addBone, bindPart, toGLB, eulerToQuatXYZ,
+  addBone, bindPart, toGLB, eulerToQuatXYZ, stats, exposedFaces, contourEdges,
 } from "../public/js/voxa/model.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +26,13 @@ const ok = (name, cond, extra = "") => {
 const box = (size = [4, 2, 2]) => newPart("P", size);
 const key = (v) => `${v.x},${v.y},${v.z}`;
 const keysOf = (p) => new Set(p.voxels.map(key));
+/** 导一份 .glb 并把里面的 JSON 块剥出来（glTF 的结构全在这个 JSON 里）。
+ *  这里刻意按 GLTFLoader 的做法原样 parse：补齐字节要是写成了 0，这里就当场炸。 */
+const glb = async (doc) => {
+  const buf = Buffer.from(await (await toGLB(doc)).arrayBuffer());
+  const jsonLen = buf.readUInt32LE(12);
+  return { buf, jsonLen, g: JSON.parse(new TextDecoder().decode(buf.slice(20, 20 + jsonLen))) };
+};
 
 /* ---------------- 作品类型必须活过序列化 ---------------- */
 {
@@ -132,9 +139,7 @@ const keysOf = (p) => new Set(p.voxels.map(key));
     { f: 0, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "normal" },
     { f: 12, pos: [4, 2, 3], rot: [0, 90, 0], scale: [1, 1, 1], op: 1, ease: "inout" },
     { f: 24, pos: [1, 2, 3], rot: [0, 0, 0], scale: [1, 1, 1], op: 1, ease: "step" }];
-  const buf = Buffer.from(await (await toGLB(doc)).arrayBuffer());
-  const jsonLen = buf.readUInt32LE(12);
-  const g = JSON.parse(buf.slice(20, 20 + jsonLen).toString("utf8").replace(/\0+$/, ""));
+  const { buf, jsonLen, g } = await glb(doc);
   const names = g.nodes.map((n) => n.name);
   ok("魔数与容器：glTF 二进制、JSON 块在前、BIN 块 4 字节对齐",
     buf.readUInt32LE(0) === 0x46546C67 && buf.readUInt32LE(4) === 2 && buf.readUInt32LE(8) === buf.length
@@ -170,6 +175,72 @@ const keysOf = (p) => new Set(p.voxels.map(key));
   ok("欧拉角转四元数与 three 同口径：绕 Y 90° 得到 (0,0.707,0,0.707)",
     eulerToQuatXYZ(0, 90, 0).map((v) => +v.toFixed(3)).join(",") === "0,0.707,0,0.707",
     JSON.stringify(eulerToQuatXYZ(0, 90, 0)));
+}
+
+/* ---------------- 真实面数：只数露出来的面 ---------------- */
+// 底栏那个"面 N"以前按 体素数 × 6 算，2×2×2 报 48 面、实际只有 24 面是看得见的。
+// 数字虚一倍，用户据此判断"这个模型能不能进游戏"就全判错了。
+{
+  const doc = newDoc("面数", "free");
+  const p = newPart("Cube", [4, 4, 4]);
+  doc.parts.push(p);
+  const c = ensureColor(doc, "#ff8800", 0);
+  fillRange(p, [0, 0, 0], [1, 1, 1], c);          // 2×2×2 = 8 个体素
+  ok("遮挡剔除后的面数：2×2×2 是 24 个方格面（不是 8×6=48）",
+    exposedFaces(p) === 24 && stats(doc).faces === 48, `faces=${exposedFaces(p)} tris=${stats(doc).faces}`);
+  const single = newPart("One", [4, 4, 4]);
+  doc.parts.push(single);
+  fillRange(single, [0, 0, 0], [0, 0, 0], c);
+  ok("单个体素才是 6 面，说明剔除只砍掉被邻居挡住的那些", exposedFaces(single) === 6);
+  ok("统计里的部件/体素/颜色数与文档一致",
+    stats(doc).parts === 2 && stats(doc).voxels === 9 && stats(doc).colors === 1, JSON.stringify(stats(doc)));
+}
+
+/* ---------------- 模型中心点(pivot)：存得住，也导得出去 ---------------- */
+{
+  const mk = () => {
+    const doc = newDoc("中心点", "free");
+    const p = newPart("Body", [4, 4, 4]);
+    doc.parts.push(p);
+    fillRange(p, [0, 0, 0], [1, 0, 0], ensureColor(doc, "#00ff00", 0));
+    return doc;
+  };
+  const plain = mk();
+  ok("默认中心点在原点：序列化里有这个字段，读回来还在",
+    JSON.stringify(plain.pivot) === "[0,0,0]"
+    && JSON.stringify(deserialize(serialize(plain)).pivot) === "[0,0,0]", JSON.stringify(plain.pivot));
+
+  const { g: g0 } = await glb(plain);
+  ok("没挪过中心点时不写多余数据：根节点无位移、文件里无 voxaPivot 标记",
+    g0.nodes[0].translation === undefined && g0.extras === undefined, JSON.stringify(g0.nodes[0]));
+
+  const doc = mk();
+  doc.pivot = [2, 3, 4];
+  const { g } = await glb(doc);
+  ok("挪过的中心点烘进根节点位移（游戏里挂点就是这颗点）",
+    JSON.stringify(g.nodes[0].translation) === "[-2,-3,-4]", JSON.stringify(g.nodes[0].translation));
+  ok("同时在文件顶层留 voxaPivot 标记：世界加载那步按包围盒重新居中，会把烘进去的位移抹掉，"
+    + "认这个标记才知道「作者钦过中心点，别归一」",
+    JSON.stringify(g.extras?.voxaPivot) === "[2,3,4]", JSON.stringify(g.extras));
+  ok("中心点跟着存盘走：撤销/读档之后不会退回原点",
+    JSON.stringify(deserialize(serialize(doc)).pivot) === "[2,3,4]");
+}
+
+/* ---------------- 轮廓边缘线：只留外棱，内部缝要没了 ---------------- */
+// 判据用"每条棱被几个面共用"是最直觉的写法，但它会把线全删光：
+// 一个立方体的每条棱都恰好被两个（互相垂直的）面共用。所以必须分平面数。
+{
+  const cells = (...cs) => { const p = newPart("P", [4, 4, 4]); p.voxels = cs.map(([x, y, z]) => ({ x, y, z, c: 0 })); return p; };
+  const segs = (p) => contourEdges(p).length / 6;
+  const solid = cells(...[...Array(8)].map((_, i) => [(i >> 2) & 1, (i >> 1) & 1, i & 1]));
+  ok("单个立方体 12 条棱一条不少", segs(cells([0, 0, 0])) === 12, `拿到 ${segs(cells([0, 0, 0]))}`);
+  ok("2×2×2 实心只画外壳：24 段（每个立方体各画 12 条是 96 段）",
+    segs(solid) === 24, `拿到 ${segs(solid)}`);
+  ok("两根并排：中间那条缝不画，长棱按两段算 = 16",
+    segs(cells([0, 0, 0], [1, 0, 0])) === 16, `拿到 ${segs(cells([0, 0, 0], [1, 0, 0]))}`);
+  ok("L 形转角的两条棱是真轮廓，不能当缝删掉",
+    segs(cells([0, 0, 0], [1, 0, 0], [0, 1, 0])) === 22, `拿到 ${segs(cells([0, 0, 0], [1, 0, 0], [0, 1, 0]))}`);
+  ok("空部件没有线", segs(newPart("E", [4, 4, 4])) === 0);
 }
 
 console.log(`\nvoxa: ${pass} passed, ${fail} failed`);

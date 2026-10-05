@@ -9,6 +9,9 @@
 <link rel="stylesheet" href="/css/voxa.css"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
 <link rel="stylesheet" href="/css/arcadia.css">
+<!-- vendor 里的 GLTFLoader 按裸名 "three" 引依赖（官方发布形态就是这样），
+     没有这张映射表，任何动态 import 都会以"解析不了模块名"告终 -->
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.js"}}</script>
 <script>
 window.__errs = [];
 window.addEventListener("error", (e) => window.__errs.push((e.message || "load-fail") + " @" + (e.filename || "") + ":" + (e.lineno || "")), true);
@@ -19,7 +22,7 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
 
 <!-- ① 全局工具栏（顶）：官方分区「全局工具栏」——模式切换 + 镜像/旋转/翻转 + 部件框大小 + 命名保存发布 -->
 <header id="vxTop">
-  <button id="vxMenu" class="vx-ico" title="菜单栏：历史 / 导入 / 导出 / 语言">
+  <button id="vxMenu" class="vx-ico" title="菜单栏：历史 / 导入 / 导出 / 社区">
     <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></g></svg>
   </button>
   <span class="vx-vsep"></span>
@@ -37,6 +40,8 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
   <span class="vx-vsep" id="sepType"></span>
   <!-- 作品类型徽标：自由模式 / 换肤模式 -->
   <span id="vxTypeBadge" class="vx-type" title="作品类型在新建时决定，之后不可修改">自由模式</span>
+  <!-- 官方 parts/globalToolbar.md 第 6 项「调整模型中心点」：进入后左键拖的就是那颗锚点 -->
+  <button id="vxPivot" class="vx-mini" title="调整模型中心点（实体在游戏里挂在哪、旋转绕哪）">中心点</button>
 
   <!-- 物理模式独有：碰撞盒模式（官方放在顶栏，不是浮层） -->
   <div class="vx-axisgrp" id="grpPhMode" hidden><b>模式</b>
@@ -85,8 +90,6 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
     <button data-act="extLoad">载入外部参照模型…</button>
     <button data-act="extToggle">显示 / 隐藏参照</button>
     <button data-act="extClear">清除参照</button>
-    <div class="vx-menu-sec">语言</div>
-    <button data-act="lang">简体中文</button>
   </div>
 </header>
 
@@ -100,16 +103,6 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
     <button id="vxBack" hidden title="退出部件编辑，返回部件列表">← 返回</button>
     <div id="vxStat"></div>
     <div id="vxTip">右键拖动旋转视角 · 中键平移 · 左键使用当前工具</div>
-    <div id="vxGizmo"></div>
-    <!-- 物理界面 -->
-    <div id="vxPhysics">
-      <div class="ph-row"><span>模式</span>
-        <select id="phMode" class="vx-sel"><option value="default">默认（初始模型最小外接包围盒）</option><option value="custom">自定义</option></select>
-      </div>
-      <div class="ph-row"><label>位置</label><input id="phPos" class="vx-vec" value="0, 0, 0"/></div>
-      <div class="ph-row"><label>尺寸</label><input id="phSize" class="vx-vec" value="1, 1, 1"/></div>
-      <div class="ph-tip">物理盒即 Arena 中的黄色碰撞框。</div>
-    </div>
   </section>
 
   <!-- ④ 右侧面板：色板 / 列表 / 参数 三段可折叠 -->
@@ -172,7 +165,7 @@ window.addEventListener("unhandledrejection", (e) => window.__errs.push("reject:
   <button id="uRedo" class="vx-ico" title="重做 (Ctrl+Shift+Z)"><span class="ti" data-vico="redo"></span></button>
   <span class="vx-spacer"></span>
   <select id="vxProj" class="vx-sel" title="切换视口窗的透视或正交显示模式"><option value="persp">透视</option><option value="ortho">正交</option></select>
-  <select id="vxEdge" class="vx-sel" title="显示 / 隐藏体素边缘线条"><option value="show">显示边缘线</option><option value="hide">隐藏边缘线</option></select>
+  <select id="vxEdge" class="vx-sel" title="体素边缘线条：不画 / 只画暴露面的轮廓线 / 画每个立方体的全部棱线"><option value="contour">轮廓边缘线</option><option value="all">全部棱线</option><option value="hide">隐藏边缘线</option></select>
   <button id="uStat" class="vx-ico tgl on" title="打开 / 关闭模型数据统计"><span class="ti" data-vico="chart"></span></button>
   <button id="uGlow" class="vx-ico tgl on" title="打开 / 关闭发光"><span class="ti" data-vico="bulb"></span></button>
   <button id="uBone" class="vx-ico tgl on" title="显示 / 隐藏骨骼"><span class="ti" data-vico="bone"></span></button>

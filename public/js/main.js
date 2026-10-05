@@ -376,17 +376,24 @@ async function loadSeedAssets(meta) {
     const r = await fetch(root + encodeURIComponent(base) + ext);
     if (!r.ok) throw new Error("missing " + ext);
     const buf = await r.arrayBuffer();
-    const scene = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", (g) => res(g.scene), rej));
+    const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
+    const scene = gltf.scene;
     // 官方 .vb 转 gltf 后各文件的内部枢轴不一致（横向最多偏 13 格、纵向有负的），
     // 统一归一到「XZ 居中、底面为原点」。补偿放在内层 wrapper 上，因为实例化时会覆写根节点 position。
-    const box = new THREE.Box3().setFromObject(scene);
-    if (isFinite(box.min.x) && isFinite(box.max.x)) {
-      const c = box.getCenter(new THREE.Vector3());
-      const wrap = new THREE.Group();
-      wrap.position.set(-c.x, -box.min.y, -c.z);
-      while (scene.children.length) wrap.add(scene.children[0]);
-      scene.add(wrap);
-      scene.updateMatrixWorld(true);
+    // 但 VOXA 自己导出的文件带了 voxaPivot 标记：作者在设计器里挪过模型中心点，
+    // -pivot 已经烘在根节点上，再按包围盒归一回会把这颗中心点冲掉、摆回"自动居中"。
+    const pivot = (gltf.userData || {}).voxaPivot;
+    const hasPivot = Array.isArray(pivot) && pivot.some((v) => Math.abs(+v) > 1e-6);
+    if (!hasPivot) {
+      const box = new THREE.Box3().setFromObject(scene);
+      if (isFinite(box.min.x) && isFinite(box.max.x)) {
+        const c = box.getCenter(new THREE.Vector3());
+        const wrap = new THREE.Group();
+        wrap.position.set(-c.x, -box.min.y, -c.z);
+        while (scene.children.length) wrap.add(scene.children[0]);
+        scene.add(wrap);
+        scene.updateMatrixWorld(true);
+      }
     }
     return scene;
   };

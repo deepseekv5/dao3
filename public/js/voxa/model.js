@@ -67,6 +67,9 @@ export function newDoc(name = "未命名模型", type = "free") {
     parts: [], bones: [root],
     anims: [newAnim("idle")], curAnim: 0,
     physics: { mode: "default", center: [0, 0, 0], size: [1, 1, 1] },
+    // 模型中心点（官方 parts/globalToolbar.md 第 6 项"调整模型中心点"）：
+    // 实体在游戏里挂在哪、旋转绕哪，都由它决定
+    pivot: [0, 0, 0],
   };
 }
 
@@ -430,13 +433,64 @@ export function refreshPhysics(doc) {
 }
 
 /* ------------------------------ 统计 / 序列化 ------------------------------ */
+const NEIGH = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+/** 真正会进渲染的面：邻居格子存在的那一面根本不产生三角形。
+ *  官方 advanced/help.md 整篇讲的就是面数对性能的影响，
+ *  统计条按"体素数 × 6"报数等于把虚数当预算报给创作者。 */
+export function exposedFaces(part) {
+  const idx = partIndex(part);
+  let n = 0;
+  for (const v of part.voxels) {
+    for (const d of NEIGH) if (!idx.has(vkey(v.x + d[0], v.y + d[1], v.z + d[2]))) n++;
+  }
+  return n;
+}
+/** 轮廓边缘线的顶点缓冲（每两个点一条线段）。判据是"这条棱是不是外边界"：
+ *  同一平面上相邻两个面之间那条是内部缝，不画；两个互相垂直的面共用的那条是真棱，要画。
+ *  只按"被几个面共用"数、不分平面，会把每条棱都判成内部缝——一个立方体一条线都不剩。 */
+const FACES = [
+  { d: [1, 0, 0], c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
+  { d: [-1, 0, 0], c: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
+  { d: [0, 1, 0], c: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
+  { d: [0, -1, 0], c: [[1, 0, 0], [1, 0, 1], [0, 0, 1], [0, 0, 0]] },
+  { d: [0, 0, 1], c: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]] },
+  { d: [0, 0, -1], c: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
+];
+export function contourEdges(part) {
+  const idx = partIndex(part);
+  const use = new Map();          // 平面|棱 -> 这一平面上有几个面压着它
+  const seg = new Map();          // 棱 -> 端点（同一条棱在两个平面里坐标一样，只留一份）
+  for (const v of part.voxels) {
+    for (const f of FACES) {
+      if (idx.has(vkey(v.x + f.d[0], v.y + f.d[1], v.z + f.d[2]))) continue;   // 被邻居挡住的面不参与
+      const axis = f.d[0] ? 0 : f.d[1] ? 1 : 2;
+      const plane = axis + ":" + (v[axis] + (f.d[axis] > 0 ? 1 : 0));
+      for (let i = 0; i < 4; i++) {
+        const a = [v.x + f.c[i][0], v.y + f.c[i][1], v.z + f.c[i][2]];
+        const b = [v.x + f.c[(i + 1) % 4][0], v.y + f.c[(i + 1) % 4][1], v.z + f.c[(i + 1) % 4][2]];
+        const dir = [Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), Math.abs(b[2] - a[2])].join("");
+        const ek = dir + ":" + (a[0] + b[0]) + "," + (a[1] + b[1]) + "," + (a[2] + b[2]);
+        const pk = plane + "|" + ek;
+        use.set(pk, (use.get(pk) || 0) + 1);
+        if (!seg.has(ek)) seg.set(ek, [a[0], a[1], a[2], b[0], b[1], b[2]]);
+      }
+    }
+  }
+  // 只要它在某一个平面区域里是收尾的那条棱，就得画出来（立方体的每条棱都同时属于两个面，
+  // 不分平面一起数的话每条都是"被 2 个面共用"，一条都剩不下）。
+  const draw = new Set();
+  for (const [pk, n] of use) if (n === 1) draw.add(pk.slice(pk.indexOf("|") + 1));
+  const arr = [];
+  for (const ek of draw) arr.push(...seg.get(ek));
+  return arr;
+}
 export function stats(doc) {
   let voxels = 0, faces = 0;
   const colors = new Set();
   for (const p of doc.parts) {
     voxels += p.voxels.length;
     for (const v of p.voxels) colors.add(v.c);
-    faces += p.voxels.length * 6;
+    faces += exposedFaces(p) * 2;        // 一个方格面 = 两个三角形
   }
   return { parts: doc.parts.length, bones: doc.bones.length, voxels, faces, colors: colors.size, anims: doc.anims.length };
 }
@@ -459,6 +513,7 @@ export function serialize(doc) {
     groups: (groups || []).map((g) => ({ id: g.id, name: g.name, partIds: g.partIds })),
     anims: anims.map((a) => ({ id: a.id, name: a.name, fps: a.fps, tracks: a.tracks })),
     curAnim: doc.curAnim || 0,
+    pivot: (doc.pivot || [0, 0, 0]).slice(),
     physics,
   };
 }
@@ -475,6 +530,7 @@ export function deserialize(raw) {
   doc.anims = (raw.anims && raw.anims.length) ? raw.anims : doc.anims;
   doc.curAnim = raw.curAnim || 0;
   doc.physics = raw.physics || doc.physics;
+  doc.pivot = Array.isArray(raw.pivot) && raw.pivot.length === 3 ? raw.pivot.map(Number) : doc.pivot;
   doc.parts.forEach((p) => invalidateIndex(p));
   return doc;
 }
@@ -567,7 +623,12 @@ export function toGLB(doc) {
   }
 
   // ---- 节点：根 → 骨骼树 → 部件 ----
-  nodes.push({ name: doc.name || "voxa", children: [] });
+  // 中心点 = 模型空间里哪个点对齐 glTF 原点：把根节点平移 -pivot，
+  // 子树整体跟着走，游戏里实体挂点/旋转轴就和编辑器里摆的那颗点一致了。
+  const pv = (doc.pivot || [0, 0, 0]).map(Number);
+  const hasPivot = pv.some((v) => Math.abs(v) > 1e-6);
+  if (hasPivot) nodes.push({ name: doc.name || "voxa", translation: pv.map((v) => -v), children: [] });
+  else nodes.push({ name: doc.name || "voxa", children: [] });
   const boneNode = new Map();
   for (const b of doc.bones) {
     boneNode.set(b.id, nodes.length);
@@ -675,6 +736,10 @@ export function toGLB(doc) {
 
   const json = {
     asset: { version: "2.0", generator: "VOXA clone" },
+    // 顶层 extras 会被 GLTFLoader 并进 gltf.userData。世界那边原本按包围盒
+    // 重新居中（官方 .vb 各家枢轴不一致，不归一就会摆歪），那一步会把上面
+    // 烘进根节点的 -pivot 抹掉。留这个标记，就是告诉它"作者钦过中心点，别归一"。
+    ...(hasPivot ? { extras: { voxaPivot: pv.slice() } } : {}),
     ...(usedEmissiveExt ? { extensionsUsed: ["KHR_materials_emissive_strength"] } : {}),
     scene: 0, scenes: [{ nodes: [0] }],
     nodes, meshes, materials, accessors, bufferViews,
@@ -683,7 +748,9 @@ export function toGLB(doc) {
   };
   const jsonBytes = new TextEncoder().encode(JSON.stringify(json));
   const jsonPad = (4 - (jsonBytes.length % 4)) % 4;
-  const padBytes = new Uint8Array(jsonPad);
+  // 规范说 JSON 块用空格(0x20)补齐、BIN 块才用 0：补 0 的话 JSON.parse 当场报错
+  // （three 的 GLTFLoader 直接把整块 decode 出来 parse，不会替你去掉尾巴上的 NUL）。
+  const padBytes = new Uint8Array(jsonPad).fill(0x20);
   const binLen = offset;
   const total = 12 + 8 + jsonBytes.length + jsonPad + 8 + binLen;
   const out = new ArrayBuffer(total);
@@ -691,7 +758,8 @@ export function toGLB(doc) {
   dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
   dv.setUint32(12, jsonBytes.length + jsonPad, true); dv.setUint32(16, 0x4E4F534A, true);
   let at = 20;
-  new Uint8Array(out, at).set(jsonBytes); at += jsonBytes.length + jsonPad;
+  new Uint8Array(out, at).set(jsonBytes); at += jsonBytes.length;
+  new Uint8Array(out, at).set(padBytes); at += jsonPad;
   dv.setUint32(at, binLen, true); dv.setUint32(at + 4, 0x004E4942, true); at += 8;
   for (const c of chunks) { new Uint8Array(out, at).set(c); at += c.byteLength; }
   return new Blob([out], { type: "model/gltf-binary" });
