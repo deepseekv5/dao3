@@ -737,3 +737,35 @@ function makeHandler(ent, rt, config) {
   }
   return handler;
 }
+
+/**
+ * 官方 GameQueryResult：同一个对象既能 await（thenable，直接给整批 rows），
+ * 也能 for await 逐行取。两种用法必须共用同一次执行——
+ * 每次取行都重跑一遍语句的话，insert 会被执行两次，那是最难查的一类错。
+ */
+export class GameQueryResult {
+  constructor(run) { this._run = run; this._p = null; this._i = 0; }
+  _promise() { if (!this._p) this._p = Promise.resolve().then(() => this._run()); return this._p; }
+  then(onOk, onErr) { return this._promise().then(onOk, onErr); }
+  catch(onErr) { return this._promise().catch(onErr); }
+  finally(fn) { return this._promise().finally(fn); }
+  async next() {
+    const rows = await this._promise();
+    return this._i < rows.length ? { done: false, value: rows[this._i++] } : { done: true, value: undefined };
+  }
+  // 提前 break 出 for await：官方语义是"结束这一轮"，把游标推到末尾即可，
+  // 不能再跑一遍语句。
+  async return() { this._i = (await this._promise()).length; return { done: true, value: undefined }; }
+  async throw(err) { await this._promise().catch(() => {}); throw err; }
+  [Symbol.asyncIterator]() { this._i = 0; return this; }
+}
+
+/**
+ * 官方 db（GameDatabase）只有一个成员 sql。run(sql, params) 由运行时提供，
+ * 负责把它送到真正执行的地方（本地服务的 node:sqlite）。
+ */
+export function makeDatabase(run) {
+  return {
+    sql: (sql, ...params) => new GameQueryResult(() => run(sql, params)),
+  };
+}

@@ -22,15 +22,55 @@ vendor/ArenaPro-CLI/client/types/ClientAPI.d.ts   UiNode 树 · InputSystem · C
    报告里的 `badKind` 必须是 0。
 
 ```bash
-npm run build:api-ref
-# 合计 107 个游戏类型 / 71 个有成员级声明，751 个官方成员，静态比对到 730（覆盖 97.2%）
+npm run build:api-ref     # 重新抽清单 + 生成 API 参考
+npm run test:api          # 真实运行时对账（CDP，不需要 playwright）
+# 合计 107 个游戏类型 / 81 个有成员级声明，805 个官方成员，静态比对到 805（覆盖 100.0%）
+# 核心四类：GameWorld 111/111 · GameEntity 95/95 · GamePlayer 114/114 · GameVoxels 9/9
 ```
+
+第 2 步必须**真的跑得起来**。这条是补出来的：`api-audit.mjs` 的输出一直写着
+"以 api-probe.js 的运行时对账为准"，而那个探针只被 `test/e2e.mjs` 调用，
+e2e 依赖 `playwright-core`——本机没装，它整批 `SKIP` 然后 exit 0。
+于是"最可信的那条结论"从来没跑过，报出来的百分比全部来自静态 grep。
+现在它有自己的入口 `npm run test:api`（走仓库自带的 `test/cdp.mjs`），
+除了探面还钉住三件容易悄悄退化的事：`onTick` 挂上去要真被调用（只验 `typeof`
+的话一个什么都不干的假监听器也能全绿）、`http.fetch` 交出去的必须是真
+`Response`（`statusText` / `bodyUsed` / `formData` 得在）、以及 SQL 层的清理语义。
 
 静态比对还有一个只咬短名字的坑：`r` / `g` / `b` / `a` 用整词正则永远命中
 （`spectator:` 里就含 `r:`）。而官方 `GameRGBColor` 的分量恰恰叫 `r/g/b`，
 我们内部却用 `red/green/blue`——审计报"已实现"，脚本里 `color.r` 是 `undefined`，
 颜色直接变黑且不报错。所以 1–2 个字符的成员只认"成员位置"：属性访问、访问器声明、
 对象字面量的键。
+
+同类还有一个坑，这次是**分母**错：`declare type GameHttpHandler = (\n  request: …,\n  response: …)`
+里那些两空格缩进的参数会被"看到顶格 `}` 才停"的扫描当成类成员收进来，
+于是凭空多出 `GameHttpRequest.response` 这样的"官方成员"，再报成"本地缺失"。
+现在按括号深度收成员，并且只有 `onX` 与 `nextX` **两边都声明了**才算一个事件通道
+（`GameGUI.onMessage` 官方就没有 `nextMessage`，`world.nextPage` 是翻页方法不是事件）。
+
+### db.sql：官方标了 @deprecated，但仍然给
+
+`declare const db: GameDatabase` 的注释是"旧代编辑器使用的数据库接口，已弃用，
+请改用 GameDataStorage"，文档站也没有 GameDatabase 这一页。但以前 `db` 被我们
+直接做成键值存储的别名，脚本按 d.ts 写 `db.sql("select …")` 拿到的是 `undefined`——
+"官方建议别用"和"我们给了个 undefined"是两件事。
+
+现在 `db.sql` 是真能跑的：语句与参数分开送到本地服务，由 Node 自带的
+`node:sqlite` 执行（每个世界一个 `server/data/worlds/<id>.sqlite`），
+返回值 `GameQueryResult` 既能 `await` 直接拿整批 rows，也能 `for await` 逐行取，
+两种用法共用同一次执行（各跑一遍的话 insert 会被执行两次）。
+键值那套 `db.get/set/…` 原样留着，存量脚本不因此失效。
+
+三条边界说清楚：
+
+- **要本地服务在跑。** 编辑器与便携包都自带；直接双击 `public/editor.html` 打开时
+  没有 SQL 引擎，这时 `db.sql` 抛的是"需要本地服务在跑"，不是静默返回空数组。
+- **Node 要 22.5+**（`node:sqlite` 从这版起才有）。不满足时只有这一条接口不可用，
+  服务照常起。
+- **库不随地图走。** 项目包导出与社区发布快照带的是世界存档与脚本，不含 `.sqlite`；
+  删世界会把它的库一起删掉，免得同 id 重建时继承上一张图的表。
+  新写玩法请优先用 `storage.getDataStorage(name)`——那才是官方推荐的那条路。
 
 逐成员的签名、官方中文说明与单位，以及本地到位还是缺口，见 [API 参考](api-reference.md)（生成物）。
 

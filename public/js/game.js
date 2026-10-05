@@ -11,6 +11,7 @@ import {
   sleep, randomPick, getEntityBounds, clamp, clamp01, toVec3, packId, baseId, rotOf, rotateVecByTurn,
   luma, rgbHex, pickEnv, sampleRamp, sampleRampNum, newParticle, matchSelector, keyCodeOf, rayHitsBox, rgbaOf, colorTriple,
   attachChannels, makeChannel, consoleDiv, esc, fmt, Sound, GameAnimation, makeMotionController,
+  makeDatabase,
   noteError,
 } from "./gapi.js";
 import { createClientApi, createAudioClass } from "./clientui.js";
@@ -3362,7 +3363,7 @@ void main() {
       GameButtonType, GameDialogType, GameEasing, GameAnimationPlaybackState, GameAnimationDirection,
       GameAssetType, GameLogLevel, GameBodyPart, SocialType, PointerEventBehavior, ImageDisplayMode, UITextFontFamily,
       sleep, randomPick, getEntityBounds,
-      resources: this._resources(), storage: this._storage("storage"), db: this._storage("db"),
+      resources: this._resources(), storage: this._storage("storage"), db: this._database(),
       http: { fetch: (u, o) => fetch(u, o) },
       remoteChannel: this._remoteChannel(),
       rtc: this._rtc(),
@@ -3446,6 +3447,31 @@ void main() {
     if (pics.includes("picture/" + rel)) return root + "picture/" + rel;
     // 名单里没有时：带目录的按原样用，光板文件名按官方惯例落在 picture/ 下
     return root + (rel.includes("/") ? rel : "picture/" + rel);
+  }
+  /** 官方 db 是 GameDatabase，唯一成员是 sql(标准 SQL)。
+   *  以前这里直接给的是键值存储的别名（db.get/db.set），所以脚本按 d.ts 写
+   *  db.sql("select …") 会拿到 undefined。官方把 db 标了 @deprecated（让用
+   *  GameDataStorage），但"官方建议别用"和"我们给了个 undefined"是两件事：
+   *  键值那套方法原样留着（存量脚本在用），再把 sql 补成真能跑的。 */
+  _database() {
+    const rt = this;
+    return Object.assign(this._storage("db"), makeDatabase((sql, params) => rt._runSql(sql, params)));
+  }
+  async _runSql(sql, params) {
+    const id = (this.e && this.e.worldId) || "local";
+    let res;
+    try {
+      res = await fetch(`/api/db/${encodeURIComponent(id)}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sql, params }),
+      });
+    } catch (e) {
+      // 说清是"送不出去"而不是"表里没数据"：后者会让人去查自己的 SQL。
+      throw new Error("db.sql 需要本地服务在跑（编辑器与便携包自带）；直接双击打开 html 时用不了");
+    }
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String((j && j.error) || `db.sql 失败：HTTP ${res.status}`));
+    return (j && j.rows) || [];
   }
   _storage(ns) {
     const rt = this;

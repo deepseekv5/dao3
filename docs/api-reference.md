@@ -168,7 +168,7 @@ _（无成员级声明：枚举或纯数据形状。）_
 | --- | --- | --- | --- |
 | `tick` | `tick: number` | — | ✅ |
 | `target` | `target: TargetType` | — | ✅ |
-| `animation` | `animation: GameAnimation<KeyframeType, TargetType>` | — | **缺** |
+| `animation` | `animation: GameAnimation<KeyframeType, TargetType>` | — | ✅ |
 | `cancelled` | `cancelled: boolean` | — | ✅ |
 
 ### GameAnimationPlaybackConfig
@@ -1356,7 +1356,7 @@ _（无成员级声明：枚举或纯数据形状。）_
 
 | 成员 | 签名 | 说明 | 本地 |
 | --- | --- | --- | --- |
-| `sql` | `sql: ( sql: string[], ...params: (number \| string \| Uint8Array \| boolean \| null)[] ) => GameQueryResult` | 执行 SQL 查询 | **缺** |
+| `sql` | `sql: ( sql: string[], ...params: (number \| string \| Uint8Array \| boolean \| null)[] ) => GameQueryResult` | 执行 SQL 查询 | ✅ |
 
 ### GameDataStorage
 

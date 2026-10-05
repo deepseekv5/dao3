@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { createCommunity } from "./server/community.mjs";
 import { createModeration } from "./server/moderate.mjs";
 import { createRealtime } from "./server/realtime.mjs";
+import { createSql } from "./server/sql.mjs";
 import { blockColors, renderCover } from "./server/covers.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -490,6 +491,9 @@ const community = createCommunity({
 const realtime = createRealtime({ community, worldExists: (id) => /^[A-Za-z0-9_-]{4,32}$/.test(id)
   && fs.existsSync(path.join(WORLDS, id + ".json.gz")) });
 
+// 官方 GameDatabase.sql 的执行端：每个世界一个 .sqlite，落在世界存档旁边。
+const sql = createSql(WORLDS);
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   let pathname = decodeURIComponent(url.pathname);
@@ -598,6 +602,20 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
+    // 官方 db.sql 的落点：脚本发语句与参数，这里 prepare + bind 后执行。
+    // 一次一条语句（node:sqlite 遇到多条自己会抛），返回 rows / changes / lastInsertRowid。
+    if (parts[1] === "db" && safeId(parts[2]) && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => { body += c; if (body.length > 512 * 1024) req.destroy(); });
+      req.on("end", async () => {
+        let p = {};
+        try { p = JSON.parse(body || "{}") || {}; } catch { return json(res, 400, { error: "请求体不是合法 JSON" }); }
+        try {
+          json(res, 200, await sql.run(parts[2], p.sql, p.params));
+        } catch (e) { json(res, 400, { error: String((e && e.message) || e) }); }
+      });
+      return;
+    }
     // 必须限定段数：这一支管的是 /api/world/:id 本身。少了 parts.length === 3，
     // 它会把 /api/world/:id/asset 的 POST 一起吞进来，然后拿二进制去 JSON.parse——
     // 于是下面那个资产接口从来没被命中过（返回的是 400 "not valid JSON"），
@@ -635,6 +653,8 @@ const server = http.createServer((req, res) => {
         // 一并删除该世界的资产目录（如导入 zip 提取的模型）
         for (const d of [path.join(ASSETS, id), path.join(ASSETS_IN_TREE, id)])
           if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+        // db.sql 的库也要一起走：留着它，将来用同一个 id 重建图会继承上一张的表。
+        sql.drop(id);
         worldMetaCache.delete(id);
         return json(res, 200, { ok: true });
       }

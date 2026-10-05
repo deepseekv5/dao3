@@ -64,7 +64,7 @@ function implemented(name) {
   return wordRe.get(name).test(sources);
 }
 
-/** 从 d.ts 里取一个类的成员（顶层两空格缩进的那些） */
+/** 从 d.ts 里取一个类的成员（类体第一层、且不在括号里的那些） */
 function membersOf(lines, className) {
   // 类名后面允许 `<`：泛型类（GameAnimation<K,T>、QueryList<T>）在上一版里因为分隔符
   // 字符类没有 `<` 而整个类被判定"没有成员声明"，于是从 api-members.json 里凭空消失，
@@ -73,19 +73,43 @@ function membersOf(lines, className) {
     || new RegExp(`^${className}\\s*(?:<[^>]*>)?\\s*(?:extends[^{]*)?\\{`).test(l));
   if (i < 0) return [];
   const out = [];
-  for (let j = i + 1; j < lines.length; j++) {
+  // 数括号深度，而不是"看到顶格的 } 就停"。
+  // 原来靠 `^\}` 收尾，可是类体结束后紧跟的 `declare type GameHttpHandler = (\n  request: …,\n  response: …\n)`
+  // 里那些两空格缩进的**参数**会被当成成员一路收进来，直到下一个 `^\}` 才停——
+  // 于是凭空多出 GameHttpRequest.response、GameHttpResponse.response 两个"官方成员"，
+  // 审计报"缺失"，而那个名字在官方文档里根本不存在。分母错了比分子错了更糟。
+  let brace = 0, paren = 0, inComment = false;
+  for (let j = i; j < lines.length; j++) {
     const l = lines[j];
-    if (/^\}/.test(l)) break;
+    const level = { brace, paren };
+    let inStr = null;
+    for (let k = 0; k < l.length; k++) {
+      const c = l[k], n = l[k + 1];
+      if (inComment) { if (c === "*" && n === "/") { inComment = false; k++; } continue; }
+      if (inStr) { if (c === "\\") k++; else if (c === inStr) inStr = null; continue; }
+      if (c === "/" && n === "*") { inComment = true; k++; continue; }
+      if (c === "/" && n === "/") break;
+      if (c === '"' || c === "'" || c === "`") { inStr = c; continue; }
+      if (c === "{") brace++; else if (c === "}") brace--;
+      else if (c === "(") paren++; else if (c === ")") paren--;
+    }
+    // level 是"这一行开始前"的深度：类体最后一行的 } 让深度从 1 回到 0，
+    // 所以收尾条件是 level.brace === 1，写成 0 就永远跳不出循环，
+    // 会把后面整个文件的成员都算到这个类头上（实测 809 → 18951）。
+    if (j > i && level.brace === 1 && level.paren === 0 && /^\}/.test(l)) break;
+    if (j <= i) continue;
     if (/^\s*(private|\/\*|\*|\/\/)/.test(l)) continue;
     // 泛型方法（findChildByName<T extends UiElement>(…)）名字后面紧跟 <，
     // 不把 < 算进分隔符就会把整个成员从官方清单里漏掉——分母错了，覆盖率反而虚高。
-    const m = l.match(/^  (?:static |readonly |get |set |async )*(?:declare\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*[:?(<]/);
+    const m = level.brace === 1 && level.paren === 0
+      ? l.match(/^  (?:static |readonly |get |set |async )*(?:declare\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*[:?(<]/)
+      : null;
     if (!m) continue;
     const after = l.slice(m.index + 2 + m[1].length);
     out.push({ name: m[1], callable: after.startsWith("(") || /^\s*<.*>\s*\(/.test(after) || /^\s*:\s*\(/.test(after) || /^\s*\(/.test(after) });
   }
   const seen = new Set();
-  return out.filter((e) => !seen.has(e.name) && seen.add(e.name));
+  return out.filter((e) => { if (seen.has(e.name)) return false; seen.add(e.name); return true; });
 }
 
 function classNames(lines) {
@@ -111,8 +135,11 @@ for (const n of names) {
 let total = 0, done = 0;
 const missingAll = [];
 for (const [k, list] of Object.entries(groups)) {
+  // 同一份 NATIVE 白名单两边都要认：以前只有文档列认，缺口清单不认，
+  // 于是同一个名字一边写"✅ 本地有"、另一边写"缺失"，两个结论互相打脸。
+  const native = NATIVE[k] || [];
   const nm = list.map((e) => e.name);
-  const miss = nm.filter((x) => !implemented(x));
+  const miss = nm.filter((x) => !implemented(x) && !native.includes(x));
   total += nm.length;
   done += nm.length - miss.length;
   if (miss.length) missingAll.push(...miss.map((m) => `${k}.${m}`));
@@ -124,16 +151,25 @@ for (const [k, list] of Object.entries(groups)) {
 }
 console.log(`\n合计 ${names.length} 个游戏类型 / ${Object.keys(groups).length} 个有成员级声明，`
   + `${total} 个官方成员，静态比对到 ${done}（覆盖 ${(100 * done / total).toFixed(1)}%）`);
+// 缺口必须逐个列出来。只报一个百分比等于没报：99.3% 背后是那 6 个名字，
+// 而"是哪 6 个"才决定下一步动哪个文件。核心四类上面已经打过，这里补其余的。
+if (missingAll.length) console.log(`未匹配的 ${missingAll.length} 个 → ${missingAll.join(", ")}`);
 
-// 事件通道必须成对：on* 与 next*
-const evNames = new Set();
+// 事件通道：只有 on* 与 next* **两边都声明了**才算一个通道，才要求成对实现。
+// 原来只要看到任意一边就把另一边也当成"应该存在"，于是三种情况全被误报成缺失：
+// GameGUI.onMessage（官方就只有单向监听，没有 nextMessage）、
+// world.nextPage（翻页方法，跟 onPage 这个事件没关系）、
+// input.onPointerDown（客户端那个是 { sub(handler) } 对象，不是通道）。
+const onSet = new Set(), nextSet = new Set();
 for (const l of lines) {
   const m = /^  (on|next)([A-Z][a-zA-Z0-9_]*)\s*:/.exec(l);
-  if (m) evNames.add(m[2]);
+  if (!m) continue;
+  (m[1] === "on" ? onSet : nextSet).add(m[2]);
 }
-const evMiss = [...evNames].filter((n) => !implemented("on" + n) || !implemented("next" + n));
-console.log(`\n官方事件 ${evNames.size} 类；on*/next* 静态没找到成对实现：${evMiss.length ? evMiss.join(", ") : "无"}`);
-console.log("（on*/next* 由 attachChannels 动态挂载，静态搜不到属正常，以 api-probe.js 的运行时对账为准）");
+const evNames = [...onSet].filter((n) => nextSet.has(n));
+const evMiss = evNames.filter((n) => !implemented("on" + n) || !implemented("next" + n));
+console.log(`\n官方事件通道 ${evNames.length} 类（on*/next* 两边都声明的）；静态没找到成对实现：${evMiss.length ? evMiss.join(", ") : "无"}`);
+console.log("（通道由 attachChannels 动态挂载，静态搜不到属正常，以 api-probe.js 的运行时对账为准）");
 
 // 核心四类单独再打一遍，保持历史输出格式（文档站与人工比对都看这四行）
 for (const c of CORE) if (!groups[c]) console.log(`警告：${c} 在 d.ts 里没找到，探针与文档会缺这一类`);

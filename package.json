@@ -44,7 +44,8 @@
     "test:realtime": "node test/realtime.test.mjs",
     "test:vox": "node test/vox.test.mjs",
     "test:ide": "node test/ide.test.mjs",
-    "test:pause": "node test/pause.test.mjs"
+    "test:pause": "node test/pause.test.mjs",
+    "test:api": "node test/api.test.mjs"
   },
   "files": [
     "server.js",

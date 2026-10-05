@@ -60,6 +60,26 @@
 - **阵列不再沉默。** 副本落在已被同一种方块占住的格子时 diff 是空的、什么都不改；
   现在把原因说出来，而不是让人以为按钮没接线。
 
+### 官方 API 面对账：805 / 805，而且这条结论现在真的跑得起来
+
+对着 `docs.dao3.fun/api/` 那套引擎 API 又核了一遍，三件事：
+
+- **量尺本身在骗人。** 审计把 `declare type GameHttpHandler = (request, response)` 里
+  两空格缩进的**参数**当成类成员收了进来，于是凭空多出两个"官方成员"再报成"本地缺失"；
+  事件那条也是——只要声明过 `onX` 或 `nextX` 任意一边就要求成对，
+  而 `GameGUI.onMessage` 官方本来就没有 `nextMessage`、`world.nextPage` 是翻页方法不是事件。
+  现在按括号深度收成员，通道只认两边都声明的。结果：**805 个官方成员全部匹配（100.0%）**，
+  26 条事件通道零缺失。
+- **"以运行时对账为准"那句一直是空的。** 探针只被 `test/e2e.mjs` 调用，而 e2e 依赖
+  没装的 playwright ⇒ 整批 SKIP 并 exit 0。新增 `npm run test:api`（走仓库自带的 CDP 通道），
+  核心四类运行时 100% 对账、`onTick` 挂上去真被调用、`http.fetch` 交出去的是真 `Response`。
+- **`db.sql` 补成真能跑的。** 官方 `db`（GameDatabase）标着 @deprecated，但我们以前
+  把它做成键值存储的别名，脚本按 d.ts 写 `db.sql(...)` 拿到 `undefined`。
+  现在语句交给本地服务、用 Node 自带的 `node:sqlite` 执行（每世界一个 `.sqlite`，
+  零第三方依赖），`GameQueryResult` 既能 `await` 拿整批也能 `for await` 逐行，
+  两种用法共用同一次执行；键值方法原样保留。删世界会连库一起删。
+  边界写在文档 API 兼容那一页：要本地服务在跑、要 Node 22.5+、库不随地图导出。
+
 ### 验证
 
 `test/ide.test.mjs` 从 49 条涨到 65 条。这一节全部走 `Input.dispatchMouseEvent` 真实输入，
@@ -68,6 +88,11 @@
 撤销能整步退回、沿路连拆、球体笔刷不再是 0 格、Shift 的空心盒确实省下方块、阵列真的产出副本、
 被围栏挡住半格以内时点击归方块、旋转后朝向写进 `entitiesTree`、单轴缩放不动另外两根轴、
 手柄外松手不卡死、手柄不吞掉远处的建造、模式活过重载。
+
+新增 `test/api.test.mjs`（`npm run test:api`，13 条）：核心四类运行时逐个成员对账
+（329 个，100%）、方法没被实现成属性、`onTick` 真被调用、`http.fetch` 是真 `Response`、
+`db.sql` 建表—参数化写入—查询—`for await`—报错整条链路、SQL 层与删世界的清理语义。
+`test/pause.test.mjs` 12 条同步复跑。三套合计 90 条，全绿。
 
 ---
 

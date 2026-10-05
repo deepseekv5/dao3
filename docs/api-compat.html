@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a href="architecture.html">架构与数据流</a><a href="editor.html">编辑器界面与命令</a><a href="testing.html">测试与验证</a><b class="grp">社区</b><a href="community.html">社区层</a><b class="grp">内核</b><a class="on" href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#怎么保证没漏而不是看着不少">怎么保证&quot;没漏&quot;而不是&quot;看着不少&quot;</a><a class="t2" href="#沙箱按端裁剪">沙箱按端裁剪</a><a class="t2" href="#逐字段对账时踩过的坑都是看起来实现了的假接口">逐字段对账时踩过的坑（都是&quot;看起来实现了&quot;的假接口）</a><a class="t2" href="#事件通道">事件通道</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#怎么保证没漏而不是看着不少">怎么保证&quot;没漏&quot;而不是&quot;看着不少&quot;</a><a class="t3" href="#db.sql官方标了-@deprecated但仍然给">db.sql：官方标了 @deprecated，但仍然给</a><a class="t2" href="#沙箱按端裁剪">沙箱按端裁剪</a><a class="t2" href="#逐字段对账时踩过的坑都是看起来实现了的假接口">逐字段对账时踩过的坑（都是&quot;看起来实现了&quot;的假接口）</a><a class="t2" href="#事件通道">事件通道</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/api-compat.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -53,9 +53,18 @@ vendor/ArenaPro-CLI/client/types/ClientAPI.d.ts   UiNode 树 · InputSystem · C
 <p>静态扫一遍 d.ts 是<b>会骗人</b>的：<code>api-audit.mjs</code> 一开始报了约 64 个&quot;缺失成员&quot;， 全是 <code>on*/next*</code> 事件通道——它们由 <code>attachChannels</code> 在运行时动态挂上去，静态读对象读不到。</p>
 <p>所以分两步：</p>
 <ol class="lv-0"><li><code>scripts/api-audit.mjs</code> 从 d.ts 抽出成员清单，产出两份：<ul class="lv-1"><li><code>public/data/api-members.json</code> — 全部成员（71 个游戏类型 / 751 个成员，两端都算）</li><li><code>public/data/api-methods.json</code> — 其中可调用的方法</li></ul></li><li><code>public/js/api-probe.js</code> 在<b>真实运行时</b>上逐个探面（含动态挂载的通道）， 并检查&quot;名字对但类型错&quot;的情况（把属性当函数暴露也是不兼容）： 报告里的 <code>badKind</code> 必须是 0。</li></ol>
-<div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run build:api-ref
-# 合计 107 个游戏类型 / 71 个有成员级声明，751 个官方成员，静态比对到 730（覆盖 97.2%）</code></pre></div>
+<div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run build:api-ref     # 重新抽清单 + 生成 API 参考
+npm run test:api          # 真实运行时对账（CDP，不需要 playwright）
+# 合计 107 个游戏类型 / 81 个有成员级声明，805 个官方成员，静态比对到 805（覆盖 100.0%）
+# 核心四类：GameWorld 111/111 · GameEntity 95/95 · GamePlayer 114/114 · GameVoxels 9/9</code></pre></div>
+<p>第 2 步必须<b>真的跑得起来</b>。这条是补出来的：<code>api-audit.mjs</code> 的输出一直写着 &quot;以 api-probe.js 的运行时对账为准&quot;，而那个探针只被 <code>test/e2e.mjs</code> 调用， e2e 依赖 <code>playwright-core</code>——本机没装，它整批 <code>SKIP</code> 然后 exit 0。 于是&quot;最可信的那条结论&quot;从来没跑过，报出来的百分比全部来自静态 grep。 现在它有自己的入口 <code>npm run test:api</code>（走仓库自带的 <code>test/cdp.mjs</code>）， 除了探面还钉住三件容易悄悄退化的事：<code>onTick</code> 挂上去要真被调用（只验 <code>typeof</code> 的话一个什么都不干的假监听器也能全绿）、<code>http.fetch</code> 交出去的必须是真 <code>Response</code>（<code>statusText</code> / <code>bodyUsed</code> / <code>formData</code> 得在）、以及 SQL 层的清理语义。</p>
 <p>静态比对还有一个只咬短名字的坑：<code>r</code> / <code>g</code> / <code>b</code> / <code>a</code> 用整词正则永远命中 （<code>spectator:</code> 里就含 <code>r:</code>）。而官方 <code>GameRGBColor</code> 的分量恰恰叫 <code>r/g/b</code>， 我们内部却用 <code>red/green/blue</code>——审计报&quot;已实现&quot;，脚本里 <code>color.r</code> 是 <code>undefined</code>， 颜色直接变黑且不报错。所以 1–2 个字符的成员只认&quot;成员位置&quot;：属性访问、访问器声明、 对象字面量的键。</p>
+<p>同类还有一个坑，这次是<b>分母</b>错：<code>declare type GameHttpHandler = (\n  request: …,\n  response: …)</code> 里那些两空格缩进的参数会被&quot;看到顶格 <code>}</code> 才停&quot;的扫描当成类成员收进来， 于是凭空多出 <code>GameHttpRequest.response</code> 这样的&quot;官方成员&quot;，再报成&quot;本地缺失&quot;。 现在按括号深度收成员，并且只有 <code>onX</code> 与 <code>nextX</code> <b>两边都声明了</b>才算一个事件通道 （<code>GameGUI.onMessage</code> 官方就没有 <code>nextMessage</code>，<code>world.nextPage</code> 是翻页方法不是事件）。</p>
+<h3 id="db.sql官方标了-@deprecated但仍然给">db.sql：官方标了 @deprecated，但仍然给</h3>
+<p><code>declare const db: GameDatabase</code> 的注释是&quot;旧代编辑器使用的数据库接口，已弃用， 请改用 GameDataStorage&quot;，文档站也没有 GameDatabase 这一页。但以前 <code>db</code> 被我们 直接做成键值存储的别名，脚本按 d.ts 写 <code>db.sql(&quot;select …&quot;)</code> 拿到的是 <code>undefined</code>—— &quot;官方建议别用&quot;和&quot;我们给了个 undefined&quot;是两件事。</p>
+<p>现在 <code>db.sql</code> 是真能跑的：语句与参数分开送到本地服务，由 Node 自带的 <code>node:sqlite</code> 执行（每个世界一个 <code>server/data/worlds/&lt;id&gt;.sqlite</code>）， 返回值 <code>GameQueryResult</code> 既能 <code>await</code> 直接拿整批 rows，也能 <code>for await</code> 逐行取， 两种用法共用同一次执行（各跑一遍的话 insert 会被执行两次）。 键值那套 <code>db.get/set/…</code> 原样留着，存量脚本不因此失效。</p>
+<p>三条边界说清楚：</p>
+<ul class="lv-0"><li><b>要本地服务在跑。</b> 编辑器与便携包都自带；直接双击 <code>public/editor.html</code> 打开时 没有 SQL 引擎，这时 <code>db.sql</code> 抛的是&quot;需要本地服务在跑&quot;，不是静默返回空数组。</li><li><b>Node 要 22.5+</b>（<code>node:sqlite</code> 从这版起才有）。不满足时只有这一条接口不可用， 服务照常起。</li><li><b>库不随地图走。</b> 项目包导出与社区发布快照带的是世界存档与脚本，不含 <code>.sqlite</code>； 删世界会把它的库一起删掉，免得同 id 重建时继承上一张图的表。 新写玩法请优先用 <code>storage.getDataStorage(name)</code>——那才是官方推荐的那条路。</li></ul>
 <p>逐成员的签名、官方中文说明与单位，以及本地到位还是缺口，见 <a href="api-reference.html">API 参考</a>（生成物）。</p>
 <h2 id="沙箱按端裁剪">沙箱按端裁剪</h2>
 <p>两端注入的全局<b>不是一套</b>。名单逐条对照各自 d.ts 顶部的 <code>declare</code> 列表：</p>

@@ -92,7 +92,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h3 id="gameanimationevent">GameAnimationEvent</h3>
 <p><em>class · GameAPI</em></p>
 <blockquote><p>表示游戏动画中的一个事件，封装了当前帧数、目标对象、动画详情和取消状态等信息。</p></blockquote>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>成员</th><th>签名</th><th>说明</th><th>本地</th></tr></thead><tbody><tr><td><code>tick</code></td><td><code>tick: number</code></td><td>—</td><td>✅</td></tr><tr><td><code>target</code></td><td><code>target: TargetType</code></td><td>—</td><td>✅</td></tr><tr><td><code>animation</code></td><td><code>animation: GameAnimation&lt;KeyframeType, TargetType&gt;</code></td><td>—</td><td><b>缺</b></td></tr><tr><td><code>cancelled</code></td><td><code>cancelled: boolean</code></td><td>—</td><td>✅</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>成员</th><th>签名</th><th>说明</th><th>本地</th></tr></thead><tbody><tr><td><code>tick</code></td><td><code>tick: number</code></td><td>—</td><td>✅</td></tr><tr><td><code>target</code></td><td><code>target: TargetType</code></td><td>—</td><td>✅</td></tr><tr><td><code>animation</code></td><td><code>animation: GameAnimation&lt;KeyframeType, TargetType&gt;</code></td><td>—</td><td>✅</td></tr><tr><td><code>cancelled</code></td><td><code>cancelled: boolean</code></td><td>—</td><td>✅</td></tr></tbody></table></div>
 <h3 id="gameanimationplaybackconfig">GameAnimationPlaybackConfig</h3>
 <p><em>interface · GameAPI</em></p>
 <blockquote><p>定义游戏动画播放的配置接口。 这个接口包含了动画播放的所有必要参数，用于控制动画的行为和特性。</p></blockquote>
@@ -316,7 +316,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h3 id="gamedatabase">GameDatabase</h3>
 <p><em>class · GameAPI</em></p>
 <blockquote><p>标准 SQL 数据库</p></blockquote>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>成员</th><th>签名</th><th>说明</th><th>本地</th></tr></thead><tbody><tr><td><code>sql</code></td><td>`sql: ( sql: string[], ...params: (number \</td><td>string \</td><td>Uint8Array \</td><td>boolean \</td><td>null)[] ) =&gt; GameQueryResult`</td><td>执行 SQL 查询</td><td><b>缺</b></td></tr></tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>成员</th><th>签名</th><th>说明</th><th>本地</th></tr></thead><tbody><tr><td><code>sql</code></td><td>`sql: ( sql: string[], ...params: (number \</td><td>string \</td><td>Uint8Array \</td><td>boolean \</td><td>null)[] ) =&gt; GameQueryResult`</td><td>执行 SQL 查询</td><td>✅</td></tr></tbody></table></div>
 <h3 id="gamedatastorage">GameDataStorage</h3>
 <p><em>class · GameAPI</em></p>
 <blockquote><p>游戏数据存储类，用于对特定存储空间内的数据进行操作。 存储数据的类型。</p></blockquote>
