@@ -4,6 +4,7 @@ import { OrbitControls } from "../../vendor/three/OrbitControls.js";
 import { colorOf, hexToRgb, partIndex, bindDoc, invalidateIndex } from "./model.js";
 
 const CUBE = new THREE.BoxGeometry(1, 1, 1);
+const HOVER_MAX = 64, SEL_MAX = 4000;   // 高亮层容量：改这里要同时改 _marker 的分配
 
 export class VoxaView {
   constructor(canvas, doc) {
@@ -39,8 +40,8 @@ export class VoxaView {
     this.scene.add(this.boneHelpers);
     this.boxHelpers = new THREE.Group();
     this.scene.add(this.boxHelpers);
-    this.hoverMesh = this._marker(0x66ccff, 0.45);
-    this.selMesh = this._marker(0x00e5ff, 0.35);
+    this.hoverMesh = this._marker(0x66ccff, 0.45, HOVER_MAX);
+    this.selMesh = this._marker(0x00e5ff, 0.35, SEL_MAX);
     this.scene.add(this.hoverMesh, this.selMesh);
     this.raycaster = new THREE.Raycaster();
     this.ortho = false;
@@ -51,10 +52,13 @@ export class VoxaView {
     this._loop = this._loop.bind(this);
     requestAnimationFrame(this._loop);
   }
-  _marker(color, opacity) {
+  _marker(color, opacity, cap) {
+    // 容量必须由调用方给：以前这里写死 1，而 showSelection 往 up-to-4000 个实例上写，
+    // 越界的部分静默落在 Float32Array 之外——于是框选一片只亮一格，
+    // 看起来像"框选根本不工作"。
     const m = new THREE.InstancedMesh(CUBE, new THREE.MeshBasicMaterial({
       color, transparent: true, opacity, depthWrite: false, wireframe: false,
-    }), 1);
+    }), cap);
     m.count = 0;
     m.frustumCulled = false;
     return m;
@@ -176,6 +180,15 @@ export class VoxaView {
     }
     n = { group, mesh, emissive, part };
     this.partNodes.set(part.id, n);
+    // 部件不透明度是数据（官方属性面板就有这一行），重建材质时必须重新贴上去，
+    // 并把"基础值"记进 userData：物理模式的幽灵态会在它之上再乘一层。
+    const op = part.opacity ?? 1;
+    for (const m of [mesh, emissive]) {
+      if (!m) continue;
+      m.material.userData.baseOpacity = op;
+      m.material.transparent = op < 0.999;
+      m.material.opacity = op;
+    }
     // 边缘线 / 发光显隐是视口级偏好，而这里每次都新建材质，
     // 所以必须把当前开关重新贴上去——否则放一个体素就把用户设的边缘线悄悄关掉了
     if (mesh) mesh.material.wireframe = !!this._edges;
@@ -243,6 +256,24 @@ export class VoxaView {
     this.boxHelpers.visible = this.showBoxes;
   }
   setActivePart(part) { this.activePart = part; this.rebuildBoxes(); }
+  /** 「局部 / 世界坐标」要有真实差别，靠的就是渲染层这条现成的父子链：
+   *  部件挂在骨骼节点下、骨骼再挂在父骨骼下，所以世界位置 = 链上变换 ∘ 部件局部位置。
+   *  自己另拼一遍父链就会和 applyPose 分叉——动画播到一半时面板数字对不上画面。 */
+  partWorldPos(part) {
+    const n = this.partNodes.get(part.id);
+    if (!n) return part.pos.slice();
+    n.group.updateWorldMatrix(true, false);
+    const v = new THREE.Vector3();
+    n.group.getWorldPosition(v);
+    return [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
+  }
+  partPosFromWorld(part, world) {
+    const n = this.partNodes.get(part.id);
+    if (!n || !n.group.parent) return world.slice();
+    n.group.updateWorldMatrix(true, false);
+    const v = n.group.parent.worldToLocal(new THREE.Vector3(world[0], world[1], world[2]));
+    return [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
+  }
   setBoneVisible(on) { this.showBones = on; this.boneHelpers.visible = on; }
   setBoxesVisible(on) { this.showBoxes = on; this.boxHelpers.visible = on; }
   /** 物理界面：官方把模型画成半透明，好让人看清碰撞盒与模型的关系 */
@@ -310,7 +341,7 @@ export class VoxaView {
   /* ---------------- 高亮 ---------------- */
   showHover(cells) {
     const list = cells ? (Array.isArray(cells[0]) ? cells : [cells]) : [];
-    this.hoverMesh.count = Math.min(list.length, 64);
+    this.hoverMesh.count = Math.min(list.length, HOVER_MAX);
     const m = new THREE.Matrix4();
     for (let i = 0; i < this.hoverMesh.count; i++) {
       m.makeTranslation(list[i][0] + 0.5, list[i][1] + 0.5, list[i][2] + 0.5);
@@ -320,7 +351,9 @@ export class VoxaView {
   }
   showSelection(cells) {
     const list = cells || [];
-    this.selMesh.count = Math.min(list.length, 4000);
+    this.selMesh.count = Math.min(list.length, SEL_MAX);
+    // 超出容量只画前若干格，但必须说出来：数据是全的、操作照常，只有高亮是截的。
+    if (list.length > SEL_MAX && this.onClamp) this.onClamp(list.length, SEL_MAX);
     const m = new THREE.Matrix4();
     for (let i = 0; i < this.selMesh.count; i++) {
       m.makeTranslation(list[i][0] + 0.5, list[i][1] + 0.5, list[i][2] + 0.5);
@@ -336,7 +369,9 @@ export class VoxaView {
       o.position.set(...b.position);
       o.rotation.set(b.rotation[0] * Math.PI / 180, b.rotation[1] * Math.PI / 180, b.rotation[2] * Math.PI / 180);
       o.scale.set(b.scale[0] || 1, b.scale[1] || 1, b.scale[2] || 1);
-      o.userData.op = 1;
+      // 骨骼自己的不透明度是基准值。这里先前写死 1，于是滑杆调完、
+      // 只要 applyPose 再跑一遍（每帧都会）读数就回到 100%。
+      o.userData.op = b.op ?? 1;
     }
     if (!anim) return;
     for (const [boneId, keys] of Object.entries(anim.tracks)) {
@@ -353,7 +388,9 @@ export class VoxaView {
     for (const p of doc.parts) {
       const n = this.partNodes.get(p.id);
       if (!n) continue;
-      let op = 1;
+      // 部件自身的不透明度是基础值，骨骼链上的 op 再往下乘：
+      // 官方就是这两条通道叠加（部件可透明 + 不透明度可 K 帧做显隐动画）。
+      let op = p.opacity ?? 1;
       if (p.bone) {
         const chain = [];
         let cur = this.doc.bones.find((b) => b.id === p.bone);

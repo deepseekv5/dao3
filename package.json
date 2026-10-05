@@ -45,7 +45,9 @@
     "test:vox": "node test/vox.test.mjs",
     "test:ide": "node test/ide.test.mjs",
     "test:pause": "node test/pause.test.mjs",
-    "test:api": "node test/api.test.mjs"
+    "test:api": "node test/api.test.mjs",
+    "test:voxa": "node test/voxa.test.mjs",
+    "test:voxa-ui": "node test/voxa-ui.test.mjs"
   },
   "files": [
     "server.js",

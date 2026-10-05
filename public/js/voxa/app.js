@@ -141,8 +141,13 @@ class VoxaApp {
   }
   restore(raw) {
     const id = this.activePart && this.activePart.id;
+    const bid = this.activeBone && this.activeBone.id;
     this.doc = deserialize(raw);
     this.activePart = this.doc.parts.find((p) => p.id === id) || this.doc.parts[0] || null;
+    // 骨骼也要重新解析：deserialize 换的是整份文档，还攥着旧对象的话，
+    // 动画模式下撤销一步之后参数面板读写的是那根"已经不在文档里"的骨骼——
+    // 数字看着动了，画面和存盘都不跟着走。
+    this.activeBone = this.doc.bones.find((b) => b.id === bid) || this.doc.bones[0] || null;
     this.view.setDoc(this.doc);
     this.selection = [];
     this.renderAll();
@@ -151,6 +156,8 @@ class VoxaApp {
   /* ---------------- UI 绑定 ---------------- */
   bindUI() {
     const cv = $("vxCanvas");
+    // 高亮层容量有限，超出时由渲染层回一句，别让用户自己猜"是不是没选中"
+    this.view.onClamp = (total, drawn) => this.tip(`选区 ${total} 格，高亮只画前 ${drawn} 格（选中的都还在，操作照常）`);
     cv.addEventListener("contextmenu", (e) => e.preventDefault());
     cv.addEventListener("pointerdown", (e) => this.onDown(e));
     cv.addEventListener("pointermove", (e) => this.onMove(e));
@@ -306,7 +313,18 @@ class VoxaApp {
     $("uRedo").onclick = () => this.redo();
     $("vxProj").onchange = () => this.view.setOrtho($("vxProj").value === "ortho");
     $("vxEdge").onchange = () => this.setEdges($("vxEdge").value === "show");
-    const tgl = (id, fn) => { const b = $(id); b.onclick = () => { const on = !b.classList.contains("on"); b.classList.toggle("on", on); fn(on); }; };
+    // 绑定完立刻把 DOM 上的初值推给渲染层：以前只有点击才会推，于是
+    // "下拉框写着显示边缘线而画面上没有线"、"发光按钮没亮而自发光在渲染"，
+    // 用户读到的是"要点两下才生效"——看起来就是功能坏了。
+    const tgl = (id, fn) => {
+      const b = $(id);
+      const apply = (on) => { b.classList.toggle("on", on); fn(on); };
+      b.onclick = () => apply(!b.classList.contains("on"));
+      apply(b.classList.contains("on"));
+    };
+    // 下拉框没有 class 可同步，单独推一次：默认值写着"显示边缘线"而 view 里是
+    // undefined，症状同样是"要点两下才生效"。
+    this.setEdges($("vxEdge").value === "show");
     tgl("uBone", (on) => this.view.setBoneVisible(on));
     tgl("uBox", (on) => this.view.setBoxesVisible(on));
     tgl("uGrid", (on) => { this.view.grid.visible = on; });
@@ -608,7 +626,13 @@ class VoxaApp {
     }
     const hit = this.view.pickVoxel(e);
     const bone = this.mode === "anim" ? this.view.pickBone(e) : null;
-    if (bone) { this.activeBone = bone; this.drag = { kind: "bone", bone, x: e.clientX, y: e.clientY }; this.renderBones(); this.renderProps(); return; }
+    if (bone) {
+      this.activeBone = bone;
+      // 快照拍在按下这一拍：以前骨骼拖拽全程不进撤销栈，拖完一步撤不动。
+      this.snapshot("骨骼位移");
+      this.drag = { kind: "bone", bone, x: e.clientX, y: e.clientY, pos: bone.position.slice() };
+      this.renderBones(); this.renderProps(); return;
+    }
     if (this.tool === "select") {
       this.drag = { kind: "select", start: hit ? hit.cell : this.view.pickPlane(e, this.activePart ? this.activePart.size[1] / 2 : 0) || [0, 0, 0] };
       return;
@@ -616,6 +640,9 @@ class VoxaApp {
     if (["move", "rot", "scale"].includes(this.tool) && hit) {
       this.activePart = hit.part;
       this.view.setActivePart(hit.part);
+      // 快照必须拍在改动之前。以前拍在 onUp（也就是改动之后），
+      // 于是"撤销一步"回到的是拖完的状态，要撤两步才回到拖之前——读起来就是撤销不干净。
+      this.snapshot(this.tool === "move" ? "移动部件" : this.tool === "rot" ? "旋转部件" : "缩放部件");
       this.drag = { kind: this.tool, part: hit.part, x: e.clientX, y: e.clientY, pos: hit.part.pos.slice(), rot: hit.part.rot.slice(), scale: hit.part.scale.slice() };
       this.renderParts();
       return;
@@ -648,8 +675,10 @@ class VoxaApp {
     }
     if (d.kind === "bone") {
       const dx = (e.clientX - d.x) * 0.06, dy = (e.clientY - d.y) * 0.06;
-      d.bone.position[0] = +(d.bone.position[0] + dx).toFixed(2);
-      d.bone.position[2] = +(d.bone.position[2] + dy).toFixed(2);
+      // 增量要从"按下那一刻"的那份位置算。以前是往当前值上再加一遍"距起点的总位移"，
+      // 于是每个 pointermove 都累加一次——越拖越快、松手时人已经不知道在哪了。
+      const from = d.pos || (d.pos = d.bone.position.slice());
+      d.bone.position = [+(from[0] + dx).toFixed(2), from[1], +(from[2] + dy).toFixed(2)];
       this.view.buildBones();
       this.renderProps();
       return;
@@ -663,7 +692,14 @@ class VoxaApp {
     }
     if (d.kind === "move") {
       const dx = (e.clientX - d.x) * 0.08, dy = (e.clientY - d.y) * 0.08;
-      d.part.pos = [+(d.pos[0] + dx).toFixed(2), +(d.pos[1] - dy).toFixed(2), d.pos[2]];
+      if (this.space === "world") {
+        // 世界系：屏幕位移加在"世界读数"上，再换算回部件局部值。
+        // 部件绑在转过/移过的骨骼上时，这两种拖法的结果明显不同——那才是这个开关的意义。
+        const w = d.world || (d.world = this.view.partWorldPos(d.part));
+        d.part.pos = this.view.partPosFromWorld(d.part, [w[0] + dx, w[1] - dy, w[2]]);
+      } else {
+        d.part.pos = [+(d.pos[0] + dx).toFixed(2), +(d.pos[1] - dy).toFixed(2), d.pos[2]];
+      }
       this.view.applyPartTransform(d.part);
       this.view.rebuildBoxes();
       this.syncPropVecs();
@@ -709,7 +745,8 @@ class VoxaApp {
       this.syncSizeBoxes();
     }
     if (d.kind === "select") this.renderProps();
-    if (["move", "rot", "scale"].includes(d.kind)) { this.snapshot(d.kind); this.dirty(); }
+    // 快照已在 onDown 拍过（改动之前），这里只需要把"有未保存改动"标出去
+    if (["move", "rot", "scale", "bone"].includes(d.kind)) this.dirty();
     this.view.showSelection(this.selection);
   }
   applyVoxelTool(hit) {
@@ -928,10 +965,11 @@ class VoxaApp {
       return;
     }
     if (this.mode === "anim" && this.activeBone) {
+      const snap = (l) => () => this.snapshot(l);
       host.appendChild(section("骨骼 " + this.activeBone.name, [
-        vecRow("位移", this.activeBone.position, (v) => { this.activeBone.position = v; this.view.buildBones(); }),
-        vecRow("旋转", this.activeBone.rotation, (v) => { this.activeBone.rotation = v; this.view.buildBones(); }),
-        vecRow("缩放", this.activeBone.scale, (v) => { this.activeBone.scale = v; this.view.buildBones(); }),
+        vecRow("位移", this.activeBone.position, (v) => { this.activeBone.position = v; this.view.buildBones(); }, null, snap("骨骼位移")),
+        vecRow("旋转", this.activeBone.rotation, (v) => { this.activeBone.rotation = v; this.view.buildBones(); }, null, snap("骨骼旋转")),
+        vecRow("缩放", this.activeBone.scale, (v) => { this.activeBone.scale = v; this.view.buildBones(); }, null, snap("骨骼缩放")),
         sliderRow("不透明度", boneOpacityOf(this.activeBone), (val) => this.setBoneOpacity(val)),
       ]));
       host.appendChild(btnRow([["◆ 创建帧", () => this.keyframe()]]));
@@ -939,18 +977,39 @@ class VoxaApp {
     }
     const p = this.activePart;
     if (!p) { host.innerHTML = '<div class="vx-empty">未选中部件</div>'; this._vecSrc = null; return; }
+    const world = this.space === "world";
     // 拖动部件时只想把三个数字刷一下，不想把整块面板拆了重建：
     // 以前 pointermove 每次都调 renderProps()，等于 60fps 拆 DOM，
     // 而且玩家正在输入的那个数字框会被半路销毁。
-    this._vecSrc = { pos: () => p.pos, rot: () => p.rot, scale: () => p.scale, size: () => p.size };
+    this._vecSrc = { pos: () => (world ? this.view.partWorldPos(p) : p.pos), rot: () => p.rot, scale: () => p.scale, size: () => p.size };
+    const snap = (l) => () => this.snapshot(l);
     host.appendChild(section("部件 " + p.name, [
-      vecRow("位置", p.pos, (v) => { p.pos = v; this.view.applyPartTransform(p); this.view.rebuildBoxes(); }, "pos"),
-      vecRow("旋转", p.rot, (v) => { p.rot = v; this.view.applyPartTransform(p); }, "rot"),
-      vecRow("缩放", p.scale, (v) => { p.scale = v; this.view.applyPartTransform(p); }, "scale"),
+      // 「位置」这一行随坐标系变口径：局部=相对所绑骨骼，世界=模型空间里的绝对位置。
+      // 旋转/缩放始终是局部值（官方那两行也没有世界口径，父子链上转两次欧拉角
+      // 与分量相加并不等价，硬做只会给出一组对不上画面的数字）。
+      vecRow("位置", world ? this.view.partWorldPos(p) : p.pos, (v) => {
+        p.pos = world ? this.view.partPosFromWorld(p, v) : v;
+        this.view.applyPartTransform(p); this.view.rebuildBoxes();
+      }, "pos", snap("改位置")),
+      vecRow("旋转", p.rot, (v) => { p.rot = v; this.view.applyPartTransform(p); }, "rot", snap("改旋转")),
+      vecRow("缩放", p.scale, (v) => { p.scale = v; this.view.applyPartTransform(p); }, "scale", snap("改缩放")),
       vecRow("部件框", p.size, (v) => {
         p.size = v.map((x) => clamp(Math.round(x) || 1, 1, MAX_BOX));
         this.view.rebuildBoxes(); this.syncSizeBoxes(); this.renderStat();
-      }, "size"),
+      }, "size", snap("改部件框")),
+      sliderRow("不透明度", p.opacity ?? 1, (val) => {
+        // 滑杆每动一格都拍一次快照会淹掉撤销栈，所以只在落到新值时记一步
+        if ((p.opacity ?? 1) === val) return;
+        this.snapshot("改不透明度");
+        p.opacity = val;
+        for (const m of [this.view.partNodes.get(p.id)?.mesh, this.view.partNodes.get(p.id)?.emissive]) {
+          if (!m) continue;
+          m.material.userData.baseOpacity = val;
+          m.material.transparent = val < 0.999;
+          m.material.opacity = val;
+        }
+        this.dirty();
+      }),
       selectRow("绑定骨骼", ["", ...this.doc.bones.map((b) => b.id)], ["未绑定", ...this.doc.bones.map((b) => b.name)], p.bone || "", (val) => {
         this.snapshot("绑定");
         bindPart(this.doc, p, val || null);
@@ -1093,7 +1152,7 @@ class VoxaApp {
       position: [o.position.x, o.position.y, o.position.z],
       rotation: [(o.rotation.x * 180 / Math.PI).toFixed(1) * 1, (o.rotation.y * 180 / Math.PI).toFixed(1) * 1, (o.rotation.z * 180 / Math.PI).toFixed(1) * 1],
       scale: [o.scale.x, o.scale.y, o.scale.z],
-      op: this.activeBone._op ?? 1,
+      op: this.activeBone.op ?? 1,
     } : { position: this.activeBone.position, rotation: this.activeBone.rotation, scale: this.activeBone.scale, op: 1 };
     this.snapshot("创建帧");
     createFrame(this.doc, this.activeBone, t, this.frame);
@@ -1103,7 +1162,7 @@ class VoxaApp {
   setBoneOpacity(v) {
     const b = this.activeBone;
     if (!b) return;
-    b._op = v;
+    b.op = v;
     const o = this.view.boneNodes.get(b.id);
     if (o) o.userData.op = v;
     // 动画模式：不透明度写进当前帧关键片（官方用不透明度做显隐动画）
@@ -1437,7 +1496,7 @@ function section(title, rows) {
   for (const r of rows) d.appendChild(r);
   return d;
 }
-function vecRow(label, value, set, key) {
+function vecRow(label, value, set, key, snap) {
   const row = document.createElement("div");
   row.className = "vx-row";
   row.innerHTML = `<label>${label}</label>`;
@@ -1445,7 +1504,9 @@ function vecRow(label, value, set, key) {
   inp.className = "vx-vec";
   if (key) inp.dataset.vec = key;
   inp.value = value.map((v) => +v.toFixed(2)).join(", ");
-  inp.onchange = () => set(parseVec(inp.value, value));
+  // 每一次提交都先拍快照再改：以前数值框完全进不了撤销栈，
+  // 手滑打错一个数只能自己凭记忆打回去。
+  inp.onchange = () => { if (snap) snap(); set(parseVec(inp.value, value)); };
   row.appendChild(inp);
   return row;
 }
@@ -1484,7 +1545,7 @@ function btnRow(pairs) {
   }
   return d;
 }
-function boneOpacityOf(bone) { return bone._op ?? 1; }
+function boneOpacityOf(bone) { return bone.op ?? 1; }
 
 /* HSV 取色块要自己算。注意 model.js 的 hexToRgb/rgbToHex 走的是 **0..1** 分量
    （直接喂给 three.js 材质），而官方色板上的 R/G/B 显示的是 0..255。

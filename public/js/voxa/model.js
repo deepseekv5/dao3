@@ -39,11 +39,14 @@ export function newPaletteEntry(hex = "#c8a06c", emissive = 0) {
 export function newPart(name = "Object", size = [8, 8, 8]) {
   return {
     id: nextId("p"), name, size: size.slice(), pos: [0, 0, 0], rot: [0, 0, 0], scale: [1, 1, 1],
-    visible: true, voxels: [], bone: null, group: null,
+    // 官方 parts/propertiesPanel.md：属性面板除位置/方向外"同时也可设置透明"
+    visible: true, opacity: 1, voxels: [], bone: null, group: null,
   };
 }
 export function newBone(name = "Bone", parent = null) {
-  return { id: nextId("b"), name, parent, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] };
+  // op 是"不透明度"这条动画通道的落点（官方 animation/propertiesPanel.md：
+  // 用不透明度做模型显示/隐藏动画），所以它是数据字段而不是 _ 开头的运行时缓存
+  return { id: nextId("b"), name, parent, position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1], op: 1 };
 }
 export function newAnim(name = "idle") {
   return { id: nextId("a"), name, fps: ANIM_FPS, tracks: {} };
@@ -444,10 +447,10 @@ export function serialize(doc) {
     palette: palette.map((c) => ({ i: c.i, hex: c.hex, emissive: c.emissive || 0 })),
     parts: parts.map((p) => ({
       id: p.id, name: p.name, size: p.size, pos: p.pos, rot: p.rot, scale: p.scale,
-      visible: p.visible !== false, bone: p.bone || null, group: p.group || null,
+      visible: p.visible !== false, opacity: p.opacity ?? 1, bone: p.bone || null, group: p.group || null,
       voxels: p.voxels.map((v) => ({ x: v.x, y: v.y, z: v.z, c: v.c })),
     })),
-    bones: bones.map((b) => ({ id: b.id, name: b.name, parent: b.parent, position: b.position, rotation: b.rotation, scale: b.scale })),
+    bones: bones.map((b) => ({ id: b.id, name: b.name, parent: b.parent, position: b.position, rotation: b.rotation, scale: b.scale, op: b.op ?? 1 })),
     groups: (groups || []).map((g) => ({ id: g.id, name: g.name, partIds: g.partIds })),
     anims: anims.map((a) => ({ id: a.id, name: a.name, fps: a.fps, tracks: a.tracks })),
     curAnim: doc.curAnim || 0,
@@ -458,9 +461,10 @@ export function deserialize(raw) {
   const doc = newDoc(raw.name || "未命名模型");
   if (raw.type) doc.type = raw.type;
   doc.palette = (raw.palette && raw.palette.length) ? raw.palette : doc.palette;
-  doc.parts = (raw.parts || []).map((p) => Object.assign({ visible: true, voxels: [] }, p));
+  doc.parts = (raw.parts || []).map((p) => Object.assign({ visible: true, opacity: 1, voxels: [] }, p));
   doc.parts.forEach((p) => bindDoc(p, doc));
-  doc.bones = (raw.bones && raw.bones.length) ? raw.bones : doc.bones;
+  // 老文件里没有 op：给回 1，而不是留 undefined 让渲染层每次都要 ?? 
+  doc.bones = (raw.bones && raw.bones.length) ? raw.bones.map((b) => Object.assign({ op: 1 }, b)) : doc.bones;
   doc.groups = raw.groups || [];
   doc.anims = (raw.anims && raw.anims.length) ? raw.anims : doc.anims;
   doc.curAnim = raw.curAnim || 0;
