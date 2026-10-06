@@ -368,8 +368,17 @@ try {
   ok("超长评论被拒", r.status === 400, r.status);
   r = await B.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "作者收到通知了吗" });
   ok("评论会通知作者", r.status === 200, r.status);
+  const cmt2 = r.data.row?.id;
   r = await A.call("GET", "/api/community/notifications");
   ok("A 的通知里有来自 B 的评论与点赞", ["comment", "like"].every((k) => r.data.rows.some((n) => n.kind === k && n.actor?.name === nameB)), JSON.stringify(r.data.rows.map((n) => n.kind)));
+  // 举报评论的路由一直都在（接口表里也写着），前端却从来没接——评论才是真会长出脏话的地方。
+  r = await C.call("POST", `/api/community/comments/${cmt2}/report`, { reason: "人身攻击" });
+  ok("路人能举报一条评论", r.status === 200, JSON.stringify(r.data));
+  r = await A.call("GET", "/api/community/admin/overview");
+  ok("评论举报进的是审核队列，target 是评论而不是地图",
+    (r.data.reports || []).some((x) => x.targetType === "comment" && x.target === cmt2), JSON.stringify(r.data.reports).slice(0, 240));
+  r = await C.call("POST", "/api/community/comments/000000000000/report", { reason: "x" });
+  ok("举报一条不存在的评论报 404", r.status === 404, r.status);
   r = await A.call("POST", "/api/community/notifications");
   r = await A.call("GET", "/api/community/notifications");
   ok("通知能一键标已读", r.status === 200 && r.data.unread === 0, JSON.stringify(r.data).slice(0, 120));

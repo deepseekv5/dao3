@@ -228,6 +228,14 @@
 .cm-cmt .hd { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 3px; }
 .cm-cmt .hd a { color: var(--fg2); text-decoration: none; font-weight: 600; }
 .cm-cmt .hd time { color: var(--fg3); font-size: 11px; font-family: var(--mono); }
+/* 「作者」这颗芯片：一张图的评论区里最该先认出来的人就是发图的那个。
+   用主色描边而不是实心，避免它比评论正文更抢眼。 */
+.cm-cmt .hd .op {
+  font: 600 10px/1 var(--mono); font-style: normal; letter-spacing: .4px;
+  color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 38%, transparent);
+  padding: 2px 5px; border-radius: 4px;
+}
 .cm-cmt p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--fg); word-break: break-word; white-space: pre-wrap; }
 .cm-cmt .ops { display: flex; gap: 10px; margin-top: 5px; font-size: 11px; color: var(--fg3); }
 .cm-cmt .ops button { background: none; border: 0; color: inherit; cursor: pointer; font: inherit; padding: 0; }

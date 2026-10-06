@@ -3,7 +3,7 @@
 // 皮肤为什么在账号上而不是地图里：角色外观是"我是谁"，不是"这张图长什么样"，
 // 换图、进别人发的图都应该带着走。运行时会读 auth.me.skin 贴到人偶上。
 import * as auth from "/js/auth.js";
-import { cardHtml, bindCards, face } from "/js/pubs.js";
+import { cardHtml, bindCards, face, toast } from "/js/pubs.js";
 import { MC_PRESETS, presetUrl, facePreview, readSkinFile, skinNameFrom } from "/js/skin-sheet.js";
 import { REGIONS, GENDERS, PERSONA, LOOKING, genderLabel, personaLabel, lookingLabel, MAX_PERSONA } from "/js/profile-fields.js";
 
@@ -304,7 +304,7 @@ function openEditor(u, onSaved) {
         draft.texture = url;
         mcName = skinNameFrom(f, "我的皮肤");
         syncDoll(); paintMc();
-      } catch (err) { alert(String(err && err.message || err)); }
+      } catch (err) { toast(String(err && err.message || err), true); }
     };
     up.appendChild(file);
     row.appendChild(up);
@@ -343,7 +343,7 @@ function openEditor(u, onSaved) {
         box.querySelector("#" + id).replaceWith(Object.assign(document.createElement("span"), {
           className: "pf-ok", textContent: (kind === "avatar" ? "头像" : "横幅") + "已更新",
         }));
-      } catch (err) { alert(err.message); }
+      } catch (err) { toast(err.message, true); }
     };
   }
   box.querySelector("#eSave").onclick = async () => {
@@ -366,7 +366,7 @@ function openEditor(u, onSaved) {
       }
       auth.setMe(r.user);
       close(); onSaved && onSaved(r.user);
-    } catch (e) { btn.disabled = false; alert(e.message); }
+    } catch (e) { btn.disabled = false; toast(e.message, true); }
   };
 }
 
@@ -488,7 +488,7 @@ export async function profileView(name, root, setTitle, setSub) {
       try {
         await api("POST", `/api/community/friend/${rel.pendingIn ? "accept" : "request"}`, { name: u.name });
         profileView(name, root, setTitle, setSub);
-      } catch (e) { alert(e.message); }
+      } catch (e) { toast(e.message, true); }
     };
   }
 
@@ -515,10 +515,18 @@ export async function profileView(name, root, setTitle, setSub) {
     }
     if (which === "followers" || which === "following") {
       const rows = (await api("GET", `/api/community/users/${encodeURIComponent(name)}/${which}`)).rows;
+      /** 关注者这一栏最该有的一颗按钮是「回关」：看到有人跟着我，却要先进他的主页
+       *  才能关注，等于把一次点击摊成三次。已关注的显示成"已关注"，再点就是取消。 */
+      const op = (x) => !auth.me || x.id === auth.me.id ? ""
+        : `<button class="cm-btn sm${x.relation && x.relation.following ? "" : " primary"}" data-fo="${esc(x.name)}">${x.relation && x.relation.following ? "已关注" : "关注"}</button>`;
       body.innerHTML = rows.length ? `<div class="cm-rows">${rows.map((x) => `<div class="cm-row">${face(x)}
-        <div class="grow"><b>${esc(x.name)}</b><div class="sub">${esc(x.bio || "")}</div></div>
-        <a class="cm-btn sm" href="/u/${encodeURIComponent(x.name)}">主页</a></div>`).join("")}</div>`
+        <div class="grow"><b>${esc(x.name)}</b><div class="sub"><span class="cm-on${x.online ? " on" : ""}">${x.online ? "在线" : "离线"}</span>${esc(x.bio || "")}</div></div>
+        ${op(x)}<a class="cm-btn sm" href="/u/${encodeURIComponent(x.name)}">主页</a></div>`).join("")}</div>`
         : `<div class="cm-empty">${which === "followers" ? "还没有人关注这个人。" : "这个人还没关注谁。"}</div>`;
+      for (const b of body.querySelectorAll("[data-fo]")) b.onclick = async () => {
+        try { await api("POST", "/api/community/follow", { name: b.dataset.fo }); await show(which); }
+        catch (e) { toast(e.message, true); }
+      };
       return;
     }
     const rows = (await api("GET", `/api/community/users/${encodeURIComponent(name)}/pubs?kind=${which}`)).rows;
@@ -526,7 +534,22 @@ export async function profileView(name, root, setTitle, setSub) {
       : `<div class="cm-empty"><b>${which === "model" ? "还没有发布模型" : "还没有发布地图"}</b>${mine ? (which === "model" ? "在 VOXA 里点「发布到社区」。" : "打开工作台，把这张图发出去。") : ""}</div>`;
     bindCards(body);
   }
-  for (const b of tabs.querySelectorAll("[data-t]")) b.onclick = () => show(b.dataset.t);
-  await show("map");
+  /** 主页的页签和广场一样要能在地址栏里活下来：刷新不丢、能直接把"他的关注者"
+   *  甩给别人。跟广场用同一套规矩——replaceState，不压历史，否则后退键会变成
+   *  "回到我三分钟前点过的那个页签"。收藏那一格只有自己看得见，所以白名单要连着
+   *  页签是否真的存在一起判。 */
+  const PF_TABS = ["map", "model", "followers", "following", "favorites", "recent"];
+  const fromUrl = () => {
+    const t = new URLSearchParams(location.search).get("tab");
+    return PF_TABS.includes(t) && tabs.querySelector(`[data-t="${t}"]`) ? t : "map";
+  };
+  for (const b of tabs.querySelectorAll("[data-t]")) b.onclick = () => {
+    const u = new URLSearchParams(location.search);
+    if (b.dataset.t === "map") u.delete("tab"); else u.set("tab", b.dataset.t);
+    const qs = u.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+    show(b.dataset.t);
+  };
+  await show(fromUrl());
 }
 export { previewHtml, SKIN_DEFAULT };

@@ -473,7 +473,7 @@ async function pubView(id) {
     try { await api("DELETE", "/api/community/pubs/" + p.id); toast("已下架"); go("/community"); }
     catch (e) { toast(e.message, true); }
   };
-  await loadComments(p.id);
+  await loadComments(p.id, p.author?.id);
 }
 
 function renderAuthorActs(a, rel) {
@@ -506,20 +506,23 @@ function renderAuthorActs(a, rel) {
   };
 }
 
-async function loadComments(pubId) {
+async function loadComments(pubId, authorId) {
   const list = $("cmCmtList"), compose = $("cmCompose");
   if (!list) return;
   let rows = [];
   try { rows = (await api("GET", `/api/community/pubs/${pubId}/comments`)).rows; }
   catch (e) { list.innerHTML = `<p class="cm-hint">${esc(e.message)}</p>`; return; }
+  // 一张地图的评论区里，作者那句话的分量不一样，所以要先认得出哪条是他。
+  const badge = (c) => authorId && c.author && c.author.id === authorId ? '<em class="op">作者</em>' : "";
   list.innerHTML = rows.length ? rows.map((c) => `<div class="cm-cmt" data-id="${esc(c.id)}">
       <a href="/u/${encodeURIComponent(c.author.name)}" style="text-decoration:none">${face(c.author)}</a>
       <div class="txt">
-        <div class="hd"><a href="/u/${encodeURIComponent(c.author.name)}">${esc(c.author.name)}</a><time>${esc(timeAgo(c.ts))}</time></div>
+        <div class="hd"><a href="/u/${encodeURIComponent(c.author.name)}">${esc(c.author.name)}</a>${badge(c)}<time>${esc(timeAgo(c.ts))}</time></div>
         <p>${esc(c.body)}</p>
         <div class="ops">
           <button data-x="like" class="${c.likedByMe ? "on" : ""}">♥ <span>${c.likes}</span></button>
-          ${c.mine ? '<button data-x="del">删除</button>' : ""}
+          ${c.mine ? '<button data-x="del">删除</button>'
+            : auth.me ? '<button data-x="report">举报</button>' : ""}
         </div>
       </div>
     </div>`).join("") : `<p class="cm-hint">还没有评论。</p>`;
@@ -536,12 +539,21 @@ async function loadComments(pubId) {
     };
     const del = el.querySelector('[data-x="del"]');
     if (del) del.onclick = async () => {
-      try { await api("DELETE", `/api/community/pubs/${pubId}/comments/${id}`); await loadComments(pubId); bumpCount(-1); }
+      try { await api("DELETE", `/api/community/pubs/${pubId}/comments/${id}`); await loadComments(pubId, authorId); bumpCount(-1); }
+      catch (e) { toast(e.message, true); }
+    };
+    // 举报评论这条路服务端早就有（docs 的接口表里也写着），前端一直没接：
+    // 结果就是地图能举报、评论不能，而评论才是真正会长出脏话的地方。
+    const rep = el.querySelector('[data-x="report"]');
+    if (rep) rep.onclick = async () => {
+      const reason = window.prompt("举报这条评论的理由（会进入管理员的审核队列）");
+      if (reason == null || !reason.trim()) return;
+      try { await api("POST", `/api/community/comments/${id}/report`, { reason: reason.trim().slice(0, 200) }); toast("已提交举报"); }
       catch (e) { toast(e.message, true); }
     };
   }
   compose.innerHTML = auth.me
-    ? `<div class="cm-compose"><textarea id="cBody" maxlength="500" placeholder="说点什么（最多 500 字）"></textarea>
+    ? `<div class="cm-compose"><textarea id="cBody" maxlength="500" placeholder="说点什么（最多 500 字，⌘/Ctrl + Enter 发送）"></textarea>
         <button class="cm-btn primary" id="cSend">发送</button></div>`
     : `<div class="cm-compose is-guest"><textarea disabled placeholder="登录后就能评论这张地图"></textarea>
         <button class="cm-btn primary" id="cLogin">登录</button></div>`;
@@ -555,9 +567,12 @@ async function loadComments(pubId) {
     try {
       await api("POST", `/api/community/pubs/${pubId}/comments`, { body });
       $("cBody").value = "";
-      await loadComments(pubId); bumpCount(1);
+      await loadComments(pubId, authorId); bumpCount(1);
     } catch (e) { toast(e.message, true); }
-    finally { send.disabled = false; }
+    finally { send.disabled = false; $("cBody")?.focus(); }
+  };
+  if (send) $("cBody").onkeydown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send.click(); }
   };
   function bumpCount(n) { const el = $("cmCmtN"); if (el) el.textContent = Math.max(0, Number(el.textContent) + n); }
 }
