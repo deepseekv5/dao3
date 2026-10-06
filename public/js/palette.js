@@ -92,11 +92,19 @@ export function wirePalette(E) {
     g("跳转", "跳到指定行…", "", () => jumpLine());
     g("跳转", "下一个问题", "F8", () => E.ideStep?.(1));
     g("跳转", "上一个问题", "Shift+F8", () => E.ideStep?.(-1));
+    g("脚本编辑", "查找", "Ctrl+F", () => { toScript(); E.codeFind?.(false); });
+    g("脚本编辑", "查找与替换", "Ctrl+H", () => { toScript(); E.codeFind?.(true); });
     g("帮助与设置", "设置", "", click("#btnSettings"));
     g("帮助与设置", "游玩手册", "", click("#btnManual"));
     g("帮助与设置", "世界库", "", click("#btnWorlds"));
     g("帮助与设置", "返回主界面", "", click("#btnHome"));
     return out;
+  }
+
+  /** 查找框长在代码区里。人可能在搭建页按 Ctrl+Shift+P 搜"查找"，
+   *  那时命令"执行成功"而屏幕上什么都没有 —— 先把脚本页打开再触发。 */
+  function toScript() {
+    if (E.ctx && E.ctx.mode !== "script") document.querySelector('.mtab[data-menu="script"]')?.click();
   }
 
   function jumpLine() {

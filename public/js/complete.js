@@ -7,12 +7,12 @@
 // 只做"名字"这一层，不做类型推导：`const e = world.getEntity("x")` 之后 `e.` 补不出来。
 // 要补那一层得引语言服务，而本工程运行时零第三方依赖（和不用 Monaco 是同一个理由）。
 //
-// 定位靠算术，不靠测量：行高 20px、上内边距 12px、左内边距 14px 由 editor.css 里
-// `.code-editor pre,#scriptCode` 那一条定死（12.5px × 1.6 = 20），跟 script-ide.js 的
-// 诊断行、当前行高亮共用同一套数——三处错位说明其中一处改了名。
+// 定位靠算术，不靠测量：行高与内边距从 textarea 的计算样式量出来，
+// 见 code-metrics.js —— 弹窗、诊断行、当前行高亮、查找命中框共用同一份量。
 import { GameRuntime } from "./game.js";
+import { metrics, textAdvance } from "./code-metrics.js";
 
-const LH = 20, PAD_T = 12, PAD_L = 14, MAX = 40;
+const MAX = 40;
 
 let spec = null, loading = null;
 function load() {
@@ -40,7 +40,7 @@ export function wireComplete(E, ta) {
   const listEl = pop.querySelector(".ac-list");
   const docEl = pop.querySelector(".ac-doc");
 
-  let items = [], idx = 0, ctx = null, cw = 0, hush = false, composing = false;
+  let items = [], idx = 0, ctx = null, hush = false, composing = false;
   // 行高从渲染出来的那一行量，不照抄 CSS：CSS 改了字号，弹窗的滚动位置跟着改，
   // 而不是选到第 8 条时列表悄悄不滚。
   let rowH = 22;
@@ -132,23 +132,6 @@ export function wireComplete(E, ta) {
   }
 
   /* ---------- 渲染与定位 ---------- */
-  function charWidth() {
-    if (cw) return cw;
-    const cs = getComputedStyle(ta);
-    const s = document.createElement("span");
-    s.style.cssText = "position:absolute;left:-9999px;top:0;white-space:pre";
-    // 长写而不是一条 font 简写：计算样式里的 font 简写在某些组合下会取空，
-    // 取空就等于量到 0，症状是弹窗永远贴在左边缘。
-    s.style.fontFamily = cs.fontFamily;
-    s.style.fontSize = cs.fontSize;
-    s.style.fontWeight = cs.fontWeight;
-    s.style.fontStyle = cs.fontStyle;
-    s.textContent = "0".repeat(40);
-    document.body.appendChild(s);
-    cw = s.getBoundingClientRect().width / 40;
-    s.remove();
-    return cw;
-  }
   // 脚注只放"行里放不下的一样东西"：完整签名。没有签名（对象、内建）就整条不渲染，
   // 否则列表只有一条候选时，脚注和那一行字面重复。
   const docLine = (it) => (it && it.sig ? `<b>${esc(it.label)}</b><em>${esc(it.sig)}</em>` : "");
@@ -169,13 +152,15 @@ export function wireComplete(E, ta) {
     const pos = ta.selectionStart;
     const before = ta.value.slice(0, pos);
     const line = before.split("\n").length - 1;          // 0 基
-    const col = pos - (before.lastIndexOf("\n") + 1);
     const w = pop.offsetWidth || 240, h = pop.offsetHeight || 100;
-    let x = PAD_L + col * charWidth() - ta.scrollLeft;
-    let y = PAD_T + (line + 1) * LH - ta.scrollTop;      // 贴在当前行下面
+    const m = metrics(ta);
+    // 行首到光标这一段可能含中文（注释里全是），按"列数 × 字宽"会偏，
+    // 所以量真实前缀宽度：中文在这套等宽字体里占两格。
+    let x = m.padL + textAdvance(m, before.slice(before.lastIndexOf("\n") + 1)) - ta.scrollLeft;
+    let y = m.padT + (line + 1) * m.lh - ta.scrollTop;   // 贴在当前行下面
     if (x + w > ta.clientWidth) x = Math.max(2, ta.clientWidth - w - 2);
     if (y + h > ta.clientHeight) {
-      const up = PAD_T + line * LH - h - ta.scrollTop;   // 底下放不下就翻到上一行上面
+      const up = m.padT + line * m.lh - h - ta.scrollTop; // 底下放不下就翻到上一行上面
       y = up >= 0 ? up : Math.max(0, ta.clientHeight - h - 2);
     }
     pop.style.left = Math.max(0, x) + "px";
@@ -235,6 +220,9 @@ export function wireComplete(E, ta) {
     const mod = ev.ctrlKey || ev.metaKey;
     if (mod && ev.code === "Space") { ev.preventDefault(); load(); open(true); return; }
     if (!isOpen() || !items.length) return;
+    // 只吃"光秃秃的上下键"。带 Alt 的 ↑↓ 是编辑器的移动整行，带 Shift 的是扩选区，
+    // 都不该被候选列表抢走 —— Enter / Tab 早就按这个规矩排除了修饰键，箭头漏了。
+    if (mod || ev.altKey || ev.shiftKey) return;
     if (ev.key === "ArrowDown") { ev.preventDefault(); ev.stopPropagation(); idx = (idx + 1) % items.length; ctx.label = items[idx].label; render(); return; }
     if (ev.key === "ArrowUp") { ev.preventDefault(); ev.stopPropagation(); idx = (idx - 1 + items.length) % items.length; ctx.label = items[idx].label; render(); return; }
     if (ev.key === "Enter" && !ev.shiftKey && !mod && !ev.altKey) { ev.preventDefault(); ev.stopPropagation(); accept(); return; }

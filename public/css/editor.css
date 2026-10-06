@@ -385,6 +385,31 @@ body.playing .prop-card{display:none !important}
 .code-editor pre code{font:inherit}
 #scriptCode{position:absolute;inset:0;width:100%;height:100%;background:transparent;border:none;color:transparent;caret-color:var(--primary);resize:none;outline:none;overflow:auto;white-space:pre}
 #scriptCode::selection{background:rgba(227, 166, 60, .28);color:transparent}
+/* ---- 编辑器列：代码区 + 底部读数 ---- */
+.code-col{display:flex;flex-direction:column;flex:1;min-width:0}
+.code-status{flex:none;display:flex;align-items:center;gap:14px;padding:3px 12px;background:var(--bg1);
+  border-top:1px solid var(--divider);color:var(--fg3);font:11px/1.5 var(--mono);
+  user-select:none;white-space:nowrap;overflow:hidden}
+.code-status:empty{display:none}
+/* ---- 查找 / 替换：浮在代码区右上角，不占布局 ---- */
+.fd-box{position:absolute;top:8px;right:14px;z-index:6;display:none;flex-direction:column;gap:4px;padding:6px;
+  background:var(--elevated);border:1px solid var(--glass-border);border-radius:var(--radius-md);box-shadow:var(--shadow-card)}
+.fd-box.on{display:flex}
+.fd-row{display:flex;align-items:center;gap:4px}
+.fd-box:not([data-re="1"]) .fd-rep{display:none}
+.fd-box input{width:190px;padding:4px 7px;background:var(--bg0);border:1px solid var(--line);
+  border-radius:var(--radius-sm);color:var(--fg);font:12px/1.4 var(--mono);outline:none}
+.fd-box input:focus{border-color:var(--primary-line)}
+.fd-box button{min-width:24px;height:24px;padding:0 6px;background:none;border:0;border-radius:var(--radius-sm);
+  color:var(--fg2);font-size:12px;cursor:pointer}
+.fd-box button:hover{background:var(--grey2);color:var(--fg)}
+.fd-box button.on{background:var(--primary-dim);color:var(--primary)}
+.fd-n{min-width:56px;text-align:center;font:11px/1 var(--mono);color:var(--fg3)}
+.fd-n.none{color:var(--bad)}
+/* 命中框画在高亮层里，于是横向滚动、行高、字号全跟着走（见 code-edit.js 的 paintMarks）。
+   全部命中给淡底，只有当前那一处描边——一眼分得清"有 12 个"和"我现在在哪个"。 */
+.fd-hit{position:absolute;background:var(--primary-dim);border-radius:2px;pointer-events:none}
+.fd-hit.on{outline:1px solid var(--primary)}
 /* 语法配色（VSCode 暗色系） */
 .tk-com{color:var(--syn-com);font-style:italic}
 .tk-str{color:var(--syn-str)}
@@ -886,7 +911,8 @@ body.playing.float-edit #peRotate{display:none}
 .lens-acts button:hover{background:var(--primary-dim);color:var(--primary)}
 .lens-err{margin-left:2px;background:var(--accent2-dim);color:var(--bad)}
 .lens-err:hover{background:rgba(224,82,75,.3)}
-.lens-keys{font-size:10px;color:var(--fg3)}
+/* 键位提示会越加越长：让它自己收缩省略，而不是把左边的函数名与动作按钮挤没。 */
+.lens-keys{font-size:10px;color:var(--fg3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ss-lens .ss-spacer{flex:1}
 
 .ss-tabs{display:flex;align-items:center;gap:4px;padding:6px 10px;border-bottom:1px solid var(--divider);flex:0 0 auto}

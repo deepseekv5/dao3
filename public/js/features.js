@@ -391,7 +391,7 @@ const IND = "  ";
 const OPEN_RE = /[{([]$/;
 const NEAR_CLOSE_RE = /^\s*[)}\]]/;
 
-function applyEdit(ta, value, selStart, selEnd) {
+export function applyEdit(ta, value, selStart, selEnd) {
   ta.value = value;
   ta.selectionStart = selStart;
   ta.selectionEnd = selEnd == null ? selStart : selEnd;
@@ -399,7 +399,7 @@ function applyEdit(ta, value, selStart, selEnd) {
 }
 
 /** 选区覆盖到的整行范围（起点行的行首 → 终点行的行尾） */
-function blockRange(ta) {
+export function blockRange(ta) {
   const v = ta.value;
   const first = v.lastIndexOf("\n", ta.selectionStart - 1) + 1;
   let last = v.indexOf("\n", ta.selectionEnd);

@@ -518,8 +518,21 @@ await drag("#gripRight", -100);
 const want = await geom();
 const stored = await s.evaluate(`localStorage.getItem("ly.panelSizes")`);
 await s.goto("http://127.0.0.1:5173/editor.html", { settleMs: 1500 });
-const early = await s.evaluate(`(() => getComputedStyle(document.documentElement).getPropertyValue("--rp-w").trim())()`);
-ok("重载后布局立刻恢复（不等世界 load 完）", early === want.rpVar && want.rpW > 300, JSON.stringify({ stored, rpW: want.rpW, early }));
+// 判据是"世界 load 完之前布局就贴好了"，不是"1500ms 时它已经在了"——
+// 模块图得先把 three.js 那么大一坨 fetch + 求值完，固定 settleMs 是在猜，
+// 默认图从 111KB 换成 2.8MB 之后这条就会时红时绿。轮询到真读数为止，
+// 但一旦世界已经 load 完就立刻停：那时候才叫真的晚了。
+let early = "", worldUp = false;
+for (let i = 0; i < 80; i++) {
+  const r = JSON.parse(await s.evaluate(`JSON.stringify({
+    v: getComputedStyle(document.documentElement).getPropertyValue("--rp-w").trim(),
+    up: !!(window.__editor && window.__editor.world) })`));
+  early = r.v; worldUp = r.up;
+  if (early === want.rpVar || r.up) break;
+  await new Promise((res) => setTimeout(res, 250));
+}
+ok("重载后布局在世界 load 完之前就恢复", early === want.rpVar && !worldUp && want.rpW > 300,
+  JSON.stringify({ stored, rpW: want.rpW, early, worldUp }));
 // 复位，免得这条断言把持久化留在非默认值上影响后面的实拍
 await s.evaluate(`(() => { localStorage.setItem("ly.panelSizes", "{}"); return true; })()`);
 
@@ -789,13 +802,28 @@ async function pressKey(k, code, modifiers = 0) {
   }
   await new Promise((r) => setTimeout(r, 140));
 }
-function vkOf(code) { return code === "Tab" ? 9 : code === "Enter" ? 13 : code === "Slash" ? 191 : 0; }
+function vkOf(code) {
+  return { Tab: 9, Enter: 13, Slash: 191, Escape: 27, Backspace: 8, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40,
+    KeyF: 70, KeyH: 72, KeyK: 75, KeyD: 68, KeyL: 76, Digit9: 57, BracketLeft: 219, ShiftLeft: 16 }[code] || 0;
+}
+/** 打一个"会出字"的键：text 让浏览器真的往 textarea 里落字符，
+ *  于是 preventDefault 有没有生效、光标停在哪，都是浏览器给的答案而不是测试编的。 */
+async function pressChar(ch, code) {
+  await s.send("Input.dispatchKeyEvent", { type: "keyDown", key: ch, code, text: ch, windowsVirtualKeyCode: vkOf(code) });
+  await s.send("Input.dispatchKeyEvent", { type: "keyUp", key: ch, code, windowsVirtualKeyCode: vkOf(code) });
+  await new Promise((r) => setTimeout(r, 140));
+}
+const setQuery = (q) => page(`const el = document.getElementById("fdQ");
+  el.value = ${JSON.stringify(q)}; el.dispatchEvent(new Event("input")); el.focus(); return 1;`);
 const codeVal = () => page(`return document.getElementById("scriptCode").value;`);
 const putCode = (text, s0, s1) => page(`
   const ta = document.getElementById("scriptCode");
   ta.value = ${JSON.stringify(text)};
+  ta.focus();
+  // 先 focus 再设选区：focus() 会把浏览器记住的旧选区还原回来，
+  // 顺序反了的话这里设的 (s0,s1) 会被悄悄覆盖，光标跑到哪儿只有 Chrome 知道。
   ta.selectionStart = ${s0}; ta.selectionEnd = ${s1 == null ? s0 : s1};
-  ta.focus(); ta.dispatchEvent(new Event("input")); return 1;`);
+  ta.dispatchEvent(new Event("input")); return 1;`);
 
 await page(`document.querySelector('.mtab[data-menu="script"]').click(); return 1;`);
 await wait(`document.getElementById("scriptScreen").classList.contains("show")`, 60000, "脚本工作区已打开");
@@ -829,6 +857,92 @@ await pressKey("/", "Slash", 2);
 const uncommented = await codeVal();
 ok("Ctrl+/ 成对地加注释与去注释", commented === "// aaa\n// bbb" && uncommented === "aaa\nbbb",
   JSON.stringify({ commented, uncommented }));
+
+/* ---------- 查找替换 / 行操作 / 括号配对 / 底部读数 ---------- */
+// 浏览器自带的 Ctrl+F 搜的是整个页面（侧栏文件名也算命中）且关不掉，所以在编辑器里它等于没有；
+// 移行、删行、配对同理。这几条守的是"改代码时手真的能动"。
+const CJK_CODE = "const alpha = 1;\nconst beta = alpha + alpha;\n// 中文注释：这里有个 target 词\n";
+await putCode(CJK_CODE, 3);
+await pressKey("f", "KeyF", 2);
+const fdOpen = await page(`return document.getElementById("fdBox").classList.contains("on") ? 1 : 0;`);
+ok("Ctrl+F 打开查找框（真按键，不是合成事件）", !!fdOpen);
+await setQuery("alpha");
+const fd = JSON.parse(await page(`return JSON.stringify({
+  n: document.getElementById("fdN").textContent,
+  marks: document.querySelectorAll("#scriptHi .fd-hit").length,
+  sel: [document.getElementById("scriptCode").selectionStart, document.getElementById("scriptCode").selectionEnd] });`));
+ok("查询一进去就有命中计数、命中框，并且当前那处被选中",
+  fd.n === "1/3" && fd.marks === 3 && fd.sel[0] === 6, JSON.stringify(fd));
+await pressKey("Enter", "Enter");
+const afterEnter = await page(`return document.getElementById("fdN").textContent;`);
+ok("查找框里按 Enter 走到下一处", afterEnter === "2/3", afterEnter);
+await page(`document.getElementById("fdAll").click(); return 1;`);
+ok("全部替换真的改到正文", !/alpha/.test(await codeVal()), await codeVal());
+// 中文行里的命中框：一个汉字占两格，按"列数 × 字宽"会整体往左跑半个词
+await putCode(CJK_CODE, 0);
+await setQuery("target");
+const align = JSON.parse(await page(`
+  const t = document.getElementById("scriptCode"), cs = getComputedStyle(t);
+  const m = document.querySelector("#scriptHi .fd-hit.on");
+  const sp = document.createElement("span");
+  sp.style.cssText = "position:absolute;left:-9999px;top:0;white-space:pre";
+  sp.style.fontFamily = cs.fontFamily; sp.style.fontSize = cs.fontSize; sp.style.fontWeight = cs.fontWeight;
+  sp.textContent = "// 中文注释：这里有个 ";
+  document.body.appendChild(sp);
+  const want = parseFloat(cs.paddingLeft) + sp.getBoundingClientRect().width; sp.remove();
+  return JSON.stringify({ got: m ? Math.round(parseFloat(m.style.left)) : -1, want: Math.round(want) });`));
+ok("中文行里的命中框按真实字宽落位（量出来的那套，不是列数乘一格）",
+  Math.abs(align.got - align.want) <= 2, JSON.stringify(align));
+await pressKey("Escape", "Escape");
+const closed = JSON.parse(await page(`return JSON.stringify({
+  on: document.getElementById("fdBox").classList.contains("on"),
+  marks: document.querySelectorAll("#scriptHi .fd-hit").length });`));
+ok("Esc 关掉查找框并把命中框清干净", !closed.on && closed.marks === 0, JSON.stringify(closed));
+// 故意把光标放在词中间：这样打字补全弹窗是开着的，而带修饰键的 ↑↓ 归编辑器，
+// 不该被候选列表抢走（抢走的话这一次按键变成"选下一个候选"，行纹丝不动）。
+await putCode(CJK_CODE, 3);
+const acOpen = await page(`return document.querySelector(".ac-pop.show") ? 1 : 0;`);
+await pressKey("ArrowDown", "ArrowDown", 1);
+const moved = await codeVal();
+ok("Alt+↓ 移动整行，即使补全弹窗正开着（修饰键归编辑器）",
+  moved.startsWith("const beta = alpha + alpha;") && (await page(`return document.getElementById("scriptCode").selectionStart;`)) >= 25,
+  `弹窗开着=${!!acOpen} · ${moved.split("\n")[0]}`);
+await putCode(CJK_CODE, 3);
+await pressKey("ArrowUp", "ArrowUp", 1);
+ok("第一行再往上移不动它（不会把行甩出文件）", (await codeVal()) === CJK_CODE, await codeVal());
+await putCode(CJK_CODE, 3);
+await pressKey("k", "KeyK", 2 | 8);
+ok("Ctrl+Shift+K 删掉当前整行", !(await codeVal()).startsWith("const alpha"), (await codeVal()).split("\n")[0]);
+await putCode(CJK_CODE, 3);
+await pressKey("d", "KeyD", 2 | 8);
+ok("Ctrl+Shift+D 把当前行复制一份到下面", (await codeVal()).split("\n")[1] === "const alpha = 1;", (await codeVal()));
+await putCode(CJK_CODE, 8);
+await pressKey("d", "KeyD", 2);
+const w1 = JSON.parse(await page(`return JSON.stringify([document.getElementById("scriptCode").selectionStart, document.getElementById("scriptCode").selectionEnd]);`));
+ok("Ctrl+D 先选中光标下那个词", (await codeVal()).slice(w1[0], w1[1]) === "alpha", JSON.stringify(w1));
+await pressKey("d", "KeyD", 2);
+const w2 = JSON.parse(await page(`return JSON.stringify([document.getElementById("scriptCode").selectionStart, document.getElementById("scriptCode").selectionEnd]);`));
+ok("再按把选区扩到下一个相同词（textarea 只有一个选区，所以连成一片）", w2[1] > w1[1], JSON.stringify([w1, w2]));
+await putCode("", 0);
+await pressChar("(", "Digit9");
+const b1 = JSON.parse(await page(`return JSON.stringify([document.getElementById("scriptCode").value, document.getElementById("scriptCode").selectionStart]);`));
+await pressChar(")", "Digit9");
+const b2 = await page(`return document.getElementById("scriptCode").selectionStart;`);
+ok("打左括号自动补右半边并把光标停在中间，再打右半边是越过去而不是插第二个",
+  b1[0] === "()" && b1[1] === 1 && b2 === 2, JSON.stringify([b1, b2]));
+await putCode("", 0);
+await pressChar("(", "Digit9");
+await pressKey("Backspace", "Backspace");
+ok("光标停在空对中间时退格一次删掉一对，不会留下半个", (await codeVal()) === "", await codeVal());
+await putCode(CJK_CODE, 0);
+await page(`const t = document.getElementById("scriptCode"); t.focus(); t.setSelectionRange(6, 11); return 1;`);
+await pressChar("[", "BracketLeft");
+ok("有选区时打括号是把选区包起来，不是替换掉它", (await codeVal()).startsWith("const [alpha] = 1;"), (await codeVal()).slice(0, 20));
+await putCode(CJK_CODE, 25, 30);
+// 不再补按键：putCode 派发的 input 已经会让读数重画一次，
+// 而任何一次按键都会先把上面那个选区吃掉（ArrowRight 会把它收成光标）。
+const stat = await page(`return document.getElementById("codeStatus").textContent;`);
+ok("编辑器底部报出行、列与选中字符数", /行 2，列 9/.test(stat) && /已选择 5 个字符/.test(stat) && /JavaScript/.test(stat), stat);
 
 await putCode("l1\nl2\nl3\nl4", 9);
 await page(`document.getElementById("scriptCode").dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowDown", bubbles: true })); return 1;`);

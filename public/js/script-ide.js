@@ -6,14 +6,17 @@
 // 语法错也只有沙箱跑完才在控制台冒出来，行号还要自己猜。
 //
 // 不换编辑器内核。本工程运行时零依赖，Monaco 是几兆的构建产物，
-// 而且现有那套 textarea + <pre> 覆盖层已经能挂装饰：行高 20px、pre 上内边距 12px，
-// 定位是确定的。缺的只是把诊断画上去、把动作放到手边。
+// 而且现有那套 textarea + <pre> 覆盖层已经能挂装饰：定位是确定的。
+// 缺的只是把诊断画上去、把动作放到手边。
+// 行高与内边距不在这里写死，从 textarea 的计算样式量出来（见 code-metrics.js）——
+// 补全弹窗、当前行高亮、诊断波浪线、查找命中框必须落在同一根线上。
 import { checkSyntax } from "./ai.js";
 import { lintScript, symbolsOf } from "./lint.js";
 import { askAbout } from "./ai-script.js";
 import { scriptChecks } from "./features.js";
+import { metrics } from "./code-metrics.js";
+import { wireCodeEdit } from "./code-edit.js";
 
-const LH = 20, PAD = 12;
 const SEV = { error: 0, warn: 1, info: 2 };
 const MARK = { error: "●", warn: "▲", info: "○" };
 
@@ -65,6 +68,9 @@ export function wireScriptIde(E) {
   // 早先这里回退到 scripts[0]，于是 lint 的是另一个文件——标出来的行全是错的。
   const editingCode = () => { const t = ta(); return t ? t.value : ((cur() || {}).code || ""); };
   const cur = () => (E.__scriptIdx == null ? null : (E.state.scripts || [])[E.__scriptIdx]);
+  // 装饰的纵坐标全靠量出来的行高与内边距；取不到 textarea 就是脚本页没打开，
+  // 那时没有任何东西要画，调用方按 null 直接返回。
+  const geo = () => { const t = ta(); return t ? metrics(t) : null; };
 
   /* ---------- 诊断 ---------- */
   function recheck() {
@@ -93,13 +99,14 @@ export function wireScriptIde(E) {
   function paint() {
     const hi = document.getElementById("scriptHi");
     const gutter = document.getElementById("scriptGutter");
-    if (!hi || !gutter) return;
+    const m = geo();
+    if (!hi || !gutter || !m) return;
     hi.querySelectorAll(".dg-row").forEach((n) => n.remove());
     for (const d of diags) {
       if (d.line < 1) continue;   // 语法错定位不到行（见 ai.js 的注释），不画到第 1 行去冒充
       const row = document.createElement("div");
       row.className = `dg-row dg-${d.sev}`;
-      row.style.top = (PAD + (d.line - 1) * LH) + "px";
+      row.style.top = (m.padT + (d.line - 1) * m.lh) + "px";
       row.title = `${d.rule}：${d.msg}`;
       hi.appendChild(row);
     }
@@ -161,7 +168,7 @@ export function wireScriptIde(E) {
     t.focus();
     t.setSelectionRange(at, at + (lines[ln - 1] || "").length);
     // textarea 没法直接滚到某行：借 scrollTop 按行高推，再把视口夹在中间
-    t.scrollTop = Math.max(0, (ln - 1) * LH - t.clientHeight / 2);
+    t.scrollTop = Math.max(0, (ln - 1) * geo().lh - t.clientHeight / 2);
     const pre = document.getElementById("scriptHi"), g = document.getElementById("scriptGutter");
     if (pre) pre.scrollTop = t.scrollTop;
     if (g) g.scrollTop = t.scrollTop;
@@ -175,10 +182,11 @@ export function wireScriptIde(E) {
   function paintCursorLine() {
     const hi = document.getElementById("scriptHi");
     const gutter = document.getElementById("scriptGutter");
-    if (!hi || !gutter) return;
+    const m = geo();
+    if (!hi || !gutter || !m) return;
     let row = hi.querySelector(".cur-row");
     if (!row) { row = document.createElement("div"); row.className = "cur-row"; hi.appendChild(row); }
-    row.style.top = (PAD + (cursorLine - 1) * LH) + "px";
+    row.style.top = (m.padT + (cursorLine - 1) * m.lh) + "px";
     const cur = gutter.querySelector(".ln.cur");
     if (cur && !cur.matches(`[data-ln="${cursorLine}"]`)) cur.classList.remove("cur");
     const node = gutter.querySelector(`[data-ln="${cursorLine}"]`);
@@ -198,7 +206,7 @@ export function wireScriptIde(E) {
           <button data-a="optimize">优化重构</button><button data-a="fix">纠正错误</button>
         </span>` : "") +
       (counts.length ? `<button class="lens-err" data-a="line">${counts.length} 个问题</button>` : "") +
-      `<span class="ss-spacer"></span><span class="lens-keys">Tab 缩进 · Shift+Tab 反缩进 · Ctrl+/ 注释 · F8 下一个问题 · Ctrl+G 跳行 · Ctrl+P 切文件</span>`;
+      `<span class="ss-spacer"></span><span class="lens-keys">Ctrl+F 查找 · Ctrl+H 替换 · Alt+↑↓ 移行 · Ctrl+Shift+K 删行 · Ctrl+D 选下一个相同词 · Tab 缩进 · Ctrl+/ 注释 · F8 下一个问题 · Ctrl+G 跳行 · Ctrl+P 切文件</span>`;
   }
   lens.onclick = (ev) => {
     const b = ev.target.closest("button[data-a]");
@@ -308,6 +316,10 @@ export function wireScriptIde(E) {
   // 状态栏只读这一个口子，不去各自数 diags：数法一多就会出现"面板说有 2 个、
   // 底栏说 3 个"，而两处都"没错"（一处按筛选、一处按全量）。
   E.ideDiags = () => diags;
+  // 查找替换、行操作、括号配对、底部读数在 code-edit.js 那一层。
+  // 从这儿挂而不是让 features.js 再去 import 一次：features ↔ script-ide 已经是环，
+  // 多一条边就多一处"谁先求值"的坑，而 ta 的引用这里现成有。
+  if (ta()) wireCodeEdit(E, ta());
   // 给测试用：断言"屏幕上的诊断"必须能拿到这一层的真实输入，
   // 否则探针只能猜（第一次就误判成 lint 读错了文件）。
   E.ideState = () => ({ code: editingCode().slice(0, 40), lines: editingCode().split("\n").length, diags, lens: cursorLine });

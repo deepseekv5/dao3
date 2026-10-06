@@ -378,12 +378,15 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
       </div>
       <div id="scriptFiles"></div>
     </div>
-    <div class="code-area">
-      <div class="code-gutter" id="scriptGutter">1</div>
-      <div class="code-editor">
-        <pre id="scriptHi" aria-hidden="true"><code id="scriptHiCode"></code></pre>
-        <textarea id="scriptCode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+    <div class="code-col">
+      <div class="code-area">
+        <div class="code-gutter" id="scriptGutter">1</div>
+        <div class="code-editor">
+          <pre id="scriptHi" aria-hidden="true"><code id="scriptHiCode"></code></pre>
+          <textarea id="scriptCode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        </div>
       </div>
+      <div class="code-status" id="codeStatus"></div>
     </div>
     <button class="ss-grip" id="gripConsole" type="button" role="separator" aria-orientation="vertical"
             aria-label="控制台宽度" title="拖动调整控制台宽度（双击复位，方向键微调）"></button>
