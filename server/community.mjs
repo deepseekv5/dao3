@@ -1337,12 +1337,22 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         if (!r) { reply.fail(404, "没有这条举报"); return true; }
         r.state = body.action === "dismiss" ? "dismissed" : "resolved";
         r.handledAt = now(); r.by2 = viewerId;
-        if (r.state === "resolved" && body.remove && r.targetType === "comment") {
-          for (const list of Object.values(docs.comments.byPub)) {
-            const i = list.findIndex((c) => c.id === r.target);
-            if (i >= 0) list.splice(i, 1);
+        if (r.state === "resolved" && body.remove) {
+          if (r.targetType === "comment") {
+            for (const list of Object.values(docs.comments.byPub)) {
+              const i = list.findIndex((c) => c.id === r.target);
+              if (i >= 0) list.splice(i, 1);
+            }
+            store.touch("comments");
+          } else {
+            // 这一支以前没有：作品那一行的「处理并删内容」只改了举报的状态，
+            // 图还挂在广场上——按钮说的话和做的事不一样。下架复用 takedown 那套 status。
+            const p = docs.pubs.byId[r.target];
+            if (p && p.status !== "removed") {
+              p.status = "removed"; p.removedBy = "admin"; p.updated = now();
+              store.touch("pubs");
+            }
           }
-          store.touch("comments");
         }
         store.touch("reports");
         reply.json(200, { ok: true, state: r.state });

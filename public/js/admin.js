@@ -66,6 +66,8 @@ function draw() {
       <button class="cm-btn sm danger" data-resolve="${esc(r.id)}">处理并删内容</button>
     </div>`).join("") : `<div class="cm-empty">没有待处理的举报。</div>`;
     const act = (key, action) => (e) => {
+      // 这颗按钮现在真的会动内容（删评论 / 下架作品），所以先要人确认一次。
+      if (key === "resolve" && !window.confirm("这会连内容一起处理：评论直接删，作品下架。确定？")) return;
       const id = e.currentTarget.dataset[key];
       api("POST", `/api/community/admin/report/${id}`, { action, remove: key === "resolve" })
         .then(() => { toast("已处理"); load(); }).catch((x) => toast(x.message, true));

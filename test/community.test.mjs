@@ -660,6 +660,16 @@ try {
   }
   ok("评论刷屏会被限流", blocked > 0, "连发 " + (RATE_COMMENT + 2) + " 条也没挡下");
 
+  /* ---------- 16b. 举报队列那颗「处理并删内容」得真删得掉东西 ---------- */
+  // 放在最后：这张一次性图到这儿已经完成了它的其它使命，下架它不再影响别的断言。
+  const repRow = (await A.call("GET", "/api/community/admin/overview")).data.reports.find((x) => x.target === pubId);
+  ok("举报队列里找得到这张图的举报", !!repRow, JSON.stringify((await A.call("GET", "/api/community/admin/overview")).data.reports.map((x) => x.target)));
+  const resolved = await A.call("POST", `/api/community/admin/report/${repRow?.id}`, { action: "resolve", remove: true });
+  ok("举报能标记为已处理", resolved.status === 200 && resolved.data.state === "resolved", JSON.stringify(resolved.data));
+  ok("这颗按钮对作品真的会下架，不只是改状态", (await client().call("GET", "/api/community/pubs/" + pubId)).status === 404);
+  ok("处理完的举报不再占着待处理队列",
+    !(await A.call("GET", "/api/community/admin/overview")).data.reports.some((x) => x.id === repRow?.id));
+
   /* ---------- 收尾：把测试造的一次性世界删掉，测试发布下架 ---------- */
   await A.call("DELETE", `/api/community/pubs/${pubId}`);
   for (const id of [skinId, bad.data.pub.id]) await A.call("DELETE", `/api/community/pubs/${id}`);

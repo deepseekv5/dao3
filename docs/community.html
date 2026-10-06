@@ -87,7 +87,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <h2 id="评论审查与举报">评论、审查与举报</h2>
 <p>评论 500 字上限，一层平铺（没有楼中楼：记录里只有 <code>pubId / userId / body / likes</code>， 歪楼在一张地图的评论区里只会让顺序更难读），点赞去重按用户。 <b>未登录也给出一个禁用的输入框</b>，而不是&quot;登录后才能评论&quot;一句话—— 位置先占住，用户知道这里能写。 自己的评论给「删除」，别人的给「举报」；这张地图作者本人的评论挂一颗「作者」芯片 （<code>commentCard.author.id</code> 对上 <code>pubCard.author.id</code> 就点亮）——一个几十条的楼里， 哪句是作者说的不该靠翻主页去对。</p>
 <p>文本进来先过 <code>screen()</code>：<code>block</code> 词表直接拒，<code>flag</code> 词表放行但打 <code>flagged</code> 标记， 后台面板按标记排序给人看。词表在 <code>community/mute-words.json</code>，改完 <b>mtime 变了就热加载</b>， 不用重启服务。</p>
-<p>举报进 <code>reports</code> 队列，上限 500 条，超了丢最老的。后台能直接下架（<code>status</code> 从 <code>live</code> 改成别的）， 下架的发布对所有读接口立刻不可见。</p>
+<p>举报进 <code>reports</code> 队列，上限 500 条，超了丢最老的。后台能直接下架（<code>status</code> 从 <code>live</code> 改成别的）， 下架的发布对所有读接口立刻不可见。 队列里每一行两颗按钮：<b>「忽略」只结掉举报</b>，<b>「处理并删内容」连着内容一起走</b>—— 评论直接删，作品走和 <code>admin/takedown</code> 同一套 <code>status = removed</code>。 这颗按钮曾经只对评论成立，对作品那一行只改举报状态、图还在广场上，等于按钮在说谎。</p>
 <p>封面：发布时如果没带封面，服务端会用体素数据<b>离线渲染一张</b>（带邻接遮蔽的明暗）， 所以不会出现&quot;每张图都缺一个 404 占位&quot;的场面。</p>
 <span id="social" class="anchor"></span>
 <h2 id="好友扩列与资料">好友、扩列与资料</h2>
