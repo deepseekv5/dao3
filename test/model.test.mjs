@@ -92,11 +92,17 @@ ok("VOXA 那类模型能发布到社区", made.status === 200 && made.kind === "
 /* ---------------- 广场：类型分得开，卡片看得出能评论 ---------------- */
 await S.goto(BASE + "/community", { settleMs: 1800 });
 const kinds = await until(`[...document.querySelectorAll(".cm-kind")].map(b=>b.textContent)`);
-ok("广场有地图/模型两种流的开关", JSON.stringify(kinds) === JSON.stringify(["地图", "模型"]), JSON.stringify(kinds));
-const chips = await until(`(() => { const s = document.querySelectorAll(".cm-card .cm-views span");
-  return s.length === 3 ? [...s].map(x => ({ t: x.getAttribute("title"), n: x.textContent.trim(), svg: !!x.querySelector("svg") })) : null; })()`);
-ok("卡片上把浏览、点赞、评论三个数都摆出来", Array.isArray(chips) && chips.length === 3
-  && chips.map((c) => c.t).join(",") === "浏览,点赞,评论" && chips.every((c) => c.svg), JSON.stringify(chips));
+/** 断言写死"恰好两个/恰好三个"的地方，加一种类型就会假红——皮肤社区上线后
+ *  类型开关是三个，卡片计数行也多了「正在玩」与好评率。这里改成按 title 断言
+ *  "该有的必须在"，多出来的是功能不是 bug。 */
+ok("广场能按类型分流：地图 / 模型 / 皮肤",
+  ["地图", "模型", "皮肤"].every((k) => JSON.stringify(kinds).includes(k)), JSON.stringify(kinds));
+const chips = await until(`(() => { const s = [...document.querySelectorAll(".cm-card .cm-views span")];
+  const want = ["游玩", "点赞", "评论"];
+  return want.every((t) => s.some((x) => x.getAttribute("title") === t))
+    ? s.map(x => ({ t: x.getAttribute("title"), n: x.textContent.trim(), svg: !!x.querySelector("svg") })) : null; })()`);
+ok("卡片上把浏览、点赞、评论三个数都摆出来", Array.isArray(chips) && chips.length >= 3
+  && chips.every((c) => c.svg), JSON.stringify(chips));
 
 await S.evaluate(`document.querySelector('.cm-kind[data-k="model"]').click()`);
 ok("只看模型时流里只剩模型", await until(`document.querySelectorAll(".cm-card").length === 1 && !!document.querySelector(".cm-card .cm-badge")`, 12),

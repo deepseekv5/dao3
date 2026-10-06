@@ -219,8 +219,8 @@ async function pubView(id) {
           </div>
           <div class="cm-playrow">
             ${p.kind === "skin"
-              ? `<button class="cm-btn lg primary" id="cmApplyTop">${icons.HEART}应用到我的角色</button>`
-              : `<button class="cm-btn lg primary" id="cmPlayTop">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>`}
+              ? `<button class="cm-btn lg primary" id="cmApply" title="写进你的账号皮肤：进任何一张图都穿着它，别人看你也是">${icons.HEART}应用到我的角色</button>`
+              : `<button class="cm-btn lg primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>`}
             ${isMap ? `<button class="cm-btn" id="cmFav" aria-pressed="${p.favByMe ? "true" : "false"}" title="收进我自己的清单，和点赞不是一回事">${p.favByMe ? "★" : "☆"} 收藏</button>` : ""}
             <button class="cm-btn" id="cmShare" title="复制这张图的链接">复制链接</button>
             <span class="cm-vote">
@@ -259,9 +259,6 @@ async function pubView(id) {
       <div class="cm-panel">
         <h4>这张${KIND_NOUN[p.kind] || "地图"}</h4>
         <div class="cm-acts" id="cmPubActs">
-          ${p.kind === "skin"
-            ? `<button class="cm-btn primary" id="cmApply" title="写进你的账号皮肤：进任何一张图都穿着它，别人看你也是">${icons.HEART}应用到我的角色</button>`
-            : `<button class="cm-btn primary" id="cmPlay" title="游玩前会把这份快照取回本地，作者之后的改动不会跟着进来">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>`}
           <button class="cm-btn ${p.likedByMe ? "on" : ""}" id="cmLike">${icons.HEART}点赞 <b>${p.likes}</b></button>
           ${p.kind === "model"
             ? `<button class="cm-btn" id="cmPull">${icons.DOWN}取回到模型库</button>`
@@ -305,12 +302,6 @@ async function pubView(id) {
   }).catch(() => { });
   const playBtn = $("cmPlay");
   if (playBtn) playBtn.onclick = () => playPub(p);
-  /** 首屏那颗大按钮和侧栏那颗走的是同一件事，别复制一份流程：
-   *  复制之后一边改了快照取回、另一边没改，就是"同一个页面两个行为"。 */
-  const top = $("cmPlayTop");
-  if (top) top.onclick = () => (p.kind === "model" ? $("cmPlay").onclick() : playPub(p));
-  const applyTop = $("cmApplyTop");
-  if (applyTop) applyTop.onclick = () => applyCommunitySkin(p, applyTop);
   /** 分享在本地就只有"复制链接"这一件事：没有社交网络 SDK 可接，
    *  硬造一个分享面板等于把用户推到站外。剪贴板 API 要安全上下文，
    *  非 https 的局域网访问走 execCommand 兜底——复制失败必须说，不能静默。 */
