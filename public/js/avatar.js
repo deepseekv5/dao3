@@ -96,12 +96,49 @@ export function blobShadowMesh() {
   return m;
 }
 
+/** 体型三档：Roblox 那套 Height / Width / Proportion 的本地版。
+ *  乘在**新加的内层 group** 上，而不是返回值本身——外层 scale 归 `player.scale`
+ *  用（运行时每帧按它 setScalar 写一遍），抢过来就是"调了体型之后玩家缩放失效"
+ *  或者反过来被每帧覆盖。
+ *  腿长另算：腿的原点在髋（y=0.80），绕髋放大只会把脚沉进地里，所以腿放大之后
+ *  必须把躯干/头/手臂整体抬起来，`rig.base` 那三个基准高度跟着一起改——
+ *  poseWalk 是按 base 值写绝对高度的，不改就会走路时上半身和腿脱开。 */
+const HIP = 0.80;
+export const BODY_LIMITS = { min: 0.8, max: 1.25 };
+function applyBody(av, body) {
+  const src = body && typeof body === "object" ? body : {};
+  const mul = (x) => (Number.isFinite(Number(x)) ? Math.min(BODY_LIMITS.max, Math.max(BODY_LIMITS.min, Number(x))) : 1);
+  const h = mul(src.h), w = mul(src.w), leg = mul(src.leg);
+  if (h === 1 && w === 1 && leg === 1) return av;
+  const root = new THREE.Group();
+  // 把已经挂上去的东西整体搬进内层：贴图人偶与手工人偶走的是两条构造路径，
+  // 在这里统一处理，比在两条路径里各插一层 group 少错一处。
+  for (const child of [...av.children]) root.add(child);
+  av.add(root);
+  av.userData.bodyRoot = root;
+  const parts = av.userData.parts || {};
+  if (leg !== 1) {
+    const lift = (leg - 1) * HIP;
+    for (const k of ["head", "body", "armL", "armR"]) {
+      const p = parts[k];
+      if (p) p.position.y += lift;
+    }
+    const base = av.userData.rig && av.userData.rig.base;
+    if (base) for (const k of ["head", "body", "armL", "armR"]) if (typeof base[k] === "number") base[k] += lift;
+  }
+  root.scale.set(w, h, w);
+  // 预览要知道该把机位拉多远：身高 1.25 还按标准身高取景就会裁掉头
+  av.userData.bodyScale = { h, w, leg };
+  return av;
+}
+
 export function makeAvatar(skinOverride) {
+  const bodyOf = skinOverride && typeof skinOverride === "object" ? skinOverride.body : null;
   // 带 MC 皮肤贴图时走经典六面体：把苦力怕的脸贴到 0.46×0.50 的圆角头上，
   // 脸会被挤变形，认不出是谁。没有贴图才走下面那套细节人偶。
   const texSrc = skinOverride && typeof skinOverride === "object" ? skinOverride.texture : null;
   if (typeof texSrc === "string" && texSrc) {
-    const av = buildTexturedAvatar(null);
+    const av = applyBody(buildTexturedAvatar(null), bodyOf);
     loadSkinTexture(texSrc).then((t) => {
       av.traverse((o) => { if (o.isMesh) { o.material.map = t; o.material.needsUpdate = true; } });
     }).catch(() => { /* 图坏了就留着白模，别把角色变没 */ });
@@ -189,5 +226,5 @@ export function makeAvatar(skinOverride) {
   g.userData.parts = { head, body, armL, armR, legL, legR };
   // 上半身起伏要整体动，所以记下这三块各自的基准高度
   g.userData.rig = Object.assign({ base: { head: 1.30, body: 0.80, armL: 1.315, armR: 1.315 } }, rig);
-  return g;
+  return applyBody(g, bodyOf);
 }

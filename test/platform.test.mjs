@@ -211,6 +211,31 @@ ok("自定义颜色立刻贴到人偶上（青色把蓝绿两通道抬起来）"
   JSON.stringify({ before: preset.rgb, after: afterCustom }));
 await A.evaluate(`document.querySelector('#eSkin [data-p="shirt"]').click()`);
 await A.evaluate(`document.querySelector('#eSkin [data-c="#e8604c"]').click()`);
+/* 体型三档。判据取"竖直跨度"而不是"画面像素数"：脚下那颗接触阴影盘不在体型
+   缩放里，拖宽窄时像素会变、轮廓宽度却一动不动，量错方向会得到一个假失败。 */
+const vSpan = () => A.evaluate(`(() => {
+  const cv = document.querySelector("#eDoll canvas"); if (!cv) return null;
+  const c = document.createElement("canvas"); c.width = 120; c.height = 150;
+  const x = c.getContext("2d"); x.drawImage(cv, 0, 0, 120, 150);
+  const d = x.getImageData(0, 0, 120, 150).data;
+  let min = 999, max = -1;
+  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 24) continue; const py = Math.floor((i / 4) / 120); if (py < min) min = py; if (py > max) max = py; }
+  return max > min ? { top: min, bottom: max, span: max - min } : null;
+})()`);
+ok("编辑资料里有身高 / 宽窄 / 腿长三档，并且能一键回标准",
+  await A.evaluate(`JSON.stringify([...document.querySelectorAll("#eBody [data-b]")].map((b) => b.dataset.b).join(","))`) === '"h,w,leg"'
+  && await A.evaluate(`!!document.getElementById("eBody0")`));
+const bodyBefore = await vSpan();
+await A.evaluate(`(() => { const b = document.querySelector('#eBody [data-b="leg"]'); b.value = 125; b.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+await sleep(700);
+const bodyAfter = await vSpan();
+ok("拖腿长会当场把人偶拉长（读数与画面一起动）",
+  !!bodyBefore && !!bodyAfter && bodyAfter.span > bodyBefore.span
+  && await A.evaluate(`document.querySelector('#eBody [data-b="leg"]').nextElementSibling.textContent`) === "1.25",
+  JSON.stringify({ before: bodyBefore, after: bodyAfter }));
+await A.evaluate(`document.getElementById("eBody0").click()`);
+await sleep(500);
+ok("「标准体型」真的把人偶放回原样", (await vSpan())?.span === bodyBefore.span, JSON.stringify(bodyBefore));
 await A.setFile("#eAvatar", "/tmp/ly-pixel.png");
 ok("头像上传后不用刷新就生效", await until(A, `!!document.querySelector(".pf-avatar img")`), await A.evaluate(`(document.querySelector(".pf-avatar")||{}).innerHTML?.slice(0,140)`));
 await A.type("#eBio", "造图的人");

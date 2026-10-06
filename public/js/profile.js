@@ -19,6 +19,11 @@ const timeAgo = (t) => {
 };
 
 const SKIN_DEFAULT = { skin: "#ffd7b0", shirt: "#c9714f", pants: "#6b625a", hair: "#6b4630", shoe: "#7b5441" };
+/** 体型三档。量程与服务端 normalizeSkin 的夹取区间一致（0.80~1.25）：
+ *  两边各写一套的话，滑杆能拖到一个服务端会悄悄改掉的值。 */
+const BODY_MIN = 80, BODY_MAX = 125;
+const BODY_ROWS = [["h", "身高"], ["w", "宽窄"], ["leg", "腿长"]];
+const pctOf = (v) => (Number.isFinite(Number(v)) ? Number(Number(v)).toFixed(2) : "1.00");
 const SKIN_PARTS = [
   ["shirt", "上衣"], ["pants", "裤子"], ["skin", "皮肤"], ["hair", "头发"], ["shoe", "鞋子"],
 ];
@@ -115,6 +120,7 @@ const presetName = (url) => {
 function openEditor(u, onSaved) {
   const box = $("cmModal");
   const skin = Object.assign({}, SKIN_DEFAULT, u.skin || {});
+  const b0 = (u.skin && u.skin.body) || {};
   box.innerHTML = `<div class="cm-mbox pf-edit">
     <h3>编辑资料</h3>
     <div class="pf-cols">
@@ -148,6 +154,15 @@ function openEditor(u, onSaved) {
           <div class="pf-swatches" id="eSkin"></div>
         </div>
         <div class="pf-mcblk" id="eMc"></div>
+        <div class="pf-body" id="eBody" title="只有身材比例：这三档会带进你游玩的每一张地图，别人看你也是这个身材">
+          ${BODY_ROWS.map(([k, label]) => `<label class="pf-slide">
+            <span>${label}</span>
+            <input type="range" min="${BODY_MIN}" max="${BODY_MAX}" step="1" data-b="${k}"
+              value="${Math.round(pctOf((b0 || {})[k]) * 100)}"/>
+            <i>${pctOf((b0 || {})[k])}</i>
+          </label>`).join("")}
+          <button type="button" class="cm-btn sm" id="eBody0">标准体型</button>
+        </div>
       </div>
     </div>
     <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="eSave">保存</button></div>
@@ -198,6 +213,28 @@ function openEditor(u, onSaved) {
       if (doll) doll.replaceWith(fragmentFirst(previewHtml(draft)));
     }
     paintFace(box);
+  };
+  /** 体型滑杆：拖一下就当场重画，和挑颜色一样。
+   *  值存成 0.80~1.25 的乘数而不是 80~125，是为了让 skin.body 直接能被
+   *  `makeAvatar` 用（运行时、主页、皮肤库读的是同一份记录），
+   *  不必在每个消费点各自除以 100。 */
+  for (const el of box.querySelectorAll("#eBody [data-b]")) {
+    el.oninput = () => {
+      const body = Object.assign({}, draft.body);
+      const v = Number(el.value) / 100;
+      body[el.dataset.b] = v;
+      draft.body = body;
+      el.nextElementSibling.textContent = pctOf(v);
+      syncDoll();
+    };
+  }
+  const reset = box.querySelector("#eBody0");
+  if (reset) reset.onclick = () => {
+    delete draft.body;
+    for (const el of box.querySelectorAll("#eBody [data-b]")) {
+      el.value = 100; el.nextElementSibling.textContent = pctOf(1);
+    }
+    syncDoll();
   };
   const applyPreset = (o, btn) => {
     Object.assign(draft, o);

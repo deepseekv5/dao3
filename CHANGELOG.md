@@ -52,9 +52,23 @@
 本地跑图的人既没有账号，也不该为它付这笔主线程的开销。
 现在 `_pullWorld()` 先看 `window.__me`，没登录就一次都不拉。
 
+### 新增：Avatar 体型三档（身高 / 宽窄 / 腿长）
+
+编辑资料里那格皮肤现在除了配色，还有三根滑杆——Roblox avatar 编辑器那套
+Height / Width / Proportion 的本地版，取值 0.80~1.25。
+
+- 存在**账号皮肤**上（`skin.body`），进谁的图都带着走；联机把 `skin` 原样透传，
+  所以同伴看到的也是这个身材。
+- 乘在人偶内部新加的一层上，不抢 `player.scale` 那层——抢了就是
+  "调完体型之后玩家缩放失效"，或者每帧被覆盖回去。
+- 腿长绕髋放大之后把上半身整体抬起，`rig.base` 三个基准高度跟着改；
+  不改的话 `poseWalk` 仍按老高度写，走起来上半身和腿是脱开的。
+- 越界夹回量程、垃圾值回默认、全 1 不存这个键。
+- 预览机位按身高一起拉远，否则 1.25 身高就是一颗被裁掉的头。
+
 ### 复核
 
-`community 145 / realtime 45 / platform 98 / play-bundle 9 / social 25`。
+`platform 101 / community 148 / realtime 45 / social 25 / pause 12 / play-bundle 9 / api 全绿`。
 
 ---
 

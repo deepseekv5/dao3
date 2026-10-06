@@ -374,6 +374,12 @@
 .pf-dollslot { flex: none; width: 150px; min-height: 190px; display: flex;
   align-items: center; justify-content: center; border-radius: var(--radius-md); }
 .pf-dollslot:has(canvas) { background: radial-gradient(80% 46% at 50% 92%, rgba(227, 166, 60, .14), transparent 72%); }
+/* 体型三档：滑杆 + 读数 + 复原。放在配色下面，因为"穿什么"比"多高"更常改。 */
+.pf-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--line); }
+.pf-slide { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); }
+.pf-slide input[type=range] { width: 74px; accent-color: var(--primary); }
+.pf-slide i { font-style: normal; font: 11px/1 var(--mono); color: var(--fg3); min-width: 30px; }
 .pf-swatches { flex: 1; min-width: 0; }
 .pf-part { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); padding: 4px 6px; border-radius: 7px; cursor: pointer; }
 .pf-part.on { background: var(--primary-dim); color: var(--fg); }

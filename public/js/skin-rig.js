@@ -308,6 +308,14 @@ function makeStage(host, { w = 230, h = 270 }) {
       loop();
     },
     remove(obj) { sc.remove(obj); },
+    /** 按体型把机位一起拉远：身高 1.25 的人偶如果还按标准身高取景，头会被画布裁掉，
+     *  于是"调高了自己"在预览里看起来像"预览坏了"。位置与注视点同倍缩放，
+     *  等于围绕脚底做同一次放大，构图关系不变。 */
+    frame(k) {
+      const s = Number.isFinite(k) && k > 0 ? k : 1;
+      cam.position.set(2.9 * s, 1.55 * s, 2.6 * s);
+      cam.lookAt(0, 0.9 * s, 0);
+    },
     stop() { dead = true; cancelAnimationFrame(raf); renderer.dispose(); cv.remove(); },
     /** 抓一张当卡片缩略图/发布封面：省得皮肤库还要为骨骼皮肤另想一套渲染 */
     snap() { try { return cv.toDataURL("image/png"); } catch { return null; } },
@@ -336,6 +344,7 @@ export function previewAvatar(host, avatar, { w = 230, h = 270, walk = true } = 
   blob.visible = true; blob.scale.setScalar(1.15);
   const wrap = new THREE.Group();
   wrap.add(avatar); wrap.add(blob);
+  stage.frame(avatar.userData && avatar.userData.bodyScale ? avatar.userData.bodyScale.h : 1);
   stage.start(wrap, walk ? (o, t) => poseWalk(avatar, t, 0.52) : null);
   return stage;
 }
@@ -367,6 +376,8 @@ export function liveAvatar(host, skin, opts = {}) {
     }
     const wrap = new THREE.Group();
     wrap.add(g); wrap.add(blob);
+    // 每拖一次滑杆都重新取景，否则身高调到 1.25 就是一颗被裁掉的头
+    stage.frame(g.userData.bodyScale ? g.userData.bodyScale.h : 1);
     stage.start(wrap, (o, t) => poseWalk(g, t, 0.52));
     cur = wrap;
   };

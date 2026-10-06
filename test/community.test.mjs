@@ -5,16 +5,18 @@
  * "谁在说话"。用裸 fetch 测出来的"能跑"是假的——所有请求都会变成匿名，
  * 鉴权与越权分支一次都走不到。
  *
- * 需要本地服务在跑（默认 http://127.0.0.1:5173，可用 BASE 覆盖）。
- * 数据落在 server/data/community/ 与 community/pubs/ 下，测试用随机后缀名字，
- * 跑完把自己造的用户删不掉（社区没有注销接口，这是刻意的：发布内容要能追责），
- * 但快照与评论不会污染广场——测完把测试发布下架。
+ * 自己起一个服务、自己挑一个干净的数据目录（见下面 freePort 那段）。
+ * 测试账号用随机后缀，跑完把自己的发布下架，不给广场留垃圾；
+ * 用户记录删不掉（社区没有注销接口，这是刻意的：发布内容要能追责）。
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+// 这条套件不起浏览器，但只要那个 freePort：端口被上一轮的僵尸服务占着时，
+// bind 失败不会报错，fetch 照样 200——回答的是上一轮那个陌生库，账号已注册。
+import { freePort } from "./cdp.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -309,6 +311,21 @@ try {
   r = await client().call("GET", "/api/community/feed?sort=foryou");
   ok("推荐流能出票（没登录时退化成热榜，而不是报错）",
     r.status === 200 && Array.isArray(r.data.rows), r.status);
+
+  /* 体型三档：账号皮肤上的 body 必须能存住、能被夹住、能原样读回来——
+   *  运行时、主页、皮肤库读的都是这一份记录。 */
+  r = await B.call("PATCH", "/api/community/me", { skin: { shirt: "#123456", body: { h: 1.25, w: 0.8, leg: 1.1 } } });
+  ok("体型存进账号皮肤（五键照旧，body 一起走）",
+    r.status === 200 && r.data.user.skin.body.h === 1.25 && r.data.user.skin.body.w === 0.8
+    && r.data.user.skin.shirt === "#123456", JSON.stringify(r.data.user && r.data.user.skin));
+  r = await B.call("PATCH", "/api/community/me", { skin: { body: { h: 9, w: -3, leg: "abc" } } });
+  ok("越界与垃圾值被夹回量程而不是写进去",
+    r.status === 200 && r.data.user.skin.body.h === 1.25 && r.data.user.skin.body.w === 0.8
+    && r.data.user.skin.body.leg === 1, JSON.stringify(r.data.user && r.data.user.skin.body));
+  r = await client().call("GET", `/api/community/users/${encodeURIComponent(nameB)}`);
+  ok("别人看主页也拿得到体型（否则别人看到的你永远是标准身材）",
+    r.status === 200 && r.data.user.skin.body && r.data.user.skin.body.h === 1.25,
+    JSON.stringify(r.data.user && r.data.user.skin));
 
   r = await B.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "这张图做得很直" });
   ok("B 能评论", r.status === 200 && r.data.row.body === "这张图做得很直", JSON.stringify(r.data));

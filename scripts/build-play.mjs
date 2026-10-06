@@ -79,11 +79,25 @@ function rmrf(p) {
 // 只解析相对说明符（本项目模块全部用相对路径），bare 说明符交给 importmap。
 const SPEC_RE = /(?:^|[\s;()])(?:import|export)\s+[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|[\s;()])(?:import|export)\s+['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 
+/** 抽出代码里的模块说明符。
+ *  先剥掉注释：说明符扫描是纯正则，注释里写一句 `import("./social.js")` 的说明
+ *  就会被当成真引用，把整层社交拖进闭包——第 5 步的审查也会把这种注释判成违规，
+ *  两边同一个规矩：只认非注释行。 */
+function stripComments(text) {
+  return text.split("\n").map((line) => {
+    const t = line.trim();
+    return t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") ? "" : line;
+  }).join("\n");
+}
+
 function specifiers(code) {
   const out = [];
   let m;
   SPEC_RE.lastIndex = 0;
-  while ((m = SPEC_RE.exec(code))) out.push(m[1] || m[2] || m[3]);
+  for (const line of stripComments(code).split("\n")) {
+    SPEC_RE.lastIndex = 0;
+    while ((m = SPEC_RE.exec(line))) out.push(m[1] || m[2] || m[3]);
+  }
   return out;
 }
 
