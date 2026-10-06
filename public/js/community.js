@@ -18,10 +18,37 @@ const FEED_KINDS = [["map", "地图"], ["model", "模型"], ["skin", "皮肤"]];
 const KIND_NOUN = { map: "地图", model: "模型", skin: "皮肤" };
 let feed = { sort: "new", cat: "", kind: "", q: "", offset: 0, total: 0, rows: [], cats: [] };
 
+/** 广场的筛选状态存在地址栏里。
+ *  以前只存在内存：导轨上写着「按热度看 → /community?sort=hot」，点进去却停在最新，
+ *  等于一条假链接；搜索结果也没法分享、没法后退。
+ *  用 replaceState 而不是 pushState：切一次 tab 就压一条历史，后退键会变成
+ *  "回到我三分钟前点过的那个分类"，没人想要那个。 */
+function readFeedUrl() {
+  const u = new URLSearchParams(location.search);
+  const s = u.get("sort");
+  feed.sort = FEED_TABS.some(([k]) => k === s) ? s : "new";
+  const k = u.get("kind");
+  feed.kind = FEED_KINDS.some(([x]) => x === k) ? k : "";
+  feed.cat = (u.get("cat") || "").slice(0, 12);
+  feed.q = (u.get("q") || "").slice(0, 60);
+  if (qBox && qBox.value !== feed.q) qBox.value = feed.q;
+}
+function writeFeedUrl() {
+  if (!location.pathname.startsWith("/community")) return;
+  const u = new URLSearchParams();
+  if (feed.sort && feed.sort !== "new") u.set("sort", feed.sort);
+  if (feed.kind) u.set("kind", feed.kind);
+  if (feed.cat) u.set("cat", feed.cat);
+  if (feed.q) u.set("q", feed.q);
+  const qs = u.toString();
+  history.replaceState(null, "", qs ? `${location.pathname}?${qs}` : location.pathname);
+}
+
 async function feedView() {
   pageTitle.textContent = "地图展厅";
   pageSub.textContent = "别人发布的世界，点进去就能跑一圈";
   qBox.closest(".wb-search").hidden = false;
+  readFeedUrl();
   root.innerHTML = `<div id="cmFeature"></div>
     <div class="cm-cats" id="cmCats"></div>
     <div class="cm-tabs" id="cmTabs"></div>
@@ -60,7 +87,7 @@ function drawTabs() {
   for (const b of el.querySelectorAll("[data-k]")) b.onclick = () => { feed.kind = feed.kind === b.dataset.k ? "" : b.dataset.k; reload(); };
 }
 
-async function reload() { feed = { ...feed, offset: 0, rows: [] }; drawCats(); drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }
+async function reload() { feed = { ...feed, offset: 0, rows: [] }; writeFeedUrl(); drawCats(); drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }
 
 async function loadFeed(reset) {
   const grid = $("cmGrid");
@@ -195,6 +222,7 @@ async function pubView(id) {
               ? `<button class="cm-btn lg primary" id="cmApplyTop">${icons.HEART}应用到我的角色</button>`
               : `<button class="cm-btn lg primary" id="cmPlayTop">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>`}
             ${isMap ? `<button class="cm-btn" id="cmFav" aria-pressed="${p.favByMe ? "true" : "false"}" title="收进我自己的清单，和点赞不是一回事">${p.favByMe ? "★" : "☆"} 收藏</button>` : ""}
+            <button class="cm-btn" id="cmShare" title="复制这张图的链接">复制链接</button>
             <span class="cm-vote">
               <button id="cmUp" class="${p.votedByMe === 1 ? "on" : ""}" title="觉得好玩">▲ <b>${p.up}</b></button>
               <button id="cmDown" class="${p.votedByMe === -1 ? "on" : ""}" title="觉得不好玩">▼ <b>${p.down}</b></button>
@@ -275,6 +303,23 @@ async function pubView(id) {
   if (top) top.onclick = () => (p.kind === "model" ? $("cmPlay").onclick() : playPub(p));
   const applyTop = $("cmApplyTop");
   if (applyTop) applyTop.onclick = () => applyCommunitySkin(p, applyTop);
+  /** 分享在本地就只有"复制链接"这一件事：没有社交网络 SDK 可接，
+   *  硬造一个分享面板等于把用户推到站外。剪贴板 API 要安全上下文，
+   *  非 https 的局域网访问走 execCommand 兜底——复制失败必须说，不能静默。 */
+  const share = $("cmShare");
+  if (share) share.onclick = async () => {
+    const url = location.origin + "/p/" + p.id;
+    let done = false;
+    try { await navigator.clipboard.writeText(url); done = true; }
+    catch {
+      const ta = document.createElement("textarea");
+      ta.value = url; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { done = document.execCommand("copy"); } catch { done = false; }
+      ta.remove();
+    }
+    toast(done ? "链接已复制：" + url : "复制失败，地址栏里直接复制吧", !done);
+  };
   const fav = $("cmFav");
   if (fav) fav.onclick = async () => {
     if (!requireLogin()) return;

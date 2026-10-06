@@ -141,6 +141,19 @@ await A.goto(BASE + "/me");
 if (!await until(A, `!!document.querySelector(".pf-banner")`, { tries: 24, ms: 400 })) await sleep(1200);
 const pf = await A.evaluate(`(() => ({ banner: !!document.querySelector(".pf-banner"), cards: document.querySelectorAll(".cm-card").length, edit: !!document.querySelector("#pfEdit") }))()`);
 ok("个人主页有横幅、自己的作品与编辑入口", pf.banner && pf.cards === 1 && pf.edit, JSON.stringify(pf));
+/** A 传过这张图的封面，但从来没上传横幅：那 168px 就该垫他自己的图，
+ *  而不是留一块纯色渐变——那是整页最难看的一块。 */
+const ab = await A.evaluate(`(async () => {
+  for (let i = 0; i < 40 && !document.querySelector(".pf-bannerimg"); i++) await new Promise((r) => setTimeout(r, 200));
+  const im = document.querySelector(".pf-bannerimg");
+  return JSON.stringify({
+    auto: !!im, loaded: im ? im.naturalWidth > 0 : false,
+    custom: !!document.querySelector(".pf-banner > img:not(.pf-bannerimg)"),
+  });
+})()`);
+const AB = JSON.parse(ab);
+ok("没设横幅的主页用最近那张图的封面垫底（作者自己传了横幅时这条要让位）",
+  AB.auto && AB.loaded && AB.custom === false, ab);
 await A.click("#pfEdit");
 await until(A, `!!document.querySelector('#eSkin [data-c="#e8604c"]')`, { tries: 12, ms: 250 });
 await A.evaluate(`(() => { const o=[...document.querySelectorAll("#eSkin [data-p]")].find(b=>b.dataset.p!=="shirt"); o.click(); })()`);

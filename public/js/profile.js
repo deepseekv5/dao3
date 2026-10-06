@@ -24,6 +24,15 @@ const SKIN_DEFAULT = { skin: "#ffd7b0", shirt: "#c9714f", pants: "#6b625a", hair
 const BODY_MIN = 80, BODY_MAX = 125;
 const BODY_ROWS = [["h", "身高"], ["w", "宽窄"], ["leg", "腿长"]];
 const pctOf = (v) => (Number.isFinite(Number(v)) ? Number(Number(v)).toFixed(2) : "1.00");
+/** 主页上把非默认体型写出来：别人看到"腿长 1.25"才明白那个人为什么比你高一截。
+ *  全默认时整行不出现——三颗"1.00"的徽章只是噪音。 */
+function bodyChips(b) {
+  if (!b || typeof b !== "object") return "";
+  const on = BODY_ROWS.filter(([k]) => Number.isFinite(Number(b[k])) && Number(b[k]) !== 1);
+  if (!on.length) return "";
+  return `<div class="pf-bodyrow"><span class="pf-blabel">体型</span>${
+    on.map(([k, label]) => `<span class="pf-bchip">${label} ${pctOf(b[k])}</span>`).join("")}</div>`;
+}
 const SKIN_PARTS = [
   ["shirt", "上衣"], ["pants", "裤子"], ["skin", "皮肤"], ["hair", "头发"], ["shoe", "鞋子"],
 ];
@@ -397,7 +406,7 @@ export async function profileView(name, root, setTitle, setSub) {
     : "";
   const bstyle = u.banner ? "" : `style="background-image:radial-gradient(120% 90% at 16% 0%,#4a3d28,transparent 60%),linear-gradient(120deg,#1b1917,#2a2118)"`;
   root.innerHTML = `<div class="pf-wrap">
-    <div class="pf-banner" ${bstyle}>${banner}</div>
+    <div class="pf-banner" id="pfBanner" ${bstyle}>${banner}</div>
     <div class="pf-head">
       <div class="pf-avatar">${face(u)}${u.online ? '<i class="pf-online" title="在线"></i>' : '<i class="pf-online off" title="离线"></i>'}</div>
       <div class="pf-id">
@@ -410,7 +419,7 @@ export async function profileView(name, root, setTitle, setSub) {
     <div class="pf-card">
       <div class="pf-dollbox" id="pfSkin">${previewHtml(u.skin || {})}</div>
       <div class="pf-facts">
-        <b>${esc(mine ? "你现在穿的皮肤" : "这个人的皮肤")}</b>
+        <b>${esc(mine ? "你现在穿的皮肤" : "这个人的皮肤")}${mine ? '<button class="cm-btn sm" id="pfSkinEdit">改皮肤</button>' : ""}</b>
         <div class="pf-factsrow">
           ${factCell("地区", u.region || "未填")}
           ${factCell("性别", u.gender ? genderLabel(u.gender) : "未填")}
@@ -419,6 +428,7 @@ export async function profileView(name, root, setTitle, setSub) {
         <div class="pf-tagline">${(u.persona || []).length
           ? (u.persona || []).map((t) => `<span class="pf-tag on">${esc(personaLabel(t))}</span>`).join("")
           : '<span class="pf-notag">没填性格标签</span>'}</div>
+        ${bodyChips(u.skin && u.skin.body)}
       </div>
     </div>
     <div class="cm-tabs" id="pfTabs">
@@ -426,12 +436,30 @@ export async function profileView(name, root, setTitle, setSub) {
       <button class="cm-btn" data-t="model">模型</button>
       <button class="cm-btn" data-t="followers">关注者</button>
       <button class="cm-btn" data-t="following">关注中</button>
+      ${mine ? '<button class="cm-btn" data-t="favorites">收藏</button>' : ""}
       <button class="cm-btn" data-t="recent">最近游玩</button>
     </div>
     <div id="pfBody"></div>
   </div>`;
   paintFace(root);
   mountSkinPreview(u, $("pfSkin"));
+  const skinEdit = $("pfSkinEdit");
+  if (skinEdit) skinEdit.onclick = () => openEditor(u, (nu) => profileView(nu.name, root, setTitle, setSub));
+  /** 没上传横幅的人占绝大多数，而那块 200px 的纯色渐变是整页最难看的地方。
+   *  拿 TA 自己最近一张图的封面垫在下面：内容是真的（就是这张图），
+   *  也不用再多一个上传入口。压暗 + 盖一层底色，标题文字仍然读得清。 */
+  if (!u.banner && (c.pubs || 0) > 0) {
+    api("GET", `/api/community/users/${encodeURIComponent(name)}/pubs?kind=map`).then((r) => {
+      const top = (r.rows || []).find((p) => p.hasCover);
+      const host = document.getElementById("pfBanner");
+      if (!top || !host || host.querySelector(".pf-bannerimg")) return;
+      const img = document.createElement("img");
+      img.className = "pf-bannerimg"; img.alt = ""; img.loading = "lazy";
+      img.src = `/api/community/pubs/${top.id}/cover`;
+      img.onerror = () => img.remove();
+      host.insertBefore(img, host.firstChild);
+    }).catch(() => { /* 拿不到就留着渐变，不值得为横幅报错 */ });
+  }
 
   const acts = $("pfActs");
   if (mine) {
@@ -468,6 +496,16 @@ export async function profileView(name, root, setTitle, setSub) {
   async function show(which) {
     for (const b of tabs.querySelectorAll("[data-t]")) b.classList.toggle("on", b.dataset.t === which);
     body.innerHTML = `<div class="cm-empty">读取中…</div>`;
+    if (which === "favorites") {
+      // 上一轮加收藏开关时没给地方看，等于一个按下去只会亮起来的按钮。
+      // 这里复用广场那张卡（cardHtml + bindCards），所以"我收藏的"和广场长得一样，
+      // 也能直接从列表里点进详情页。
+      const rows = (await api("GET", `/api/community/users/${encodeURIComponent(name)}/favorites`)).rows;
+      body.innerHTML = rows.length ? `<div class="cm-grid">${rows.map(cardHtml).join("")}</div>`
+        : `<div class="cm-empty">还没有收藏。<div>在地图详情页点「☆ 收藏」就会进这份清单——它和点赞不是一回事：赞是给作者的，收藏是给自己的。</div></div>`;
+      bindCards(body);
+      return;
+    }
     if (which === "recent") {
       const rows = (await api("GET", `/api/community/users/${encodeURIComponent(name)}/recent`)).rows;
       body.innerHTML = rows.length ? `<div class="pf-recent">${rows.map((h) => `<a class="pf-rrow" href="/p/${esc(h.pubId)}">

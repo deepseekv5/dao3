@@ -661,6 +661,16 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         reply.json(200, { rows });
         return true;
       }
+      if (sub === "favorites") {
+        // 收藏清单和最近游玩走同一条隐私规矩：只有本人与管理员看得全。
+        // "他收藏了什么"是可以反推兴趣的，公开出来就等于替人做了决定。
+        if (!(viewerId === u.id || isAdmin())) { reply.fail(403, "收藏清单只有本人看得到"); return true; }
+        const rows = livePubs().filter((p) => (p.favs || []).includes(u.id))
+          .sort((a, b) => (b.updated || b.created) - (a.updated || a.created))
+          .map((p) => pubCard(p, viewerId));
+        reply.json(200, { rows });
+        return true;
+      }
       if (sub === "recent") {
         // 最近游玩只有本人和管理员看得全，别人主页只显示公开的那几条
         const rows = (docs.history.byUser[u.id] || []).slice(0, viewerId === u.id || isAdmin() ? 20 : 6)

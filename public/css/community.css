@@ -334,6 +334,11 @@
   background: #161412 center/cover no-repeat; border: 1px solid var(--line);
 }
 .pf-banner img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* 自动垫的横幅是"别人的一张图"，不是作者挑来当门面的，所以压暗一档：
+   名字、简介、加入时间那几行必须比图更先被读到。作者自己上传的图不受这条影响。 */
+.pf-banner .pf-bannerimg { opacity: .46; filter: saturate(.85); }
+.pf-banner:not(:has(> img:not(.pf-bannerimg)))::before { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(13, 12, 11, .35), rgba(13, 12, 11, .72)); pointer-events: none; }
 .pf-banner::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 62px;
   background: linear-gradient(transparent, rgba(0, 0, 0, .5)); pointer-events: none; }
 /* 只有头像压在横幅下缘。整行身份信息被拽到横幅上时，名字会落在图里最花的那一块，
@@ -377,11 +382,16 @@
 /* 体型三档：滑杆 + 读数 + 复原。放在配色下面，因为"穿什么"比"多高"更常改。 */
 .pf-body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 10px;
   padding-top: 10px; border-top: 1px solid var(--line); }
-.pf-slide { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); }
-.pf-slide input[type=range] { width: 74px; accent-color: var(--primary); }
-.pf-slide i { font-style: normal; font: 11px/1 var(--mono); color: var(--fg3); min-width: 30px; }
+/* 一格一行、读数跟在滑杆后面。
+   选择器必须带上 .pf-body：弹窗自己有一条 `.cm-mbox label { display: block }`
+   （特异性 0,1,1），只写 .pf-slide（0,1,0）会被它压成块级，label 于是竖着排、
+   子元素的 width 也全部失效——排版对不对，只有量计算样式才知道，看图只会以为"没生效"。 */
+.pf-body .pf-slide { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); flex: 0 0 auto; white-space: nowrap; }
+.pf-body .pf-slide > span { width: 30px; }
+.pf-body .pf-slide input[type=range] { width: 68px; accent-color: var(--primary); }
+.pf-body .pf-slide i { font-style: normal; font: 11px/1 var(--mono); color: var(--fg3); min-width: 30px; }
 .pf-swatches { flex: 1; min-width: 0; }
-.pf-part { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); padding: 4px 6px; border-radius: 7px; cursor: pointer; }
+.pf-part { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); padding: 4px 6px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
 .pf-part.on { background: var(--primary-dim); color: var(--fg); }
 .pf-part span { width: 15px; height: 15px; border-radius: 4px; border: 1px solid rgba(255,255,255,.22); }
 .pf-pal { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
@@ -437,7 +447,9 @@
 .pf-o.dice { align-items: center; justify-content: center; color: var(--fg2); width: 30px; }
 .pf-o.dice:hover { color: var(--fg); border-color: var(--primary); }
 .pf-o.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
-.pf-parts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 6px; }
+/* 列数按宽度自己排：写死 1fr 1fr 再配 nowrap 的标签，第二列会被弹窗右缘切掉
+   （"裤子""头发"就是这么丢的）。auto-fit 装不下就自己减一列。 */
+.pf-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 1px 6px; }
 .pf-custom { display: inline-flex; margin-top: 7px; overflow: hidden; position: relative; }
 .pf-custom input[type=color] { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); border: 0; padding: 0; background: none; cursor: pointer; }
 
@@ -474,7 +486,13 @@
 .pf-dollbox:has(canvas) { border-radius: var(--radius-md);
   background: radial-gradient(80% 46% at 50% 92%, rgba(227, 166, 60, .14), transparent 72%); }
 .pf-facts { flex: 1; min-width: 0; align-self: center; }
-.pf-facts > b { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg3); margin-bottom: 12px; }
+.pf-facts > b { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg3); margin-bottom: 12px; }
+.pf-facts > b .cm-btn.sm { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 11.5px; }
+/* 非默认体型才出现这一行；别人看到"腿长 1.25"才明白为什么那个人比你高一截。 */
+.pf-bodyrow { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.pf-blabel { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg3); }
+.pf-bchip { font: 11.5px/1 var(--mono); color: var(--fg2); background: var(--bg3);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
 .pf-factsrow { display: flex; flex-wrap: wrap; gap: 9px; }
 .pf-fact { display: inline-flex; align-items: baseline; gap: 7px; padding: 7px 12px; border-radius: var(--radius-md);
   background: var(--bg2); border: 1px solid var(--line); }

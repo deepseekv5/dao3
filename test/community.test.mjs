@@ -301,8 +301,21 @@ try {
 
   r = await B.call("POST", `/api/community/pubs/${pubId}/favorite`);
   ok("B 收藏这张", r.status === 200 && r.data.favs === 1 && r.data.favByMe === true, JSON.stringify(r.data));
+  /** 收藏要有地方看：本人读得到，别人读不到（"他收藏了什么"能反推兴趣）。 */
+  r = await client().call("GET", `/api/community/users/${encodeURIComponent(nameB)}/favorites`);
+  ok("匿名读别人的收藏清单被拒（403，不是空列表——空列表会诱导人猜）", r.status === 403, r.status);
+  r = await B.call("GET", `/api/community/users/${encodeURIComponent(nameB)}/favorites`);
+  ok("本人读自己的收藏，刚收藏那张在里面",
+    r.status === 200 && r.data.rows.length === 1 && r.data.rows[0].id === pubId && r.data.rows[0].favByMe === true,
+    JSON.stringify(r.data).slice(0, 200));
+  /** 用 C 而不是 A：这套里 A 是第一个注册的账号，按"首个注册即管理员"的规则它是管理员，
+   *  管理员本来就读得到（和最近游玩同一条规矩）。拿管理员当"路人"会得到一个假失败。 */
+  r = await C.call("GET", `/api/community/users/${encodeURIComponent(nameB)}/favorites`);
+  ok("普通用户也读不到别人的收藏（只有登录者本人与管理员能读）", r.status === 403, r.status);
   r = await B.call("POST", `/api/community/pubs/${pubId}/favorite`);
   ok("再点一次是取消收藏", r.status === 200 && r.data.favs === 0 && r.data.favByMe === false, JSON.stringify(r.data));
+  r = await B.call("GET", `/api/community/users/${encodeURIComponent(nameB)}/favorites`);
+  ok("取消之后清单跟着空掉", r.status === 200 && r.data.rows.length === 0, JSON.stringify(r.data).slice(0, 160));
   /** 正在玩读的是实时房间人数。测试里没有真连接，所以判据是"这个字段在、
    *  且是个数"——缺字段会让前端渲染成空白，那和数值是 0 是两回事。 */
   r = await client().call("GET", `/api/community/pubs/${pubId}`);
