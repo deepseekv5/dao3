@@ -237,6 +237,7 @@ async function pubView(id) {
         <div id="cmCmtList"></div>
         <div id="cmCompose"></div>
       </section>
+      <div id="cmByAuthor"></div>
       <div id="cmAlso"></div>
     </div>
     <aside class="cm-side">
@@ -289,6 +290,13 @@ async function pubView(id) {
   </div>`;
 
   if (a) renderAuthorActs(a, rel);
+  /** 看完这张最想做的两件事：再来一张 TA 的（同一个作者的口味是连着的），
+   *  或者换一张热门的。顺序就这么排——作者自己的其他图排在通用推荐前面。 */
+  if (a) api("GET", `/api/community/users/${encodeURIComponent(a.name)}/pubs`).then((r) => {
+    const rows = (r.rows || []).filter((x) => x.id !== p.id).slice(0, 6);
+    const host = $("cmByAuthor");
+    if (host && rows.length) { host.innerHTML = railHtml(` ${a.name} 的其他作品`.trim(), rows); bindCards(host); }
+  }).catch(() => { });
   // 详情页最容易空：看完这张就该有下一张。取热门，排掉自己。
   api("GET", "/api/community/feed?sort=hot&limit=8").then((r) => {
     const rows = (r.rows || []).filter((x) => x.id !== p.id).slice(0, 6);
