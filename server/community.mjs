@@ -370,6 +370,16 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     };
     const model = assetUrl(src.model);
     if (model) out.model = model;
+    /** 体型三档（身高 / 宽窄 / 腿长）：只收这个区间里的数，越界夹回来而不是拒掉整份皮肤。
+     *  放任任意值等于让人把自己拉到看不见、或者撑破第三人称相机。 */
+    const bd = src.body && typeof src.body === "object" ? src.body : null;
+    if (bd) {
+      const mul = (x) => (Number.isFinite(Number(x)) ? Math.min(1.25, Math.max(0.8, Number(x))) : 1);
+      const body = { h: mul(bd.h), w: mul(bd.w), leg: mul(bd.leg) };
+      // 全 1 就不存：默认值写进档案会让每一份皮肤记录都多三个数，
+      // 以后想改默认身材得先迁移几百个账号。
+      if (body.h !== 1 || body.w !== 1 || body.leg !== 1) out.body = body;
+    }
     // MC 贴图皮肤：只认站内路径（随包预设 /img/skins/、用户上传 /api/community/uploads/）。
     const texture = assetUrl(src.texture);
     if (texture && /\.(png|jpe?g|webp)$/i.test(texture)) out.texture = texture;
