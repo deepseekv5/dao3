@@ -1,7 +1,7 @@
 # AI 能力：写脚本与生成体素模型
 
 这篇讲两件事：**怎么配**，以及**你交给它的密钥会经过哪些手**。
-所有数字都是本机实测的（`node test/ai.mjs` 94 条 + `test/e2e.mjs` 里代理那 6 条），
+所有数字都是本机实测的（`node test/ai.mjs` 101 条 + `test/e2e.mjs` 里代理那 6 条），
 不是照着设计稿写的。
 
 > AI 是**可选**能力。不填接口，编辑器一切功能照旧；填了也不会多出任何官方 API——
@@ -136,11 +136,18 @@ openai 兼容端点。填完点「测试连接」，它发一句"只回复两个
 ### 动作面照官方 `apc` 的命名
 
 动作名一律是 `<组>.<动词>`：`project.info` / `project.create` / `map.save` /
-`map.resource` / `script.list|get|upload|rename` / `storage.set|get|list|remove` /
-`blocks.edit` / `model.build` / `entity.add` / `build.check` /
+`map.resource` / `script.list|get|upload|rename|remove` / `storage.set|get|list|remove` /
+`blocks.edit` / `model.build` / `model.list|remove` / `entity.add|list|remove` /
+`zone.add|list|remove` / `ui.add|list|remove` / `settings.get|set` / `build.check` /
 `runtime.start|status|logs|stop` / `scene.capture` / `project.export` / `plan.set` / `finish`。
-另有五个社区动作不走 `apc` 命名（官方 CLI 没有这一层）：
+另有四个社区动作不走 `apc` 命名（官方 CLI 没有这一层）：
 `community.who` / `community.publish` / `community.feed` / `community.comment`，它们只碰本地社区。
+
+**每一组"能加"的动作都配一个 `list` 和一个 `remove`。** 这不是对称癖：
+只有数量清单的话，Agent 无法核对脚本里 `#名字` 取的是不是真存在的实体
+（猜错不报错，只是运行时静默取不到），也没法把上一次放歪的东西找出来删掉。
+六个删除动作（`script/entity/zone/ui/model/storage` 的 `.remove`）**全部要 `confirm:true`**，
+找不到目标时报错并列出有哪些可选、该用哪个 `list` 去看。
 
 依据是官方 CLI 的 `apc script upload <project> <side> <entry>`、`apc storage`、
 `apc runtime start|logs`、`apc scene capture`、`apc project info`，
@@ -166,7 +173,8 @@ openai 兼容端点。填完点「测试连接」，它发一句"只回复两个
 并把缺口明写在最后。它不评价"像不像个好玩的游戏"，那个只有你玩过才知道。
 
 创作动作面因此扩到：`project.create` / `map.save` / `blocks.edit` / `model.build` /
-`entity.add`（触发盒）/ `ui.add`（HUD）/ `zone.add`（区域触发器）/
+`entity.add`（触发盒）/ `ui.add`（HUD）/ `zone.add`（区域触发器；给它 `goto`
+就是一道**世界之门**，走进去把人送去做标的那个世界/发布）/
 `settings.set`（游戏规则与世界物理）/ `project.export`（.zip 交付物）。
 
 为什么值得对齐：模型在文档与训练数据里见过的就是这套名字。自己另起一套
@@ -276,7 +284,7 @@ project.info → plan.set → 动手（blocks.edit / model.build / script.upload
 ## 自己验一遍
 
 ```bash
-node test/ai.mjs          # 94 条：解析、校验、展开、配额、规范、动作协议，纯离线不联网
+node test/ai.mjs          # 101 条：解析、校验、展开、配额、规范、动作协议，纯离线不联网
 npm run test:e2e          # 另外那批要真浏览器：代理 6 条 + 走真实 UI 的规范与 Agent 小窗
 ```
 
