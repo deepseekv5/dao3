@@ -334,6 +334,11 @@
 .pf-hint { font-size: 11px; color: var(--fg3); }
 .pf-ok { font-size: 11.5px; color: var(--ok); }
 .pf-skinrow { display: flex; gap: 14px; align-items: flex-start; }
+/* 编辑弹窗里的实时预览位：3D 起来时是个透明画布，垫一层地面光才站得住；
+   WebGL 起不来时里面躺的还是那张 CSS 纸片人，尺寸得给它留够。 */
+.pf-dollslot { flex: none; width: 150px; min-height: 190px; display: flex;
+  align-items: center; justify-content: center; border-radius: var(--radius-md); }
+.pf-dollslot:has(canvas) { background: radial-gradient(80% 46% at 50% 92%, rgba(227, 166, 60, .14), transparent 72%); }
 .pf-swatches { flex: 1; min-width: 0; }
 .pf-part { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg2); padding: 4px 6px; border-radius: 7px; cursor: pointer; }
 .pf-part.on { background: var(--primary-dim); color: var(--fg); }
@@ -423,11 +428,10 @@
 .pf-dollbox { flex: none; width: 190px; min-height: 220px; display: flex; align-items: center; justify-content: center;
   border-right: 1px solid var(--line); }
 .pf-dollbox .pf-doll { margin: 0 auto; transform: scale(1.35); }
-.pf-rigbox { width: 172px; height: 220px; display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-md); background: radial-gradient(80% 46% at 50% 92%, rgba(227, 166, 60, .14), transparent 72%); }
-/* 模型真画出来了就把"载入中"那行字让位，不然它会一直杵在 canvas 边上 */
-.pf-rigbox:has(canvas) .pf-rigload { display: none; }
-.pf-rigload, .pf-rigfail { font-size: 11.5px; color: var(--fg3); }
+/* 3D 预览（人偶与骨骼皮肤共用 avatar.js 那一具）落地时要有一点"站着"的暗示：
+   画布本身是透明的，没有这道地面光就是个浮在卡片上的剪影。 */
+.pf-dollbox:has(canvas) { border-radius: var(--radius-md);
+  background: radial-gradient(80% 46% at 50% 92%, rgba(227, 166, 60, .14), transparent 72%); }
 .pf-facts { flex: 1; min-width: 0; align-self: center; }
 .pf-facts > b { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg3); margin-bottom: 12px; }
 .pf-factsrow { display: flex; flex-wrap: wrap; gap: 9px; }

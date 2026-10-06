@@ -17,8 +17,10 @@
 .so-drawer{position:fixed;top:0;right:0;bottom:0;width:352px;max-width:100vw;z-index:901;
   display:flex;flex-direction:column;background:var(--glass-bg);border-left:1px solid var(--line2);
   box-shadow:-18px 0 40px rgba(0,0,0,.55);
-  transform:translateX(102%);transition:transform .24s var(--ease)}
-.so-drawer.on{transform:translateX(0)}
+  transform:translateX(102%);visibility:hidden;transition:transform .24s var(--ease),visibility 0s linear .24s}
+/* 收起时不能只是"移出屏幕"：Tab 依然会走进那三个页签，读屏软件也会照念。
+   visibility 用 0s + 240ms 延迟，这样滑出动画放完才真正消失，滑入时立刻可见。 */
+.so-drawer.on{transform:translateX(0);visibility:visible;transition-delay:0s}
 .so-head{display:flex;align-items:center;gap:8px;padding:10px 10px 10px 12px;border-bottom:1px solid var(--line)}
 .so-tabs{display:flex;gap:4px;flex:1}
 .so-tabs button{padding:6px 12px;border-radius:var(--radius-md);border:1px solid transparent;

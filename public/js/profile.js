@@ -38,7 +38,9 @@ const OUTFITS = [
 const rand = (a) => a[(Math.random() * a.length) | 0];
 const randomOutfit = () => ({ skin: rand(TONES), shirt: rand(SWATCHES), pants: rand(SWATCHES), hair: rand(HAIRS), shoe: rand(["#2b2f38", "#3b2a1c", "#e8e6e1", "#241f1a"]) });
 
-/** 纯 CSS 的角色预览：不为了看个配色就把 three.js 拖进社区页。
+/** 纯 CSS 的角色预览，现在只是**兜底**：WebGL 起不来（老设备、驱动被禁、
+ *  软件渲染被关掉）时这一格不能空着。正常路径由 `mountSkinPreview()` 换成
+ *  `avatar.js` 那具与运行时同一份几何的人偶——主页上看到的必须就是进图之后那身。
  *  贴图皮肤只把头那一格换成展开图的正脸（src 由 paintFace 异步填），
  *  身体仍按配色画——展开图整张塞进去只会糊成一片噪点，读不出任何东西。 */
 function previewHtml(skin) {
@@ -142,7 +144,7 @@ function openEditor(u, onSaved) {
       <div>
         <h4 title="配色会带进你游玩的每一张地图；模型皮肤在 VOXA 里发布后选择。">角色皮肤</h4>
         <div class="pf-skinrow">
-          ${previewHtml(skin)}
+          <div class="pf-dollslot" id="eDoll">${previewHtml(skin)}</div>
           <div class="pf-swatches" id="eSkin"></div>
         </div>
         <div class="pf-mcblk" id="eMc"></div>
@@ -151,7 +153,22 @@ function openEditor(u, onSaved) {
     <div class="cm-mbtns"><button class="cm-btn" data-x="cancel">取消</button><button class="cm-btn primary" id="eSave">保存</button></div>
   </div>`;
   box.classList.add("show");
-  const close = () => box.classList.remove("show");
+  // 编辑弹窗里那格预览换成运行时同一具人偶：挑颜色时看到的就是进图之后的样子。
+  // 起不来（没有 WebGL）就留着 CSS 纸片人，这一格不能空。
+  let live = null;
+  (async () => {
+    try {
+      const { liveAvatar } = await import("/js/skin-rig.js");
+      const slot = box.querySelector("#eDoll");
+      if (!slot || !box.isConnected) return;
+      slot.innerHTML = "";
+      live = liveAvatar(slot, draft, { w: 150, h: 190 });
+    } catch { /* 纸片人还在 */ }
+  })();
+  const close = () => {
+    box.classList.remove("show");
+    if (live) { try { live.stop(); } catch { /* 已经停了 */ } live = null; }
+  };
   box.onclick = (e) => { if (e.target === box) close(); };
   box.querySelector('[data-x="cancel"]').onclick = close;
 
@@ -175,8 +192,11 @@ function openEditor(u, onSaved) {
     for (const b of box.querySelectorAll("[data-p]")) {
       b.querySelector("span").style.background = draft[b.dataset.p];
     }
-    const doll = box.querySelector(".pf-doll");
-    if (doll) doll.replaceWith(fragmentFirst(previewHtml(draft)));
+    if (live) live.set(draft);
+    else {
+      const doll = box.querySelector(".pf-doll");
+      if (doll) doll.replaceWith(fragmentFirst(previewHtml(draft)));
+    }
     paintFace(box);
   };
   const applyPreset = (o, btn) => {
@@ -309,19 +329,20 @@ const factCell = (k, v) => `<span class="pf-fact"><i>${esc(k)}</i><b>${esc(v)}</
 
 // 一台机甲 6.9 MB，绝不该在每页都开一份 WebGL 上下文：切页时把上一个预览停掉并释放。
 let rigLive = null;
-/** 皮肤预览分三条路：六块配色（纯 CSS 人偶）、MC 展开图（CSS + 裁出来的正脸）、
- *  骨骼皮肤（真模型，要 three）。前两条不引依赖，只有真是 rig 才动态 import。 */
+/** 皮肤预览统一走 skin-rig 的那个舞台：骨骼皮肤上真模型，其余上 avatar.js 那具
+ *  与运行时同一份几何的人偶。以前这里非 rig 就留一张纯 CSS 纸片人，于是"主页上
+ *  看到的我"和"进图之后的我"是两种东西——现在只有一份画法，漂移不了。
+ *  CSS 纸片人退成兜底：WebGL 起不来（老设备 / 驱动被禁）时至少有个轮廓。 */
 async function mountSkinPreview(u, host) {
-  if (rigLive) { try { rigLive.stop(); } catch {} rigLive = null; }
-  const s = u.skin || {};
-  if (!(s.kind === "rig" && s.model && host)) return;
-  host.innerHTML = `<div class="pf-rigbox"><span class="pf-rigload">载入皮肤模型…</span></div>`;
+  if (rigLive) { try { rigLive.stop(); } catch { /* 已经没了 */ } rigLive = null; }
+  if (!host) return;
+  const fallback = host.innerHTML;   // 兜底那张纸片人，先留着
   try {
-    const { previewRig } = await import("/js/skin-rig.js");
-    rigLive = previewRig(host.firstChild, { model: s.model, bones: s.bones, axes: s.axes, scale: s.scale, flip: s.flip },
-      { w: 172, h: 220 });
-  } catch (e) {
-    host.innerHTML = `<div class="pf-rigbox"><span class="pf-rigfail">模型读不出来</span></div>`;
+    const { previewSkin } = await import("/js/skin-rig.js");
+    host.innerHTML = "";             // 画布要 append 进来，不清掉就会叠在纸片人上面
+    rigLive = previewSkin(host, u.skin || {}, { w: 172, h: 220 });
+  } catch {
+    host.innerHTML = fallback;       // WebGL 起不来就还原，这一格不能空
   }
 }
 

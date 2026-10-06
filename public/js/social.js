@@ -21,6 +21,7 @@ const seen = new Set();            // 已渲染过的消息 id（去重）
 let lastWorld = 0;                 // 世界频道本地"看到哪儿了"，公共频道不占服务端未读
 let worldBadge = 0;
 let drawer = null, body = null;
+let lastFocus = null;              // 打开抽屉前焦点在哪，关掉之后要还回去
 let sock = null, sockRetry = 0;
 let pollTimer = null;
 let counts = { friends: 0, unread: 0 };
@@ -94,6 +95,11 @@ export function openSocial(which = "friends") {
   if (!drawer) {
     drawer = document.createElement("div");
     drawer.id = "soDrawer"; drawer.className = "so-drawer";
+    // 抽屉是盖在页面上的模态层：没有这三样，读屏软件会照本宣科地念整个背景页面，
+    // 而 Tab 会从"关闭"一路走到被遮住的世界列表上去。
+    drawer.setAttribute("role", "dialog");
+    drawer.setAttribute("aria-modal", "true");
+    drawer.setAttribute("aria-label", "好友、扩列与聊天");
     drawer.innerHTML = `<header class="so-head">
         <div class="so-tabs">${TABS.map(([k, l]) => `<button data-tab="${k}">${l}</button>`).join("")}</div>
         <button class="so-x" id="soClose" aria-label="关闭">✕</button>
@@ -104,20 +110,46 @@ export function openSocial(which = "friends") {
     scrim.onclick = closeSocial;
     document.body.appendChild(scrim);
     drawer.__scrim = scrim;
+    drawer.inert = true;   // 收起时整块从Tab顺序和点击里消失，只靠 translateX(102%) 移出去挡不住键盘
     for (const b of drawer.querySelectorAll("[data-tab]")) b.onclick = () => { tab = b.dataset.tab; thread = null; draw(); };
     $("soClose").onclick = closeSocial;
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawer.classList.contains("on")) closeSocial(); });
+    document.addEventListener("keydown", (e) => {
+      if (!drawer.classList.contains("on")) return;
+      if (e.key === "Escape") { closeSocial(); return; }
+      if (e.key === "Tab") trapFocus(e, drawer);
+    });
   }
+  // 已经在抽屉里换格子（或从主页点开私聊）时不能重记：那会把"回去的位置"
+  // 记成抽屉里的某个按钮，关掉之后焦点落在一个刚消失的东西上。
+  if (!drawer.classList.contains("on")) lastFocus = document.activeElement;
   drawer.classList.add("on");
+  drawer.inert = false;
   drawer.__scrim.classList.add("on");
+  const first = drawer.querySelector('.so-tabs [data-tab="' + tab + '"]') || $("soClose");
+  if (first && !drawer.contains(document.activeElement)) first.focus();
   connectSocial();
   draw();
+}
+
+/** Tab 关在抽屉里：模态层最烦人的不是"要按很多次才走到关闭"，
+ *  而是按着按着焦点跑到被遮住的页面上，此时回车会点到一个看不见的按钮。 */
+function trapFocus(e, root) {
+  const items = [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => !el.disabled && el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 export function closeSocial() {
   if (!drawer) return;
   drawer.classList.remove("on");
   drawer.__scrim.classList.remove("on");
   stopPoll();
+  // 焦点不能留在一个已经看不见的按钮上：那样下一次 Tab 是从抽屉里继续走的，
+  // 而不是从"我刚才点的那个入口"接着往下。
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  lastFocus = null;
 }
 export const socialIsOpen = () => !!(drawer && drawer.classList.contains("on"));
 

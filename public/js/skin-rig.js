@@ -12,6 +12,7 @@
 // 符号取点积。所以只要 facing 选对，整套骨架一次到位；选错了预览里立刻看得出来。
 import * as THREE from "../vendor/three/three.module.js";
 import { GLTFLoader } from "../vendor/three/GLTFLoader.js";
+import { makeAvatar, blobShadowMesh } from "./avatar.js";
 
 // 官方 GameBodyPart 的 18 个槽位（与 gapi.js 那份枚举同名，别在这里改出第二套口径）
 export const SLOTS = ["hips", "torso", "neck", "head",
@@ -275,9 +276,10 @@ export function missingJoints(map) {
 }
 
 /* ---------------- 预览：走路循环 ---------------- */
-/** 在给定容器里起一个小画布，用**运行时同一套**姿态公式驱动这台模型。
- *  映射对不对只有动起来才看得出来——静着一张图，前后摆和左右劈长得一模一样。 */
-export function previewRig(host, rec, { w = 230, h = 270, walk = true } = {}) {
+/** 一个能站住人的小舞台：画布、灯光、相机、循环都在这里，内容谁给都行。
+ *  灯光刻意与运行时同一取向（半球天光 + 一盏主光），因为"主页上好看、进图变灰"
+ *  多半就是预览打光比场景里讲究。 */
+function makeStage(host, { w = 230, h = 270 }) {
   const cv = document.createElement("canvas");
   cv.width = w; cv.height = h;
   cv.style.width = w + "px"; cv.style.height = h + "px";
@@ -289,26 +291,89 @@ export function previewRig(host, rec, { w = 230, h = 270, walk = true } = {}) {
   const key = new THREE.DirectionalLight(0xffffff, 1.3); key.position.set(3, 5, 4); sc.add(key);
   const cam = new THREE.PerspectiveCamera(34, w / h, 0.05, 60);
   cam.position.set(2.9, 1.55, 2.6); cam.lookAt(0, 0.9, 0);
-  let av = null, t = 0, raf = 0, dead = false, last = performance.now();
-  const loop = () => {
-    if (dead) return;
-    const now = performance.now();
-    t += (now - last) / 1000 * 7; last = now;
-    if (av && walk) poseWalk(av, t, 0.52);
-    renderer.render(sc, cam);
-    raf = requestAnimationFrame(loop);
-  };
-  loadRigScene(rec.model).then((scene) => {
-    if (dead) return;
-    av = assembleRig(scene, rec);
-    sc.add(av);
-    loop();
-  }).catch(() => {
-    host.appendChild(document.createTextNode("预览读不出这个模型"));
-  });
+  let t = 0, raf = 0, dead = false, last = performance.now();
   return {
+    get dead() { return dead; },
+    /** 内容准备好之后再开循环：早开一帧就是拍封面时抓到空背景。 */
+    start(obj, pose) {
+      sc.add(obj);
+      const loop = () => {
+        if (dead) return;
+        const now = performance.now();
+        t += (now - last) / 1000 * 7; last = now;
+        if (pose) pose(obj, t);
+        renderer.render(sc, cam);
+        raf = requestAnimationFrame(loop);
+      };
+      loop();
+    },
+    remove(obj) { sc.remove(obj); },
     stop() { dead = true; cancelAnimationFrame(raf); renderer.dispose(); cv.remove(); },
     /** 抓一张当卡片缩略图/发布封面：省得皮肤库还要为骨骼皮肤另想一套渲染 */
     snap() { try { return cv.toDataURL("image/png"); } catch { return null; } },
+  };
+}
+
+/** 在给定容器里起一个小画布，用**运行时同一套**姿态公式驱动这台模型。
+ *  映射对不对只有动起来才看得出来——静着一张图，前后摆和左右劈长得一模一样。 */
+export function previewRig(host, rec, { w = 230, h = 270, walk = true } = {}) {
+  const stage = makeStage(host, { w, h });
+  loadRigScene(rec.model).then((scene) => {
+    if (stage.dead) return;
+    stage.start(assembleRig(scene, rec), walk ? (o, t) => poseWalk(o, t, 0.52) : null);
+  }).catch(() => {
+    host.appendChild(document.createTextNode("预览读不出这个模型"));
+    stage.stop();
+  });
+  return stage;
+}
+
+/** 人偶（体素配色 / MC 贴图皮肤）的预览：直接吃 avatar.js 那一份几何，
+ *  所以这张脸就是进图之后那张脸，没有第二套画法可以漂移。 */
+export function previewAvatar(host, avatar, { w = 230, h = 270, walk = true } = {}) {
+  const stage = makeStage(host, { w, h });
+  const blob = blobShadowMesh();
+  blob.visible = true; blob.scale.setScalar(1.15);
+  const wrap = new THREE.Group();
+  wrap.add(avatar); wrap.add(blob);
+  stage.start(wrap, walk ? (o, t) => poseWalk(avatar, t, 0.52) : null);
+  return stage;
+}
+
+/** 三种皮肤走同一个入口：骨骼皮肤上真模型，其余用人偶几何。
+ *  调用方（个人主页、皮肤面板）不该自己去判断 kind。 */
+export function previewSkin(host, skin, opts = {}) {
+  const s = skin && typeof skin === "object" ? skin : {};
+  if (s.kind === "rig" && s.model) return previewRig(host, s, opts);
+  return previewAvatar(host, makeAvatar(s), opts);
+}
+
+/** 会随配色实时换装的那一份预览：编辑资料弹窗里挑颜色时用。
+ *  以前这里是一张纯 CSS 纸片人（五个 div），于是"挑颜色时看到的"和"进图之后的"
+ *  是两个东西——纸片人不会显示领口、袖口、鞋底、眉毛这些运行时才有的细节。
+ *  set() 只换材质色重搭一具人偶（37 块网格，比一次布局还便宜），不换画布，
+ *  所以自定义取色器在系统面板里连续拖动时不会闪。 */
+export function liveAvatar(host, skin, opts = {}) {
+  const stage = makeStage(host, opts);
+  let cur = null;
+  const set = (next) => {
+    const g = makeAvatar(next || {});
+    const blob = blobShadowMesh();
+    blob.visible = true; blob.scale.setScalar(1.15);
+    g.userData.blob = blob;
+    if (cur) {
+      stage.remove(cur);
+      cur.traverse((o) => { if (o.isMesh) o.material.dispose(); });
+    }
+    const wrap = new THREE.Group();
+    wrap.add(g); wrap.add(blob);
+    stage.start(wrap, (o, t) => poseWalk(g, t, 0.52));
+    cur = wrap;
+  };
+  set(skin);
+  return {
+    set,
+    stop() { if (cur) cur.traverse((o) => { if (o.isMesh) o.material.dispose(); }); cur = null; stage.stop(); },
+    snap: () => stage.snap(),
   };
 }

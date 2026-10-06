@@ -5,6 +5,7 @@
 // 之间形成循环（两边导航里都有对方），而 panels 目录是零构建的原生 ESM，
 // 循环里的函数声明提升不可依赖。动态 import 把这条边彻底断开，代价只是首次切换多一个请求。
 import * as THREE from "../../vendor/three/three.module.js";
+import { makeAvatar } from "../avatar.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -101,45 +102,13 @@ function hexToRgb(hex) {
   const t = triple(hex);
   return t || [0, 0, 0];
 }
-/** 变暗/变亮（k<1 变暗），用于从一块主色推出头发、袖口、鞋这些派生色。 */
+/** 变暗（k<1），用于从一块主色推出头发、袖口、鞋这些派生色。 */
 function shade(hex, k) {
   const t = hexToRgb(hex);
   return "#" + t.map((x) => hx(Math.min(1, x * k))).join("");
 }
-/** 与白色混合，得到同色系的浅版（头发高光、领口）。 */
-function tint(hex, k) {
-  const t = hexToRgb(hex);
-  return "#" + t.map((x) => hx(x + (1 - x) * k)).join("");
-}
 
 /* ------------------------------ 离屏 3D 预览 ------------------------------ */
-// 倒角盒：把盒子的顶点沿「到内核盒最近点」方向推到半径 r 处，法线同一式子解析求。
-// 人偶全由直角盒拼出来时剪影是"一摞纸箱"，圆角一到就读得出是个玩具小人。
-const _geoCache = new Map();
-function rbox(w, hgt, d, r, seg = 4) {
-  const key = `${w}|${hgt}|${d}|${r}|${seg}`;
-  const hit = _geoCache.get(key);
-  if (hit) return hit;
-  const rad = Math.max(0.002, Math.min(r, w / 2, hgt / 2, d / 2));
-  const geo = new THREE.BoxGeometry(w, hgt, d, seg, seg, seg);
-  const pos = geo.attributes.position, nor = geo.attributes.normal;
-  const ix = w / 2 - rad, iy = hgt / 2 - rad, iz = d / 2 - rad;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const cx = Math.max(-ix, Math.min(ix, x)), cy = Math.max(-iy, Math.min(iy, y)), cz = Math.max(-iz, Math.min(iz, z));
-    const dx = x - cx, dy = y - cy, dz = z - cz;
-    const len = Math.hypot(dx, dy, dz);
-    if (len > 1e-9) {
-      const k = rad / len;
-      pos.setXYZ(i, cx + dx * k, cy + dy * k, cz + dz * k);
-      nor.setXYZ(i, dx / len, dy / len, dz / len);
-    }
-  }
-  geo.computeBoundingSphere();
-  _geoCache.set(key, geo);
-  return geo;
-}
-
 let _gl = null;
 /** 建一个共享的离屏渲染器（只占一个 WebGL 上下文），弹窗关闭时 disposeGL 释放。 */
 function gl(w, hgt) {
@@ -172,69 +141,37 @@ export function disposeGL() {
 
 /**
  * 渲染一张正面 3/4 的人偶图，返回 dataURL。
- * 头发取 head 色的深版：官方 skin 槽里没有头发这一件（游戏里头发不参与染色），
- * 但预览必须一眼看出不同皮肤的差别，所以让 head 同时决定"头部区域整体色调"。
+ *
+ * 几何与配色一律走 avatar.js —— 也就是图里跑的那一具。这里以前自己手搓过第二份
+ * 三十来块盒子的人偶，比例、暗部、五官各调各的，结果皮肤面板里选的预览和进图之后
+ * 的角色是两个模型。第二份画法一旦存在就一定会漂，所以删掉，只留翻译。
+ *
+ * 项目皮肤记录是六键（head/body/armL/armR/legL/legR），运行时人偶是五键
+ * （skin/shirt/pants/hair/shoe），所以这里只做一次键名翻译：袖子跟着上衣、
+ * 两条腿同一条裤子——因为运行时就是这么长的。
  */
 export function renderDoll(colors, { w = 220, h = 200 } = {}) {
   const g = gl(w, h);
-  const group = new THREE.Group();
-  const mats = [];
-  const put = (parent, geo, hex, x, y, z) => {
-    const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.72, metalness: 0 });
-    mats.push(m);
-    const mesh = new THREE.Mesh(geo, m);
-    mesh.position.set(x, y, z);
-    parent.add(mesh);
-    return mesh;
-  };
-  const C = {
-    head: colors.head || "#ffd7b0", body: colors.body || "#c9714f",
-    armL: colors.armL || colors.body || "#c9714f", armR: colors.armR || colors.body || "#c9714f",
-    legL: colors.legL || "#6b625a", legR: colors.legR || colors.legL || "#6b625a",
-  };
-  const hair = shade(C.head, 0.34), collar = tint(C.body, 0.72), cuff = shade(C.body, 0.74);
-  const eye = "#2f2c39", sole = "#2c2a2e", hand = tint(C.head, 1.02);
-
-  // 腿（髋 0.78 起往下），鞋单独一块，免得腿直接杵在地上
-  for (const [sx, cl] of [[-1, C.legL], [1, C.legR]]) {
-    put(group, rbox(0.2, 0.44, 0.22, 0.06), cl, sx * 0.115, 0.56, 0);
-    put(group, rbox(0.19, 0.36, 0.21, 0.05), shade(cl, 0.84), sx * 0.115, 0.22, 0);
-    put(group, rbox(0.21, 0.13, 0.3, 0.05), shade(cl, 0.42), sx * 0.115, 0.065, 0.04);
-    put(group, rbox(0.215, 0.04, 0.31, 0.015), sole, sx * 0.115, 0.02, 0.045);
-  }
-  // 躯干 + 领口 + 腰带
-  put(group, rbox(0.46, 0.58, 0.28, 0.09), C.body, 0, 1.06, 0);
-  put(group, rbox(0.32, 0.08, 0.29, 0.03), collar, 0, 1.33, 0.005);
-  put(group, rbox(0.47, 0.08, 0.29, 0.03), shade(C.body, 0.5), 0, 0.8, 0);
-  // 手臂：原点在肩，静息略外张，贴着躯干会插进身体里
-  for (const [sx, cl] of [[-1, C.armL], [1, C.armR]]) {
-    const arm = new THREE.Group();
-    arm.position.set(sx * 0.3, 1.32, 0);
-    arm.rotation.z = sx * 0.06;
-    group.add(arm);
-    put(arm, rbox(0.15, 0.34, 0.16, 0.05), cl, 0, -0.17, 0);
-    put(arm, rbox(0.15, 0.05, 0.16, 0.02), cuff, 0, -0.35, 0);
-    put(arm, rbox(0.13, 0.2, 0.14, 0.035), hand, 0, -0.47, 0);
-  }
-  // 头：脸 + 头发帽 + 后脑 + 眼睛眉毛
-  put(group, rbox(0.46, 0.48, 0.44, 0.12), C.head, 0, 1.58, 0);
-  put(group, rbox(0.49, 0.2, 0.47, 0.09), hair, 0, 1.76, -0.015);
-  put(group, rbox(0.45, 0.36, 0.12, 0.05), hair, 0, 1.6, -0.19);
-  for (const sx of [-1, 1]) {
-    put(group, rbox(0.09, 0.11, 0.04, 0.02), eye, sx * 0.105, 1.57, 0.215);
-    put(group, rbox(0.11, 0.026, 0.026, 0.01), hair, sx * 0.105, 1.66, 0.212);
-    put(group, rbox(0.03, 0.036, 0.02, 0.008), "#ffffff", sx * 0.085, 1.6, 0.232);
-  }
-  put(group, rbox(0.08, 0.026, 0.02, 0.011), "#b96b58", 0, 1.45, 0.215);
-
-  g.scene.add(group);
+  const C = colors && typeof colors === "object" ? colors : {};
+  const skin = /^#[0-9a-fA-F]{6}$/.test(String(C.head)) ? C.head : "#ffd7b0";
+  const group = makeAvatar({
+    skin,
+    shirt: C.body || "#c9714f",
+    pants: C.legL || "#6b625a",
+    // 官方 skin 槽里没有头发这一件（游戏里头发不参与染色），但预览要一眼看出
+    // 不同皮肤的差别，所以让 head 同时决定"头部区域整体色调"。
+    hair: C.hair || shade(skin, 0.34),
+    shoe: C.shoe || shade(skin, 0.42),
+  });
   group.rotation.y = -0.42;
+  g.scene.add(group);
   g.camera.position.set(0, 1.5, 5.1);
   g.camera.lookAt(0, 0.95, 0);
   g.renderer.render(g.scene, g.camera);
   const url = g.renderer.domElement.toDataURL("image/png");
   g.scene.remove(group);
-  for (const m of mats) m.dispose();
+  // 只丢材质：几何是 avatar.js 里按尺寸缓存着全页面共用的，dispose 掉下一张卡片就空了
+  group.traverse((o) => { if (o.isMesh) o.material.dispose(); });
   return url;
 }
 

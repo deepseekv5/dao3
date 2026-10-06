@@ -16,7 +16,7 @@ import {
 } from "./gapi.js";
 import { createClientApi, createAudioClass } from "./clientui.js";
 import { sunDirFromPhase, nightFromElev } from "./sun.js";
-import { buildTexturedAvatar, loadSkinTexture } from "./skin3d.js";
+import { makeAvatar, blobShadowMesh } from "./avatar.js";
 
 /**
  * 地图级持久化数据的键名，只在这里定义一次。
@@ -109,201 +109,16 @@ class TagLayer {
 }
 
 /* ============================ 默认角色外观 ============================ */
-// 六个命名部件（head/body/armL/armR/legL/legR）是对外契约：PART_SLOT 的 18 个官方
+// 人偶本体在 avatar.js：主页皮肤卡、皮肤面板预览和图里跑的是同一份几何。
+// 以前这三处各自画一版，比例与暗部各调各的，于是"主页上看到的"和"进图之后的"
+// 不像同一个人——抽成一份之后，预览不可能再和运行时漂移。
+// 六个命名部件（head/body/armL/armR/legL/legR）仍是对外契约：PART_SLOT 的 18 个官方
 // 挂点归并到它们，addWearable 拿它们当锚点，player.skin 按它们分部位染色，
-// _updateAvatar 按它们摆臂摆腿。所以重做外观只能改这六块**内部**长什么样。
-//
-// 每个部件是一个 Group，原点放在**关节**上（肩、髋），网格往下偏——
-// 这样 rotation.x 是绕肩/髋转，而不是绕一块居中盒子的中心转（旧版腿像钟摆就是这么来的）。
-// 肘与膝是部件**内部**的二级 Group（rig 里带着），不新增对外挂点：
-// 官方那 18 个槽位里没有本地网格可用的关节，多挂只会让换装对不上位。
-// 子网格用 userData.tint 标自己该被哪种染色影响：
-//   "cloth" 上衣/裤子类，受 skin[part] 与 player.color 驱动
-//   "skin"  露出的皮肤（脸、手），受 skin[part] 驱动
-//   不设   头发、眼睛、腰带、鞋、纽扣——永远是自己的颜色，染色不会把五官涂没
-
-// 倒角盒：把 BoxGeometry 的每个顶点沿"到内核盒最近点"的方向推到半径 r 处，
-// 法线用同一个式子解析求出。平面上它正好退化成面法线，所以相邻面在接缝处
-// 拿到同一个法线——不必 mergeVertices 也能全表面平滑着色。
-// 为什么要换掉直角盒：整套人偶由三十个 90° 硬边盒子拼成时，剪影读起来是
-// "一摞纸箱"而不是"一个人"。这是"不好看"的第一来源，比配色严重。
-const _rboxCache = new Map();
-function rbox(w, h, d, r, seg = 5) {
-  const key = `${w}|${h}|${d}|${r}|${seg}`;
-  const hit = _rboxCache.get(key);
-  if (hit) return hit;
-  const rad = Math.max(0.002, Math.min(r, w / 2, h / 2, d / 2));
-  const geo = new THREE.BoxGeometry(w, h, d, seg, seg, seg);
-  const pos = geo.attributes.position, nor = geo.attributes.normal;
-  const ix = w / 2 - rad, iy = h / 2 - rad, iz = d / 2 - rad;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const cx = clamp(x, -ix, ix), cy = clamp(y, -iy, iy), cz = clamp(z, -iz, iz);
-    const dx = x - cx, dy = y - cy, dz = z - cz;
-    const len = Math.hypot(dx, dy, dz);
-    if (len > 1e-9) {
-      const k = rad / len;
-      pos.setXYZ(i, cx + dx * k, cy + dy * k, cz + dz * k);
-      nor.setXYZ(i, dx / len, dy / len, dz / len);
-    }
-  }
-  geo.computeBoundingSphere();
-  _rboxCache.set(key, geo);
-  return geo;
-}
+// _updateAvatar 按它们摆臂摆腿。
 
 /** 第三人称出生俯角（弧度）。0 度会让地平线卡在画面正中、人物像浮在半空。 */
 const DEFAULT_PITCH = -0.2;
 
-/** #rrggbb 或 0x 整数 → 乘一个系数得到暗部，避免每个部位都要手配两色。 */
-function shade(color, k) {
-  const n = typeof color === "string" ? parseInt(color.replace("#", ""), 16) : (color | 0);
-  const r = Math.min(255, Math.round(((n >> 16) & 255) * k));
-  const g = Math.min(255, Math.round(((n >> 8) & 255) * k));
-  const b = Math.min(255, Math.round((n & 255) * k));
-  return (r << 16) | (g << 8) | b;
-}
-
-/** 账号皮肤（社区里那份）覆盖基础色；只认 #rrggbb，其余保持默认。 */
-function avatarPalette(override) {
-  const src = override && typeof override === "object" ? override : {};
-  const hex = (v) => (/^#[0-9a-fA-F]{6}$/.test(String(v)) ? parseInt(String(v).slice(1), 16) : null);
-  const C = {
-    skin: 0xffd7b0, skinShade: 0xeab88e, blush: 0xe9ac96, hair: 0x6b4630, hairDeep: 0x54372a,
-    eye: 0x3a3644, shine: 0xffffff, lip: 0xc0705f,
-    shirt: 0xc9714f, shirtDeep: 0x9c5740, collar: 0xf6f1e8, button: 0xece2d2,
-    pants: 0x6b625a, pantsDeep: 0x524a44, belt: 0x5b4636, buckle: 0xd9b45e,
-    shoe: 0x7b5441, sole: 0x332a2b,
-  };
-  for (const [key, base] of [["skin", "skin"], ["shirt", "shirt"], ["pants", "pants"], ["hair", "hair"], ["shoe", "shoe"]]) {
-    const v = hex(src[key]);
-    if (v == null) continue;
-    C[key] = v;
-    if (key === "skin") { C.skinShade = shade(v, 0.9); C.blush = shade(v, 0.82); }
-    if (key === "shirt") C.shirtDeep = shade(v, 0.72);
-    if (key === "pants") C.pantsDeep = shade(v, 0.78);
-    if (key === "hair") C.hairDeep = shade(v, 0.75);
-    if (key === "shoe") C.sole = shade(v, 0.45);
-  }
-  return C;
-}
-
-/** 接触阴影（blob shadow）：一张贴着地面跟脚走的软边椭圆。
- *  太阳的阴影贴图只覆盖投影那一片，夜里/洞里还会整块关掉，于是角色"飘在半空"。
- *  脚下那点永远存在的暗，是体素游戏里最便宜也最有效的接地手段。 */
-let _blobGeo = null, _blobTex = null;
-function blobShadowMesh() {
-  if (!_blobTex) {
-    const c = document.createElement("canvas"); c.width = c.height = 64;
-    const g = c.getContext("2d");
-    const rad = g.createRadialGradient(32, 32, 3, 32, 32, 31);
-    rad.addColorStop(0, "rgba(0,0,0,.5)"); rad.addColorStop(.55, "rgba(0,0,0,.24)"); rad.addColorStop(1, "rgba(0,0,0,0)");
-    g.fillStyle = rad; g.fillRect(0, 0, 64, 64);
-    _blobTex = new THREE.CanvasTexture(c);
-    _blobGeo = new THREE.PlaneGeometry(1, 1);
-  }
-  const m = new THREE.Mesh(_blobGeo, new THREE.MeshBasicMaterial({ map: _blobTex, transparent: true, depthWrite: false, opacity: .9 }));
-  m.rotation.x = -Math.PI / 2;
-  m.renderOrder = 2;
-  m.visible = false;
-  return m;
-}
-
-function makeAvatar(skinOverride) {
-  // 带 MC 皮肤贴图时走经典六面体：把苦力怕的脸贴到 0.46×0.50 的圆角头上，
-  // 脸会被挤变形，认不出是谁。没有贴图才走下面那套细节人偶。
-  const texSrc = skinOverride && typeof skinOverride === "object" ? skinOverride.texture : null;
-  if (typeof texSrc === "string" && texSrc) {
-    const av = buildTexturedAvatar(null);
-    loadSkinTexture(texSrc).then((t) => {
-      av.traverse((o) => { if (o.isMesh) { o.material.map = t; o.material.needsUpdate = true; } });
-    }).catch(() => { /* 图坏了就留着白模，别把角色变没 */ });
-    return av;
-  }
-  const g = new THREE.Group();
-  // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
-  // 所以人偶统一用 Standard（roughness 1 / metalness 0 时观感接近原来的 Lambert）
-  const std = (hex, rough = 0.78) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 });
-  // 默认配色按"低饱和场景里要跳得出来"来选：游戏光照偏暗（globalLight 0.29 起），
-  // 中蓝+深蓝裤子在这个光照下会糊成一块黑柱子。账号皮肤传进来时覆盖对应几项。
-  const C = avatarPalette(skinOverride);
-  const part = (name, x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); p.name = name; g.add(p); return p; };
-  // box 的 y 是相对**所属关节**的偏移，不是世界高度。r 缺省取最短边的 32%，
-  // 所以厚 0.02 的贴片几乎仍是直角（细节要利落），而头/躯干这种体量会明显圆起来。
-  const box = (parent, w, h, d, hex, x, y, z, tint, rough, r) => {
-    const m = new THREE.Mesh(rbox(w, h, d, r == null ? Math.min(w, h, d) * 0.32 : r), std(hex, rough));
-    m.position.set(x, y, z);
-    m.castShadow = true; m.receiveShadow = true;
-    m.userData.baseColor = hex;
-    if (tint) m.userData.tint = tint;
-    parent.add(m);
-    return m;
-  };
-
-  // 头：占满 1.30..1.80，圆角收到"玩具人偶"而不是"鸡蛋"的程度
-  const head = part("head", 0, 1.30, 0);
-  box(head, 0.46, 0.50, 0.42, C.skin, 0, 0.25, 0, "skin", 0.74, 0.12);   // 头
-  box(head, 0.045, 0.085, 0.062, C.skinShade, -0.222, 0.225, -0.02, "skin"); // 左耳（贴着颅侧，突出量只留一点）
-  box(head, 0.045, 0.085, 0.062, C.skinShade, 0.222, 0.225, -0.02, "skin");  // 右耳
-  box(head, 0.485, 0.22, 0.45, C.hair, 0, 0.41, -0.015, null, 0.62, 0.10);   // 头发帽（盖住头顶，露出额头下半）
-  box(head, 0.44, 0.36, 0.13, C.hair, 0, 0.21, -0.20, null, 0.62, 0.055);    // 后脑头发（一直收到颈后，免得脑后露出一圈头皮）
-  box(head, 0.115, 0.028, 0.028, C.hairDeep, -0.105, 0.305, 0.203);        // 左眉
-  box(head, 0.115, 0.028, 0.028, C.hairDeep, 0.105, 0.305, 0.203);         // 右眉
-  // 眼睛是"深色眼球 + 一点高光"，不是"白眼白 + 黑瞳"：0.4 格见方的白色眼白
-  // 在这个尺寸下只会连成一片，看着像戴了副墨镜。
-  box(head, 0.095, 0.115, 0.05, C.eye, -0.105, 0.225, 0.198, null, 0.28, 0.022);
-  box(head, 0.095, 0.115, 0.05, C.eye, 0.105, 0.225, 0.198, null, 0.28, 0.022);
-  box(head, 0.034, 0.040, 0.02, C.shine, -0.085, 0.258, 0.226, null, 0.2);
-  box(head, 0.034, 0.040, 0.02, C.shine, 0.125, 0.258, 0.226, null, 0.2);
-  box(head, 0.068, 0.034, 0.02, C.blush, -0.163, 0.152, 0.196, "skin", 0.95);
-  box(head, 0.068, 0.034, 0.02, C.blush, 0.163, 0.152, 0.196, "skin", 0.95);
-  box(head, 0.085, 0.026, 0.022, C.lip, 0, 0.108, 0.203, null, 0.6, 0.011);  // 嘴
-
-  const body = part("body", 0, 0.80, 0);
-  box(body, 0.42, 0.56, 0.26, C.shirt, 0, 0.27, 0, "cloth", 0.8, 0.085);   // 躯干
-  box(body, 0.30, 0.075, 0.29, C.collar, 0, 0.545, 0.005, null, 0.7, 0.03); // 领口（比肩窄，才读得出是领子不是垫肩）
-  box(body, 0.055, 0.30, 0.02, C.shirtDeep, 0, 0.30, 0.132);               // 门襟
-  box(body, 0.034, 0.034, 0.022, C.button, 0, 0.40, 0.14, null, 0.4);       // 上扣
-  box(body, 0.034, 0.034, 0.022, C.button, 0, 0.26, 0.14, null, 0.4);       // 下扣
-  box(body, 0.435, 0.075, 0.275, C.belt, 0, 0.045, 0, null, 0.66, 0.028);   // 腰带
-  box(body, 0.075, 0.058, 0.03, C.buckle, 0, 0.045, 0.145, null, 0.32);     // 铜扣
-
-  const rig = {};
-  const arm = (name, side) => {
-    const a = part(name, side * 0.235, 1.315, 0);                           // 原点在肩
-    box(a, 0.145, 0.30, 0.155, C.shirt, 0, -0.15, 0, "cloth", 0.8, 0.05);   // 上臂（袖子）
-    box(a, 0.15, 0.05, 0.16, C.shirtDeep, 0, -0.315, 0, null, 0.75, 0.02);  // 袖口
-    const elbow = new THREE.Group(); elbow.position.set(0, -0.33, 0); a.add(elbow);
-    // 小臂和手都刻意"方"一点（倒角只给到 0.03 上下）：半径一大，手就变成
-    // 两颗球挂在腕上，看着像戴了拳击手套。
-    box(elbow, 0.125, 0.20, 0.135, C.skin, 0, -0.10, 0, "skin", 0.74, 0.034); // 小臂
-    box(elbow, 0.12, 0.15, 0.125, C.skin, 0, -0.285, 0, "skin", 0.74, 0.038); // 手
-    rig[name === "armL" ? "elbowL" : "elbowR"] = elbow;
-    return a;
-  };
-  const armL = arm("armL", -1), armR = arm("armR", 1);
-
-  const leg = (name, side) => {
-    const l = part(name, side * 0.108, 0.80, 0);                            // 原点在髋
-    box(l, 0.175, 0.40, 0.19, C.pants, 0, -0.20, 0, "cloth", 0.82, 0.058);  // 大腿
-    const knee = new THREE.Group(); knee.position.set(0, -0.40, 0); l.add(knee);
-    // 小腿往上多长 0.03 盖住膝盖：两块圆角盒正好在关节处各退让一个半径，
-    // 不重叠就会露出一圈"可动人偶"的接缝。
-    box(knee, 0.165, 0.38, 0.18, C.pantsDeep, 0, -0.16, 0, "cloth", 0.82, 0.05); // 小腿
-    box(knee, 0.185, 0.12, 0.30, C.shoe, 0, -0.33, 0.045, null, 0.6, 0.045);     // 鞋（往前伸，有鞋头）
-    box(knee, 0.19, 0.04, 0.315, C.sole, 0, -0.375, 0.05, null, 0.85, 0.016);    // 鞋底
-    rig[name === "legL" ? "kneeL" : "kneeR"] = knee;
-    return l;
-  };
-  const legL = leg("legL", -1), legR = leg("legR", 1);
-
-  // 静息时手臂略微外张：贴着躯干会交叉进盒子里，看着像没有胳膊
-  armL.rotation.z = -0.05; armR.rotation.z = 0.05;
-  g.userData.parts = { head, body, armL, armR, legL, legR };
-  // 上半身起伏要整体动，所以记下这三块各自的基准高度
-  g.userData.rig = Object.assign({ base: { head: 1.30, body: 0.80, armL: 1.315, armR: 1.315 } }, rig);
-  return g;
-}
 
 // 官方 GameBodyPart 有 18 个槽位，本地人偶是 6 块盒体，按下表归并到挂点
 const PART_SLOT = {
@@ -707,6 +522,7 @@ export class GameRuntime {
     this.running = false;
     this.paused = false;
     const e = this.e, r = e.renderer;
+    this._stopWorldIngress();
     if (this._net) { this._net.close(); this._net = null; }
     // 从菜单里点"退出"时菜单还开着；不关掉的话下一次进运行，
     // 屏幕上杵着一个上一层留下的菜单，而且它会吃掉所有点击。
@@ -4200,11 +4016,21 @@ void main() {
     for (const b of document.querySelectorAll("#chatChips [data-ch]")) b.classList.toggle("on", b.dataset.ch === this._chatCh);
     const box = this.hud && this.hud.chatBox;
     if (box) box.placeholder = this._chatCh === "world" ? "说给所有在线的人听…" : "说点什么…";
+    // 切过去先补一次，别等下一个轮询周期才看到刚才错过的话
+    if (this._chatCh === "world") this._pullWorld();
+  }
+  /** 世界频道必须一直收得到。
+   *  以前这条轮询挂在「切到世界这一格」上，于是**没开过聊天面板的人永远收不到世界消息**——
+   *  而世界频道的意思就是"所有在线的人"，不是"所有恰好点开面板的人"。
+   *  进运行就开，退出就停；面板开着时它同时是历史补漏。 */
+  _startWorldIngress() {
+    if (this._worldPoll) return;
+    this._pullWorld();
+    this._worldPoll = setInterval(() => this._pullWorld(), 5000);
+  }
+  _stopWorldIngress() {
     clearInterval(this._worldPoll);
-    if (this._chatCh === "world") {
-      this._pullWorld();
-      this._worldPoll = setInterval(() => this._pullWorld(), 5000);
-    }
+    this._worldPoll = null;
   }
   async _pullWorld() {
     try {
@@ -4605,6 +4431,7 @@ void main() {
     // 频道那一格默认停在「地图」：进来先跟同图的人说话，才是联机该有的样子
     for (const b of document.querySelectorAll("#chatChips [data-ch]")) b.onclick = () => this.setChatChannel(b.dataset.ch);
     this.setChatChannel("map");
+    this._startWorldIngress();
     if (this.hud.chatSocial) {
       this.hud.chatSocial.onclick = async () => {
         if (!window.__me) { const a = await import("./auth.js"); a.openAuth("login"); return; }

@@ -147,14 +147,32 @@ await A.evaluate(`(() => { const o=[...document.querySelectorAll("#eSkin [data-p
 await sleep(150);
 await A.evaluate(`document.querySelector('#eSkin [data-p="shirt"]').click()`);
 await sleep(150);
-await A.evaluate(`document.querySelector('#eSkin [data-c="#e8604c"]').click()`);
-// 主页上现在有两份预览人偶：一张是主页自己的皮肤卡（只读），一张在编辑弹窗里。
-// 选择器必须锁在弹窗那一份上，否则querySelector 拿到的是皮肤卡，
-// 于是"改了配色人偶不动"这种断言会红在测试自己身上。
-ok("主页皮肤卡里也有一份人偶预览（别人不用点开编辑就能看到你的配色）",
-  await until(A, `!!document.querySelector(".pf-card .pf-doll")`, { tries: 6, ms: 250 }));
-const doll = await A.evaluate(`(document.querySelector(".pf-skinrow .pf-doll .d-torso")||{getAttribute:()=>""}).getAttribute("style")`);
-ok("皮肤调色板即时反映到预览人偶", /e8604c/i.test(String(doll)), doll);
+// 预览从"五个 div 的纸片人"换成运行时同一具人偶（avatar.js）之后，断言必须跟着换：
+// 纸片人时代比的是 style 属性里的 hex，那只能证明"字符串被写进去了"，证明不了画面。
+// 现在直接读画布的平均色——挑一件红上衣要真的把画面往红里推，才算"贴到人偶上"。
+const avgRGB = (sel) => A.evaluate(`(() => {
+  const cv = document.querySelector(${JSON.stringify(sel)});
+  if (!cv) return null;
+  const c = document.createElement("canvas"); c.width = 40; c.height = 50;
+  const x = c.getContext("2d"); x.drawImage(cv, 0, 0, 40, 50);
+  const d = x.getImageData(0, 0, 40, 50).data;
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 24) continue; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+  return n ? [Math.round(r / n), Math.round(g / n), Math.round(b / n), n] : null;
+})()`);
+ok("主页皮肤卡用的是 3D 预览（和进图之后同一具人偶，不是 CSS 纸片人）",
+  await until(A, `!!document.querySelector(".pf-card canvas")`, { tries: 12, ms: 250 })
+  && !(await A.evaluate(`!!document.querySelector(".pf-card .pf-doll")`)));
+// 编辑弹窗那一份是异步挂上去的（要现取 skin-rig + three），不等它就采到 null
+ok("编辑弹窗里的预览也是 3D 人偶", await until(A, `!!document.querySelector("#eDoll canvas")`, { tries: 16, ms: 250 }));
+const beforeShirt = await avgRGB("#eDoll canvas");
+// 挑一件和默认陶土色反差最大的：从暖红到亮蓝，R 掉 B 涨，采到的差异不会是噪声
+await A.evaluate(`document.querySelector('#eSkin [data-c="#5aa8e8"]').click()`);
+await sleep(400);
+const afterShirt = await avgRGB("#eDoll canvas");
+ok("皮肤调色板即时反映到预览人偶（画布平均色真的动了）",
+  !!beforeShirt && !!afterShirt && afterShirt[2] > beforeShirt[2] + 4 && afterShirt[0] < beforeShirt[0],
+  JSON.stringify({ before: beforeShirt, after: afterShirt }));
 // 每一格给自己的色板：拿挑上衣的十色去挑脸，怎么选都像贴了块塑料。
 const palOf = (p) => A.evaluate(`(() => {
   const b = document.querySelector('#eSkin [data-p="${p}"]'); b.click();
@@ -167,24 +185,30 @@ ok("「上衣」那一格回到通用色板", (await palOf("shirt")).includes("#
 // 预设：多数人选不出五配色，没有成套预设时这一格等于没做。
 const nPreset = await A.evaluate(`document.querySelectorAll("#eSkin [data-o]").length`);
 ok("皮肤有成套预设可选", nPreset >= 6, String(nPreset));
+const beforePreset = await avgRGB("#eDoll canvas");
 await A.evaluate(`document.querySelector('#eSkin [data-o][title="夜行"]').click()`);
-const presetDoll = await A.evaluate(`(() => ({
-  torso: getComputedStyle(document.querySelector(".pf-skinrow .pf-doll .d-torso")).backgroundColor,
-  chip: getComputedStyle(document.querySelector('#eSkin [data-p="shirt"] span')).backgroundColor,
-  on: !!document.querySelector('#eSkin [data-o].on'),
-}))()`);
-// 夜行的上衣是 #22252c = rgb(34, 37, 44)。浏览器会把 style 属性序列化成 rgb()，比 hex 比不出来。
+await sleep(400);
+const preset = {
+  chip: await A.evaluate(`getComputedStyle(document.querySelector('#eSkin [data-p="shirt"] span')).backgroundColor`),
+  on: await A.evaluate(`!!document.querySelector('#eSkin [data-o].on')`),
+  rgb: await avgRGB("#eDoll canvas"),
+};
 ok("点预设会同时改人偶和部位色块",
-  presetDoll.torso === "rgb(34, 37, 44)" && presetDoll.chip === "rgb(34, 37, 44)" && presetDoll.on, presetDoll);
+  preset.chip === "rgb(34, 37, 44)" && preset.on
+  && !!preset.rgb && Math.hypot(preset.rgb[0] - beforePreset[0], preset.rgb[2] - beforePreset[2]) > 6,
+  JSON.stringify({ ...preset, beforePreset }));
 // 取色器在系统面板里每动一下就触发 input；老写法那时重建宿主，等于把用户正在用的控件销毁掉。
 const kept = await A.evaluate(`(async () => {
   const el = document.getElementById("eCustom");
   el.value = "#12b5c9"; el.dispatchEvent(new Event("input", { bubbles: true }));
   await new Promise((r) => setTimeout(r, 60));
-  return { same: el === document.getElementById("eCustom"), torso: getComputedStyle(document.querySelector(".pf-skinrow .pf-doll .d-torso")).backgroundColor };
+  return { same: el === document.getElementById("eCustom") };
 })()`);
 ok("自定义取色器拖动过程中不会被重建", kept.same, JSON.stringify(kept));
-ok("自定义颜色立刻贴到人偶上", kept.torso === "rgb(18, 181, 201)", JSON.stringify(kept));
+const afterCustom = await avgRGB("#eDoll canvas");
+ok("自定义颜色立刻贴到人偶上（青色把蓝绿两通道抬起来）",
+  !!afterCustom && afterCustom[1] > preset.rgb[1] && afterCustom[2] > preset.rgb[2],
+  JSON.stringify({ before: preset.rgb, after: afterCustom }));
 await A.evaluate(`document.querySelector('#eSkin [data-p="shirt"]').click()`);
 await A.evaluate(`document.querySelector('#eSkin [data-c="#e8604c"]').click()`);
 await A.setFile("#eAvatar", "/tmp/ly-pixel.png");

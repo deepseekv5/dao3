@@ -71,7 +71,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <span id="surfaces" class="anchor"></span>
 <h2 id="前端有哪几个面">前端有哪几个面</h2>
 <p>路由是同一套壳（<code>community.html</code>）按 <code>location.pathname</code> 分派，<code>popstate</code> 重跑：</p>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>路径</th><th>是什么</th></tr></thead><tbody><tr><td><code>/community</code></td><td>广场：精选位 + 导轨 + 分类 + 排序 + 搜索</td></tr><tr><td><code>/p/&lt;pubId&gt;</code></td><td>地图/模型详情：封面压标题、右栏动作与信息表、评论、&quot;接下来试试&quot;</td></tr><tr><td><code>/u/&lt;名字&gt;</code></td><td>用户主页：横幅、头像、皮肤卡（人偶 / 贴图 / 真模型预览）、地区·性别·性格、关注/加好友/私聊、地图/模型/关注者/关注中/最近游玩五个 tab</td></tr><tr><td><code>/friends</code></td><td>好友与关注：好友 / 请求 / 扩列 / 可能认识 / 通知</td></tr><tr><td><code>/me</code></td><td>自己的主页（未登录会跳登录框）</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>路径</th><th>是什么</th></tr></thead><tbody><tr><td><code>/community</code></td><td>广场：精选位 + 导轨 + 分类 + 排序 + 搜索</td></tr><tr><td><code>/p/&lt;pubId&gt;</code></td><td>地图/模型详情：封面压标题、右栏动作与信息表、评论、&quot;接下来试试&quot;</td></tr><tr><td><code>/u/&lt;名字&gt;</code></td><td>用户主页：横幅、头像、皮肤卡（与进图同一具 3D 人偶）、地区·性别·性格、关注/加好友/私聊、地图/模型/关注者/关注中/最近游玩五个 tab</td></tr><tr><td><code>/friends</code></td><td>好友与关注：好友 / 请求 / 扩列 / 可能认识 / 通知</td></tr><tr><td><code>/me</code></td><td>自己的主页（未登录会跳登录框）</td></tr></tbody></table></div>
 <p>广场的卡片是<b>图占绝对主导</b>的展厅读法：标题压在封面下缘的暗带上， 相框 16:10 用 <code>contain</code>——这些封面是体素小地图，<code>cover</code> 会裁掉一圈看不出是什么， 而 1:1 方框配 16:9 原图只剩上下两道黑带。</p>
 <span id="moderation" class="anchor"></span>
 <h2 id="评论审查与举报">评论、审查与举报</h2>
@@ -84,7 +84,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>社交动作大多发生在&quot;正在做别的事&quot;的时候：逛广场看到一个人、玩图时想喊一句、 收到请求想立刻回。所以它不是一个页面，而是<b>从右侧滑出来的抽屉</b> （<code>public/js/social.js</code> + <code>css/social.css</code>），社区页与游戏内 HUD 都能开， 顶栏那颗「消息」按钮带未读角标。三页签：</p>
 <ul class="lv-0"><li><b>好友</b>：在线点、备注（一条边两个人各存各的，谁加的谁叫得顺口）、私聊、看主页、解除。 顶部直接躺着待处理请求，接受/拒绝不用换页。</li><li><b>扩列</b>：按关键词 + 地区 + 性别 + 性格标签找人，卡片上就写着这些，不用点进主页才知道是谁。 默认口径是&quot;愿意被扩列的人&quot;（<code>looking</code> 为 <code>none</code> 的不出现），明确搜名字时带 <code>all=1</code> 才全给。 <code>/friends</code> 那一页的「扩列」页签用的是<b>同一个渲染函数</b>（<code>renderPeopleGrid</code>），不抄第二份。</li><li><b>消息</b>：世界频道、当前这张图的地图频道、以及所有有往来的私聊会话（带未读）。</li></ul>
 <p>资料字段是四件：<b>地区</b>（35 项 = 31 个省级 + 香港 / 澳门 / 台湾 + 海外，只能选不能填）、 <b>性别</b>（男 / 女 / 其他 / 不展示，没有默认值）、<b>性格标签</b>（12 选最多 6）、 <b>扩列状态</b>（欢迎扩列 / 找固定队友 / 只聊天 / 不扩列）。 枚举表在 <code>public/js/profile-fields.js</code> 一份，服务端 import 它做校验、前端 import 它做渲染—— 抄两份必然出现&quot;前端能选、后端报非法&quot;。默认全空：注册框不该逼人家填性别。</p>
-<p>用户主页（<code>/u/&lt;名字&gt;</code>）显示一张皮肤卡：六块配色是纯 CSS 人偶、MC 展开图裁正脸、 骨骼皮肤（那台 CC0 机甲）用 <code>skin-rig.js</code> 起一个小 WebGL 预览并跟着走路循环； 旁边是地区 / 性别 / 扩列状态与性格标签。别人看你的主页，看到的就是你进图时那身。</p>
+<p>用户主页（<code>/u/&lt;名字&gt;</code>）显示一张皮肤卡，三种皮肤共用 <code>avatar.js</code> 那一具人偶： 纯配色与 MC 展开图都走 <code>makeAvatar()</code>（贴图那件由 <code>skin3d.js</code> 换材质），骨骼皮肤 （那台 CC0 机甲）由 <code>skin-rig.js</code> 装成同一份 parts 契约，两者都跟着走路循环动。 旁边是地区 / 性别 / 扩列状态与性格标签。以前非骨骼皮肤在这里是一张<b>纯 CSS 纸片人</b>， 于是&quot;主页上的我&quot;和&quot;进图之后的我&quot;是两种画法——现在只有一份，漂移不了； CSS 那张退成 WebGL 起不来时的兜底。</p>
 <span id="realtime" class="anchor"></span>
 <h2 id="联机与聊天">联机与聊天</h2>
 <p><code>server/realtime.mjs</code>，原生 WebSocket，零依赖。一个 <code>pubId</code> 一个房间， <b>房间上限 24 人</b>——本地服务不是给压测用的，超了就明确拒绝而不是悄悄丢消息。</p>

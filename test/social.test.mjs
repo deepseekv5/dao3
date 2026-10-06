@@ -261,17 +261,37 @@ ok("非好友发不出私聊（先加好友这条规矩在服务端）", dmNo.st
 // 跳页一律走 CDP 的 goto。
 await SB.goto(BASE + "/u/" + encodeURIComponent(NAME_A), { settleMs: 1800 });
 const pf = await ev(SB, `
-  const card = document.querySelector(".pf-card");
+  // 主页皮肤预览现在是图内同款 3D 人偶（avatar.js），挂载走动态 import，
+  // 所以这里必须等它真的出现，固定 settle 会读到还没画出来的空槽。
+  let cv = null;
+  for (let i = 0; i < 40 && !cv; i++) {
+    cv = document.querySelector(".pf-dollbox canvas");
+    if (!cv) await new Promise((r) => setTimeout(r, 150));
+  }
+  let colors = 0;
+  if (cv) {
+    const c = document.createElement("canvas"); c.width = 48; c.height = 60;
+    const x = c.getContext("2d"); x.drawImage(cv, 0, 0, 48, 60);
+    const d = x.getImageData(0, 0, 48, 60).data, seen = new Set();
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 24) continue;
+      seen.add((d[i] >> 3) + "," + (d[i + 1] >> 3) + "," + (d[i + 2] >> 3));
+    }
+    colors = seen.size;
+  }
   return JSON.stringify({
-    hasCard: !!card,
-    doll: !!document.querySelector(".pf-dollbox .pf-doll"),
+    hasCard: !!document.querySelector(".pf-card"),
+    doll: !!cv,
+    paper: !!document.querySelector(".pf-dollbox .pf-doll"),
+    colors,
     facts: [...document.querySelectorAll(".pf-fact")].map((e) => e.textContent.replace(/\\s+/g, " ")),
     tags: [...document.querySelectorAll(".pf-tagline .pf-tag")].map((e) => e.textContent),
     dm: !!document.getElementById("pfDm"),
     friend: !!document.getElementById("pfFriend"),
   });`);
 const P7 = JSON.parse(pf);
-ok("主页有皮肤预览（六色人偶画得出来）", P7.hasCard && P7.doll, pf);
+ok("主页有皮肤预览（用的是图内同款 3D 人偶，画得出多个色阶）",
+  P7.hasCard && P7.doll && !P7.paper && P7.colors >= 4, pf);
 ok("主页显示地区 / 性别 / 扩列状态", P7.facts.some((f) => /广东/.test(f)) && P7.facts.some((f) => /女/.test(f))
   && P7.facts.some((f) => /欢迎扩列/.test(f)), JSON.stringify(P7.facts));
 ok("主页显示性格标签", P7.tags.join(",") === "搞笑,爱建", JSON.stringify(P7.tags));
@@ -313,4 +333,7 @@ ok("性格标签封顶 6 个（多点不会无限加）", capped === 6, String(c
 
 await SA.close(); await SB.close();
 console.log(`\nsocial: ${pass} passed, ${fail} failed`);
-if (fail) process.exitCode = 1;
+// 必须显式退出：spawn 出来的 server.js 占着 stdio 管道，事件循环不会空，
+// 于是这个脚本每次都"打印完结论然后挂住"，攒下一堆僵尸把后面的浏览器测试拖死。
+cleanup();
+process.exit(fail ? 1 : 0);
