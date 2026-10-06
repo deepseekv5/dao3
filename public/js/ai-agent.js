@@ -27,7 +27,7 @@
 
 import { chat, aiReady, openSettings, checkSyntax, extractJson, validateVoxelProgram, programToVoxels } from "./ai.js";
 import { apiDigest, specPrompt } from "./ai-script.js";
-import { runSandboxCode, createWorld, addEntityMarker } from "./features.js";
+import { runSandboxCode, createWorld, addEntityMarker, removePlacedModel } from "./features.js";
 import { exportProjectZip } from "./io.js";
 import { dataStorageKey, dataStoragePrefix } from "./game.js";
 import * as auth from "./auth.js";
@@ -41,7 +41,8 @@ import { renderMd, mdEl, MD_CSS } from "./md.js";
  */
 const PROGRESS_ACTIONS = new Set(["blocks.edit", "model.build", "entity.add", "ui.add",
   "zone.add", "settings.set", "script.upload", "script.rename", "storage.set",
-  "storage.remove", "map.save", "project.export", "project.create"]);
+  "storage.remove", "map.save", "project.export", "project.create",
+  "script.remove", "entity.remove", "zone.remove", "ui.remove", "model.remove"]);
 
 const MAX_CODE = 20000;         // 单个脚本的字符上限
 const MAX_OBS = 3600;           // 每条观察回喂给模型的字符上限
@@ -68,7 +69,14 @@ export const TOOLS = [
   // **没有** project.* / game.* 这种嵌套动词——所以"统一改成 apc project info"这种动作别做：
   // Agent 是浏览器内自动写手，apc 是终端脚手架，两条流水线的物理边界不同。
   // community.* 是仓库自建后端（/api/community/*），不是官方动作；标了"本地"以防误用。
-  { name: "project.info", desc: "看当前地图工程现状：世界尺寸、方块数、模型与实体数、玩家位置、脚本清单。无参数。" },
+  { name: "project.info", desc: "看当前地图工程现状：世界尺寸、方块数、模型与实体数、玩家位置、脚本清单、区域/HUD 数量与当前设置。无参数。" },
+  // 这四个 list 是"眼睛"：只有数量清单的话，Agent 无法核对脚本里 #名字 取的是不是
+  // 真存在的实体，也无法把上一次放歪的东西找出来删掉。
+  { name: "entity.list", desc: "列出世界里所有**实体触发盒**：名字（脚本用 #名字 取它）、标签、坐标、半尺寸、是否参与碰撞。写选择器之前先查这个，别猜名字。无参数。" },
+  { name: "model.list", desc: "列出世界里放置的**模型网格**（不含实体触发盒）：名字、坐标、缩放、部件数。无参数。" },
+  { name: "zone.list", desc: "列出所有区域触发器：名字、角点、选择器、标签，以及**是不是一道门**（带 goto）。无参数。" },
+  { name: "ui.list", desc: "列出屏幕上的 HUD 部件：id、类型、文字、位置与尺寸。脚本要按 id 找部件时先用它对一下。无参数。" },
+  { name: "settings.get", desc: "读回当前的地图级设置：gameRules（重生/PVP/计时）与 worldSettings（重力/阻尼/雾…）。settings.set 只写不读，改之前先用这个看现值。无参数。" },
   { name: "project.create", desc: "新建一张空图并切过去（会丢掉当前未保存的编辑，谨慎用）。",
     args: { name: "地图名", size: "[X,Y,Z] 三个整数，各轴 8..256", terrain: `可选地貌，只能是：${PRESETS.map((p) => p.id).join(" / ")}；省略就是平地` } },
   { name: "map.save", desc: "把当前地图保存到本地世界库（Agent 做完一批改动就该存一次，别等收尾）。" },
@@ -79,6 +87,8 @@ export const TOOLS = [
   { name: "script.upload", desc: "新建或覆盖一个脚本。落地前先过语法预检，语法不过不会写入。跨文件复用用 CommonJS：require(\"./x.js\") 与 module.exports。",
     args: { entry: "脚本文件名，必须以 .js 结尾", side: "server 或 client（官方契约要求显式声明，不要靠文件名猜）", code: "完整 JavaScript 源码" } },
   { name: "script.rename", desc: "重命名一个脚本。", args: { entry: "现名", newEntry: "新名" } },
+  { name: "script.remove", desc: "删掉一个脚本。删了就没有撤销，所以必须显式 confirm:true；要先看有什么先用 script.list。",
+    args: { entry: "脚本文件名", confirm: "必须传 true" } },
 
   { name: "storage.set", desc: "写一条持久化数据。scope=project 等价脚本里的 storage.getDataStorage(name)（只这张图），scope=group 是 getGroupStorage（本实现里退化为这台设备共享）。",
     args: { name: "存储名", key: "键", value: "任意 JSON 值", scope: "可选 project|group，默认 project" } },
@@ -91,8 +101,12 @@ export const TOOLS = [
     args: { code: "sb 沙箱代码：sb.set/del/block/box/sphere/clear/count/size/log" } },
   { name: "model.build", desc: "把一个体素图元程序盖进世界（可撤销）。做独立物件、道具、装饰用它。",
     args: { at: "[x,y,z] 整数世界坐标，部件左下角锚点", program: "体素程序 {name, parts:[{name,size,prims:[...]}]}" } },
+  { name: "model.remove", desc: "按名字删掉一个放置进世界的模型网格（实体触发盒请用 entity.remove）。要 confirm:true。",
+    args: { name: "模型名（model.list 里那一列）", confirm: "必须传 true" } },
   { name: "entity.add", desc: "放一个**实体触发盒**进世界（区域/检查点/道具都用它），带名字与标签供脚本用 #名字 / .标签 取。注意：这不是放模型网格，模型用 model.build。",
     args: { name: "实体名，如 检查点-0", at: "[x,y,z] 整数世界坐标（盒底中心）", label: "可选标签，供 .标签 选择器", bounds: "可选半尺寸 [hx,hy,hz]，默认 [1.5,1.5,1.5]", collides: "可选，是否参与碰撞" } },
+  { name: "entity.remove", desc: "按名字删掉一个实体触发盒（会连带把它在视口里的标记盒摘掉）。要 confirm:true。",
+    args: { name: "实体名，即 entity.add 里那个 name / 脚本里的 #名字", confirm: "必须传 true" } },
 
   { name: "build.check", desc: "发布前那道静态闸门：逐个脚本查语法、查有没有用到本实现没提供的 API 成员。不执行任何东西。" },
   { name: "runtime.start", desc: "进入运行模式开始预览。", args: { ticks: "要跑多久，1..200 tick（1 tick = 64ms）" } },
@@ -106,9 +120,14 @@ export const TOOLS = [
       x: "左边 % 0..100", y: "上边 % 0..100", w: "宽 %", h: "高 %",
       size: "可选字号 px，默认 14", color: "可选 CSS 颜色，默认 #fff", bg: "可选背景 CSS 颜色",
       id: "可选部件 id；不填自动生成，填了脚本才能稳定找到它" } },
-  { name: "zone.add", desc: "加一个区域触发器（脚本用 world.onZoneEnter / onZoneLeave 响应）。",
+  { name: "ui.remove", desc: "按 id 删掉一个 HUD 部件（id 从 ui.list 拿）。要 confirm:true。",
+    args: { id: "部件 id", confirm: "必须传 true" } },
+  { name: "zone.add", desc: "加一个区域触发器（脚本用 world.onZoneEnter / onZoneLeave 响应）。给了 goto 它就是一道**世界之门**：走进去把人送去做标的那个世界/发布。",
     args: { name: "区域名，如 森林", min: "[x,y,z] 角点", max: "[x,y,z] 对角点",
-      selector: "可选实体选择器，默认 player", label: "可选标签" } },
+      selector: "可选实体选择器，默认 player", label: "可选标签",
+      goto: "可选目标：本地世界 id、社区发布 id，或精确的地图名字；填了这张区域就成了门" } },
+  { name: "zone.remove", desc: "按名字（或 zone.list 给的 id）删掉一个区域触发器。要 confirm:true。",
+    args: { name: "区域名", id: "可选，区域 id；给了 id 就按 id 找", confirm: "必须传 true" } },
   { name: "settings.set", desc: "改地图级设置：游戏规则（重生、PVP、计时）或世界物理（重力、速度阻尼、雾…）。",
     args: { gameRules: "可选对象，写进 meta.gameRules", worldSettings: "可选对象，写进 meta.worldSettings" } },
   { name: "project.export", desc: "把整个工程导出成官方同构的项目包 .zip —— 这就是交付物。",
@@ -137,6 +156,11 @@ const ALIAS = {
   checkScripts: "build.check", validate: "build.check", playtest: "runtime.start", "package.export": "project.export",
   "storage.page": "storage.list", "storage.delete": "storage.remove", "storage.del": "storage.remove",
   save: "map.save", "map.saveWorld": "map.save", "map.blocks": "map.resource", finishTask: "finish", done: "finish",
+  // 删除与读取这一圈：模型几乎一律写 delete 而不是 remove，列表则写成 listXxx 驼峰。
+  "entity.delete": "entity.remove", "zone.delete": "zone.remove", "ui.delete": "ui.remove",
+  "model.delete": "model.remove", "script.delete": "script.remove", "script.del": "script.remove",
+  listEntities: "entity.list", "entity.query": "entity.list", listZones: "zone.list",
+  listModels: "model.list", listUi: "ui.list", "settings.read": "settings.get", "project.settings": "settings.get",
 };
 
 /** 把任意写法归一到正式动作名；认不出来返回 null。 */
@@ -236,6 +260,12 @@ export function sanitizeAction(parsed) {
       return { err: `${label} 需要 args.at，形如 [x, y, z] 的三个整数世界坐标` };
     }
     return { at };
+  };
+  /** 删除类动作共用的一道闸门。理由和 storage.remove 那条一样：
+   *  官方 storage delete 要 --yes，而我们这些删除**没有撤销**，
+   *  所以"模型顺手写了个 remove"不该就直接吃掉用户的一个脚本或一整片实体。 */
+  const needConfirm = (label) => raw.confirm === true ? null : {
+    err: `${label} 需要 args.confirm=true 才会真删（这一步没有撤销）。要先看有什么，用 ${label.split(".")[0]}.list。`,
   };
 
   if (action === "script.get") {
@@ -356,6 +386,31 @@ export function sanitizeAction(parsed) {
     args.min = min; args.max = max;
     args.selector = String(raw.selector || "player").trim().slice(0, 64);
     args.label = String(raw.label || "").trim().slice(0, 64);
+    // goto 以前在这里被漏掉：TOOLS 没写、sanitize 不取，于是 execTool 里那段
+    // "这是一道门"的分支永远拿不到值——Agent 摆门这条能力等于不存在。
+    const goto = String(raw.goto || raw.target || "").trim().slice(0, 120);
+    if (goto) args.goto = goto;
+  } else if (action === "script.remove") {
+    const e = takeEntry(raw.entry || raw.name, "脚本文件名");
+    if (e.err) return { ok: false, error: e.err };
+    const c = needConfirm("script.remove"); if (c) return { ok: false, error: c.err };
+    args.entry = e.name;
+  } else if (action === "entity.remove" || action === "model.remove") {
+    const name = String(raw.name || "").trim().slice(0, 64);
+    if (!name) return { ok: false, error: `${action} 需要 args.name —— 先用 ${action.split(".")[0]}.list 看清它到底叫什么` };
+    const c = needConfirm(action); if (c) return { ok: false, error: c.err };
+    args.name = name;
+  } else if (action === "zone.remove") {
+    const name = String(raw.name || "").trim().slice(0, 64);
+    const id = String(raw.id || "").trim().slice(0, 48);
+    if (!name && !id) return { ok: false, error: "zone.remove 需要 args.name 或 args.id 其中一个（zone.list 两列都给）" };
+    const c = needConfirm("zone.remove"); if (c) return { ok: false, error: c.err };
+    args.name = name; args.id = id;
+  } else if (action === "ui.remove") {
+    const id = String(raw.id || raw.name || "").trim().slice(0, 48);
+    if (!id) return { ok: false, error: "ui.remove 需要 args.id —— 部件 id 从 ui.list 拿" };
+    const c = needConfirm("ui.remove"); if (c) return { ok: false, error: c.err };
+    args.id = id;
   } else if (action === "settings.set") {
     const gr = raw.gameRules, ws = raw.worldSettings;
     const plainObj = (v) => v && typeof v === "object" && !Array.isArray(v);
@@ -391,13 +446,22 @@ export function sanitizeAction(parsed) {
 function worldDigest(E) {
   const w = E.world;
   const players = (E.state.meta && E.state.meta.players) || [];
+  const models = E.state.models || [];
+  const markers = models.filter((m) => m.entity);
+  const meta = E.state.meta || {};
+  const zones = meta.zones || [];
   return {
     size: w.shape.slice(),
     blocks: w.size(),
-    models: (E.state.models || []).length,
+    // 以前这里只有"多少个模型/实体"一个合并计数：脚本要引用 #检查点-2，
+    // Agent 却连它存不存在、在哪儿都看不到。
+    meshes: models.length - markers.length, markers: markers.length,
     scripts: (E.state.scripts || []).map((s) => `${s.name}(${(s.code || "").split("\n").length}行)`),
     playerPos: players.length && players[0].position ? players[0].position : null,
     worldName: (E.state.meta && E.state.meta.name) || E.state.name || "",
+    zones: zones.length, doors: zones.filter((z) => z.goto).length,
+    hud: (meta.ui || []).length,
+    rules: Object.keys(meta.gameRules || {}).length, physics: Object.keys(meta.worldSettings || {}).length,
   };
 }
 
@@ -868,9 +932,17 @@ function storageScope(v) {
 }
 
 /** 执行一个已校验的动作，返回 {ok, obs}。obs 永远是一句能直接喂回模型的话。 */
-async function execTool(E, action, args, spec, onShot, setPlan) {
+/** 执行一个动作并返回观察结果。导出它是为了让回归能对着真实编辑器状态跑：
+    这些动作全部在改 state / 场景图，光测协议那一层（sanitizeAction）测不到。 */
+export async function execTool(E, action, args, spec, onShot, setPlan) {
   const scripts = () => E.state.scripts || (E.state.scripts = []);
   const findScript = (name) => scripts().find((s) => s.name === name);
+  // 列表类动作要把坐标念给模型听，四舍五入到两位小数就够它判断"放歪了一格"，
+  // 原样输出 12.345678 那种只会白白吃掉回喂的字符预算。
+  const num = (v) => Math.round(Number(v) * 100) / 100;
+  const at = (p) => "[" + (p || []).map(num).join(", ") + "]";
+  const LIST_CAP = 40;
+  const more = (rows) => (rows.length > LIST_CAP ? `\n…另有 ${rows.length - LIST_CAP} 个未列出，需要就看全` : "");
   try {
     switch (action) {
       case "ui.add": {
@@ -899,6 +971,88 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
         return { ok: true, obs: `已加区域「${args.name}」[${args.min}]→[${args.max}]（选择器 ${args.selector}），共 ${zones.length} 个；脚本用 world.onZoneEnter / onZoneLeave 响应`
           + (args.goto ? `；这是一道门，走进去会去「${args.goto}」` : "") };
       }
+      /* -------- 读：世界里有什么，得能列出来 -------- */
+      case "entity.list": {
+        const rows = (E.state.models || []).filter((m) => m.entity);
+        if (!rows.length) return { ok: true, obs: "这张图里还没有实体触发盒。放一个用 entity.add。" };
+        // 报的是**锚点**（盒底那一点），不是 state 里存的 pos：那个 pos 的 y 已经被
+        // 减掉半个盒高，跟 entity.add 传进去的 at 差了 1.5 格。列出来对不上号，
+        // 模型就会以为它放歪了，然后越改越歪。
+        const anchor = (m) => at([(m.pos || [])[0], (m.pos || [])[1] + ((m.entityBounds || [])[1] || 0), (m.pos || [])[2]]);
+        return { ok: true, obs: `实体触发盒 ${rows.length} 个（脚本里用 #名字 / .标签 取）：\n`
+          + rows.slice(0, LIST_CAP).map((m) => `#${m.entId}`
+            + ((m.entTags || []).length ? " " + m.entTags.map((t) => "." + t).join(" ") : "")
+            + ` 锚点 ${anchor(m)} 半尺寸 ±[${(m.entityBounds || []).join("/")}]`
+            + (m.entCollides ? " · 参与碰撞" : " · 不碰撞")).join("\n") + more(rows) };
+      }
+      case "model.list": {
+        const rows = (E.state.models || []).filter((m) => !m.entity);
+        if (!rows.length) return { ok: true, obs: "这张图里没有放置的模型网格（体素地形不算，那是方块）。" };
+        return { ok: true, obs: `模型 ${rows.length} 个：\n` + rows.slice(0, LIST_CAP)
+          .map((m) => `${m.name || "未命名"} 在 ${at(m.pos)} 缩放 ${num(m.scale)}${m.meshName ? " · " + m.meshName : ""}${m.hidden ? " · 隐藏" : ""}`).join("\n") + more(rows) };
+      }
+      case "zone.list": {
+        const rows = (E.state.meta && E.state.meta.zones) || [];
+        if (!rows.length) return { ok: true, obs: "还没有区域触发器。加一个用 zone.add（带 goto 就是门）。" };
+        return { ok: true, obs: `区域 ${rows.length} 个：\n` + rows.slice(0, LIST_CAP).map((z) =>
+          `${z.id} ·「${z.name}」${at(z.bounds && z.bounds.min)}→${at(z.bounds && z.bounds.max)}`
+          + ` 选择器 ${z.selector || "player"}${(z.labels || []).length ? " 标签 " + z.labels.join("/") : ""}`
+          + (z.goto ? ` → 门，通往 ${z.goto}` : "")).join("\n") + more(rows) };
+      }
+      case "ui.list": {
+        const rows = (E.state.meta && E.state.meta.ui) || [];
+        if (!rows.length) return { ok: true, obs: "屏幕上还没有 HUD 部件。加一个用 ui.add。" };
+        return { ok: true, obs: `HUD 部件 ${rows.length} 个：\n` + rows.slice(0, LIST_CAP).map((w) =>
+          `${w.id} · ${w.type}「${String(w.text || "").slice(0, 24)}」在 ${num(w.x)}%,${num(w.y)}% · ${num(w.w)}%×${num(w.h)}%`).join("\n") + more(rows) };
+      }
+      case "settings.get": {
+        const meta = E.state.meta || {};
+        const gr = meta.gameRules || {}, ws = meta.worldSettings || {};
+        const fmt = (o) => Object.keys(o).length
+          ? Object.entries(o).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(" ")
+          : "（没改过，全是默认）";
+        return { ok: true, obs: `gameRules: ${fmt(gr)}\nworldSettings: ${fmt(ws)}\n改它们用 settings.set（只写你确实要改的那几个键，其余会保留）。` };
+      }
+
+      /* -------- 删：能放就得能撤 -------- */
+      case "script.remove": {
+        const list = scripts();
+        const i = list.findIndex((s) => s.name === args.entry);
+        if (i < 0) return { ok: false, obs: `没有这个脚本：${args.entry}。现有：${list.map((s) => s.name).join("、") || "（一个都没有）"}` };
+        const [gone] = list.splice(i, 1);
+        E.markDirty?.();
+        E.refreshScriptFiles?.();
+        return { ok: true, obs: `已删掉脚本 ${gone.name}（${(gone.code || "").split("\n").length} 行）。记得 map.save。` };
+      }
+      case "entity.remove":
+      case "model.remove": {
+        const wantEntity = action === "entity.remove";
+        const pool = (E.state.models || []).filter((m) => !!m.entity === wantEntity);
+        const hit = pool.find((m) => (wantEntity ? m.entId : m.name) === args.name);
+        if (!hit) {
+          return { ok: false, obs: `${wantEntity ? "实体" : "模型"}里找不到「${args.name}」。现有：${pool.map((m) => wantEntity ? m.entId : m.name).join("、") || "（一个都没有）"}` };
+        }
+        removePlacedModel(hit);
+        E.markDirty?.();
+        return { ok: true, obs: `已删掉${wantEntity ? "实体触发盒" : "模型"}「${args.name}」，${wantEntity ? "脚本里再引用 #" + args.name : "视口里"}都会取不到了` };
+      }
+      case "zone.remove": {
+        const zones = (E.state.meta && E.state.meta.zones) || [];
+        const i = zones.findIndex((z) => (args.id && z.id === args.id) || (!args.id && z.name === args.name));
+        if (i < 0) return { ok: false, obs: `找不到这个区域。现有：${zones.map((z) => z.name).join("、") || "（一个都没有）"}` };
+        const [gone] = zones.splice(i, 1);
+        E.markDirty?.();
+        return { ok: true, obs: `已删掉区域「${gone.name}」${gone.goto ? `（那扇通往 ${gone.goto} 的门也没了）` : ""}，共剩 ${zones.length} 个` };
+      }
+      case "ui.remove": {
+        const ui = (E.state.meta && E.state.meta.ui) || [];
+        const i = ui.findIndex((w) => w.id === args.id);
+        if (i < 0) return { ok: false, obs: `没有 id 为 ${args.id} 的 HUD 部件。现有：${ui.map((w) => w.id).join("、") || "（一个都没有）"}` };
+        ui.splice(i, 1);
+        E.markDirty?.();
+        return { ok: true, obs: `已删掉 HUD 部件 ${args.id}，共剩 ${ui.length} 个` };
+      }
+
       case "settings.set": {
         const meta = E.state.meta;
         const keys = [];
@@ -969,8 +1123,12 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
       }
       case "project.info": {
         const g = worldDigest(E);
-        return { ok: true, obs: `世界「${g.worldName}」 尺寸 ${g.size.join("×")} · ${g.blocks.toLocaleString()} 格方块 · ${g.models} 个模型/实体 · 脚本 ${g.scripts.join("、") || "无"}` +
-          (g.playerPos ? ` · 玩家在 [${g.playerPos.map((v) => +v.toFixed(1))}]` : "") };
+        return { ok: true, obs: `世界「${g.worldName}」 尺寸 ${g.size.join("×")} · ${g.blocks.toLocaleString()} 格方块`
+          + ` · ${g.meshes} 个模型 + ${g.markers} 个实体触发盒 · ${g.zones} 个区域${g.doors ? `（${g.doors} 道是门）` : ""} · ${g.hud} 个 HUD 部件`
+          + ` · 脚本 ${g.scripts.join("、") || "无"} · 设置改过 ${g.rules} 项游戏规则 / ${g.physics} 项世界物理`
+          + (g.playerPos ? ` · 玩家在 [${g.playerPos.map((v) => +v.toFixed(1))}]` : "")
+          // 数量之外还要告诉它去哪儿看明细：写 #名字 选择器却猜错名字，是这一层最常见的空转。
+          + `\n明细在 entity.list / model.list / zone.list / ui.list / settings.get。写脚本引用 #名字 之前先查 entity.list。` };
       }
       case "project.create": {
         createWorld("custom", args.size[0], args.size[1], args.size[2], 16, args.name,
@@ -1099,7 +1257,7 @@ async function execTool(E, action, args, spec, onShot, setPlan) {
         const shot = await grabView(E);
         if (shot) onShot && onShot(shot);
         return { ok: true, obs: `视口${shot ? "已截图显示在小窗里" : "截图失败（WebGL 上下文没开 preserveDrawingBuffer）"}` +
-          ` · 现在世界里 ${g.blocks.toLocaleString()} 格方块、${g.models} 个模型/实体` };
+          ` · 现在世界里 ${g.blocks.toLocaleString()} 格方块、${g.meshes} 个模型 + ${g.markers} 个实体触发盒` };
       }
       default:
         return { ok: false, obs: `没有实现的动作：${action}` };
@@ -1156,6 +1314,9 @@ const AGENT_RULES = `
 
 工作方式（照着做，不要跳）：
 1. 第一步永远是 project.info，看清尺寸和现有内容。不知道世界有多大就盖东西，一定会越界。
+   它给的是数量；要知道**具体有哪些**（实体叫什么、区域在哪儿、HUD 有什么 id），
+   用 entity.list / model.list / zone.list / ui.list / settings.get。
+   脚本里要写 #名字 选择器，就先查 entity.list —— 猜错名字不会报错，只会静默取不到实体。
 2. 一次只推进一小步，然后**读观察结果**。观察结果是这一轮唯一的事实来源，
    不要假设某一步成功了——它可能返回"失败：…"。
 3. 动手前用 plan.set 发一份 3~8 项的计划清单，之后每完成一项就再发一次把该项改成 done、
@@ -1178,7 +1339,9 @@ const AGENT_RULES = `
 
 硬约束：
 - 世界坐标必须是整数格；sb 沙箱只有 sb / Math / console 三个全局，官方 API 一个都没有。
-- 地图脚本（index.js 等）只能 writeScript 写进去由引擎运行，不能在本轮执行里调 world.*。
+- 地图脚本（index.js 等）只能 script.upload 写进去由引擎运行，不能在本轮执行里调 world.*。
+- 删除类动作（script.remove / entity.remove / zone.remove / ui.remove / model.remove / storage.remove）
+  **没有撤销**，都要 confirm:true；名字不确定就先 list。
 - 不要试图读或写文件、网络、localStorage——这些工具不存在。
 `;
 

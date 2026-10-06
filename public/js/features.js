@@ -81,8 +81,12 @@ function wireStatusBar() {
     const err = n("error"), warn = n("warn");
     set("diag", d.length ? [err && `${err} 错误`, warn && `${warn} 警告`, n("info") && `${n("info")} 提示`].filter(Boolean).join(" · ") : "无问题");
     flag("diag", "err", !!err); flag("diag", "warn", !err && !!warn);
-    if (last.diagTitle !== d.length) {
-      last.diagTitle = d.length;
+    // 悬浮提示以前按"条数变了没变"决定要不要重写：两份脚本各有 2 条问题时，
+    // 计数不变，于是底栏写着"1 错误 · 1 警告"，鼠标移上去却是**上一份脚本**的行号。
+    // 键要落在内容签名上，不是落在数量上。
+    const sig = d.map((x) => `${x.line}:${x.rule}`).join("|");
+    if (last.diagSig !== sig) {
+      last.diagSig = sig;
       nodes.diag.title = d.length
         ? d.slice(0, 5).map((x) => `第 ${x.line >= 1 ? x.line : "—"} 行 · ${x.rule}：${x.msg}`).join("\n") + (d.length > 5 ? `\n…共 ${d.length} 条` : "")
         : "脚本没有发现问题";
@@ -997,6 +1001,18 @@ let _suspendList = false;
 export function suspendModelList(v) { _suspendList = !!v; }
 export function refreshModelList() { renderModelList(); }
 export function refreshScriptFiles() { renderScriptFiles(); }
+/** 从世界里摘掉一个已放置的模型或实体标记。模型面板的 × 和 AI Agent 的
+    model.remove / entity.remove 共用这一份——两处各写一遍，迟早有一边漏掉
+    场景节点或 selectedModel，留下一个点不动的幽灵。 */
+export function removePlacedModel(m) {
+  if (!m) return false;
+  E.renderer.models.remove(m.object);
+  E.state.models = (E.state.models || []).filter((x) => x !== m);
+  if (E.state.selectedModel === m) E.state.selectedModel = null;
+  m._destroyed = true;
+  renderModelList();
+  return true;
+}
 function renderModelList() {
   const e = E, list = document.getElementById("modelList");
   if (!list || _suspendList) return;
@@ -1012,9 +1028,12 @@ function renderModelList() {
     for (const m of models) {
       const it = document.createElement("div");
       it.className = "mitem" + (e.state.selectedModel === m ? " active" : "");
-      const badge = (m.tags && m.tags.length) ? "实体" : "模型";
-      it.innerHTML = `<span class="mico${(m.tags && m.tags.length) ? " ent" : ""}"></span><span class="mname">${escHtml(m.name || "未命名")}</span><span class="mbadge">${badge}</span><span class="del">×</span>`;
-      it.querySelector(".del").onclick = (ev) => { ev.stopPropagation(); e.renderer.models.remove(m.object); e.state.models = e.state.models.filter((x) => x !== m); if (e.state.selectedModel === m) e.state.selectedModel = null; m._destroyed = true; renderModelList(); };
+      // 判"是不是实体"要看 entId/entity，不能看 tags：addEntityMarker 写的是 entTags，
+      // 所以以前每一个实体标记在列表里都被标成了「模型」。
+      const isEnt = !!m.entity || !!m.entId;
+      const badge = isEnt ? "实体" : "模型";
+      it.innerHTML = `<span class="mico${isEnt ? " ent" : ""}"></span><span class="mname">${escHtml(m.name || "未命名")}</span><span class="mbadge">${badge}</span><span class="del">×</span>`;
+      it.querySelector(".del").onclick = (ev) => { ev.stopPropagation(); removePlacedModel(m); };
       it.onclick = (ev) => { if (ev.target.classList.contains("del")) return; e.state.selectedModel = m; renderModelList(); focusModel(m); if (E.ui && E.ui.refreshTree) E.ui.refreshTree(); };
       list.appendChild(it);
     }

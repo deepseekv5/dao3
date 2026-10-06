@@ -232,6 +232,34 @@ console.log("== Agent 动作协议：它想干什么，都得先过这一关 =="
   // 社区动作：Agent 之前只会改图，看不到广场也发不出去。写动作要 confirm 才落地。
   ok("Agent 能读广场、能发布、能评论",
     ["community.who", "community.feed", "community.publish", "community.comment"].every((n) => TOOL_NAMES.includes(n)));
+  // 世界里同理：以前只能加不能看、能放不能撤。看不见就写不出正确的 #名字 选择器，
+  // 撤不回就不敢让它乱摆——所以这十个动作是一起补的。
+  ok("Agent 能列出实体/模型/区域/HUD 并读回设置",
+    ["entity.list", "model.list", "zone.list", "ui.list", "settings.get"].every((n) => TOOL_NAMES.includes(n)));
+  ok("Agent 能删掉自己放过的东西",
+    ["script.remove", "entity.remove", "zone.remove", "ui.remove", "model.remove"].every((n) => TOOL_NAMES.includes(n)));
+  ok("删除类动作没带 confirm 一律不落地，且回话点名该用哪个 list",
+    ["script.remove", "entity.remove", "zone.remove", "ui.remove", "model.remove"].every((n) => {
+      const r = sanitizeAction({ action: n, args: { name: "x", entry: "a.js", id: "w1", confirm: false } });
+      return !r.ok && /confirm=true/.test(r.error) && /\w+\.list/.test(r.error);
+    }), "有一条没把闸门关上");
+  ok("带 confirm 的删除放行并把名字带下去", (() => {
+    const r = sanitizeAction({ action: "entity.remove", args: { name: "检查点-2", confirm: true } });
+    return r.ok && r.args.name === "检查点-2";
+  })());
+  ok("模型写 delete 也归一到 remove",
+    ["entity.delete", "zone.delete", "ui.delete", "model.delete", "script.delete"]
+      .every((k) => /remove$/.test(normalizeAction(k) || "")));
+  // 回归：zone.add 的 goto（把区域当门）以前既没写进 TOOLS，也没被 sanitize 取，
+  // 于是 execTool 里那段"这是一道门"的分支永远拿不到值——这条能力等于不存在。
+  ok("zone.add 的 goto 能穿过校验落到执行体", (() => {
+    const r = sanitizeAction({ action: "zone.add", args: { name: "门", min: [1, 1, 1], max: [3, 3, 3], goto: "lyracing" } });
+    return r.ok && r.args.goto === "lyracing";
+  })());
+  ok("没给 goto 的 zone.add 不会凭空造出一道门", (() => {
+    const r = sanitizeAction({ action: "zone.add", args: { name: "森林", min: [0, 0, 0], max: [2, 2, 2] } });
+    return r.ok && !("goto" in r.args);
+  })());
 
   // 动作名与执行体必须名实一致。apc 二次校准抓到过一个真 bug：TOOLS 里写 map.blocks，
   // switch 里却是 case "map.resource" —— 模型照目录写就走到 default，报"没有实现的动作"，

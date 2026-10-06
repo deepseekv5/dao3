@@ -366,6 +366,13 @@ ok("有选区时命令真的执行，状态栏报得出选区", didCopy.n >= 1 &
 // 先把原文留着：脚本页的 input 是会写回 state.scripts 的，不还原就是往默认图里塞垃圾。
 const origScript = await s.evaluate(`(() => { const f = (window.__editor.state.scripts || [])[0]; return f ? f.code : ""; })()`);
 const diag = await s.evaluate(`(async () => {
+  // 「未使用局部变量」这条默认是关的（检查严格度面板里最吵的一项），
+  // 而这里要的是三种严重度各来一条。所以先把闸门打开，测完再按原值放回去——
+  // 以前直接断 3 条，红的理由是"这条规则平时不响"，跟被测的东西无关。
+  const { scriptChecks } = await import("/js/features.js");
+  const cfg = scriptChecks(window.__editor);
+  window.__unusedWas = cfg.noUnusedLocals;
+  cfg.noUnusedLocals = true;
   const ta = document.getElementById("scriptCode");
   ta.value = "const unusedThing = 1;\\nworld.projectName = 'x';\\nworld.querySelector('a').value = 2;\\n";
   ta.dispatchEvent(new Event("input"));
@@ -375,6 +382,10 @@ const diag = await s.evaluate(`(async () => {
   return { text: d.textContent, sevs: (window.__editor.ideDiags() || []).map(x => x.sev), cls: d.className, title: d.title };
 })()`);
 ok("诊断按严重度写进状态栏", /1 错误/.test(diag.text) && /1 警告/.test(diag.text) && /1 提示/.test(diag.text), JSON.stringify(diag));
+// 悬浮提示必须说的是**当前这份**脚本。以前它按"条数变了没变"决定要不要重写，
+// 于是两份各有 2 条问题的脚本之间切换，计数对、行号还是上一个文件的。
+ok("状态栏的悬浮提示跟着当前脚本走，不留着上一个文件的行号",
+  /第 2 行/.test(diag.title) && !/第 87 行/.test(diag.title), diag.title.slice(0, 120));
 ok("有错误时状态栏转成错误色", diag.cls.includes("err"), diag.cls);
 
 // 光标在第 4 行，下一个问题绕回第 1 行（未使用变量），再点一下到第 2 行（只读属性赋值）。
@@ -387,6 +398,12 @@ await s.click("#sbDiag");
 await new Promise((r) => setTimeout(r, 500));
 const step2 = await s.evaluate(`(() => (window.__editor.ideState()||{}).lens)()`);
 ok("再点一下前进到第 2 行", step2 === 2, String(step2));
+// 闸门放回原值：后面还有别的断言，不该带着一条临时打开的规则往下跑。
+await s.evaluate(`(async () => {
+  const { scriptChecks } = await import("/js/features.js");
+  scriptChecks(window.__editor).noUnusedLocals = window.__unusedWas;
+  window.__editor.ideRecheck();
+})()`);
 
 /* ---------- 控制台：日志是条目，不是一行状态文字 ---------- */
 const cs = await s.evaluate(`(async () => {
