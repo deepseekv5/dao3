@@ -20,6 +20,7 @@ npm run test:pause               # test/pause.test.mjs · 运行态暂停与单�
 npm run test:api                 # test/api.test.mjs · API 运行时对账
 npm run test:vox                 # test/vox.test.mjs · .vox 导入导出
 npm run test:pkg                 # test/packaging.mjs · 项目包导出/回环导入
+npm run test:play-bundle         # test/play-bundle.test.mjs · 把 play/ 产物真跑一遍
 npm run check:dist               # 分发内容审计（授权、凭据、必需文件）
 ```
 
@@ -36,6 +37,23 @@ npm i -D playwright-core && npx playwright install chromium
 CHROME=/path/to/chrome PLAYWRIGHT_MODULE=/path/to/playwright-core node test/runtime_parity.mjs
 # 找不到就打印 SKIP 并退出 0，不会抛一堆模块解析错误
 ```
+
+## 关键技巧零：测试自己 spawn 的服务端会留在原地
+
+每条浏览器套件都自己起一个 `server.js`（独立 `DATA_DIR`，独立端口）。
+被打断的那一轮，**子进程不会跟着死**：它继续占着那个端口，而数据目录里
+账号已经注册过了。下一轮如果挑到同一个端口，bind 失败但没人报错，
+于是 `fetch(首页)` 照样 200 —— 回答的是上一轮那个陌生人。测试接下来看到的是
+"注册按钮不见了"，红得莫名其妙，而产品代码一点问题都没有。
+
+所以端口一律走 `freePort(base, span)`（`test/cdp.mjs`）：先真空着才交出去。
+
+同理两条现场纪律，踩过才知道：
+
+- 跑测试期间**不要** `pkill -f "node server.js"`——那会连测试自己的服务端一起杀掉，
+  剩下的断言就在等一个永远不会来的 WebSocket 推送。
+- 浏览器套件**一次只跑一条**。两条并发时软件光栅化的 WebGL 页面互相抢 CPU，
+  "B 进图后 A 看到同伴"这种等待型断言会先超时。
 
 ## 关键技巧一：后台标签页没有 rAF，必须手动推 tick
 

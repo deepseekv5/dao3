@@ -40,7 +40,7 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <main class="doc">
   <aside class="doc-side">
     <nav class="doclist"><b>文档目录</b><a href="documentation.html">文档中心</a><b class="grp">入门</b><a class="on" href="architecture.html">架构与数据流</a><a href="editor.html">编辑器界面与命令</a><a href="testing.html">测试与验证</a><b class="grp">社区</b><a href="community.html">社区层</a><b class="grp">内核</b><a href="api-compat.html">官方 API 兼容层</a><a href="api-reference.html">API 参考</a><a href="data-format.html">数据格式</a><a href="map-format.html">标准地图格式</a><a href="physics.html">物理与单位制</a><a href="ai.html">AI 能力</a><a href="skill.html">AI 接入（Skill / MCP）</a><b class="grp">交付</b><a href="packaging.html">便携包与发布</a><a href="playground.html">网页体验版</a><a href="dependencies.html">依赖清单</a><a href="credits.html">致谢</a><a href="windows.html">Windows 支持说明</a><a href="changelog.html">更新日志</a></nav>
-    <nav class="toc"><b>本页内容</b><a class="t2" href="#分层">分层</a><a class="t2" href="#为什么运行模式不复制一份世界">为什么运行模式不复制一份世界</a><a class="t2" href="#实体只有一张表">实体只有一张表</a><a class="t2" href="#模型拾取射线打不中时用包围盒">模型拾取：射线打不中时用包围盒</a><a class="t2" href="#体素网格的增量重建">体素网格的增量重建</a><a class="t2" href="#脚本沙箱">脚本沙箱</a></nav>
+    <nav class="toc"><b>本页内容</b><a class="t2" href="#分层">分层</a><a class="t2" href="#运行时够得着服务端的那一层">运行时够得着服务端的那一层</a><a class="t2" href="#为什么运行模式不复制一份世界">为什么运行模式不复制一份世界</a><a class="t2" href="#实体只有一张表">实体只有一张表</a><a class="t2" href="#模型拾取射线打不中时用包围盒">模型拾取：射线打不中时用包围盒</a><a class="t2" href="#体素网格的增量重建">体素网格的增量重建</a><a class="t2" href="#脚本沙箱">脚本沙箱</a></nav>
     <a class="edit" href="https://github.com/deepseekv5/dao3/blob/main/docs/architecture.md">在 GitHub 编辑原文</a>
   </aside>
   <article class="doc-body">
@@ -72,6 +72,10 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
    │  · 面剔除 · 旋转码贴图重排 · 动画瓦片      │
    │  · 天气/雾/六面天光 · 区域预览 · 名牌层     │
    └──────────────────────────────────────────┘</code></pre></div>
+<h2 id="运行时够得着服务端的那一层">运行时够得着服务端的那一层</h2>
+<p><code>game.js</code> 里有四件事必须打服务端：世界之门的目标解析与跳转、<code>db.sql</code>、 世界频道读写、个人资料跳转。它们全部走 <code>backend.js</code> 一个模块，运行时其余代码 不出现任何 <code>/api/</code> 或根绝对跳转。</p>
+<p>为什么要立这道墙：网页体验版（<code>play/</code>）是纯静态的，复用同一份 <code>game.js</code>。 以前这些取用散在运行时里，构建闭包就会把 <code>pubs.js</code> / <code>social.js</code> / <code>auth.js</code> 整层社交拉进产物，留下几十个&quot;点了必然 404&quot;的口子，<code>build:play</code> 的自检也一次 次报红。收成一层之后，<code>scripts/build-play.mjs</code> 的 <code>SUBSTITUTES</code> 把 <code>js/backend.js</code> 换成 <code>scripts/play-src/backend.play.js</code> 那份空实现， 其余代码一个字不改，社交模块连文件都不进产物。</p>
+<p>两道判据跟着一起成立：体验版菜单里不给&quot;个人资料&quot;、世界频道那条轮询不起 （都看 <code>backend.serverBacked</code>）；<code>npm run test:play-bundle</code> 把产物真跑一遍来证明。</p>
 <h2 id="为什么运行模式不复制一份世界">为什么运行模式不复制一份世界</h2>
 <p>官方语义里&quot;运行&quot;就是预览：脚本改的东西不回写存档。 所以 <code>enterPlay()</code> 只做三件事——把场景模型同步回 <code>meta.entities</code>、把资产表交给运行时、 <code>game.start()</code>；<code>stopPlay()</code> 只回收通道与计时器。</p>
 <p>这里踩过一次代价很高的坑：早先 <code>stopPlay</code> 会把运行时的<b>默认</b> <code>gameRules</code> 合并回 <code>state.meta.gameRules</code>。于是每跑一次自动化测试，就把一整套默认值固化进地图存档。 现在运行期的一切修改都是预览态，不回写。</p>

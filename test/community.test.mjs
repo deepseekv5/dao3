@@ -32,7 +32,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /* 自己起一个服务、自己挑一个干净的数据目录。
    借用开发中那个实例有两个问题：测试账号永远留在开发库里；
    而"首个注册账号是管理员"这类规则只有在空库上才测得准。 */
-const PORT = 5400 + ((Date.now() % 400) | 0);
+const PORT = await freePort(5400, 400);
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ly-community-test-"));
 const child = spawn(process.execPath, [path.join(ROOT, "server.js")], {
   cwd: ROOT, stdio: "ignore", env: { ...process.env, PORT: String(PORT), HOST: "127.0.0.1", DATA_DIR },
@@ -275,6 +275,40 @@ try {
   r = await B.call("POST", `/api/community/pubs/${pubId}/like`);
   ok("再点一次是取消", r.status === 200 && r.data.likedByMe === false, JSON.stringify(r.data));
   await B.call("POST", `/api/community/pubs/${pubId}/like`);
+
+  /* 顶 / 踩：详情页那根好评率条的全部数据来源。 */
+  r = await B.call("POST", `/api/community/pubs/${pubId}/vote`, { v: 1 });
+  ok("B 顶了这张：up 记上、好评率 100%",
+    r.status === 200 && r.data.up === 1 && r.data.down === 0 && r.data.rating === 100 && r.data.votedByMe === 1,
+    JSON.stringify(r.data));
+  r = await C.call("POST", `/api/community/pubs/${pubId}/vote`, { v: -1 });
+  ok("C 踩了这张：好评率掉到 50%，不是仍然 100%",
+    r.status === 200 && r.data.up === 1 && r.data.down === 1 && r.data.rating === 50, JSON.stringify(r.data));
+  r = await C.call("POST", `/api/community/pubs/${pubId}/vote`, { v: 1 });
+  ok("改票是把人从另一栏挪过来，不是两栏各留一份",
+    r.status === 200 && r.data.up === 2 && r.data.down === 0 && r.data.votedByMe === 1, JSON.stringify(r.data));
+  r = await C.call("POST", `/api/community/pubs/${pubId}/vote`, { v: 0 });
+  ok("v=0 是撤票：一个人同时出现在顶和踩里，好评率就成了假的",
+    r.status === 200 && r.data.up === 1 && r.data.down === 0 && r.data.votedByMe === 0, JSON.stringify(r.data));
+  r = await client().call("GET", `/api/community/pubs/${pubId}`);
+  ok("匿名读详情也拿得到票数与好评率（这是公开读数，不是私密统计）",
+    r.status === 200 && r.data.pub.up === 1 && r.data.pub.rating === 100 && r.data.pub.votedByMe === 0,
+    JSON.stringify({ up: r.data.pub?.up, rating: r.data.pub?.rating, v: r.data.pub?.votedByMe }));
+  r = await client().call("POST", `/api/community/pubs/${pubId}/vote`, { v: 1 });
+  ok("没登录不能表态", r.status === 401, r.status);
+
+  r = await B.call("POST", `/api/community/pubs/${pubId}/favorite`);
+  ok("B 收藏这张", r.status === 200 && r.data.favs === 1 && r.data.favByMe === true, JSON.stringify(r.data));
+  r = await B.call("POST", `/api/community/pubs/${pubId}/favorite`);
+  ok("再点一次是取消收藏", r.status === 200 && r.data.favs === 0 && r.data.favByMe === false, JSON.stringify(r.data));
+  /** 正在玩读的是实时房间人数。测试里没有真连接，所以判据是"这个字段在、
+   *  且是个数"——缺字段会让前端渲染成空白，那和数值是 0 是两回事。 */
+  r = await client().call("GET", `/api/community/pubs/${pubId}`);
+  ok("详情里带「正在玩」实时读数（没连接时是 0，不是 undefined）",
+    r.status === 200 && r.data.pub.playing === 0, JSON.stringify({ playing: r.data.pub?.playing }));
+  r = await client().call("GET", "/api/community/feed?sort=foryou");
+  ok("推荐流能出票（没登录时退化成热榜，而不是报错）",
+    r.status === 200 && Array.isArray(r.data.rows), r.status);
 
   r = await B.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "这张图做得很直" });
   ok("B 能评论", r.status === 200 && r.data.row.body === "这张图做得很直", JSON.stringify(r.data));

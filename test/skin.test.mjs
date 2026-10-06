@@ -14,10 +14,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { launchChrome, Session } from "./cdp.mjs";
+import { launchChrome, Session, freePort } from "./cdp.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 6100 + ((Date.now() % 90) | 0);
+const PORT = await freePort(6100, 90);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ly-skin-"));
 const PW = "a-long-enough-password-42";

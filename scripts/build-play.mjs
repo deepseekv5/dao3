@@ -59,6 +59,15 @@ const BUNDLE_DIRS = [
 // three.js 以 MIT 随包分发，许可证必须同行
 const FORCE_VENDOR = [["public/vendor/three/LICENSE", "vendor/three/LICENSE"]];
 
+/* 构建期替换：某个模块在体验版里换成另一份实现，产物路径不变。
+   只有 backend.js 用得上——它是运行时够得着服务端的唯一一层（世界之门、
+   db.sql、个人资料跳转）。替换之后闭包里根本不会出现 pubs.js / auth.js，
+   体验版也就没有"点了必然 404"的取用点，第 5 步自检才有得可查。 */
+const SUBSTITUTES = {
+  "public/js/backend.js": "scripts/play-src/backend.play.js",
+};
+const sourceOf = (rel) => SUBSTITUTES[rel] || rel;
+
 const log = (...a) => console.log(...a);
 const kb = (n) => (n / 1024).toFixed(1) + " KB";
 
@@ -83,7 +92,7 @@ function closure(entryRelList) {
   const queue = [...entryRelList];
   while (queue.length) {
     const rel = queue.shift();
-    const abs = path.join(ROOT, rel);
+    const abs = path.join(ROOT, sourceOf(rel));
     if (seen.has(rel)) continue;
     if (!fs.existsSync(abs)) throw new Error(`闭包里的模块不存在：${rel}`);
     seen.add(rel);
@@ -145,8 +154,12 @@ function audit() {
     const ext = path.extname(f);
     if (![".js", ".mjs", ".html", ".css", ".json"].includes(ext)) continue;
     const text = fs.readFileSync(f, "utf8");
+    const isJs = ext === ".js" || ext === ".mjs";
     text.split("\n").forEach((line, i) => {
-      // three.module.js 的注释里会出现 "/api/" 之类的字样，只查真正的取用位置
+      // 注释里写到的路径不是取用。不剥掉的话，"体验版不带 /api/"这件事本身
+      // 就没法在注释里说清楚——第一版就把自己写的说明判成了违规。
+      const t = line.trim();
+      if (isJs && (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*"))) return;
       for (const [re, why] of BANNED) {
         if (re.test(line)) problems.push(`${path.relative(OUT, f)}:${i + 1} ${why}\n    ${line.trim().slice(0, 140)}`);
       }
@@ -172,7 +185,8 @@ const mods = closure(ENTRIES.concat(shellEntries()));
 const jsBytes = {};
 for (const rel of mods) {
   const dest = rel.replace(/^public\//, "");
-  jsBytes[dest] = copy(rel, dest);
+  jsBytes[dest] = copy(sourceOf(rel), dest);
+  if (SUBSTITUTES[rel]) log(`   ! ${dest}: 换成体验版实现 ${SUBSTITUTES[rel]}`);
   bytes += jsBytes[dest];
 }
 log(`\n运行时（import 闭包，共 ${mods.length} 个模块）`);

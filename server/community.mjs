@@ -203,7 +203,7 @@ async function readBody(req) {
   try { return JSON.parse(text); } catch { throw new Error("bad-json"); }
 }
 
-export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, moderation, atlas } = {}) {
+export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, moderation, atlas, presence } = {}) {
   const store = createStore(path.join(dataRoot, "community"));
   // 世界资产可能落在两处：可写数据目录，或仓库内的 public/assets（老包）
   const roots = assetRoots || [assetRoot].filter(Boolean);
@@ -315,13 +315,33 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     store.touch("notes");
   }
 
+  /** 一张发布自己的口碑分：踩是要扣分的，只加不减的话"一堆人顶 + 一堆人踩"
+   *  会排得比"没人理"还高，而后者才是更该被看到的新图。 */
+  function voteScore(p) {
+    const up = (p.votes && p.votes.up || []).length;
+    const down = (p.votes && p.votes.down || []).length;
+    return up * 4 - down * 4;
+  }
+
   function pubCard(p, viewerId) {
     const author = docs.users.byId[p.authorId];
+    const up = (p.votes && p.votes.up) || [];
+    const down = (p.votes && p.votes.down) || [];
+    const favs = p.favs || [];
+    const mineVote = up.includes(viewerId) ? 1 : down.includes(viewerId) ? -1 : 0;
     return {
       id: p.id, worldId: p.worldId, title: p.title, desc: p.desc, tags: p.tags || [],
       kind: p.kind || "map", version: p.version || 1, flagged: !!p.flagged,
       created: p.created, updated: p.updated, plays: p.plays || 0,
       likes: (p.likes || []).length, likedByMe: !!viewerId && (p.likes || []).includes(viewerId),
+      /** 好评率只在"有人表过态"时给数。三票两踩写"100% 好评"是编的，
+       *  所以一票没有时给 null，让界面显示"暂无评分"而不是一个假的高分。 */
+      up: up.length, down: down.length, votedByMe: mineVote,
+      rating: up.length + down.length ? Math.round((up.length / (up.length + down.length)) * 100) : null,
+      favs: favs.length, favByMe: !!viewerId && favs.includes(viewerId),
+      // 正在玩是实时房间人数，不是累计游玩数；没有注入（比如测试里）就给 0，
+      // 而不是 undefined——前端拿到 undefined 会渲染成空白，看起来像坏了。
+      playing: presence ? presence(p.id) : 0,
       comments: commentsOf(p.id).length, hasCover: !!p.hasCover, bytes: p.bytes, shape: p.shape || null,
       assets: p.assets || 0,
       mine: !!viewerId && viewerId === p.authorId,
@@ -801,7 +821,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
 
     /* ---------------- 广场 / 发布 ---------------- */
     if (seg[0] === "feed" && method === "GET") {
-      const sort = ["new", "hot", "following"].includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "new";
+      const sort = ["new", "hot", "following", "foryou"].includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "new";
       const q = (url.searchParams.get("q") || "").trim().toLowerCase();
       // 玩法分类是广场的主导航，不是标签云：作者多半不会自己打标签，
       // 所以标题与简介里出现这个词也算命中，否则每个分类都是空的。
@@ -818,14 +838,24 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       if (q) {
         rows = rows.filter((p) => `${p.title} ${p.desc} ${(p.tags || []).join(" ")} ${docs.users.byId[p.authorId]?.name || ""}`.toLowerCase().includes(q));
       }
+      if (sort === "foryou") {
+        // "推荐"在本地能做的就一件事：把已经玩过的排出去，再按热度打分。
+        // 没看过的人、没有行为数据的新号，这里就退化成热榜——那是诚实的退化，
+        // 而不是编一个"算法"出来。没登录时同样退化成热榜（不报错）。
+        if (viewerId) {
+          const seen = new Set((docs.history.byUser[viewerId] || []).map((h) => h.pubId));
+          rows = rows.filter((p) => !seen.has(p.id) && p.authorId !== viewerId);
+        }
+      }
       if (sort === "following") {
         if (!viewerId) { reply.fail(401, "看关注流要先登录"); return true; }
         const ids = new Set(docs.graph.follows.filter((e) => e.a === viewerId).map((e) => e.b));
         ids.add(viewerId);
         rows = rows.filter((p) => ids.has(p.authorId));
       }
-      const score = (p) => (p.likes || []).length * 3 + (p.plays || 0) + commentsOf(p.id).length * 2;
-      rows.sort((a, b) => (sort === "hot" ? score(b) - score(a) || b.created - a.created : b.created - a.created));
+      const score = (p) => (p.likes || []).length * 3 + (p.plays || 0) + commentsOf(p.id).length * 2
+        + (p.favs || []).length * 2 + voteScore(p);
+      rows.sort((a, b) => (sort === "hot" || sort === "foryou" ? score(b) - score(a) || b.created - a.created : b.created - a.created));
       const offset = clamp(url.searchParams.get("offset") || 0, 0, 1e6);
       const limit = clamp(url.searchParams.get("limit") || 24, 1, 100);
       reply.json(200, { total: rows.length, sort, cat, cats: CATEGORIES, offset, rows: rows.slice(offset, offset + limit).map((p) => pubCard(p, viewerId)) });
@@ -960,6 +990,10 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         worldId: kind === "map" ? String(body.worldId) : null,
         created: prev ? prev.created : now(), updated: now(),
         plays: prev ? prev.plays || 0 : 0, likes: prev ? prev.likes || [] : [],
+        // 改版不清票：作者更新一版就把"这图好不好"的历史抹平，等于让每张
+        // 迭代过的图永远停在"暂无评分"。下架重发也一样要留着。
+        votes: prev && prev.votes ? { up: prev.votes.up || [], down: prev.votes.down || [] } : { up: [], down: [] },
+        favs: prev ? prev.favs || [] : [],
         version: prev ? (prev.version || 1) + 1 : 1, status: "live",
         bytes, shape, hasCover: fs.existsSync(store.pubCover(id)),
         assets: prev && kind !== "skin" ? prev.assets || 0 : (kind === "map" || kind === "skin" ? listFiles(store.pubAssets(id)).length : 0),
@@ -1006,6 +1040,33 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         else arr.splice(i, 1);
         store.touch("pubs");
         reply.json(200, { likes: arr.length, likedByMe: i < 0 });
+        return true;
+      });
+
+      /** 顶 / 踩：Roblox 那张详情页最显眼的是好评率而不是点赞数，而"点赞"
+       *  给不出差评——只看好坏的话，一个全是赞的列表等于没有信息。
+       *  一个人同时只能在 up 或 down 里出现一次，改票就是把自己从另一栏摘掉。 */
+      if (sub === "vote" && method === "POST") return login(() => {
+        const v = Number(body.v) > 0 ? 1 : Number(body.v) < 0 ? -1 : 0;
+        const votes = p.votes || (p.votes = { up: [], down: [] });
+        votes.up = (votes.up || []).filter((x) => x !== viewerId);
+        votes.down = (votes.down || []).filter((x) => x !== viewerId);
+        if (v === 1) { votes.up.push(viewerId); notify(p.authorId, "vote", viewerId, p.id); }
+        else if (v === -1) votes.down.push(viewerId);
+        store.touch("pubs");
+        reply.json(200, pubCard(p, viewerId));
+        return true;
+      });
+
+      /** 收藏与点赞的分工：赞是"这图好玩，作者收下"，收藏是"我自己的清单"。
+       *  混在一个数上，个人主页的"我收藏的"就没法做。 */
+      if (sub === "favorite" && method === "POST") return login(() => {
+        const arr = p.favs || (p.favs = []);
+        const i = arr.indexOf(viewerId);
+        if (i < 0) arr.push(viewerId);
+        else arr.splice(i, 1);
+        store.touch("pubs");
+        reply.json(200, { favs: arr.length, favByMe: i < 0 });
         return true;
       });
 

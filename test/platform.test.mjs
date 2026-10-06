@@ -15,10 +15,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { launchChrome, Session } from "./cdp.mjs";
+import { launchChrome, Session, freePort } from "./cdp.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 5500 + ((Date.now() % 400) | 0);
+const PORT = await freePort(5500, 400);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ly-platform-"));
 const ACK = 'localStorage.setItem("dao3_disclaimer_ack","3")';

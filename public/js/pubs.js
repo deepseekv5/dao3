@@ -112,9 +112,11 @@ export function cardHtml(p) {
     <div class="cm-lines">
       <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span></div>
       <div class="cm-views">
+        ${isSkin || isModel ? "" : `<span class="now${p.playing ? " on" : ""}" title="现在有几层里有人">${kfmt(p.playing || 0)}</span>`}
         <span title="${isSkin ? "取用" : "游玩"}">${EYE}${kfmt(p.plays)}</span>
         <span title="点赞">${HEART}${kfmt(p.likes)}</span>
         <span title="评论">${CHAT}${kfmt(p.comments)}</span>
+        ${p.rating == null ? "" : `<span class="rate" title="${p.up} 顶 / ${p.down} 踩">${p.rating}%</span>`}
       </div>
     </div>
   </article>`;

@@ -49,9 +49,10 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <p>不装 Node、不下载包，打开链接就能跑官方赛车模板： <b>&lt;https://deepseekv5.github.io/dao3play/&gt;</b>。</p>
 <p>它和介绍站是同一个渲染器、同一份 <code>game.js</code>——不是&quot;演示视频&quot;，也不是阉割版预览， 而是同一套运行时换了个不带服务端的装配层。</p>
 <h2 id="一条命令构建">一条命令构建</h2>
-<div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run build:play        # → play/（约 8.5 MB）
-npm run test:play         # 真浏览器回归：桌面 + 手机 + CDN 解压，跑完自报条数</code></pre></div>
-<blockquote><p><b>已知问题：<code>npm run build:play</code> 现在过不了自己的审查（46 处）。</b></p><p>根因不是路径写错，而是体验版<b>不该带上&quot;跳到社区另一张图&quot;这条路</b>：</p><p><code>game.js</code> 的世界之门分支里有一句 <code>await import(&quot;./pubs.js&quot;)</code>，闭包会照着它把</p><p><code>pubs.js</code> 整个拉进产物，而 <code>pubs.js</code> 走的是 <code>/api/community/...</code> 与</p><p><code>/assets/worlds/...</code> —— 静态托管的 <code>dao3play</code> 上这两样都不存在。</p><p>审查之所以设计上&quot;连动态 import 一起跟&quot;（见 <code>scripts/build-play.mjs</code> 开头），</p><p>就是为了不让这种&quot;构建绿了、线上一按就 404&quot;的口子悄悄合上。所以现在报的是真问题。</p><p></p><p>影响面：<code>play/</code> 里现存的是最后一次通过的构建（2026-10-03），此后 <code>public/js</code> 的改动没进体验版。</p><p>修法是给世界之门在体验版里降级（提示&quot;体验版不能跳社区地图&quot;），</p><p>而不是放宽审查。这条与配色无关，是皮肤社区那一轮引入的。</p></blockquote>
+<div class="code code-bash"><span class="code-lang">bash</span><pre><code>npm run build:play         # → play/（90 个文件 · 8.58 MB）
+npm run test:play-bundle   # 起静态服务把产物真跑一遍（CDP，无需 playwright）
+npm run test:play          # 更深的一轮：桌面 + 手机 + CDN 解压（需要 playwright）</code></pre></div>
+<blockquote><p><b>曾经的问题（3.9.1 已修）：<code>build:play</code> 过不了自己的审查（46 处）。</b></p><p>根因不是路径写错，而是体验版<b>不该带上&quot;跳到社区另一张图&quot;这条路</b>：</p><p><code>game.js</code> 的世界之门分支里有一句 <code>await import(&quot;./pubs.js&quot;)</code>，闭包会照着它把</p><p><code>pubs.js</code> 整个拉进产物，而 <code>pubs.js</code> 走的是 <code>/api/community/...</code> 与</p><p><code>/assets/worlds/...</code> —— 静态托管的 <code>dao3play</code> 上这两样都不存在。</p><p>审查之所以设计上&quot;连动态 import 一起跟&quot;（见 <code>scripts/build-play.mjs</code> 开头），</p><p>就是为了不让这种&quot;构建绿了、线上一按就 404&quot;的口子悄悄合上。所以当时报的是真问题。</p><p></p><p><b>修法</b>：把运行时够得着服务端的那一层收进 <code>public/js/backend.js</code></p><p>（世界之门的目标解析与跳转、<code>db.sql</code>、世界频道读写、个人资料跳转），</p><p>构建时按 <code>SUBSTITUTES</code> 换成 <code>scripts/play-src/backend.play.js</code> 那份空实现。</p><p>运行时其余代码一个字不改，闭包里从此根本不出现 <code>pubs.js</code> / <code>social.js</code> / <code>auth.js</code>。</p><p>顺带把两个&quot;点了必然 404&quot;的出口从体验版菜单里拿掉（个人资料、世界频道那一格）。</p><p>没有放宽审查——放宽审查就是把这件事再留给下一个人。</p></blockquote>
 <p><code>play/</code> 是<b>产物</b>，已进 <code>.gitignore</code>：源码在 <code>play-src/</code> 与 <code>scripts/build-play.mjs</code>。 它单独发布到 <code>deepseekv5/dao3play</code>，Pages 的构建源就是仓库根， 所以线上路径正好落在主页域名下的 <code>/dao3play/</code>。</p>
 <h2 id="装配层只有-290-行">装配层只有 290 行</h2>
 <p><code>GameRuntime</code> 真正取用的编辑器字段就五个：<code>state</code>（含 <code>meta</code> / <code>models</code> / <code>entities</code> / <code>scripts</code>）、 <code>atlas</code>、<code>world</code>、<code>renderer</code>、<code>toast</code>，外加可选的 <code>applyTerrain</code>。 所以 <code>play-src/js/play.js</code> 走的是和 <code>public/js/main.js</code> 完全相同的一条链：</p>
@@ -62,11 +63,14 @@ npm run test:play         # 真浏览器回归：桌面 + 手机 + CDN 解压，
 <p>编辑器的工具、UI、历史、存档、服务端 IO 一行都没带进来。</p>
 <h2 id="拷哪些文件不靠列清单">拷哪些文件不靠列清单</h2>
 <p><code>scripts/build-play.mjs</code> 从四个入口出发<b>沿 <code>import</code> / <code>import()</code> 递归求闭包</b>， 只拷贝真正被引用的模块：</p>
-<div class="code"><pre><code>运行时（import 闭包：10 个 js + 4 个 vendor）
-   js/atlas.js  js/clientui.js  js/game.js  js/gapi.js  js/net.js
-   js/play.js   js/playshell.js js/renderer.js  js/sun.js  js/world.js
+<div class="code"><pre><code>运行时（import 闭包：14 个 js + 4 个 vendor）
+   js/atlas.js     js/avatar.js     js/backend.js   js/clientui.js
+   js/console.js   js/game.js       js/gapi.js      js/net.js
+   js/play.js      js/playshell.js  js/renderer.js  js/skin-rig.js
+   js/skin3d.js    js/sun.js        js/world.js
    vendor/three/three.module.js  vendor/three/OrbitControls.js
    vendor/three/GLTFLoader.js    vendor/utils/BufferGeometryUtils.js</code></pre></div>
+<p><code>js/backend.js</code> 落在这里的是<b>替换后的那份</b>（<code>scripts/play-src/backend.play.js</code>， 1.9 KB 的空实现），所以 <code>pubs.js</code> / <code>social.js</code> / <code>auth.js</code> 不在闭包里。</p>
 <p><code>io.js</code>（打 <code>/api/</code>）、<code>ui.js</code>、<code>features.js</code>、<code>main.js</code>、整个 <code>voxa/</code> 因此<b>自然落选</b>—— 不需要维护一份&quot;哪些文件属于体验版&quot;的清单，也就不会出现清单和代码不同步的那种静默损坏。 代价是闭包解析器只认相对说明符，bare 说明符交给 <code>importmap</code>。</p>
 <h2 id="三条硬约束构建时自检">三条硬约束，构建时自检</h2>
 <p>体验版没有服务端，Pages 又把站点挂在主页域名的<b>子路径</b>下，所以：</p>
@@ -82,7 +86,7 @@ npm run test:play         # 真浏览器回归：桌面 + 手机 + CDN 解压，
 <p><code>test/play.mjs</code> 用 390×844、<code>hasTouch</code>、<code>deviceScaleFactor 3</code> 的上下文实测：</p>
 <ul class="lv-0"><li>摇杆 120×120 落在可视区内，七个按钮全部在界内；</li><li>派发真 <code>TouchEvent</code> 推摇杆，角色在 1.8 秒内移动 7.66 格；</li><li>首屏与游玩画面的 <code>scrollWidth - innerWidth</code> 都是 0（无横向溢出）。</li></ul>
 <h2 id="实测数字">实测数字</h2>
-<div class="tbl-wrap"><table class="tbl"><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>产物</td><td>最后一次通过审查的构建：85 个文件 / 8.47 MB（当前 <code>build:play</code> 见上面的已知问题）</td></tr><tr><td>地图载荷</td><td><code>world.json.gz</code> 2,780 KB → 解压 19 MB → 1,523,592 格 / 199 实体</td></tr><tr><td>本地首屏到可进入</td><td>2.0~2.2 秒</td></tr><tr><td>回归</td><td>桌面 + 手机 + CDN 已解压三轮，条数由 <code>npm run test:play</code> 自己报</td></tr><tr><td>网络面</td><td>17 个请求，零 4xx、零 <code>/api/</code>、零未捕获异常</td></tr><tr><td>移动速度</td><td>按住 Shift+W 走 6.86 格 / 19 tick = 0.361 格/tick，按官方 64ms tick 折算是 ≈5.6 格/秒</td></tr></tbody></table></div>
+<div class="tbl-wrap"><table class="tbl"><thead><tr><th>项</th><th>值</th></tr></thead><tbody><tr><td>产物</td><td>90 个文件 / 8.58 MB（<code>build:play</code> 审查通过）</td></tr><tr><td>地图载荷</td><td><code>world.json.gz</code> 2,780 KB → 解压 19 MB → 1,523,592 格 / 199 实体</td></tr><tr><td>本地首屏到可进入</td><td>2.0~2.2 秒</td></tr><tr><td>回归</td><td><code>npm run test:play-bundle</code> 9 条：静态子路径加载 → 进入体验 → 合成帧不是纯色 → tick 在涨 → 菜单里没有服务端出口；另有 <code>test:play</code> 的桌面 + 手机 + CDN 三轮（需要 playwright）</td></tr><tr><td>网络面</td><td>零 4xx、零 <code>/api/</code>、零未捕获异常</td></tr><tr><td>移动速度</td><td>按住 Shift+W 走 6.86 格 / 19 tick = 0.361 格/tick，按官方 64ms tick 折算是 ≈5.6 格/秒</td></tr></tbody></table></div>
 <p><code>test/play.mjs</code> 里那个静态服务器会把 <code>/dao3play/</code> 前缀剥掉再落盘—— 这是刻意的：产物必须在<b>它真实的部署形态</b>下被测， 否则&quot;本地全绿、上线白屏&quot;这类问题根本测不出来。</p>
     <nav class="pager"><a href="packaging.html"><small>上一篇</small><b>便携包与发布</b></a><a class="next" href="dependencies.html"><small>下一篇</small><b>依赖清单</b></a></nav>
   </article>

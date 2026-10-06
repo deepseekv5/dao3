@@ -3,8 +3,8 @@
 **<https://deepseekv5.github.io/dao3play/>**
 
 不装 Node、不下载包，打开链接就在浏览器里跑官方「赛车模板」：
-1,523,592 格体素、199 个实体、两个官方脚本真实执行、20 TPS 定步长物理，
-手机上左摇杆 + 七个虚拟键。
+1,523,592 格体素、199 个实体、两个官方脚本真实执行、64ms 定步长物理
+（15.625 tick/秒，官方那个 tick 频率，不是"20 TPS"），手机上左摇杆 + 七个虚拟键。
 
 这是 [deepseekv5/dao3](https://github.com/deepseekv5/dao3)（DAO3 编辑器复刻）
 的**构建产物**，不是独立项目：运行时用的是同一份 `game.js` / `renderer.js` /

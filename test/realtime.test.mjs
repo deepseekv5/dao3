@@ -11,10 +11,12 @@ import path from "node:path";
 import crypto from "node:crypto";
 import net from "node:net";
 import { spawn } from "node:child_process";
+// 只要 freePort：这条套件自己不起浏览器，但它的 server.js 一样会留在端口上
+import { freePort } from "./cdp.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 5700 + ((Date.now() % 200) | 0);
+const PORT = await freePort(5700, 200);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ly-realtime-"));
 

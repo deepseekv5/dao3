@@ -479,16 +479,22 @@ const scrub = (text, key) => {
 // 账号、关注、好友、地图发布与评论。数据落在 DATA_ROOT/community/ 下，
 // 和世界存档同一个可写策略（安装目录只读时退到用户目录）。
 const moderation = createModeration({ file: path.join(DATA_ROOT, "community", "mute-words.json") });
+// realtime 要在 community 之后才建（它反过来要拿 community 挂聊天频道），
+// 而 community 的 presence 回调引用它。先声明成 null：对 const 用 typeof 会踩
+// 暂时性死区直接抛 ReferenceError，那比返回 0 糟得多。
+let realtime = null;
 const community = createCommunity({
   dataRoot: DATA_ROOT, worldsDir: WORLDS, assetRoots: [ASSETS, ASSETS_IN_TREE], moderation,
   // 缺封面的图要用方块自己的颜色画小地图，而不是退化成一段按 id 派生的渐变
   atlas: { json: path.join(PUBLIC, "data", "block-atlas.json"), png: path.join(PUBLIC, "data", "block-atlas.png") },
+  // 「正在玩」读的是实时房间人数，不是累计游玩数。
+  presence: (pubId) => (realtime ? realtime.room("pub:" + pubId).length : 0),
 });
 
 // 联机通道：升级请求由它自己判会话 cookie，路径不是 /ws/play/<pub> 的原样放回去。
 // 编辑协作房间要求世界存档真的存在，否则第二个人进来是空世界——两个人的"同一张图"
 // 就成了两张图。存档目录只有这里知道，所以以回调形式注入。
-const realtime = createRealtime({ community, worldExists: (id) => /^[A-Za-z0-9_-]{4,32}$/.test(id)
+realtime = createRealtime({ community, worldExists: (id) => /^[A-Za-z0-9_-]{4,32}$/.test(id)
   && fs.existsSync(path.join(WORLDS, id + ".json.gz")) });
 
 // 官方 GameDatabase.sql 的执行端：每个世界一个 .sqlite，落在世界存档旁边。

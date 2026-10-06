@@ -1,6 +1,6 @@
 {
   "name": "laoyou-metaverse",
-  "version": "3.9.1",
+  "version": "3.9.2",
   "private": false,
   "description": "老攸元宇宙：跑在自己机器上的体素元宇宙。编辑器 + 运行时 + VOXA 建模负责创作，服务端社区负责发布快照、账号、好友、关注与评论。引擎接口层与 dao3.fun 的 GameAPI 语义兼容。零第三方运行时依赖。",
   "type": "module",
@@ -31,6 +31,7 @@
     "test": "node test/runtime_parity.mjs",
     "test:e2e": "node test/e2e.mjs",
     "test:play": "node test/play.mjs",
+    "test:play-bundle": "node test/play-bundle.test.mjs",
     "test:terrain": "node test/terrain.mjs",
     "test:ai": "node test/ai.mjs",
     "package": "node scripts/build-portable.mjs",

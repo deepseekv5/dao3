@@ -52,6 +52,22 @@
 `kind` 有 `map`、`model`、`skin` 三种。模型走 `.voxa.json`，8 MB 上限，取回是**并进本地模型库**
 而不是覆盖，同名会另存。
 
+### 详情页那四个读数
+
+`pubCard` 一张卡带出四种计数，全部是真读数，没有一个是装饰：
+
+| 读数 | 从哪来 | 空的时候显示什么 |
+|---|---|---|
+| 正在玩 | `createCommunity({ presence })` 回调问 `realtime` 要 `pub:<id>` 房间的人数 | `0`，绿点是灰的 |
+| 累计进入 | `POST pubs/<id>/play` 计数（同时写进「最近游玩」） | `0` |
+| 收藏 | `pubs/<id>/favorite` 的用户数组长度 | `0` |
+| 好评率 | `pubs/<id>/vote` 的 `up/(up+down)`，四舍五入 | **暂无评分**，并且不给那根条 |
+
+两条刻意的取舍：**一票没有时不给百分比**（写"0%"或"100%"都是编的），
+**改版不清票**（否则每张迭代过的图都退回"暂无评分"）。
+`playing` 缺注入时返回 `0` 而不是 `undefined`——前端拿到 undefined 会渲染成空白，
+看起来像坏了，而不是"这里没人"。
+
 ## 皮肤社区：第三种发布
 
 皮肤既不是地图也不是模型：它没有"游玩"这个动作，也不该被塞进模型流里沉底。
@@ -195,9 +211,12 @@ HTTP 全在 `/api/community/` 下（`server/community.mjs`）。标 ★ 的要�
 | `chat` | GET / POST ★ | 读频道历史（`?ch=&after=`）/ 发一条 |
 | `chat/read` | POST ★ | 把某个频道的未读清零 |
 | `channels` | GET ★ | 抽屉一次拿全：各频道未读数 + 私聊会话列表 |
-| `feed` | GET | 广场分页，`kind=map\|model\|skin`、`cat`、`sort=new\|hot\|following` |
+| `feed` | GET | 广场分页，`kind=map\|model\|skin`、`cat`、`sort=new\|hot\|following\|foryou` |
 | `publish` | POST ★ | 发布快照（地图 / 模型 / 皮肤） |
 | `pubs/...` | GET / PATCH / DELETE ★ | 作品详情（按 id）、改标题简介标签、下架；`/skin` 子路径取皮肤包 |
+| `pubs/<id>/like` | POST ★ | 点赞，再点取消 |
+| `pubs/<id>/vote` | POST ★ | 顶 / 踩：`{v: 1\| -1 \| 0}`，0 是撤票。返回整张 `pubCard`（含新的 `rating`） |
+| `pubs/<id>/favorite` | POST ★ | 收藏，再点取消。与点赞分开：赞是给作者的，收藏是给自己的清单 |
 | `comments/...` | POST | 点赞（按用户去重）/ 举报 |
 | `notifications` | GET ★ | 通知列表 + 未读数 |
 | `stats` | GET | 广场顶部那几个计数 |

@@ -12,7 +12,7 @@ const qBox = document.getElementById("cmQ");
 const $ = (id) => document.getElementById(id);
 
 /* ---------------- 广场 ---------------- */
-const FEED_TABS = [["new", "最新"], ["hot", "最热"], ["following", "关注"]];
+const FEED_TABS = [["new", "最新"], ["hot", "最热"], ["foryou", "推荐"], ["following", "关注"]];
 // 不写"全部"那一格：上面那行分类已经有一个"全部"了，同一屏出现两个同义词的开关，谁都要想一下。
 const FEED_KINDS = [["map", "地图"], ["model", "模型"], ["skin", "皮肤"]];
 const KIND_NOUN = { map: "地图", model: "模型", skin: "皮肤" };
@@ -25,6 +25,7 @@ async function feedView() {
   root.innerHTML = `<div id="cmFeature"></div>
     <div class="cm-cats" id="cmCats"></div>
     <div class="cm-tabs" id="cmTabs"></div>
+    <div id="cmContinue"></div>
     <div id="cmRails"></div>
     <section class="cm-sect"><header><h3 id="cmSectTitle">全部作品</h3><span class="cm-count" id="cmCount"></span></header>
       <div class="cm-grid" id="cmGrid"></div></section>
@@ -95,6 +96,18 @@ async function loadFeed(reset) {
   // 导轨要在内容够多的时候才有意义：一共三张图还分"大家都在玩"和"全部作品"两遍，是凑版式。
   const rest = plain && byPlays.length > 7 ? byPlays.slice(1, 7) : [];
   railHost.innerHTML = rest.length ? railHtml("大家都在玩", rest, { href: "/community?sort=hot", label: "按热度看" }) : "";
+  /** 「继续游玩」用真实的游玩历史，不用 localStorage 里"上次看过哪张"：
+   *  前者是"我玩过这些"，后者只是浏览器记得一个 id。没登录就没有历史，这一格整块不出现。 */
+  if (plain && auth.me) {
+    api("GET", `/api/community/users/${encodeURIComponent(auth.me.name)}/recent`).then((h) => {
+      const seen = new Set();
+      const rows = (h.rows || []).map((x) => x.pub)
+        .filter((p) => p && p.kind === "map" && !seen.has(p.id) && seen.add(p.id)).slice(0, 6);
+      if (!rows.length || !document.getElementById("cmRails")) return;
+      $("cmContinue").innerHTML = railHtml("继续游玩", rows, { href: "/me", label: "全部记录" });
+      bindCards($("cmContinue"));
+    }).catch(() => { });
+  } else $("cmContinue").innerHTML = "";
   $("cmCount").textContent = `${feed.rows.length} / ${r.total}`;
   $("cmMore").innerHTML = feed.rows.length < r.total ? `<button class="cm-btn" id="cmMoreBtn">再看 24 张</button>` : "";
   const more = $("cmMoreBtn");
@@ -148,6 +161,7 @@ async function applyCommunitySkin(p, btn) {
 }
 
 /* ---------------- 详情页 ---------------- */
+let detailPoll = null;
 async function pubView(id) {
   root.innerHTML = `<div class="cm-empty">正在读取这张地图…</div>`;
   pageTitle.textContent = "地图详情";
@@ -158,6 +172,7 @@ async function pubView(id) {
   catch (e) { root.innerHTML = `<div class="cm-empty"><b>${esc(e.message)}</b><a href="/community">回广场</a></div>`; return; }
   const p = d.pub, a = d.author;
   const rel = a && a.relation;
+  const isMap = p.kind !== "model" && p.kind !== "skin";
   root.innerHTML = `<div class="cm-detail">
     <div>
       <section class="cm-hero">
@@ -165,6 +180,26 @@ async function pubView(id) {
           <div class="cap"><h2>${esc(p.title)}</h2><div class="kind">${esc(KIND_NOUN[p.kind] || "地图")} · ${esc(timeAgo(p.created))}发布</div></div>
         </div>
         <div class="meta">
+          <div class="cm-statbar">
+            <span class="st"><b id="stPlaying">${isMap ? p.playing : "—"}</b><i>正在玩</i></span>
+            <span class="st"><b>${p.plays}</b><i>累计进入</i></span>
+            <span class="st"><b id="stFav">${p.favs}</b><i>收藏</i></span>
+            <span class="st rate">
+              <b>${p.rating == null ? "暂无评分" : p.rating + "%"}</b>
+              <i>${p.up + p.down ? `${p.up} 顶 / ${p.down} 踩` : "还没有人表过态"}</i>
+              ${p.rating == null ? "" : `<span class="bar"><s style="width:${p.rating}%"></s></span>`}
+            </span>
+          </div>
+          <div class="cm-playrow">
+            ${p.kind === "skin"
+              ? `<button class="cm-btn lg primary" id="cmApplyTop">${icons.HEART}应用到我的角色</button>`
+              : `<button class="cm-btn lg primary" id="cmPlayTop">${icons.PLAY}${p.kind === "model" ? "下载模型" : "开始游玩"}</button>`}
+            ${isMap ? `<button class="cm-btn" id="cmFav" aria-pressed="${p.favByMe ? "true" : "false"}" title="收进我自己的清单，和点赞不是一回事">${p.favByMe ? "★" : "☆"} 收藏</button>` : ""}
+            <span class="cm-vote">
+              <button id="cmUp" class="${p.votedByMe === 1 ? "on" : ""}" title="觉得好玩">▲ <b>${p.up}</b></button>
+              <button id="cmDown" class="${p.votedByMe === -1 ? "on" : ""}" title="觉得不好玩">▼ <b>${p.down}</b></button>
+            </span>
+          </div>
           ${p.desc ? `<p class="lead">${esc(p.desc)}</p>` : `<p class="lead none">作者没写简介。进去跑一圈比看文字快。</p>`}
           ${p.tags.length ? `<div class="cm-tags">${p.tags.map((t) => `<span class="cm-tag">${esc(t)}</span>`).join("")}</div>` : ""}
         </div>
@@ -184,6 +219,14 @@ async function pubView(id) {
         </a>
         ${a ? `<div class="cm-acts" id="cmAuthorActs"></div>` : ""}
       </div>
+      ${isMap ? `<div class="cm-panel">
+        <h4>房间</h4>
+        <div class="cm-room">
+          <span class="dot${p.playing ? " on" : ""}"></span>
+          <b id="rmN">${p.playing}</b><i>/ 24 人</i>
+          <span id="rmNote" class="nt">${p.playing ? "里面已经有人了，进去就在同一间" : "现在没人，进去就是第一个"}</span>
+        </div>
+      </div>` : ""}
       <div class="cm-panel">
         <h4>这张${KIND_NOUN[p.kind] || "地图"}</h4>
         <div class="cm-acts" id="cmPubActs">
@@ -226,6 +269,72 @@ async function pubView(id) {
   }).catch(() => { });
   const playBtn = $("cmPlay");
   if (playBtn) playBtn.onclick = () => playPub(p);
+  /** 首屏那颗大按钮和侧栏那颗走的是同一件事，别复制一份流程：
+   *  复制之后一边改了快照取回、另一边没改，就是"同一个页面两个行为"。 */
+  const top = $("cmPlayTop");
+  if (top) top.onclick = () => (p.kind === "model" ? $("cmPlay").onclick() : playPub(p));
+  const applyTop = $("cmApplyTop");
+  if (applyTop) applyTop.onclick = () => applyCommunitySkin(p, applyTop);
+  const fav = $("cmFav");
+  if (fav) fav.onclick = async () => {
+    if (!requireLogin()) return;
+    try {
+      const r = await api("POST", `/api/community/pubs/${p.id}/favorite`);
+      fav.innerHTML = `${r.favByMe ? "★" : "☆"} 收藏`;
+      fav.setAttribute("aria-pressed", r.favByMe ? "true" : "false");
+      const n = $("stFav"); if (n) n.textContent = r.favs;
+    } catch (e) { toast(e.message, true); }
+  };
+  /** 顶与踩：再点一次同一边就是撤票。好评率与条形条一起改，
+   *  不然数字动了、那根条还停在旧比例上，比谁都更像一个坏掉的界面。 */
+  const paintVote = (v) => {
+    const up = $("cmUp"), down = $("cmDown");
+    if (up) { up.classList.toggle("on", v.votedByMe === 1); up.querySelector("b").textContent = v.up; }
+    if (down) { down.classList.toggle("on", v.votedByMe === -1); down.querySelector("b").textContent = v.down; }
+    const st = document.querySelector(".cm-statbar .rate");
+    if (!st) return;
+    st.querySelector("b").textContent = v.rating == null ? "暂无评分" : v.rating + "%";
+    st.querySelector("i").textContent = v.up + v.down ? `${v.up} 顶 / ${v.down} 踩` : "还没有人表过态";
+    // 一票没有时那根条不给：一根空的横杠看起来像"评分是 0%"，而实际上是没人说过话
+    let bar = st.querySelector(".bar");
+    if (v.rating == null) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement("span"); bar.className = "bar";
+      bar.appendChild(document.createElement("s"));
+      st.appendChild(bar);
+    }
+    bar.querySelector("s").style.width = v.rating + "%";
+  };
+  for (const [id, val] of [["cmUp", 1], ["cmDown", -1]]) {
+    const b = $(id);
+    if (!b) continue;
+    b.onclick = async () => {
+      if (!requireLogin()) return;
+      const want = p.votedByMe === val ? 0 : val;
+      try { paintVote(await api("POST", `/api/community/pubs/${p.id}/vote`, { v: want })); p.votedByMe = want; }
+      catch (e) { toast(e.message, true); }
+    };
+  }
+  /** 「正在玩」是实时数，页面停着不动就一直是进来那一刻的值。
+   *  12 秒一次；换路由时 pubView 开头会清掉上一条，不然看五张图就是五条轮询
+   *  在对着自己的本地服务刷。 */
+  clearInterval(detailPoll);
+  if (isMap) {
+    detailPoll = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const d2 = await api("GET", "/api/community/pubs/" + id);
+        const n = d2.pub.playing;
+        const e1 = $("stPlaying"), e2 = $("rmN");
+        if (e1) e1.textContent = n;
+        if (e2) e2.textContent = n;
+        const note = $("rmNote");
+        if (note) note.textContent = n ? "里面已经有人了，进去就在同一间" : "现在没人，进去就是第一个";
+        const dot = document.querySelector(".cm-room .dot");
+        if (dot) dot.classList.toggle("on", !!n);
+      } catch { /* 服务停了就停在最后一次读数上，别把整页刷没 */ }
+    }, 12000);
+  }
   const fork = $("cmFork");
   if (fork) fork.onclick = () => materialize(p, { keep: true });
   const pull = $("cmPull");
@@ -492,7 +601,7 @@ async function friendsView() {
     };
   } else {
     if (notes.rows.length) api("POST", "/api/community/notifications").catch(() => { });
-    const KIND = { follow: "关注了你", friend_request: "想加你为好友", friend: "接受了你的好友请求", like: "赞了你的地图", comment: "评论了你的地图", publish: "发布了新地图" };
+    const KIND = { follow: "关注了你", friend_request: "想加你为好友", friend: "接受了你的好友请求", like: "赞了你的地图", vote: "给这张图表了态", comment: "评论了你的地图", publish: "发布了新地图" };
     body.innerHTML = notes.rows.length ? notes.rows.map((n) => `<div class="cm-row">${face(n.actor || {})}
       <div class="grow"><b>${esc(n.actor ? n.actor.name : "系统")}</b><div class="sub">${esc(KIND[n.kind] || n.kind)} · ${esc(timeAgo(n.ts))}</div></div>
       ${n.pub ? `<a class="cm-btn sm" href="/p/${esc(n.pub.id)}">去看地图</a>` : n.actor ? `<a class="cm-btn sm" href="/u/${encodeURIComponent(n.actor.name)}">看主页</a>` : ""}`).join("")

@@ -13,10 +13,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { launchChrome, Session } from "./cdp.mjs";
+import { launchChrome, Session, freePort } from "./cdp.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PORT = 5900 + ((Date.now() % 250) | 0);
+const PORT = await freePort(5900, 250);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ly-door-"));
 const SRC = "216d665d3ca92bd1b9a2";

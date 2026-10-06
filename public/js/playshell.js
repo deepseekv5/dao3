@@ -4,6 +4,8 @@
 // 对"打开一张图玩"的人来说等于被踢出产品。Roblox 的 escape 菜单是浮在游戏上的，
 // 世界继续跑，菜单只给出口与设置——这里照这个口径做。
 
+import * as backend from "./backend.js";
+
 /* 体验版是纯静态站点，部署在 Pages 子路径下，所以图标不能写根绝对路径。
    从模块自己的 URL 推：应用里模块在 /js/、图标在 /img/；体验版同理，只是多了个子路径前缀。 */
 const LOGO = new URL("../img/laoyou.svg", import.meta.url).href;
@@ -34,7 +36,7 @@ function build() {
         <button data-x="view"><span>切换视角</span><kbd>V</kbd></button>
         <button data-x="settings"><span>画面与操作</span><kbd>H</kbd></button>
         <button data-x="chat"><span>聊天</span><kbd>↵</kbd></button>
-        <button data-x="profile"><span>个人资料</span><kbd></kbd></button>
+        ${backend.serverBacked ? '<button data-x="profile"><span>个人资料</span><kbd></kbd></button>' : ""}
         <button data-x="back" hidden><span id="gmBack">回到上一张</span><kbd></kbd></button>
         <button class="danger" data-x="leave"><span id="gmLeave">离开游戏</span><kbd></kbd></button>
       </div>
@@ -54,10 +56,10 @@ function build() {
   on("view", () => { const p = rt.player; p.cameraMode = p.cameraMode === "fps" ? "follow" : "fps"; close(); });
   on("settings", () => { close(); document.getElementById("gameHudSettings")?.classList.add("show"); });
   on("chat", () => { close(); rt.openChat && rt.openChat(); });
-  on("profile", () => { location.href = "/me"; });
+  on("profile", () => backend.openProfile());
   on("back", () => {
     const f = cameFrom();
-    if (f && f.id) location.href = "/edit/" + encodeURIComponent(f.id) + "?play=1&from=" + encodeURIComponent(mTitle());
+    if (f && f.id) backend.gotoWorld(f.id, mTitle());
   });
   on("leave", () => leave());
 }

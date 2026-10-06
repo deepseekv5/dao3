@@ -8,6 +8,7 @@
 // 而不是拿一个会话假装两个人。
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { resolveChromium } from "./browser.mjs";
@@ -17,6 +18,30 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function httpJson(port, p, method = "GET") {
   const res = await fetch(`http://127.0.0.1:${port}${p}`, { method });
   return res.json();
+}
+
+/** 找一个真空着的端口。
+ *
+ *  为什么测试要自己挑端口还要先探一次：被 Ctrl-C / pkill 打断的那一轮，
+ *  它 spawn 的 server.js 会活着留在原地（同一个随机区间里）。下一轮挑到同一个端口时
+ *  bind 失败，但 `fetch(首页)` 依然返回 200 —— 因为回答的是**上一轮那个陌生人**，
+ *  它的数据目录里账号早就注册过了。于是测试看到"注册按钮不见了"，
+ *  红得莫名其妙，而代码其实没问题。 */
+export async function freePort(base, span = 400) {
+  const offset = Math.floor(Math.random() * span);
+  for (let i = 0; i < span; i++) {
+    const p = base + ((offset + i) % span);
+    const ok = await new Promise((res) => {
+      const srv = net.createServer();
+      // 一次只试一个端口。上一版把 span 个 listen 一次性发出去，
+      // 结果是测试自己把文件描述符占满，卡在"一个 PASS 都没打印"那种红里。
+      srv.once("error", () => res(false));
+      srv.once("listening", () => srv.close(() => res(true)));
+      srv.listen(p, "127.0.0.1");
+    });
+    if (ok) return p;
+  }
+  throw new Error(`${base}~${base + span} 没有空端口`);
 }
 
 /** 起一个 headless Chrome 调试端点；复用已经在跑的实例。 */

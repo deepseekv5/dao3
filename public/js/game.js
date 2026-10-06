@@ -17,6 +17,7 @@ import {
 import { createClientApi, createAudioClass } from "./clientui.js";
 import { sunDirFromPhase, nightFromElev } from "./sun.js";
 import { makeAvatar, blobShadowMesh } from "./avatar.js";
+import * as backend from "./backend.js";
 
 /**
  * 地图级持久化数据的键名，只在这里定义一次。
@@ -2568,29 +2569,10 @@ const ZERO = new GameVector3();
 
   /* ---------------- 世界之门 ---------------- */
   /** 传送目标 → {kind:"world"|"pub", id, title, author}，认不出来就 null。
-   *  官方 mapId 是数字、且限定"同一图组内的其他地图"；本机没有图组这一层，
-   *  所以这里认三种写法：本地世界 id、社区发布 id，以及两者的精确名字——
-   *  作者记不住 20 位十六进制，逼他们抄 id 的门没人摆。 */
+   *  取用全在 backend.js：体验版那份没有服务端，换掉之后这里只会拿到 null，
+   *  于是门给出"找不到要去的那张图"，而不是一串 404。 */
   async _resolveGoto(target) {
-    const t = String(target == null ? "" : target).trim();
-    if (!t) return null;
-    try {
-      const ws = ((await (await fetch("/api/worlds")).json()).worlds) || [];
-      const w = ws.find((x) => x.id === t) || ws.find((x) => (x.name || "") === t);
-      if (w) return { kind: "world", id: w.id, title: w.name || w.id };
-    } catch { /* 世界列表读不到就继续按发布找 */ }
-    try {
-      const d = await (await fetch(`/api/community/pubs/${encodeURIComponent(t)}`)).json();
-      if (d && d.pub && d.pub.kind !== "model") {
-        return { kind: "pub", id: d.pub.id, title: d.pub.title, author: (d.author && d.author.name) || "" };
-      }
-    } catch { /* 不是发布 id */ }
-    try {
-      const f = await (await fetch(`/api/community/feed?sort=new&kind=map&limit=100&q=${encodeURIComponent(t)}`)).json();
-      const hit = (f.rows || []).find((p) => p.title === t);
-      if (hit) return { kind: "pub", id: hit.id, title: hit.title, author: (hit.author && hit.author.name) || "" };
-    } catch { /* 广场读不到 */ }
-    return null;
+    return (await backend.findWorld(target)) || (await backend.findPub(target));
   }
 
   /** 真的走一趟：先把未保存的编辑落盘，再记下从哪来，最后换页。
@@ -2608,10 +2590,9 @@ const ZERO = new GameVector3();
       const from = { id: String(this.e.worldId || ""), title: (this.e.state && this.e.state.meta && this.e.state.meta.name) || "上一张图", at: Date.now() };
       try { sessionStorage.setItem("ly.cameFrom", JSON.stringify(from)); } catch { /* 隐私模式下记不住就算了，不值得为此打断传送 */ }
       if (dest.kind === "world") {
-        location.href = `/edit/${encodeURIComponent(dest.id)}?play=1&from=${encodeURIComponent(from.title)}`;
+        backend.gotoWorld(dest.id, from.title);
       } else {
-        const m = await import("./pubs.js");
-        await m.gotoPub(dest, from.title);
+        await backend.gotoPub(dest, from.title);
       }
       return { serverId: "local" };
     } catch (e) { this._going = false; throw e; }
@@ -3297,19 +3278,7 @@ void main() {
   }
   async _runSql(sql, params) {
     const id = (this.e && this.e.worldId) || "local";
-    let res;
-    try {
-      res = await fetch(`/api/db/${encodeURIComponent(id)}`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sql, params }),
-      });
-    } catch (e) {
-      // 说清是"送不出去"而不是"表里没数据"：后者会让人去查自己的 SQL。
-      throw new Error("db.sql 需要本地服务在跑（编辑器与便携包自带）；直接双击打开 html 时用不了");
-    }
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(String((j && j.error) || `db.sql 失败：HTTP ${res.status}`));
-    return (j && j.rows) || [];
+    return backend.runSql(id, sql, params);
   }
   _storage(ns) {
     const rt = this;
@@ -3997,8 +3966,7 @@ void main() {
       // 回显用服务端返回的那一条并把 id 记进去：HTTP 发送没有"排除自己"这条通道，
       // 自己再画一遍就是屏幕上两行一样的话。
       try {
-        const { chatSend } = await import("./social.js");
-        const r = await chatSend("world", msg);
+        const r = await backend.chatSend("world", msg);
         if (r && r.msg) { if (!this._chatSeen) this._chatSeen = new Set(); this._chatSeen.add(r.msg.id); this._netChat(r.msg); }
         else this._chatLine(`${this.player ? this.player.name : "玩家"}: ${msg}`, "#ffffff");
       } catch (e) { this._chatLine("世界频道没发出去：" + e.message, "#ffb3b3", "sys"); }
@@ -4024,7 +3992,7 @@ void main() {
    *  而世界频道的意思就是"所有在线的人"，不是"所有恰好点开面板的人"。
    *  进运行就开，退出就停；面板开着时它同时是历史补漏。 */
   _startWorldIngress() {
-    if (this._worldPoll) return;
+    if (!backend.serverBacked || this._worldPoll) return;
     this._pullWorld();
     this._worldPoll = setInterval(() => this._pullWorld(), 5000);
   }
@@ -4033,9 +4001,12 @@ void main() {
     this._worldPoll = null;
   }
   async _pullWorld() {
+    // 没登录就一次都不该拉：世界频道要鉴权，未登录的每次请求都是一个 401，
+    // 而 `import("./social.js")` 会把整层社交解析进主线程——
+    // 单机跑图的人既没有账号，也不该为它付这笔钱。
+    if (!window.__me) return;
     try {
-      const { chatPull } = await import("./social.js");
-      const rows = await chatPull("world", this._worldAfter || 0, 40);
+      const rows = await backend.chatPull("world", this._worldAfter || 0, 40);
       for (const m of rows) {
         this._worldAfter = Math.max(this._worldAfter || 0, m.ts);
         this._netChat(m);
@@ -4430,14 +4401,14 @@ void main() {
     }
     // 频道那一格默认停在「地图」：进来先跟同图的人说话，才是联机该有的样子
     for (const b of document.querySelectorAll("#chatChips [data-ch]")) b.onclick = () => this.setChatChannel(b.dataset.ch);
+    // 世界频道是社区后端的能力。体验版（纯静态）里它必然发不出去，
+    // 所以那一格直接不给——留着一个点了报错的按钮比没有按钮更糟。
+    for (const b of document.querySelectorAll('#chatChips [data-ch="world"]')) b.hidden = !backend.serverBacked;
     this.setChatChannel("map");
     this._startWorldIngress();
     if (this.hud.chatSocial) {
-      this.hud.chatSocial.onclick = async () => {
-        if (!window.__me) { const a = await import("./auth.js"); a.openAuth("login"); return; }
-        const m = await import("./social.js");
-        m.openSocial("messages");
-      };
+      this.hud.chatSocial.hidden = !backend.serverBacked;
+      this.hud.chatSocial.onclick = () => backend.openMessages();
     }
     if (this.hud.qualityBtn) this.hud.qualityBtn.onclick = () => this.toggleQualityPanel();
     if (this.hud.qualityPanel) {
