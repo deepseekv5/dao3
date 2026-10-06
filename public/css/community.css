@@ -124,6 +124,12 @@
 .cm-author { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg3); margin-bottom: 3px; min-width: 0; }
 .cm-author span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cm-author .au-face { width: 18px; height: 18px; border-radius: 5px; font-size: 10px; flex: none; }
+/* 好友/关注行上的在线标记：点在前、字在后，扫一眼就分得出谁在。
+   和抽屉里那颗点是同一套语言，两处不该长得不一样。 */
+.cm-on { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; color: var(--fg3); }
+.cm-on::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line2); }
+.cm-on.on { color: var(--fg2); }
+.cm-on.on::before { background: #57c07a; box-shadow: 0 0 0 3px rgba(87, 192, 122, .16); }
 .cm-views { display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: var(--fg3); }
 .cm-views span { display: inline-flex; align-items: center; gap: 4px; }
 .cm-views svg { width: 13px; height: 13px; flex: none; opacity: .8; }

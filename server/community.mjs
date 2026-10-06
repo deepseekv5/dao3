@@ -702,15 +702,18 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         .map((e) => ({ user: publicUser(docs.users.byId[e.from], viewerId), ts: e.ts })).filter((r) => r.user);
       const outgoing = docs.graph.requests.filter((e) => e.from === viewerId)
         .map((e) => ({ user: publicUser(docs.users.byId[e.to], viewerId), ts: e.ts })).filter((r) => r.user);
-      // 「可能认识的人」= 好友们在跟的人，去掉我自己、已加好友的
+      // 「可能认识的人」= 好友们在跟的人，去掉我自己、已加好友的。
+      // 光给一个名字没有说服力：同一份数据顺手算出"我的好友里有几个人跟了 TA"，
+      // 前端才写得出一句理由，也才排得出谁更可能认识。
       const friendIds = new Set(docs.graph.friends.filter((e) => e.a === viewerId || e.b === viewerId).map((e) => e.a === viewerId ? e.b : e.a));
       const known = new Set([viewerId, ...friendIds]);
-      const suggested = [];
+      const followers = new Map();
       for (const f of docs.graph.follows) {
-        if (!friendIds.has(f.a) || known.has(f.b)) continue;
-        const u = docs.users.byId[f.b];
-        if (u) { suggested.push(publicUser(u, viewerId)); known.add(f.b); }
+        if (friendIds.has(f.a) && !known.has(f.b)) followers.set(f.b, (followers.get(f.b) || 0) + 1);
       }
+      const suggested = [...followers].filter(([id]) => docs.users.byId[id])
+        .map(([id, mutual]) => ({ ...publicUser(docs.users.byId[id], viewerId), mutual }))
+        .sort((x, y) => y.mutual - x.mutual || x.name.localeCompare(y.name, "zh"));
       reply.json(200, { friends, incoming, outgoing, suggested: suggested.slice(0, 12) });
       return true;
     });

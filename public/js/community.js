@@ -593,8 +593,8 @@ async function friendsView() {
     friendsView();
   };
   const body = $("fBody");
-  const row = (u, ops) => `<div class="cm-row">${face(u)}<div class="grow"><b>${esc(u.name)}</b>
-    <div class="sub">${esc(u.bio || (u.counts ? u.counts.pubs + " 张发布" : ""))}</div></div>${ops}</div>`;
+  const row = (u, ops, why) => `<div class="cm-row">${face(u)}<div class="grow"><b>${esc(u.name)}</b>
+    <div class="sub"><span class="cm-on${u.online ? " on" : ""}">${u.online ? "在线" : "离线"}</span>${esc(u.bio || (u.counts ? u.counts.pubs + " 张发布" : ""))}${why ? ` · ${esc(why)}` : ""}</div></div>${ops}</div>`;
   if (tab === "expand") {
     // 扩列的筛选与卡片全部由 social.js 出：抽屉里那一页与这一页必须是同一份实现，
     // 否则改一处筛选参数就会有一边悄悄失效。
@@ -607,9 +607,14 @@ async function friendsView() {
       <a class="cm-btn sm" href="/u/${encodeURIComponent(u.name)}">主页</a>
       <button class="cm-btn sm" data-note="${esc(u.name)}">备注</button>
       <button class="cm-btn sm" data-rm="${esc(u.name)}">解除</button>`;
-    body.innerHTML = fr.friends.length ? fr.friends.map((u) => `<div class="cm-row">${face(u)}
+    /** 在线的排前面：这一页问的就是"现在能拉谁一起玩"，
+     *  按加入时间排会把三个下线的人挡在第一个能上线的朋友前面。
+     *  在线状态给一个点而不是"· 在线"那两个字——扫一眼就知道，不用读。 */
+    const sorted = [...fr.friends].sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0)
+      || (b.counts ? b.counts.pubs : 0) - (a.counts ? a.counts.pubs : 0));
+    body.innerHTML = fr.friends.length ? sorted.map((u) => `<div class="cm-row">${face(u)}
       <div class="grow"><b>${esc(u.note || u.name)}${u.note ? ` <span class="cm-hint" style="display:inline">${esc(u.name)}</span>` : ""}</b>
-        <div class="sub">${esc(u.bio || (u.counts ? u.counts.pubs + " 张发布" : ""))}${u.online ? " · 在线" : ""}</div></div>${ops(u)}</div>`).join("")
+        <div class="sub"><span class="cm-on${u.online ? " on" : ""}">${u.online ? "在线" : "离线"}</span>${esc(u.bio || (u.counts ? u.counts.pubs + " 张发布" : ""))}</div></div>${ops(u)}</div>`).join("")
       : `<div class="cm-empty">还没有好友。到「扩列」那一页按地区或性格找人，或者从别人主页上加好友。</div>`;
     const so = await import("/js/social.js");
     for (const b of body.querySelectorAll("[data-dm]")) b.onclick = () => so.openDm({ id: b.dataset.dm, name: b.dataset.n });
@@ -619,6 +624,8 @@ async function friendsView() {
       try { await api("POST", "/api/community/friend/note", { name: b.dataset.note, note: v.slice(0, 20) }); friendsView(); } catch (e) { toast(e.message, true); }
     };
     for (const b of body.querySelectorAll("[data-rm]")) b.onclick = async () => {
+      // 抽屉里那条解除是有确认框的，这一页以前点一下就没了：同一件事两处代价不同。
+      if (!window.confirm("解除好友关系？私聊记录还会留着。")) return;
       await api("POST", "/api/community/friend/remove", { name: b.dataset.rm });
       toast("已解除好友"); friendsView();
     };
@@ -636,20 +643,61 @@ async function friendsView() {
     for (const b of body.querySelectorAll("[data-acc]")) b.onclick = act("acc");
     for (const b of body.querySelectorAll("[data-dec]")) b.onclick = act("dec");
   } else if (tab === "suggested") {
+    /** 这一屏以前只有一列名字 + 一个「关注」，看不出凭什么推荐。
+     *  服务端现在会带 mutual（我的好友里有几个人跟了 TA），把它写成一句理由；
+     *  同时给「加好友」——会被推荐出来就是因为熟，只让关注是把路走窄了。 */
     body.innerHTML = fr.suggested.length ? fr.suggested.map((u) => row(u,
-      `<button class="cm-btn sm" data-fo="${esc(u.name)}">${u.relation && u.relation.following ? "已关注" : "关注"}</button>`)).join("")
+      `<button class="cm-btn sm" data-fo="${esc(u.name)}">${u.relation && u.relation.following ? "已关注" : "关注"}</button>
+       <button class="cm-btn sm primary" data-fr="${esc(u.name)}">加好友</button>`,
+      `${u.mutual} 个好友在跟`)).join("")
       : `<div class="cm-empty">暂时没有可推荐的人。加了好友之后这里会出现好友们在关注的人。</div>`;
     for (const b of body.querySelectorAll("[data-fo]")) b.onclick = async () => {
       await api("POST", "/api/community/follow", { name: b.dataset.fo });
       friendsView();
     };
+    for (const b of body.querySelectorAll("[data-fr]")) b.onclick = async () => {
+      try { await api("POST", "/api/community/friend/request", { name: b.dataset.fr }); toast("好友请求已发出"); }
+      catch (e) { toast(e.message, true); }
+    };
   } else {
-    if (notes.rows.length) api("POST", "/api/community/notifications").catch(() => { });
     const KIND = { follow: "关注了你", friend_request: "想加你为好友", friend: "接受了你的好友请求", like: "赞了你的地图", vote: "给这张图表了态", comment: "评论了你的地图", publish: "发布了新地图" };
-    body.innerHTML = notes.rows.length ? notes.rows.map((n) => `<div class="cm-row">${face(n.actor || {})}
-      <div class="grow"><b>${esc(n.actor ? n.actor.name : "系统")}</b><div class="sub">${esc(KIND[n.kind] || n.kind)} · ${esc(timeAgo(n.ts))}</div></div>
-      ${n.pub ? `<a class="cm-btn sm" href="/p/${esc(n.pub.id)}">去看地图</a>` : n.actor ? `<a class="cm-btn sm" href="/u/${encodeURIComponent(n.actor.name)}">看主页</a>` : ""}`).join("")
+    // 一屏通知被看到就算处理完，但页签上那个 (1) 会一直挂着到下次进页面——
+    // 所以标记已读之后要顺手把那一格的字改掉，否则读数在说谎。
+    const clearBadge = () => {
+      const b = root.querySelector('[data-t="notes"]');
+      if (b) b.textContent = "通知";
+    };
+    if (notes.rows.length) api("POST", "/api/community/notifications").then(clearBadge).catch(() => { });
+    /** 通知是一条日志，不是一张待办：请求可能早就在「请求」页签里处理掉了。
+     *  所以只有还在 pending 里的人才配那两个按钮（否则点下去只会拿到"你们已经是好友了"），
+     *  而翻过篇的那条要补一个状态——不然那句"想加你为好友"就是句假话。 */
+    const pending = new Set(fr.incoming.map((r) => r.user && r.user.name));
+    const friendNames = new Set(fr.friends.map((u) => u.name));
+    const label = (n) => {
+      if (n.kind !== "friend_request") return KIND[n.kind] || n.kind;
+      if (n.actor && pending.has(n.actor.name)) return KIND.friend_request;
+      return n.actor && friendNames.has(n.actor.name) ? "的好友请求已通过" : "的好友请求已处理";
+    };
+    body.innerHTML = notes.rows.length ? notes.rows.map((n) => {
+      const ops = n.kind === "friend_request" && n.actor && pending.has(n.actor.name)
+        ? `<button class="cm-btn sm primary" data-nacc="${esc(n.actor.name)}">接受</button>
+           <button class="cm-btn sm" data-ndec="${esc(n.actor.name)}">拒绝</button>`
+        : n.pub ? `<a class="cm-btn sm" href="/p/${esc(n.pub.id)}">去看地图</a>`
+          : n.actor ? `<a class="cm-btn sm" href="/u/${encodeURIComponent(n.actor.name)}">看主页</a>` : "";
+      return `<div class="cm-row">${face(n.actor || {})}
+        <div class="grow"><b>${esc(n.actor ? n.actor.name : "系统")}</b><div class="sub">${esc(label(n))} · ${esc(timeAgo(n.ts))}</div></div>${ops}</div>`;
+    }).join("")
       : `<div class="cm-empty">还没有通知。</div>`;
+    /** 通知里躺着一条好友请求，却要用户先跳去「请求」页签才能处理——
+     *  就地给接受/拒绝，处理完这条通知所在的列表也一起变了，所以重跑一次。 */
+    const noteAct = (which) => (e) => {
+      const name = e.currentTarget.dataset[which];
+      api("POST", `/api/community/friend/${which === "nacc" ? "accept" : "decline"}`, { name })
+        .then(() => { toast(which === "nacc" ? "已接受" : "已拒绝"); friendsView(); })
+        .catch((x) => toast(x.message, true));
+    };
+    for (const b of body.querySelectorAll("[data-nacc]")) b.onclick = noteAct("nacc");
+    for (const b of body.querySelectorAll("[data-ndec]")) b.onclick = noteAct("ndec");
   }
 }
 

@@ -200,6 +200,19 @@ try {
   r = await C.call("POST", "/api/community/friend/accept", { name: nameA });
   ok("没有待处理请求时 accept 报 404", r.status === 404, r.status);
 
+  /* ---------- 5b. 可能认识：得说得出"凭什么推荐这个人" ---------- */
+  r = await B.call("POST", "/api/community/friend/request", { name: nameA });
+  ok("B 向 A 发好友请求", r.status === 200 && r.data.friend === false, r.status);
+  r = await A.call("POST", "/api/community/friend/accept", { name: nameB });
+  ok("A 接受后两人成好友", r.status === 200 && r.data.friend === true, JSON.stringify(r.data));
+  r = await B.call("POST", "/api/community/follow", { name: nameC });
+  ok("B 关注 C", r.status === 200, r.status);
+  r = await A.call("GET", "/api/community/friends");
+  const sug = (r.data.suggested || []).find((u) => u.name === nameC);
+  // mutual 是这一栏唯一的理由：只有名字的话，"可能认识"和"随机抽人"没区别。
+  ok("A 的「可能认识」列出 C，并带上 1 个好友在跟", r.status === 200 && !!sug && sug.mutual === 1, JSON.stringify(r.data.suggested));
+  ok("已加好友的人不会出现在「可能认识」里", !(r.data.suggested || []).some((u) => u.name === nameB), JSON.stringify((r.data.suggested || []).map((u) => u.name)));
+
   /* ---------- 6. 发布：快照不可变 ---------- */
   // 绝不拿用户真实的世界做写测试：默认地图上留一丝残留都查不出来。
   // 造一张一次性的小图，测完删掉。

@@ -92,7 +92,8 @@ function highlight(raw, lang) {
 }
 
 function inline(src) {
-  let s = esc(src);
+  // 占位符用 NUL 当边界，所以正文里原有的 NUL 先清掉，不然会被当成占位符吃掉
+  let s = esc(src).replace(/\u0000/g, "");
   const stash = [];
   const keep = (html) => {
     stash.push(html);
@@ -106,7 +107,14 @@ function inline(src) {
   });
   s = s.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => stash[+i]);
+  // 占位符会套娃：链接的文字本身可以是个 code span（[\`x\`](url)），
+  // 于是替换回来的那段里还嵌着一个占位符。`replace` 不回扫刚插进去的内容，
+  // 只跑一遍就会把 \u0000N\u0000 原样留在页面上——渲染出的是控制字符，肉眼看不见。
+  for (let n = 0; n < 8; n++) {
+    const before = s;
+    s = s.replace(/\u0000(\d+)\u0000/g, (_, i) => stash[+i] ?? "");
+    if (s === before) break;
+  }
   return s;
 }
 
