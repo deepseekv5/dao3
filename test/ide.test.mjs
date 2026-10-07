@@ -1109,5 +1109,100 @@ const reloaded = await page(`return { mode: window.__editor.gizmo.mode, on: docu
 ok("手柄模式记在本地并在重载后恢复", keptMode === "scale" && reloaded.mode === "scale" && reloaded.on, JSON.stringify({ keptMode, reloaded }));
 await page(`window.__editor.gizmo.setMode("move"); return 1;`);
 
+/* ---------- IDE：布局不被内容撑爆 / 装饰层 / 标签页 / 分栏 / 积木出码 ----------
+   这组断言是被 3.9.15 打出来的：那一版把 .code-area 包进 .ed-row 却没给 min-height:0，
+   行号槽（装着整份代码的行号）于是变成了这一列的"最小高度"，260 行的脚本一贴上去
+   整列被撑爆——代码滚不动、底部读数被顶出视口、各层重叠。
+   类型检查抓不到，截图也未必看得出；只有真的把 scrollTop 推进去才知道它坏了。 */
+await page(`document.querySelector('.mtab[data-menu="script"]').click(); return 1;`);
+await new Promise((r) => setTimeout(r, 400));
+const LONG = "world.onPlayerJoin(({ entity }) => {\n"
+  + Array.from({ length: 220 }, (_, i) => `  const v${i} = ${i}; // 行 ${i}`).join("\n")
+  + "\n});";
+await putCode(LONG, 0, 0);
+await new Promise((r) => setTimeout(r, 400));
+const lay = await page(`
+  const ta = document.getElementById("scriptCode");
+  const q = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), h: Math.round(b.height) }; };
+  return { clientH: ta.clientHeight, scrollH: ta.scrollHeight, edRow: q(".ed-row"), status: q(".code-status"),
+    hud: q("#hud"), guides: document.querySelectorAll(".ig").length,
+    hudBg: getComputedStyle(document.getElementById("hud")).backgroundColor };`);
+ok("长脚本不撑爆编辑列：textarea 高 = 盒子高而不是内容高",
+  lay.clientH === lay.edRow.h && lay.scrollH > lay.clientH, JSON.stringify(lay));
+ok("底部读数不被顶出视口、不压状态栏", lay.status.bottom <= lay.hud.top + 1, JSON.stringify({ status: lay.status, hudTop: lay.hud.top }));
+ok("缩进引导线按层级画出来", lay.guides > 100, "ig 节点 " + lay.guides);
+ok("IDE 屏的主状态栏是官方蓝", lay.hudBg === "rgb(0, 122, 204)", lay.hudBg);
+await page(`document.getElementById("scriptCode").scrollTop = 1600; return 1;`);
+await new Promise((r) => setTimeout(r, 240));
+const sync = await page(`const ta = document.getElementById("scriptCode");
+  return { ta: ta.scrollTop, g: document.getElementById("scriptGutter").scrollTop };
+`);
+ok("能往下滚，行号槽跟着滚（诊断标记不许把行距撑破）",
+  sync.ta >= 1000 && Math.abs(sync.g - sync.ta) <= 2, JSON.stringify(sync));
+
+const mmXY = await page(`const r = document.getElementById("minimap").getBoundingClientRect();
+  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height * 0.8) };`);
+await page(`document.getElementById("scriptCode").scrollTop = 0; return 1;`);
+await new Promise((r) => setTimeout(r, 120));
+// 真指针事件：合成 PointerEvent 没有活动指针，setPointerCapture 会抛（代码里已兜住，这里测的是行为）
+await s.send("Input.dispatchMouseEvent", { type: "mousePressed", x: mmXY.x, y: mmXY.y, button: "left", clickCount: 1, buttons: 1 });
+await new Promise((r) => setTimeout(r, 160));
+const mmJump = await page(`return document.getElementById("scriptCode").scrollTop;`);
+await s.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: mmXY.x, y: mmXY.y, button: "none", clickCount: 0 });
+ok("点小地图跳过去", mmJump > 1000, "scrollTop " + mmJump);
+
+const pair = await page(`const ta = document.getElementById("scriptCode");
+  const i = ta.value.indexOf("});");
+  ta.focus(); ta.setSelectionRange(i + 1, i + 1);
+  ta.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }));
+  return document.querySelectorAll(".bp-match").length;`);
+ok("光标停在 } 上，配对的两个括号都打亮", pair === 2, "bp-match " + pair);
+
+const tabber = await page(`const files = [...document.querySelectorAll(".sfile")];
+  files.forEach((f) => f.click()); files[0].click();
+  return [...document.querySelectorAll(".ed-tab")].map((t) => t.title);`);
+ok("在资源管理器点过的文件都有标签", tabber.length >= 2, JSON.stringify(tabber));
+await page(`document.querySelectorAll(".ed-tab")[1].dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 })); return 1;`);
+await new Promise((r) => setTimeout(r, 180));
+const closedTab = await page(`return { tabs: [...document.querySelectorAll(".ed-tab")].map((t) => t.title), files: document.querySelectorAll(".sfile").length };`);
+ok("中键关标签：标签少一个、文件一个不少",
+  closedTab.tabs.length === tabber.length - 1 && closedTab.files >= tabber.length, JSON.stringify(closedTab));
+const tabMenu = await page(`document.querySelector(".ed-tab").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 300, clientY: 140 }));
+  const m = document.querySelector(".ide-menu");
+  const items = m ? [...m.querySelectorAll("button")].map((b) => b.textContent.trim()) : [];
+  if (m) m.remove();
+  return items;`);
+ok("标签右键：关闭 / 关闭其他 / 关闭全部 / 重命名 / 删除", tabMenu.length >= 5, JSON.stringify(tabMenu));
+
+// 反斜杠走 fromCharCode：写成 "${bs}" 会把 \ 插进字符串字面量里，页面侧直接语法错
+await page(`document.getElementById("scriptScreen").dispatchEvent(new KeyboardEvent("keydown", { key: String.fromCharCode(92), ctrlKey: true, bubbles: true })); return 1;`);
+await new Promise((r) => setTimeout(r, 260));
+const split = await page(`const c = document.querySelector(".split-col"), m = document.querySelector(".mirror");
+  return { on: !!c, w: c ? Math.round(c.getBoundingClientRect().width) : 0, mirror: m ? (m.textContent || "").includes("world.onPlayerJoin") : false };`);
+ok("Ctrl+\\ 开分栏，右栏是同一份代码的镜像", split.on && split.w > 120 && split.mirror, JSON.stringify(split));
+await page(`document.getElementById("scriptScreen").dispatchEvent(new KeyboardEvent("keydown", { key: String.fromCharCode(92), ctrlKey: true, bubbles: true })); return 1;`);
+await new Promise((r) => setTimeout(r, 200));
+ok("再按一次收回分栏", await page(`return !document.querySelector(".split-col");`));
+
+await page(`document.querySelector('.mtab[data-menu="blocks"]').click(); return 1;`);
+await new Promise((r) => setTimeout(r, 300));
+const blk = await page(`document.getElementById("bsExample").click();
+  const code = document.querySelector("#blockScreen .bs-code code").textContent;
+  const before = document.querySelectorAll("#blockScreen .bk").length;
+  document.querySelectorAll("#blockScreen .bk-x")[0].click();
+  let err = ""; try { new Function("world", "entity", code); } catch (e) { err = e.message; }
+  return { mode: document.getElementById("sbMode").textContent, before, after: document.querySelectorAll("#blockScreen .bk").length,
+    chips: document.querySelectorAll("#blockScreen .bs-chip").length,
+    api: ["world.onPlayerJoin", "world.onChat", "world.onTick", "entity.say", "let "].every((k) => code.includes(k)), err };`);
+ok("积木页开得了，状态栏报名字", blk.mode === "积木", blk.mode);
+ok("工具箱五类都有块", blk.chips >= 15, "chips " + blk.chips);
+ok("载入示例拼出程序，删一块就少一块", blk.before >= 4 && blk.after === blk.before - 1, JSON.stringify({ before: blk.before, after: blk.after }));
+ok("出码只用运行时真存在的接口", blk.api, JSON.stringify(blk));
+ok("生成的 JS 语法过（new Function 不抛）", !blk.err, blk.err || "ok");
+const written = await page(`document.getElementById("bsWrite").click(); return (window.__editor.state.scripts || []).map((f) => f.name);`);
+ok("写入脚本：blocks.js 进了文件列表", written.includes("blocks.js"), JSON.stringify(written));
+ok("积木树存进 meta（跟着世界存盘）", await page(`return Array.isArray(window.__editor.state.meta.blocks);`));
+await page(`document.querySelector('.mtab[data-menu="build"]').click(); return 1;`);
+
 await s.close();
 process.exit(0);

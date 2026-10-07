@@ -15,7 +15,7 @@ import { lintScript, symbolsOf } from "./lint.js";
 import { askAbout } from "./ai-script.js";
 import { scriptChecks } from "./features.js";
 import { metrics } from "./code-metrics.js";
-import { wireCodeEdit } from "./code-edit.js";
+import { wireCodeEdit, ideMenu } from "./code-edit.js";
 
 const SEV = { error: 0, warn: 1, info: 2 };
 const MARK = { error: "●", warn: "▲", info: "○" };
@@ -304,6 +304,8 @@ export function wireScriptIde(E) {
       return;
     }
     if (mod && ev.key === "`") { ev.preventDefault(); consoleBox.classList.toggle("is-closed"); return; }
+    // Ctrl+\ 拆分编辑器：E.ideSplit 在同一层的末尾定义，这里按引用调用
+    if (mod && ev.key === "\\") { ev.preventDefault(); E.ideSplit?.(); return; }
   });
 
   /* ---------- 挂接 ---------- */
@@ -377,6 +379,7 @@ export function wireScriptIde(E) {
         const t = document.createElement("div");
         t.className = "ed-tab" + (name === curName ? " active" : "") + (dirty ? " modified" : "");
         t.setAttribute("role", "tab");
+        t.draggable = true;
         t.title = name;
         t.innerHTML = `<span class="js-badge">JS</span><span class="tname"></span>` +
           `<button class="ed-close${dirty ? " dot" : ""}" title="关闭标签（不删除文件）" aria-label="关闭">${dirty ? "●" : "×"}</button>`;
@@ -386,22 +389,43 @@ export function wireScriptIde(E) {
         edTabs.appendChild(t);
       }
     }
-    if (crumbs) {
-      crumbs.textContent = "";
-      const seg = document.createElement("span");
-      seg.textContent = "脚本";
-      crumbs.appendChild(seg);
-      const chev = document.createElement("span");
-      chev.className = "sep";
-      chev.textContent = "›";
-      crumbs.appendChild(chev);
-      if (curName) {
-        const last = document.createElement("button");
-        last.className = "crumb-file";
-        last.textContent = curName;
-        last.title = "Ctrl+P 快速切换文件";
-        last.onclick = quickOpen;
-        crumbs.appendChild(last);
+    if (crumbs) renderCrumbs();
+  }
+
+  /** 面包屑到函数级：脚本 › index.js › function onJoin。
+      取的是 symbolsOf 里"行号 ≤ 光标"的最后一个符号——和 CodeLens 同一个口径，
+      两处不一致的话，人会觉得头顶那条和手边那条在说不同的事。 */
+  function renderCrumbs() {
+    if (!crumbs) return;
+    crumbs.textContent = "";
+    const t = ta();
+    const curName = E.__scriptIdx == null ? null : nameAt(E.__scriptIdx);
+    const push = (text, cls) => {
+      const el = document.createElement(cls === "btn" ? "button" : "span");
+      el.textContent = text;
+      if (cls === "sep") el.className = "sep";
+      if (cls === "btn") el.className = "crumb-file";
+      crumbs.appendChild(el);
+    };
+    push("脚本");
+    push("›", "sep");
+    if (curName) {
+      const last = document.createElement("button");
+      last.className = "crumb-file";
+      last.textContent = curName;
+      last.title = "Ctrl+P 快速切换文件";
+      last.onclick = quickOpen;
+      crumbs.appendChild(last);
+    }
+    if (t && curName) {
+      const syms = symbolsOf(t.value).filter((s) => s.line <= cursorLine);
+      const here = syms.pop();
+      if (here) {
+        push("›", "sep");
+        const fn = document.createElement("span");
+        fn.textContent = `${here.kind} ${here.name}`;
+        fn.title = `第 ${here.line} 行`;
+        crumbs.appendChild(fn);
       }
     }
   }
@@ -522,6 +546,172 @@ export function wireScriptIde(E) {
   const taEl2 = ta();
   if (taEl2) taEl2.addEventListener("scroll", syncMinimap);
   window.addEventListener("resize", syncMinimap);
+
+  /* ---------- 标签页：拖拽排序 / 中键关闭 / 右键菜单 ---------- */
+  let dragName = null;
+  if (edTabs) {
+    edTabs.addEventListener("dragstart", (ev) => {
+      const t = ev.target.closest(".ed-tab");
+      if (!t) return;
+      dragName = t.title;
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", dragName);
+    });
+    edTabs.addEventListener("dragover", (ev) => {
+      const t = ev.target.closest(".ed-tab");
+      if (!t || !dragName) return;
+      ev.preventDefault();
+      t.classList.add("drop");
+    });
+    edTabs.addEventListener("dragleave", (ev) => ev.target.closest(".ed-tab")?.classList.remove("drop"));
+    edTabs.addEventListener("drop", (ev) => {
+      const t = ev.target.closest(".ed-tab");
+      if (!t || !dragName) return;
+      ev.preventDefault();
+      t.classList.remove("drop");
+      const to = t.title;
+      if (to !== dragName) {
+        openTabs.splice(openTabs.indexOf(dragName), 1);
+        const r = t.getBoundingClientRect();
+        const after = ev.clientX > r.left + r.width / 2;
+        openTabs.splice(Math.max(0, openTabs.indexOf(to)) + (after ? 1 : 0), 0, dragName);
+      }
+      dragName = null;
+      renderTabs();
+    });
+    edTabs.addEventListener("auxclick", (ev) => {           // 中键：关掉标签，不碰文件
+      if (ev.button !== 1) return;
+      const t = ev.target.closest(".ed-tab");
+      if (!t) return;
+      ev.preventDefault();
+      closeTab(t.title);
+    });
+    edTabs.addEventListener("contextmenu", (ev) => {
+      const t = ev.target.closest(".ed-tab");
+      if (!t) return;
+      ev.preventDefault();
+      const name = t.title;
+      const idx = idxOf(name);
+      ideMenu(E, [
+        { label: "关闭", keys: "Ctrl+W", run: () => closeTab(name) },
+        { label: "关闭其他", disabled: openTabs.length < 2, run: () => { openTabs = [name]; if (idx >= 0 && E.__scriptIdx !== idx) switchTo(idx); renderTabs(); } },
+        { label: "关闭全部（留一个）", run: () => { openTabs = openTabs.slice(0, 1); renderTabs(); } },
+        { sep: true },
+        // 重命名/删除改的是文件本身，得先把它变成当前文件——那两个按钮只认"当前"
+        { label: "重命名文件…", run: () => { if (idx >= 0 && E.__scriptIdx !== idx) switchTo(idx); document.getElementById("scriptRename")?.click(); } },
+        { label: "删除文件…", run: () => { if (idx >= 0 && E.__scriptIdx !== idx) switchTo(idx); document.getElementById("scriptDel")?.click(); } },
+      ], ev.clientX, ev.clientY);
+    });
+  }
+
+  /* ---------- 资源管理器右键 ---------- */
+  filesBox.addEventListener("contextmenu", (ev) => {
+    const row = ev.target.closest(".sfile");
+    if (!row) return;
+    ev.preventDefault();
+    const i = [...filesBox.querySelectorAll(".sfile")].indexOf(row);
+    const name = ((E.state.scripts || [])[i] || {}).name;
+    ideMenu(E, [
+      { label: "打开", run: () => switchTo(i) },
+      { label: "关闭标签", disabled: !name || !openTabs.includes(name), run: () => closeTab(name) },
+      { sep: true },
+      { label: "重命名…", run: () => { switchTo(i); document.getElementById("scriptRename")?.click(); } },
+      { label: "删除…", run: () => { switchTo(i); document.getElementById("scriptDel")?.click(); } },
+      { label: "新建文件…", run: () => document.getElementById("scriptNew")?.click() },
+    ], ev.clientX, ev.clientY);
+  });
+
+  /* ---------- 小地图：点一下就跳，按住亮带能拖 ---------- */
+  if (mm) {
+    const jump = (clientY) => {
+      const t = ta();
+      if (!t) return;
+      const r = mm.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (clientY - r.top) / r.height));
+      t.scrollTop = Math.max(0, ratio * t.scrollHeight - t.clientHeight / 2);
+      t.dispatchEvent(new Event("scroll"));
+    };
+    let dragging = false;
+    mm.addEventListener("pointerdown", (ev) => {
+      dragging = true;
+      // 指针捕获只是让拖出小地图后还能继续收到 move，捕获失败也必须照样跳
+      try { mm.setPointerCapture(ev.pointerId); } catch {}
+      jump(ev.clientY);
+    });
+    mm.addEventListener("pointermove", (ev) => { if (dragging) jump(ev.clientY); });
+    mm.addEventListener("pointerup", () => { dragging = false; });
+    mm.addEventListener("pointercancel", () => { dragging = false; });
+    mm.addEventListener("wheel", (ev) => {
+      const t = ta();
+      if (!t) return;
+      ev.preventDefault();
+      t.scrollTop += ev.deltaY;
+      t.dispatchEvent(new Event("scroll"));
+    }, { passive: false });
+  }
+
+  /* ---------- 拆分编辑器：Ctrl+\ 在右边再开一栏看同一份代码 ----------
+     右栏是镜像：高亮与诊断装饰跟着左栏重画，可以各自滚动，但编辑只在左栏——
+     textarea 只有一个，两个可编辑视口得自己接管选区，那已经超出"编辑器增强"的范围，
+     做成一个假的"能编辑"只会让人在错的那一栏打字。 */
+  let splitCol = null;
+  function setSplit(on) {
+    const row = screen.querySelector(".ed-row");
+    if (!row) return;
+    if (on && !splitCol) {
+      splitCol = document.createElement("div");
+      splitCol.className = "split-col";
+      splitCol.innerHTML = `<button class="split-grip" id="gripSplit" type="button" role="separator"
+          aria-label="拆分两栏宽度" title="拖动调整两栏宽度（双击复位）"></button>
+        <div class="mirror" id="splitMirror"></div>`;
+      row.insertBefore(splitCol, row.querySelector(".minimap"));
+      const mirror = splitCol.querySelector(".mirror");
+      const hi = document.getElementById("scriptHi");
+      const sync = () => { if (hi) { mirror.innerHTML = hi.innerHTML; } };
+      sync();
+      const t = ta();
+      if (t) {
+        t.addEventListener("input", () => requestAnimationFrame(sync));
+        t.addEventListener("scroll", () => { /* 两栏各自滚：这里不同步位置 */ });
+      }
+      if (hi) new MutationObserver(sync).observe(hi, { childList: true, subtree: true, characterData: true });
+      const grip = splitCol.querySelector(".split-grip");
+      const setW = (px) => { splitCol.style.setProperty("--split-w", Math.round(px) + "px"); };
+      let sx = 0, sw = 0, active = false;
+      grip.addEventListener("pointerdown", (ev) => {
+        active = true; sx = ev.clientX; sw = splitCol.getBoundingClientRect().width;
+        try { grip.setPointerCapture(ev.pointerId); } catch {}
+      });
+      grip.addEventListener("pointermove", (ev) => { if (active) setW(Math.max(120, Math.min(sw - (ev.clientX - sx), row.clientWidth - 260))); });
+      grip.addEventListener("pointerup", () => { active = false; });
+      grip.addEventListener("dblclick", () => splitCol.style.removeProperty("--split-w"));
+      splitCol.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        ideMenu(E, [
+          { label: "关闭这一栏", keys: "Ctrl+\\", run: () => setSplit(false) },
+          { label: "回到左边编辑", run: () => ta()?.focus() },
+        ], ev.clientX, ev.clientY);
+      });
+      try { const w = +localStorage.getItem("ly_split_w"); if (w > 120) setW(w); } catch {}
+    }
+    if (!on && splitCol) {
+      splitCol.remove();
+      splitCol = null;
+    }
+    screen.classList.toggle("split", !!on);
+    try { localStorage.setItem("ly_split", on ? "1" : "0"); } catch {}
+    if (on) ta()?.focus();
+  }
+  E.ideSplit = (force) => setSplit(force === undefined ? !splitCol : !!force);
+  // 命令面板只认这一组口子，不在那边再抄一遍 DOM 操作
+  E.ideCloseTab = () => { const cn = E.__scriptIdx == null ? null : nameAt(E.__scriptIdx); if (cn) closeTab(cn); };
+  E.ideSidebar = () => { filesBox.classList.toggle("hidden"); syncAct(); };
+  E.idePanel = () => consoleBox.classList.toggle("is-closed");
+  E.ideFocusFiles = () => { filesBox.classList.remove("hidden"); syncAct(); document.querySelector(".sfile")?.focus(); };
+  if (!splitCol && (() => { try { return localStorage.getItem("ly_split") === "1"; } catch { return false; } })()) {
+    // 上次开着分屏就走掉/刷新了：恢复它，否则"记住了布局"是半句话
+    setTimeout(() => setSplit(true), 0);
+  }
 
   renderTabs();
   renderMinimap();

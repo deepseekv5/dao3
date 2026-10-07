@@ -52,6 +52,7 @@
   --vsc-caret:#aeafad;     /* 光标 */
   --vsc-mod:#e2c08d;       /* 已修改标签的顶条 / 脏点 */
   --vsc-js:#f0db4f;        /* JS 文件徽标（官方黄） */
+  --vsc-guide:rgba(255, 255, 255, .10);  /* 缩进引导线 */
   --vsc-jsink:#26261a;     /* 徽标上的深字 */
   --vsc-lncur:#c6c6c6;     /* 当前行号 */
   --vsc-err:#f48771;       /* 错误文字（官方错误红） */
@@ -1614,4 +1615,167 @@ body:has(.script-screen.show) #hud button.sb-btn:hover { background-color: rgba(
     border-right: 0; border-bottom: 1px solid var(--vsc-line); }
   .act-btn.active { box-shadow: inset 0 -2px 0 #fff; }
   .minimap { display: none; }
+}
+
+/* ==================== 脚本工作区布局（重写） ====================
+   为什么要有这一节：加了小地图那版把 .code-area 包进 .ed-row 之后，整列被撑爆——
+   代码滚不动、底部读数被顶出屏幕、各层重叠。根因是 flex 的"自动最小尺寸"：
+   列方向 flex 项目的 min-height 默认是 auto = 内容最小高度，而行号槽里是整份代码
+   的行号（一百行就是 2000px），于是 .ed-row 的"最小高度"变成了整份代码的高度，
+   flex:1 根本压不下去。textarea 是 absolute inset:0 跟着父盒子长到 2000px，
+   它自己的滚动条自然就在屏幕外——这就是"没法往下拖"。
+
+   修法不是哪里坏了补哪里，而是把这一列每个盒子的高度来源一次写死：
+   谁是固定高（tabs/crumbs/status）、谁吃剩余空间（ed-row/code-area，flex:1 1 0）、
+   吃剩余空间的一律 min-height:0 掐掉内容最小高度。行号槽与高亮层本来就
+   overflow:hidden，掐掉之后它们的高度只能来自父盒子，滚动全部由 textarea 承担。 */
+.script-screen { display: none; }
+.script-screen.show { display: flex; }
+.ss-head { flex: 0 0 auto; }
+.ss-body { display: flex; flex: 1 1 0; min-height: 0; }
+.ss-files { flex: 0 0 200px; min-height: 0; }
+.act-bar { flex: 0 0 44px; min-height: 0; }
+.code-col { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; }
+.ed-tabs { flex: 0 0 auto; height: 35px; }
+.ed-crumbs { flex: 0 0 auto; height: 22px; }
+.ed-row { flex: 1 1 0; min-height: 0; min-width: 0; display: flex; }
+.code-area { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; }
+.code-gutter { flex: 0 0 44px; min-height: 0; overflow: hidden; }
+.code-editor { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; }
+.minimap { flex: 0 0 96px; min-height: 0; position: relative; overflow: hidden; }
+.code-status { flex: 0 0 auto; }
+.ss-grip { flex: 0 0 auto; min-height: 0; }
+.ss-console { flex: 0 0 auto; min-height: 0; }
+/* 窄屏：整列改上下排，高度来源换成"内容自己长"，但代码区仍要给一个确定高度，
+   否则 textarea 又会跟着内容长到屏幕外 */
+@media (max-width: 960px) {
+  .ss-body { flex-direction: column; }
+  .act-bar { flex: 0 0 40px; }
+  .ss-files { flex: 0 0 auto; width: auto; max-height: 160px; }
+  .code-col { flex: 1 1 0; min-height: 0; }
+  .ss-console { width: auto; flex: 0 0 140px; border-left: none; border-top: 1px solid var(--vsc-line); }
+}
+
+/* ==================== IDE 增量：装饰层 / 浮层菜单 / 拆分 / 小地图交互 ==================== */
+
+/* 缩进引导线：一行一个覆盖元素，线本身用 repeating-gradient 画，
+   这样一行三级缩进也只占一个节点（1500 行的脚本也不会把 DOM 压垮）。 */
+.ig { position: absolute; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0, transparent calc(var(--ig-step) - 1px),
+    var(--vsc-guide) calc(var(--ig-step) - 1px), var(--vsc-guide) var(--ig-step)); }
+/* 诊断标记得绝对定位在行号槽里。它原来是内联的：44px 宽的槽里行号一长
+   （三位数 + 标记）就被挤到换行，那一行从 20px 变成 40px，行号与代码整片错开——
+   长脚本满屏「未使用变量」时肉眼可见。行距 20px 是当前行高亮、命中框、补全弹窗
+   共同的尺子，不能被标记撑破。 */
+#scriptGutter .ln { position: relative; }
+.dg-mark { position: absolute; left: 3px; top: 0; margin-left: 0; line-height: 20px; }
+
+/* 括号配对：两个端点各一块底，配不上的时候什么都不画（宁可没有，不画错的） */
+.bp-match { position: absolute; pointer-events: none; border-radius: 2px;
+  background: rgba(255, 255, 255, .13); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .26); }
+
+/* 通用右键菜单（编辑区 / 标签页 / 资源管理器共用一份实现） */
+.ide-menu { position: fixed; z-index: 420; min-width: 190px; padding: 4px; border-radius: 8px;
+  background-color: var(--vsc-side); border: 1px solid var(--vsc-line2);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .6); display: flex; flex-direction: column; }
+.ide-menu button { display: flex; align-items: baseline; justify-content: space-between; gap: 18px;
+  width: 100%; text-align: left; padding: 6px 9px; border: 0; border-radius: 5px; background: none;
+  color: var(--vsc-fg); font: inherit; font-size: 12.5px; cursor: pointer; }
+.ide-menu button:hover { background: var(--vsc-hover); color: #fff; }
+.ide-menu button[disabled] { opacity: .38; cursor: default; }
+.ide-menu button em { font-style: normal; font-size: 10.5px; color: var(--vsc-fg3); font-family: var(--mono); }
+.ide-menu .im-sep { height: 1px; margin: 4px 6px; background: var(--vsc-line2); }
+
+/* 小地图：指针就是"这里可以拖"的意思 */
+.minimap { cursor: ns-resize; }
+.mmap-slider { cursor: grab; }
+.mmap-slider:active { cursor: grabbing; }
+
+/* 标签页拖拽中的落点 */
+.ed-tab { cursor: pointer; }
+.ed-tab.drop { box-shadow: inset 0 0 0 1px var(--vsc-blue2); background: rgba(0, 122, 204, .16); }
+
+/* 拆分编辑器：右栏是镜像（可滚、可选中复制，但编辑在左栏） */
+.split-col { flex: 0 0 var(--split-w, 42%); min-width: 0; min-height: 0; position: relative;
+  display: flex; border-left: 1px solid var(--vsc-line); background: var(--vsc-bg); }
+.split-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 9px; padding: 0; border: 0;
+  background: none; cursor: col-resize; z-index: 3; touch-action: none; }
+.split-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
+  margin-left: -.5px; background: transparent; transition: background .12s var(--ease); }
+.split-grip:hover::after, .split-grip:focus-visible::after { background: var(--vsc-blue); }
+.mirror { flex: 1 1 0; min-width: 0; overflow: auto; position: relative; color: var(--vsc-fg);
+  font-family: Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.6;
+  padding: 12px 14px; white-space: pre; tab-size: 2; }
+
+/* ==================== 积木编辑器（低代码） ====================
+   积木不是另一套运行时：每块对应官方引擎里真实存在的接口，右边那栏 JS 就是它
+   跑起来的样子。分类色沿用代码着色那一组 hues，不另立一套色板。 */
+.bs-body { background: var(--vsc-bg); }
+.bs-tool { flex: 0 0 208px; min-height: 0; overflow: auto; padding: 8px;
+  background: var(--vsc-side); border-right: 1px solid var(--vsc-line); }
+.bs-cat { margin-bottom: 12px; }
+.bs-cat-h { font-size: 10.5px; letter-spacing: .1em; color: var(--vsc-fg2); padding: 4px 6px 6px; }
+.bs-chip { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+  padding: 6px 8px; margin-bottom: 3px; border-radius: 6px; border: 1px solid transparent;
+  background: rgba(255, 255, 255, .045); color: var(--vsc-fg); font-size: 12px; cursor: grab;
+  transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+.bs-chip:hover { background: rgba(255, 255, 255, .09); border-color: var(--vsc-line2); color: #fff; }
+.bs-chip:active { cursor: grabbing; }
+.bs-dot { width: 9px; height: 9px; border-radius: 3px; flex: none; background: var(--bk-c, var(--vsc-fg3)); }
+.bs-event { --bk-c: rgba(227, 166, 60, .92); }
+.bs-action { --bk-c: rgba(122, 162, 247, .92); }
+.bs-flow { --bk-c: rgba(220, 200, 110, .92); }
+.bs-var { --bk-c: rgba(170, 130, 210, .92); }
+.bs-world { --bk-c: rgba(78, 201, 176, .92); }
+
+.bs-canvas { flex: 1 1 0; min-width: 0; min-height: 0; overflow: auto; position: relative; padding: 10px 16px; }
+.bs-list { min-height: 100%; }
+.bs-blank { position: absolute; inset: 0; display: grid; place-content: center; gap: 7px;
+  text-align: center; color: var(--vsc-fg2); font-size: 12.5px; pointer-events: none; }
+.bs-blank b { color: var(--vsc-fg); font-size: 13.5px; font-weight: 600; }
+.bs-blank[hidden] { display: none; }
+
+.bk { position: relative; margin: 0 0 7px; border-radius: 8px; font-size: 12.5px; color: var(--vsc-fg);
+  background: rgba(255, 255, 255, .05); border: 1px solid var(--vsc-line2);
+  border-left: 3px solid var(--bk-c, var(--vsc-fg3)); }
+.bk-grip { cursor: grab; color: var(--vsc-fg3); font-size: 12px; line-height: 1; flex: none; padding: 2px 1px; }
+.bk-grip:hover { color: #fff; }
+.bk-grip:active { cursor: grabbing; }
+.bk.hat { background: rgba(227, 166, 60, .08); }
+.bk-top { display: flex; align-items: center; gap: 8px; padding: 7px 9px; flex-wrap: wrap; }
+.bk-move { display: flex; gap: 2px; flex: none; }
+.bk-move button { width: 18px; height: 18px; border-radius: 4px; border: 0; background: rgba(255, 255, 255, .06);
+  color: var(--vsc-fg3); font-size: 8px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.bk-move button:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+.bk-text { flex: 1 1 auto; min-width: 140px; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bk-x { flex: none; width: 20px; height: 20px; border: 0; border-radius: 5px; background: none;
+  color: var(--vsc-fg3); font-size: 14px; line-height: 1; }
+.bk-x:hover { background: rgba(217, 79, 95, .22); color: #fff; }
+.bk-more, .bk-more-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 9px 8px 35px; }
+.bk-f { height: 24px; max-width: 190px; padding: 0 7px; border-radius: 5px; border: 1px solid var(--vsc-line2);
+  background: var(--vsc-line2); color: var(--vsc-fg); font: 12px/1 var(--mono); }
+.bk-f:hover { border-color: rgba(255, 255, 255, .2); }
+.bk-f:focus { outline: none; border-color: var(--vsc-blue2); }
+.bk-f.expr { color: var(--vsc-js); }
+select.bk-f { max-width: 66px; text-align: center; }
+input.bk-f[type=number] { width: 64px; }
+.bk-slot { margin: 0 9px 8px 35px; padding: 5px; min-height: 34px; border-radius: 7px;
+  border: 1px dashed var(--vsc-line2); background: rgba(0, 0, 0, .22); }
+.bk-slot.has { border-style: solid; background: rgba(0, 0, 0, .12); }
+.bk-slot.over { border-color: var(--vsc-blue2); background: rgba(0, 122, 204, .14); }
+.bk-empty { margin: 0; padding: 5px 4px; color: var(--vsc-fg3); font-size: 11px; }
+.bs-list.over { outline: 1px dashed var(--vsc-blue2); outline-offset: 6px; border-radius: 8px; }
+.bs-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--vsc-fg2); }
+.bs-opt input { accent-color: var(--vsc-blue); }
+
+.bs-code { flex: 0 0 var(--bs-code-w, 340px); min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  background: rgba(0, 0, 0, .22); border-left: 1px solid var(--vsc-line); }
+.bs-code .ss-console-head { cursor: default; }
+.bs-code pre { flex: 1 1 0; min-height: 0; margin: 0; overflow: auto; padding: 10px 12px;
+  font-family: Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.6; white-space: pre;
+  color: var(--vsc-fg); tab-size: 2; }
+@media (max-width: 960px) {
+  .bs-body { flex-direction: column; }
+  .bs-tool { flex: 0 0 auto; max-height: 150px; border-right: 0; border-bottom: 1px solid var(--vsc-line); }
+  .bs-code { flex: 0 0 180px; width: auto; border-left: none; border-top: 1px solid var(--vsc-line); }
 }

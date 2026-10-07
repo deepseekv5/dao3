@@ -51,6 +51,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
       <button class="mtab active" data-menu="build">搭建</button><i class="div"></i>
       <button class="mtab" data-menu="model">模型</button><i class="div"></i>
       <button class="mtab" data-menu="script">脚本</button><i class="div"></i>
+      <button class="mtab" data-menu="blocks">积木</button><i class="div"></i>
       <button class="mtab" data-menu="ui">界面</button><i class="div"></i>
       <button class="mtab" data-menu="store">商城</button><i class="div"></i>
       <button class="mtab" data-menu="player">玩家</button><i class="div"></i>
@@ -430,6 +431,35 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <div class="ss-console" id="scriptConsole">
       <button class="ss-console-head" id="scriptConsoleHead" title="运行游戏时脚本报错也会显示在这里；运行期间修改不会保存">输出<span>▾</span></button>
       <div id="scriptOut" class="scriptout"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 积木编辑器（低代码）：拼块 → 编译成官方 API 的 JS → 落进脚本工作区的 blocks.js。
+     它不是另一套"积木运行时"：出码走的是和手写字完全相同的那份 state.scripts。 -->
+<div id="blockScreen" class="script-screen">
+  <div class="ss-head">
+    <button id="blockBack" class="ss-back bs-back" title="返回搭建界面"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>返回编辑器</button>
+    <b>积木</b>
+    <span class="ss-dim" title="每块积木都对应官方引擎里真实存在的接口；右边那份 JS 就是它跑起来的样子">拼块写玩法 · 出码到 blocks.js · 可回脚本页接着改</span>
+    <span class="ss-spacer"></span>
+    <label class="bs-opt" title="每次改动都同步写进脚本页的 blocks.js"><input id="bsAuto" type="checkbox" checked>自动出码</label>
+    <button id="bsExample" title="放一套能跑的示例：进入世界打招呼 + 聊天计分">载入示例</button>
+    <button id="bsClear" title="清空画布（脚本里的 blocks.js 不会被删）">清空</button>
+    <button id="bsWrite" title="把生成的 JS 写进脚本文件 blocks.js">写入脚本</button>
+    <button id="bsRun" class="play-ss" title="出码后进入完整运行模式"><svg viewBox="0 0 24 24" width="13" height="13"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>运行游戏</button>
+  </div>
+  <div class="ss-body bs-body">
+    <div class="bs-tool" aria-label="积木工具箱"></div>
+    <div class="bs-canvas" tabindex="0" aria-label="积木画布">
+      <div class="bs-list"></div>
+      <div class="bs-blank" hidden><b>还没有积木</b><span>左边点一块「事件」开头，或按「载入示例」看一个能跑的</span></div>
+    </div>
+    <button class="ss-grip" id="gripBlocks" type="button" role="separator" aria-orientation="vertical"
+            aria-label="代码预览宽度" title="拖动调整预览宽度（双击复位）"></button>
+    <div class="bs-code" aria-label="生成的 JavaScript">
+      <div class="ss-console-head">生成的 JavaScript</div>
+      <pre><code></code></pre>
     </div>
   </div>
 </div>

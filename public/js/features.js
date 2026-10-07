@@ -6,6 +6,7 @@ import { generate as genTerrain, PRESETS, presetById } from "./terrain.js";
 import * as io from "./io.js";
 import { wireScriptAi } from "./ai-script.js";
 import { wireScriptIde } from "./script-ide.js";
+import { wireBlocks } from "./blocks.js";
 import { wireComplete } from "./complete.js";
 import { wirePalette } from "./palette.js";
 import { wirePanels } from "./panels.js";
@@ -32,6 +33,7 @@ export function initFeatures(editor) {
   wireScript();
   wireScriptAi(editor);
   wireScriptIde(editor);
+  wireBlocks(editor);
   wirePalette(editor);
   wirePanels(editor);
   wireConsole(editor);
@@ -50,7 +52,7 @@ export function initFeatures(editor) {
 }
 
 /* ------------------------------ 状态栏 ------------------------------ */
-const MODE_ZH = { build: "搭建", model: "模型", script: "脚本", ui: "界面", store: "商城", pack: "代码包" };
+const MODE_ZH = { build: "搭建", model: "模型", script: "脚本", blocks: "积木", ui: "界面", store: "商城", pack: "代码包" };
 
 /** 底部那条读数带。
  *  刷新走轮询而不是在每个改动点补一次 update()：改动点会随功能一起长，
@@ -114,13 +116,14 @@ function wireTopMenu() {
       const packScreen = document.getElementById("packScreen");
       // 每个全屏页都得在这里关掉。以前少列了 storeScreen，于是开过商城之后
       // 点「界面」，看到的还是商城那张盖在上面的页——像界面坏了，其实只是没关。
-      for (const el of [scriptScreen, uiScreen, playerPanel, packScreen, document.getElementById("storeScreen"), modelPanel]) {
+      for (const el of [scriptScreen, uiScreen, playerPanel, packScreen, document.getElementById("storeScreen"), document.getElementById("blockScreen"), modelPanel]) {
         if (el) el.classList.remove("show");
       }
       libCard.style.display = "block";
       E.ctx.mode = "build";
       if (m === "model") { libCard.style.display = "none"; modelPanel.classList.add("show"); E.ctx.mode = "model"; }
       else if (m === "script") { libCard.style.display = "none"; scriptScreen.classList.add("show"); E.ctx.mode = "script"; if (E.showScriptScreen) E.showScriptScreen(true); }
+      else if (m === "blocks") { libCard.style.display = "none"; E.ctx.mode = "blocks"; const bs = document.getElementById("blockScreen"); bs.classList.add("show"); bs.__open && bs.__open(); }
       else if (m === "ui") { document.getElementById("uiScreen").classList.add("show"); E.ctx.mode = "ui"; document.getElementById("uiPalette")?.classList.add("show"); if (E.renderUiEditor) E.renderUiEditor(); }
       else if (m === "player") {
         // 官方是「一个弹窗 + 左栏三节」，不是一个孤立属性遮罩。
@@ -683,7 +686,7 @@ function syncCodeScroll() {
   gutter.scrollTop = ta.scrollTop;
 }
 function refreshScriptList() { renderScriptFiles(); }
-export { refreshScriptList };
+export { refreshScriptList, highlightJS };
 
 // 从导入脚本中识别 #id / .tag，自动生成实体标记（可再用位置滑杆调整）
 function genEntitiesFromScript() {

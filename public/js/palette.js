@@ -47,7 +47,7 @@ export function wirePalette(E) {
   function commands() {
     const out = [];
     const g = (group, title, hint, run) => out.push({ group, title, hint, run });
-    for (const [key, zh] of [["build", "搭建"], ["model", "模型"], ["script", "脚本"], ["ui", "界面"], ["store", "商城"], ["player", "玩家"], ["pack", "代码包"]]) {
+    for (const [key, zh] of [["build", "搭建"], ["model", "模型"], ["script", "脚本"], ["blocks", "积木"], ["ui", "界面"], ["store", "商城"], ["player", "玩家"], ["pack", "代码包"]]) {
       g("切换工作区", `去「${zh}」`, "顶部菜单", click(`.mtab[data-menu="${key}"]`));
     }
     for (const b of document.querySelectorAll("#editToolbar .ft[data-tool]")) {
@@ -89,11 +89,19 @@ export function wirePalette(E) {
     g("运行", "停止运行", "", () => E.stopPlay && E.stopPlay());
     g("发布与协作", "发布到社区", "", click("#btnShare"));
     g("发布与协作", "开关协作", "", click("#btnCollab"));
-    g("跳转", "跳到指定行…", "", () => jumpLine());
+    g("跳转", "跳到指定行…", "Ctrl+G", () => jumpLine());
+    g("跳转", "切换文件", "Ctrl+P", () => { toScript(); document.getElementById("scriptScreen")?.dispatchEvent(new KeyboardEvent("keydown", { key: "p", ctrlKey: true, bubbles: true })); });
     g("跳转", "下一个问题", "F8", () => E.ideStep?.(1));
     g("跳转", "上一个问题", "Shift+F8", () => E.ideStep?.(-1));
     g("脚本编辑", "查找", "Ctrl+F", () => { toScript(); E.codeFind?.(false); });
     g("脚本编辑", "查找与替换", "Ctrl+H", () => { toScript(); E.codeFind?.(true); });
+    g("脚本编辑", "拆分编辑器 / 收回", "Ctrl+\\", () => { toScript(); E.ideSplit?.(); });
+    g("脚本编辑", "关闭当前标签", "Ctrl+W", () => E.ideCloseTab?.());
+    g("脚本编辑", "收起 / 展开资源管理器", "Ctrl+B", () => { toScript(); E.ideSidebar?.(); });
+    g("脚本编辑", "收放底部面板", "Ctrl+`", () => { toScript(); E.idePanel?.(); });
+    g("脚本编辑", "聚焦资源管理器", "Ctrl+Shift+E", () => { toScript(); E.ideFocusFiles?.(); });
+    g("积木", "去积木编辑器", "拼块写玩法", click('.mtab[data-menu="blocks"]'));
+    g("积木", "把积木出码写进 blocks.js", "右边那栏就是 JS", () => { document.getElementById("bsWrite")?.click(); });
     g("帮助与设置", "设置", "", click("#btnSettings"));
     g("帮助与设置", "游玩手册", "", click("#btnManual"));
     g("帮助与设置", "世界库", "", click("#btnWorlds"));

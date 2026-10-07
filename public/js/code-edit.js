@@ -268,6 +268,143 @@ export function wireCodeEdit(E, ta) {
     add("JavaScript", "官方 GameAPI 的 JavaScript 脚本");
   }
 
+  /* ================= 装饰层：缩进引导线 + 括号配对高亮 =================
+     这两样是"一眼是不是 IDE"的分水岭，画法是覆盖而不是改文本：
+     坐标一律来自 code-metrics 量出来的行高/内边距/字宽，中文行也不会跑偏。
+     高亮层每次被重画（输入、切文件）都要补一次，所以 E.renderCode 也包了一层。 */
+  function lineOfIndex(v, i) { const s = v.lastIndexOf("\n", i - 1); return { line: v.slice(0, s + 1).split("\n").length - 1, col: i - s - 1 }; }
+  function paintGuides() {
+    const el = pre();
+    if (!el) return;
+    el.querySelectorAll(".ig").forEach((n) => n.remove());
+    const m = metrics(ta);
+    const lines = ta.value.split("\n");
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < lines.length && i < 1500; i++) {
+      const s = lines[i];
+      if (!s) continue;
+      let n = 0;
+      while (n < s.length && (s[n] === " " || s[n] === "\t")) n++;
+      const cols = s.slice(0, n).replace(/\t/g, "  ").length;      // tab 也按两级算
+      const lvl = Math.floor(cols / 2);
+      if (!lvl) continue;                                          // 顶格行没有引导线
+      const d = document.createElement("i");
+      d.className = "ig";
+      d.style.top = (m.padT + i * m.lh) + "px";
+      d.style.left = m.padL + "px";
+      d.style.width = (lvl * 2 * m.charW) + "px";
+      d.style.height = m.lh + "px";
+      d.style.setProperty("--ig-step", (2 * m.charW) + "px");
+      frag.appendChild(d);
+    }
+    el.appendChild(frag);
+  }
+  /** 从 i 出发找配对的括号：一层层数着走。
+   *  开号往后数、闭号往前数，两种情况都是"遇到同类加、遇到对头减，减到 0 就是它"。
+   *  上一版把闭号那支写反了（只加不减），症状是光标停在 } 上时什么都不亮——
+   *  而那恰好是最常见的那一半。 */
+  function matchBracket(v, i) {
+    const ch = v[i];
+    const isOpen = PAIRS[ch] !== undefined;
+    if (!isOpen && !CLOSERS.has(ch)) return -1;
+    const dir = isOpen ? 1 : -1;
+    const mate = isOpen ? PAIRS[ch] : Object.keys(PAIRS).find((k) => PAIRS[k] === ch);
+    if (!mate) return -1;
+    let depth = 0;
+    for (let p = i; p >= 0 && p < v.length; p += dir) {
+      if (inStringOrComment(v, p)) continue;
+      const c = v[p];
+      if (c === ch) depth++;
+      else if (c === mate) { depth--; if (depth === 0) return p; }
+    }
+    return -1;
+  }
+  // 粗略跳过字符串与注释：数该行之前出现的未转义引号与 // 位置
+  function inStringOrComment(v, i) {
+    const lineStart = v.lastIndexOf("\n", i - 1) + 1;
+    const seg = v.slice(lineStart, i);
+    const cmt = seg.indexOf("//");
+    if (cmt >= 0 && !/["'`]/.test(seg.slice(cmt))) return true;
+    let q = -1;
+    for (let k = 0; k < seg.length; k++) {
+      const ch = seg[k];
+      if (ch === "\\") { k++; continue; }
+      if (ch === '"' || ch === "'" || ch === "`") { if (q < 0) q = k; else if (seg[q] === ch) q = -1; }
+    }
+    return q >= 0;
+  }
+  function paintPair() {
+    const el = pre();
+    if (!el) return;
+    el.querySelectorAll(".bp-match").forEach((n) => n.remove());
+    if (ta.selectionEnd !== ta.selectionStart) return;
+    const v = ta.value, s = ta.selectionStart;
+    let idx = -1;
+    if (PAIRS[v[s]] !== undefined || CLOSERS.has(v[s])) idx = s;
+    else if (PAIRS[v[s - 1]] !== undefined || CLOSERS.has(v[s - 1])) idx = s - 1;
+    if (idx < 0) return;
+    const other = matchBracket(v, idx);
+    if (other < 0 || other === idx) return;
+    const m = metrics(ta);
+    const lines = v.split("\n");
+    for (const p of [idx, other]) {
+      const { line, col } = lineOfIndex(v, p);
+      const d = document.createElement("i");
+      d.className = "bp-match";
+      d.style.top = (m.padT + line * m.lh) + "px";
+      d.style.left = (m.padL + textAdvance(m, (lines[line] || "").slice(0, col))) + "px";
+      d.style.width = m.charW + "px";
+      d.style.height = m.lh + "px";
+      el.appendChild(d);
+    }
+  }
+  const decorate = () => { paintGuides(); paintPair(); };
+  // 高亮层是 innerHTML 整个重写的，装饰会被抹掉；包一层钩子而不是在 features 里加调用，
+  // 免得"谁重画谁负责补"这件事有两份清单。
+  const rc = E.renderCode;
+  E.renderCode = () => { if (rc) rc(); decorate(); };
+
+  /* ================= 右键菜单 ================= */
+  ta.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    const hasSel = ta.selectionEnd > ta.selectionStart;
+    ideMenu(E, [
+      { label: "剪切", keys: "Ctrl+X", disabled: !hasSel, run: async () => { await copySel(); cutSel(); } },
+      { label: "复制", keys: "Ctrl+C", disabled: !hasSel, run: () => copySel() },
+      { label: "粘贴", keys: "Ctrl+V", run: () => pasteAt() },
+      { sep: true },
+      { label: "全选", keys: "Ctrl+A", run: () => { ta.focus(); ta.setSelectionRange(0, ta.value.length); paintStatus(); } },
+      { label: "查找", keys: "Ctrl+F", run: () => open(false) },
+      { label: "查找与替换", keys: "Ctrl+H", run: () => open(true) },
+      { sep: true },
+      { label: "注释 / 取消注释这一行", keys: "Ctrl+/", run: () => { ta.focus(); toggleCommentHere(); } },
+      { label: "跳到下一个问题", keys: "F8", run: () => E.ideStep?.(1) },
+      { label: "运行脚本", keys: "Ctrl+Enter", run: () => document.getElementById("scriptRun")?.click() },
+    ], ev.clientX, ev.clientY);
+  });
+  // 菜单项要用到的编辑动作：剪贴板走 navigator.clipboard，没权限就说清为什么不行
+  const cutSel = async () => { const { first, last } = blockRange(ta); applyEdit(ta, ta.value.slice(0, first) + ta.value.slice(last), first); };
+  const copySel = async () => {
+    const text = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    if (!text) return;
+    try { await navigator.clipboard.writeText(text); } catch { E.toast("浏览器不让网页写剪贴板，选区还在：按 Ctrl+C 就行", true); }
+  };
+  const pasteAt = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const s = ta.selectionStart, e = ta.selectionEnd;
+      applyEdit(ta, ta.value.slice(0, s) + text + ta.value.slice(e), s + text.length);
+    } catch { E.toast("浏览器不给网页读剪贴板（这是安全边界，不是坏了）：按 Ctrl+V", true); }
+  };
+  const toggleCommentHere = () => {
+    const { first, last } = blockRange(ta);
+    const v = ta.value;
+    const head = v.slice(first, last);
+    const all = head.split("\n").every((s) => /^\s*\/\//.test(s) || !s.trim());
+    const out = head.split("\n").map((s) => (all ? s.replace(/^(\s*)\/\/ ?/, "$1") : (s.trim() ? s.replace(/^(\s*)/, "$1// ") : s))).join("\n");
+    applyEdit(ta, v.slice(0, first) + out + v.slice(last), first, first + out.length);
+  };
+
   /* ================= 接线 ================= */
   ta.addEventListener("keydown", onKey);
   ta.addEventListener("keydown", (ev) => {
@@ -296,12 +433,55 @@ export function wireCodeEdit(E, ta) {
   });
   ta.addEventListener("input", () => {
     paintStatus();
+    decorate();
     if (box.classList.contains("on")) scan();
   });
-  ta.addEventListener("keyup", paintStatus);
-  ta.addEventListener("click", () => setTimeout(paintStatus, 0));
+  ta.addEventListener("keyup", () => { paintStatus(); paintPair(); });
+  ta.addEventListener("click", () => setTimeout(() => { paintStatus(); paintPair(); }, 0));
   paintStatus();
+  decorate();
   // 命令面板与别处要能复用同一个查找框，不在那边再搭一份输入框。
   E.codeFind = (withRe) => open(!!withRe);
   E.codeFindOpen = () => box.classList.contains("on");
+  E.ideDecorate = decorate;
+}
+
+/* ================= 通用右键菜单（标签页、资源管理器共用这一份） =================
+   为什么放这层：菜单本身没有 IDE 语义，谁都能要一份；两处各写一份的话，
+   "关一个另一个还挂着"这类毛病会只出现在其中一边。 */
+let menuEl = null;
+const escHtml = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+export function closeIdeMenu() {
+  if (!menuEl) return;
+  menuEl.remove();
+  menuEl = null;
+  document.removeEventListener("pointerdown", outside, true);
+  document.removeEventListener("keydown", onEsc, true);
+}
+function outside(ev) { if (menuEl && !menuEl.contains(ev.target)) closeIdeMenu(); }
+function onEsc(ev) { if (ev.key === "Escape") { ev.stopPropagation(); closeIdeMenu(); } }
+
+/** items: {label, keys, disabled, sep, run} */
+export function ideMenu(E, items, x, y) {
+  closeIdeMenu();
+  const el = document.createElement("div");
+  el.className = "ide-menu";
+  el.setAttribute("role", "menu");
+  el.innerHTML = items.map((it, i) => it.sep ? '<i class="im-sep"></i>'
+    : `<button role="menuitem" data-i="${i}"${it.disabled ? " disabled" : ""}><span>${escHtml(it.label)}</span>${it.keys ? `<em>${escHtml(it.keys)}</em>` : ""}</button>`).join("");
+  document.body.appendChild(el);
+  menuEl = el;
+  // 贴着屏幕边缘时往里收：菜单被裁掉一半就等于没有
+  const r = el.getBoundingClientRect();
+  el.style.left = Math.max(6, Math.min(x, innerWidth - r.width - 8)) + "px";
+  el.style.top = Math.max(6, Math.min(y, innerHeight - r.height - 8)) + "px";
+  el.onclick = (ev) => {
+    const b = ev.target.closest("button[data-i]");
+    if (!b || b.disabled) return;
+    const it = items[+b.dataset.i];
+    closeIdeMenu();
+    if (it && it.run) it.run();
+  };
+  document.addEventListener("pointerdown", outside, true);
+  document.addEventListener("keydown", onEsc, true);
 }

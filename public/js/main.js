@@ -96,7 +96,7 @@ function enterPlay() {
   if (renderer.fpMode) setFirstPerson(false);
   // 全屏子界面（脚本 / UI / 商城）会盖住运行画面，先收起
   let closedFs = false;
-  for (const id of ["scriptScreen", "uiScreen", "storeScreen"]) {
+  for (const id of ["scriptScreen", "uiScreen", "storeScreen", "blockScreen"]) {
     const el = document.getElementById(id);
     if (el && el.classList.contains("show")) { el.classList.remove("show"); closedFs = true; }
   }
