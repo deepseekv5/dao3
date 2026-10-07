@@ -31,7 +31,12 @@ body.wb ::selection { background: rgba(227, 166, 60, .32); }
 
 .wb-rail {
   display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 0 10px;
-  background: linear-gradient(180deg, #141211, #131211); border-right: 1px solid var(--line);
+  /* 侧栏也是玻璃：它比顶栏更靠里，索性让它薄一档，光和内容都能透进来 */
+  background: var(--glass-fill); background-image: var(--glass-sheen);
+  backdrop-filter: blur(calc(var(--glass-blur) - 4px)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) - 4px)) saturate(var(--glass-sat));
+  border-right: 1px solid var(--glass-border);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .03), inset 1px 0 0 rgba(255, 255, 255, .05);
 }
 .wb-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--primary-dim); margin-bottom: 12px; }
 .wb-mark:hover { background: rgba(227, 166, 60, .24); }
@@ -57,8 +62,12 @@ body.wb ::selection { background: rgba(227, 166, 60, .32); }
 /* ---------------- 顶栏 ---------------- */
 .wb-top {
   display: flex; align-items: center; gap: 16px; padding: 0 18px; height: 56px; flex: 0 0 auto;
-  background: var(--glass-nav-bg); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  border-bottom: 1px solid var(--glass-border); box-shadow: 0 1px 0 rgba(227, 166, 60, .06);
+  /* 液态玻璃顶栏：半透明 + 糊掉身后的环境光 + 上缘一道受光棱（见 tokens.css 的配方） */
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 12px 30px -24px rgba(0, 0, 0, .8);
 }
 .wb-crumb { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .wb-crumb h1 { margin: 0; font-size: 15.5px; font-weight: 700; letter-spacing: .2px; }

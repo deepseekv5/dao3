@@ -99,3 +99,19 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--p
   .ad-two { grid-template-columns: 1fr; }
   .ad-drawer { width: 100%; }
 }
+
+/* 后台同一种玻璃：数据卡、批量条、抽屉、封禁对话框都浮在同一层环境光上 */
+.ad-cards > div, .ad-card, .ad-batch {
+  background: var(--glass-fill); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+}
+.ad-mask { backdrop-filter: blur(5px) saturate(1.1); -webkit-backdrop-filter: blur(5px) saturate(1.1); }
+.ad-drawer, .ad-dialog {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-lit), var(--glass-dark), 0 30px 70px -34px rgba(0, 0, 0, .85);
+}

@@ -687,3 +687,39 @@
 /* 空态/错误态的动作行：主按钮在前，出路在后，居中排一行 */
 .cm-empty-acts { display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 14px; flex-wrap: wrap; }
 .cm-empty-acts span { color: var(--fg3); font-size: var(--fs-12); }
+
+/* ---------------- 液态玻璃：浮起来的那几层 ----------------
+   只给"压在别的东西上面"的面上玻璃：侧面板、弹窗、气泡、抽屉。
+   广场那张网格不加——那里要让封面自己跳出来，糊一层只会发灰。
+   配方见 tokens.css（半透明 + 糊背景 + 上缘受光棱 + 右下暗棱 + 软外影）。 */
+.cm-sidecol .cm-panel,
+.cm-panel {
+  background: var(--glass-fill); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+}
+.cm-modal { backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); }
+.cm-mbox, .au-box {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border-hover);
+  box-shadow: var(--glass-lit), var(--glass-dark), 0 30px 70px -34px rgba(0, 0, 0, .85);
+}
+.au-menu {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-lit), var(--glass-dark), 0 24px 54px -28px rgba(0, 0, 0, .8);
+}
+.cm-toast {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-lit), var(--glass-dark), 0 18px 40px -22px rgba(0, 0, 0, .8);
+}
+/* 瓷砖上有底图时，玻璃的受光棱正好给封面加一道边光 */
+.cm-tile { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
+.cm-tile.on { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
