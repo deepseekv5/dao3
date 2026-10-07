@@ -1193,15 +1193,67 @@ const blk = await page(`document.getElementById("bsExample").click();
   let err = ""; try { new Function("world", "entity", code); } catch (e) { err = e.message; }
   return { mode: document.getElementById("sbMode").textContent, before, after: document.querySelectorAll("#blockScreen .bk").length,
     chips: document.querySelectorAll("#blockScreen .bs-chip").length,
-    api: ["world.onPlayerJoin", "world.onChat", "world.onTick", "entity.say", "let "].every((k) => code.includes(k)), err };`);
+    api: ["world.onPlayerJoin", "world.onChat", "world.onTick", "entity.say", "let "].every((k) => code.includes(k)), err,
+    cjk: /let 得分/.test(code) && !/v_[0-9a-z]{6,}/.test(code) };`);
 ok("积木页开得了，状态栏报名字", blk.mode === "积木", blk.mode);
 ok("工具箱五类都有块", blk.chips >= 15, "chips " + blk.chips);
 ok("载入示例拼出程序，删一块就少一块", blk.before >= 4 && blk.after === blk.before - 1, JSON.stringify({ before: blk.before, after: blk.after }));
 ok("出码只用运行时真存在的接口", blk.api, JSON.stringify(blk));
 ok("生成的 JS 语法过（new Function 不抛）", !blk.err, blk.err || "ok");
+// 中文在 ECMAScript 里本来就是合法标识符。上一版只认 ASCII，积木里写「得分」
+// 出码却成 v_ivrg7a —— 人在两块面板之间那根看得懂的线就这么断了。
+ok("积木里的中文变量名直接落进代码，不转成乱码短名", blk.cjk, JSON.stringify(blk.cjk));
 const written = await page(`document.getElementById("bsWrite").click(); return (window.__editor.state.scripts || []).map((f) => f.name);`);
 ok("写入脚本：blocks.js 进了文件列表", written.includes("blocks.js"), JSON.stringify(written));
 ok("积木树存进 meta（跟着世界存盘）", await page(`return Array.isArray(window.__editor.state.meta.blocks);`));
+// 拖一块积木进画布：走页面侧的合成 PointerEvent——同一条处理链路，
+// 但不依赖 Chrome 认为鼠标在哪儿（CDP 的指针坐标在离屏窗口上会偏）
+const dragBlk = await page(`const chip = document.querySelector("#blockScreen .bs-chip");
+  const r = chip.getBoundingClientRect();
+  const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+  const scr = document.querySelector("#blockScreen .bs-scroll").getBoundingClientRect();
+  const x1 = scr.left + 200, y1 = scr.bottom - 44;
+  const pe = (t, x, y, primary) => new PointerEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y,
+    pointerId: 8, isPrimary: true, button: primary ? 0 : -1, buttons: 1 });
+  const before = document.querySelectorAll("#blockScreen .bk").length;
+  chip.dispatchEvent(pe("pointerdown", x0, y0, true));
+  window.dispatchEvent(pe("pointermove", x0 + 130, y0 + 170));
+  const started = { ghost: !!document.querySelector(".bk-ghost"),
+    lift: document.querySelector("#bsCanvas").classList.contains("dragging") };
+  window.dispatchEvent(pe("pointermove", x1, y1));
+  // 落点提示有两种：插到两块之间是一条位置线，装进容器块是那一块高亮。
+  // 中途那一发可能还落在画布留白上（那时本来就不该有提示），所以取最后一次 move。
+  const mid = { line: !!document.querySelector(".bk-line") || !!document.querySelector(".bk.over-into") };
+  window.dispatchEvent(pe("pointerup", x1, y1));
+  return { before, after: document.querySelectorAll("#blockScreen .bk").length, started, mid };`);
+ok("从积木箱拖一块进画布真的落下了", dragBlk.after === dragBlk.before + 1, JSON.stringify(dragBlk));
+ok("拖拽时有跟手的幽灵、落点提示、画布进入拖动态",
+  dragBlk.started.ghost && dragBlk.started.lift && dragBlk.mid.line, JSON.stringify({ s: dragBlk.started, m: dragBlk.mid }));
+await page(`document.getElementById("bsUndo").click(); return 1;`);
+await new Promise((r) => setTimeout(r, 200));
+ok("撤销把刚才那一块收回去", await page(`return document.querySelectorAll("#blockScreen .bk").length;`) === dragBlk.before);
+const blkMenu = await page(`const b = document.querySelector("#blockScreen .bk");
+  b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 420, clientY: 300 }));
+  const m = document.querySelector(".ide-menu");
+  const items = m ? [...m.querySelectorAll("button")].map((x) => x.textContent.trim()) : [];
+  if (m) m.remove();
+  return items;`);
+ok("块右键有复制 / 删除 / 往上一格 / 提到顶层", blkMenu.length >= 5, JSON.stringify(blkMenu));
+await page(`document.getElementById("bsZoomIn").click(); return 1;`);
+const z = await page(`return { txt: document.getElementById("bsZoom").textContent,
+  scaled: getComputedStyle(document.querySelector("#blockScreen .bs-list")).transform };`);
+ok("画布能缩放（点阵与块一起缩放）", z.txt !== "100%" && z.scaled.startsWith("matrix"), JSON.stringify(z));
+await page(`document.getElementById("bsZoom").click(); return 1;`);
+const preset = await page(`document.querySelector('#blockScreen [data-preset="score"]').closest(".bs-blank").hidden = true;
+  const before = document.querySelectorAll("#blockScreen .bk").length;
+  document.querySelector('#blockScreen [data-preset="score"]').click();
+  return { before, after: document.querySelectorAll("#blockScreen .bk").length,
+    code: document.querySelector("#blockScreen .bs-code code").textContent.includes("onChat") };`);
+ok("空态的现成程序一键可用", preset.after > 0 && preset.code, JSON.stringify(preset));
+const linenum = await page(`const nl = String.fromCharCode(10);
+  return document.getElementById("bsLn").textContent.split(nl).length
+    === document.querySelector("#blockScreen .bs-code code").textContent.split(nl).length;`);
+ok("代码栏行号与代码行数对得上", linenum);
 await page(`document.querySelector('.mtab[data-menu="build"]').click(); return 1;`);
 
 await s.close();

@@ -443,23 +443,47 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <b>积木</b>
     <span class="ss-dim" title="每块积木都对应官方引擎里真实存在的接口；右边那份 JS 就是它跑起来的样子">拼块写玩法 · 出码到 blocks.js · 可回脚本页接着改</span>
     <span class="ss-spacer"></span>
+    <span class="bs-stat" id="bsStat" title="块数 · 生成的代码行数 · 语法检查">—</span>
     <label class="bs-opt" title="每次改动都同步写进脚本页的 blocks.js"><input id="bsAuto" type="checkbox" checked>自动出码</label>
+    <button id="bsUndo" title="撤销刚才那步（Ctrl+Z）">撤销</button>
     <button id="bsExample" title="放一套能跑的示例：进入世界打招呼 + 聊天计分">载入示例</button>
     <button id="bsClear" title="清空画布（脚本里的 blocks.js 不会被删）">清空</button>
     <button id="bsWrite" title="把生成的 JS 写进脚本文件 blocks.js">写入脚本</button>
     <button id="bsRun" class="play-ss" title="出码后进入完整运行模式"><svg viewBox="0 0 24 24" width="13" height="13"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>运行游戏</button>
   </div>
   <div class="ss-body bs-body">
-    <div class="bs-tool" aria-label="积木工具箱"></div>
-    <div class="bs-canvas" tabindex="0" aria-label="积木画布">
-      <div class="bs-list"></div>
-      <div class="bs-blank" hidden><b>还没有积木</b><span>左边点一块「事件」开头，或按「载入示例」看一个能跑的</span></div>
+    <!-- 积木箱：分类分组 + 搜索；按住一块拖到右边画布上就是它 -->
+    <div class="bs-tool" aria-label="积木箱">
+      <div class="bs-tool-head"><span>积木箱</span><input id="bsFilter" placeholder="搜索" spellcheck="false"/></div>
+      <div class="bs-tool-body" id="bsTool"></div>
+    </div>
+    <!-- 画布：点阵底、可缩放；块有榫与帽，容器块把子块包在嘴里（Scratch 那套形状语言） -->
+    <div class="bs-canvas" id="bsCanvas" tabindex="0" aria-label="积木画布">
+      <div class="bs-topbar">
+        <button id="bsZoomOut" title="缩小" aria-label="缩小">−</button>
+        <button id="bsZoom" class="bs-zoom-val" title="点一下回到 100%">100%</button>
+        <button id="bsZoomIn" title="放大" aria-label="放大">＋</button>
+        <span class="bs-hint">按住块拖动拼装 · 右键有更多动作 · Del 删除选中 · Ctrl+D 复制</span>
+      </div>
+      <div class="bs-scroll"><div class="bs-list"></div></div>
+      <div class="bs-blank" hidden>
+        <b>还没有积木</b>
+        <span>从左边拖一块进来，或者直接从一个现成的开始：</span>
+        <div class="bs-quick">
+          <button data-preset="hello">进入世界打招呼</button>
+          <button data-preset="score">聊天计分板</button>
+          <button data-preset="rain">定时下雨氛围</button>
+        </div>
+      </div>
+      <div class="bs-trash" id="bsTrash">拖到这里删除</div>
     </div>
     <button class="ss-grip" id="gripBlocks" type="button" role="separator" aria-orientation="vertical"
             aria-label="代码预览宽度" title="拖动调整预览宽度（双击复位）"></button>
     <div class="bs-code" aria-label="生成的 JavaScript">
-      <div class="ss-console-head">生成的 JavaScript</div>
-      <pre><code></code></pre>
+      <div class="ss-console-head">生成的 JavaScript
+        <span class="bs-code-acts"><button id="bsCopy" title="复制这份代码">复制</button><button id="bsOpen" title="切到脚本页并打开 blocks.js">在脚本页打开</button></span>
+      </div>
+      <div class="bs-code-body"><div class="bs-ln" id="bsLn" aria-hidden="true">1</div><pre><code></code></pre></div>
     </div>
   </div>
 </div>
