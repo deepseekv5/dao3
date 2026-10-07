@@ -158,8 +158,9 @@ async function loadFeed(reset) {
   feed.catCounts = r.catCounts || {};
   feed.recent = r.recent || [];
   feed.online = r.online || [];
-  drawCats();
+  // total 要在画瓷砖之前落：瓷砖上那行"全部 N 件"读的就是它
   feed.total = r.total;
+  drawCats();
   feed.rows = feed.rows.concat(r.rows);
   feed.offset = r.rows.length;
   const noun = KIND_NOUN[feed.kind] || "作品";
