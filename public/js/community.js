@@ -1,7 +1,7 @@
 // community.js — 社区页：广场、地图详情、用户主页、好友与关注。
 // 一个 HTML 壳 + 按路径分派，因为这几屏共用同一条数据管线（发布卡片、关注按钮、头像）。
 import * as auth from "/js/auth.js";
-import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, coverUrl, cardHtml, railHtml, heroHtml, bindCards, playPub, materialize, pullModel, openPublishDialog, icons } from "/js/pubs.js";
+import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, coverUrl, cardHtml, railHtml, heroHtml, bindCards, playPub, materialize, pullModel, openPublishDialog, icons, skRows, errorState } from "/js/pubs.js";
 import { profileView } from "/js/profile.js";
 const { api, esc, mountAuth, onLogin, openAuth } = auth;
 
@@ -148,7 +148,9 @@ async function loadFeed(reset) {
   try {
     r = await api("GET", `/api/community/feed?sort=${feed.sort}&cat=${encodeURIComponent(feed.cat)}&kind=${feed.kind}&q=${encodeURIComponent(feed.q)}&offset=${feed.offset}&limit=24`);
   } catch (e) {
-    grid.innerHTML = `<div class="cm-empty"><b>${esc(e.message)}</b>${feed.sort === "following" ? "登录后才能看关注的人发布了什么。" : "社区服务没起来？"}</div>`;
+    grid.innerHTML = errorState(e.message, feed.sort === "following" ? "<span>关注流要先登录。</span>" : "");
+    const rt = grid.querySelector("[data-retry]");
+    if (rt) rt.onclick = () => { feed = { ...feed, offset: 0, rows: [] }; loadFeed(true); };
     return;
   }
   if (Array.isArray(r.cats) && r.cats.join() !== feed.cats.join()) feed.cats = r.cats;
@@ -664,7 +666,7 @@ async function friendsView() {
   qBox.closest(".wb-search").hidden = false;
   pageTitle.textContent = "好友与关注";
   pageSub.textContent = "谁在跟你一起玩，谁在等你回应";
-  root.innerHTML = `<div class="cm-empty">读取中…</div>`;
+  root.innerHTML = skRows(4);
   if (!auth.me) {
     // 未登录也给内容，而不是一句"先登录"占满整屏：扩列读的是公开资料，
     // 这一页空着看起来像坏了。
@@ -831,6 +833,24 @@ window.addEventListener("popstate", route);
 
 // 登录/注册成功后重跑当前视图：auth.me 是命名导出的实时绑定，读到的就是新人
 onLogin(() => route());
+
+/** `/` 聚焦搜索：这是到处都在用的肌肉记忆。光标已经在输入框里时不抢它。
+    `Esc` 清空并退出——搜完之后退不回"全部"，是这类界面里最容易被骂的一处。 */
+window.addEventListener("keydown", (e) => {
+  const t = e.target;
+  const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+  const box = qBox && qBox.closest(".wb-search");
+  if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey && box && !box.hidden) {
+    e.preventDefault();
+    qBox.focus();
+    qBox.select();
+  }
+  if (e.key === "Escape" && t === qBox && qBox.value) {
+    qBox.value = "";
+    feed.q = "";
+    reload();
+  }
+});
 
 (async () => {
   await mountAuth();

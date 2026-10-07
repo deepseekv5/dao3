@@ -2,7 +2,7 @@
 // 所有动作打的是 /api/community/admin/*，服务端会再查一次角色；
 // 前端藏按钮只是体验，不是权限。
 import * as auth from "/js/auth.js";
-import { toast } from "/js/pubs.js";
+import { toast, skRows } from "/js/pubs.js";
 
 const { api, esc, mountAuth, openAuth } = auth;
 const $ = (id) => document.getElementById(id);
@@ -157,7 +157,7 @@ async function drawReports(body) {
     `<button class="cm-btn sm ${rf.state === k ? "on" : ""}" data-rs="${k}">${l}</button>`).join("")}
     <span class="grow"></span>
     <button class="cm-btn sm" id="rpRefresh">刷新</button>
-  </div><div id="rpBody"><div class="cm-empty">读取中…</div></div>`;
+  </div><div id="rpBody">${skRows(6)}</div>`;
   for (const b of body.querySelectorAll("[data-rs]")) b.onclick = () => { rf.state = b.dataset.rs; drawReports(body); };
   $("rpRefresh").onclick = () => { store.reports = null; drawReports(body); };
   if (!store.reports) { try { store.reports = await api("GET", `/api/community/admin/reports?state=${rf.state}`); } catch (e) { $("rpBody").innerHTML = `<div class="cm-empty">${esc(e.message)}</div>`; return; } }
@@ -191,7 +191,7 @@ async function drawContent(body) {
   body.innerHTML = `<div class="ad-seg">
     ${[["pubs", "作品"], ["comments", "评论"], ["flagged", "被标记 " + (data.flagged ? data.flagged.pubs + data.flagged.comments : 0)]].map(([k, l]) =>
     `<button class="cm-btn sm ${ct === k ? "on" : ""}" data-ct="${k}">${l}</button>`).join("")}
-  </div><div id="ctBody"><div class="cm-empty">读取中…</div></div>`;
+  </div><div id="ctBody">${skRows(6)}</div>`;
   for (const b of body.querySelectorAll("[data-ct]")) b.onclick = () => { store.contentTab = b.dataset.ct; drawContent(body); };
   const host = $("ctBody");
   const t = ct;
@@ -287,7 +287,7 @@ async function drawContent(body) {
   }
 
   // 被标记队列：审查留下的红旗集中在一处，省得一张图一张图翻。
-  host.innerHTML = `<div id="flRows"><div class="cm-empty">读取中…</div></div>`;
+  host.innerHTML = `<div id="flRows">${skRows(6)}</div>`;
   if (!store.flagged) { try { store.flagged = await api("GET", "/api/community/admin/flagged"); } catch (e) { $("flRows").innerHTML = `<div class="cm-empty">${esc(e.message)}</div>`; return; } }
   const d = store.flagged;
   $("flRows").innerHTML = `<div class="ad-count">${d.total} 项被机器审查打上标记 · 人看一眼再决定：取消标记或下架/删除</div>`
@@ -332,7 +332,7 @@ async function drawUsers(body) {
     <button class="cm-btn sm" data-batch="role_user">降为普通</button>
     <button class="cm-btn sm" id="usClear">清空选择</button>
   </div>
-  <div id="usRows"><div class="cm-empty">读取中…</div></div>`;
+  <div id="usRows">${skRows(6)}</div>`;
   const run = () => { store.users = null; drawUsers(body); };
   $("usGo").onclick = () => { uf.q = $("usQ").value.trim(); run(); };
   $("usQ").onkeydown = (e) => { if (e.key === "Enter") { uf.q = e.target.value.trim(); run(); } };
@@ -450,7 +450,7 @@ function banDialog(name) {
 async function openUser(name) {
   const mask = document.createElement("div");
   mask.className = "ad-mask";
-  mask.innerHTML = `<div class="ad-drawer"><div class="cm-empty">读取中…</div></div>`;
+  mask.innerHTML = `<div class="ad-drawer">${skRows(6)}</div>`;
   document.body.appendChild(mask);
   const close = () => { document.removeEventListener("keydown", onKey); mask.remove(); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
@@ -568,7 +568,7 @@ async function drawAudit(body) {
     <select id="auAct"><option value="">所有动作</option>
       ${Object.entries(ACT_CN).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
     <span class="grow"></span><button class="cm-btn sm" id="auGo">查询</button></div>
-  <div id="auRows"><div class="cm-empty">读取中…</div></div>`;
+  <div id="auRows">${skRows(6)}</div>`;
   const run = () => { store.audit = null; drawAudit(body); };
   $("auGo").onclick = () => { af.q = $("auQ").value.trim(); af.action = $("auAct").value; run(); };
   $("auQ").onkeydown = (e) => { if (e.key === "Enter") { af.q = e.target.value.trim(); run(); } };

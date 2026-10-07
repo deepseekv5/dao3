@@ -3,7 +3,7 @@
 // 皮肤为什么在账号上而不是地图里：角色外观是"我是谁"，不是"这张图长什么样"，
 // 换图、进别人发的图都应该带着走。运行时会读 auth.me.skin 贴到人偶上。
 import * as auth from "/js/auth.js";
-import { cardHtml, bindCards, face, toast } from "/js/pubs.js";
+import { cardHtml, bindCards, face, toast, skRows, errorState } from "/js/pubs.js";
 import { MC_PRESETS, presetUrl, facePreview, readSkinFile, skinNameFrom } from "/js/skin-sheet.js";
 import { REGIONS, GENDERS, PERSONA, LOOKING, genderLabel, personaLabel, lookingLabel, MAX_PERSONA } from "/js/profile-fields.js";
 
@@ -395,7 +395,12 @@ async function mountSkinPreview(u, host) {
 export async function profileView(name, root, setTitle, setSub) {
   let d;
   try { d = await api("GET", "/api/community/users/" + encodeURIComponent(name)); }
-  catch (e) { root.innerHTML = `<div class="cm-empty"><b>${esc(e.message)}</b><a href="/community">回广场</a></div>`; return; }
+  catch (e) {
+    root.innerHTML = errorState(e.message, '<a class="cm-btn" href="/community">回广场</a>');
+    const rt = root.querySelector("[data-retry]");
+    if (rt) rt.onclick = () => profileView(name, root, setTitle, setSub);
+    return;
+  }
   const u = d.user;
   const mine = !!(auth.me && auth.me.id === u.id);
   const c = u.counts || {};
@@ -563,7 +568,7 @@ export async function profileView(name, root, setTitle, setSub) {
 
   async function show(which) {
     for (const b of tabs.querySelectorAll("[data-t]")) b.classList.toggle("on", b.dataset.t === which);
-    body.innerHTML = `<div class="cm-empty">读取中…</div>`;
+    body.innerHTML = skRows(4);
     if (which === "wall") return showWall();
     if (which === "favorites") {
       // 上一轮加收藏开关时没给地方看，等于一个按下去只会亮起来的按钮。

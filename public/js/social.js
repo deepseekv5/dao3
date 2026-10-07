@@ -12,6 +12,8 @@
 import { me, api, openAuth, esc, onLogin, avatarBg } from "./auth.js";
 import { REGIONS, GENDERS, PERSONA, genderLabel, personaLabel, lookingLabel } from "./profile-fields.js";
 
+/** 抽屉里读数据的骨架：和好友行同形（圆头像 + 两行字）。 */
+const SK = `<div class="sk-list">${Array.from({ length: 5 }, () => `<div class="sk-row"><span class="sk-img round"></span><span class="sk-lines"><span class="sk-line"></span><span class="sk-line sm"></span></span></div>`).join("")}</div>`;
 const TABS = [["friends", "好友"], ["expand", "扩列"], ["messages", "消息"]];
 const PAGE = 20;
 
@@ -167,7 +169,7 @@ function startPoll(fn, ms) { stopPoll(); pollTimer = setInterval(fn, ms); }
 async function draw() {
   for (const b of drawer.querySelectorAll("[data-tab]")) b.classList.toggle("on", b.dataset.tab === tab);
   body = $("soBody");
-  body.innerHTML = `<div class="so-empty">读取中…</div>`;
+  body.innerHTML = SK;
   if (tab === "friends") return friendsPane();
   if (tab === "expand") return expandPane();
   return thread ? conversationPane() : messagesPane();

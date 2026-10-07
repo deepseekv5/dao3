@@ -98,6 +98,21 @@ const kfmt = (n) => {
   if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
   return String(v);
 };
+/** 骨架屏：读数据的时候给形状，不给"读取中…"三个字。
+ *  一行灰条看不出在等什么，而一屏和真内容同形的灰块，人会先认出"这里将出现什么"。 */
+export const skRows = (n = 4) => `<div class="sk-list">${Array.from({ length: n }, () => `<div class="sk-row">
+  <span class="sk-img"></span><span class="sk-lines"><span class="sk-line"></span><span class="sk-line sm"></span></span>
+</div>`).join("")}</div>`;
+
+/** 出错了要给出路。一句话 + 一个"重试"，而不是把错误原文甩在空白页上。 */
+export const errorState = (msg, extra = "") => `<div class="cm-empty">
+  <b>没读出来</b>${esc(msg || "服务没回应")}
+  <div class="cm-empty-acts"><button class="cm-btn primary" data-retry>重试</button>${extra}</div></div>`;
+
+/** 空态：说清"这里为什么空" + 下一步去哪。空态没有出路，就等于页面坏了。 */
+export const emptyState = ({ title = "这里还空着", body = "", action = "" } = {}) =>
+  `<div class="cm-empty"><b>${esc(title)}</b>${body ? esc(body) : ""}${action ? `<div>${action}</div>` : ""}</div>`;
+
 /** 卡片：照官方展厅的读法——图占主导，标题落在图下面，而不是压在图上。
  *  压在图上时，亮底封面会把字吃掉，而我们的封面全是服务端拿体素快照画的，
  *  什么底色都有可能。标题单独一行，字才永远读得清。 */

@@ -683,3 +683,7 @@
   .cm-tile:active { transform: none; border-color: var(--primary-line); }
   html { -webkit-tap-highlight-color: transparent; }
 }
+
+/* 空态/错误态的动作行：主按钮在前，出路在后，居中排一行 */
+.cm-empty-acts { display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.cm-empty-acts span { color: var(--fg3); font-size: var(--fs-12); }
