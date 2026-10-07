@@ -408,11 +408,19 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
            关闭标签只是不再看它，不等于删文件（删文件在左侧资源管理器）。 -->
       <div class="ed-tabs" id="edTabs" role="tablist" aria-label="打开的脚本"></div>
       <div class="ed-crumbs" id="edCrumbs" aria-label="面包屑"></div>
-      <div class="code-area">
-        <div class="code-gutter" id="scriptGutter">1</div>
-        <div class="code-editor">
-          <pre id="scriptHi" aria-hidden="true"><code id="scriptHiCode"></code></pre>
-          <textarea id="scriptCode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <!-- 编辑区 + 小地图：VS Code 编辑组的标准组合（小地图 = 右侧整份代码的缩略总览，
+           中间那条亮带是当前视口所在的位置，随滚动同步） -->
+      <div class="ed-row">
+        <div class="code-area">
+          <div class="code-gutter" id="scriptGutter">1</div>
+          <div class="code-editor">
+            <pre id="scriptHi" aria-hidden="true"><code id="scriptHiCode"></code></pre>
+            <textarea id="scriptCode" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
+        </div>
+        <div class="minimap" id="minimap" aria-hidden="true">
+          <div class="mmap-canvas" id="mmapCanvas"></div>
+          <i class="mmap-slider" id="mmapSlider"></i>
         </div>
       </div>
       <div class="code-status" id="codeStatus"></div>

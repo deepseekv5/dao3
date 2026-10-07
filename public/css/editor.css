@@ -31,13 +31,30 @@
   --ed-hair-2:rgba(255, 255, 255, .13);
   --ed-inset:rgba(0, 0, 0, .32);       /* 输入框、代码区、缩略图槽这类"凹进去"的底 */
   --ed-lift:0 18px 44px -22px rgba(0, 0, 0, .92), 0 2px 10px -4px rgba(0, 0, 0, .5);
-  /* 脚本工作区（VS Code 同构）：编辑区单独一套色温，等价于"给 VS Code 换了一副主题"。
-     chrome 与编辑区分两种底色是 VS Code 自己就在做的事（#252526 的侧栏 + #1e1e1e 的编辑区）。 */
-  --code-bg:#201d19;                    /* 编辑区：VS Code #1e1e1e 的暖调同值 */
-  --code-tab:#1b1815;                   /* 非活动标签 / 面板页签行 */
-  --code-side:#171411;                  /* 活动栏 / 资源管理器 / 面板 / 底部读数 */
-  --code-line:rgba(255, 255, 255, .055);/* 编辑区发丝线 */
-  --code-sel:rgba(227, 166, 60, .14);   /* 列表选中 / 活动栏选中 */
+  /* 脚本工作区：VS Code Dark+ 官方主题原色。
+     游戏编辑器（搭建视图）保持产品暖色，代码区是"另一个世界"——这就是 VS Code 自己的
+     分层逻辑：chrome 一种色，编辑区一种色。 */
+  --vsc-bg:#1e1e1e;        /* 编辑区 / 面板体 */
+  --vsc-side:#252526;      /* 侧栏 / 面板页签行 / 浮层（补全、查找、命令面板） */
+  --vsc-act:#333333;       /* 活动栏 */
+  --vsc-tab:#2d2d2d;       /* 非活动标签 */
+  --vsc-line:#262626;      /* 标签描边 / 编辑区发丝线 */
+  --vsc-line2:#3c3c3c;     /* 浮层描边 / 输入框 */
+  --vsc-fg:#cccccc; --vsc-fg2:#9d9d9d; --vsc-fg3:#6a6a6a;
+  --vsc-hover:#2a2d2e;     /* 列表悬停 */
+  --vsc-sel:#37373d;       /* 列表选中（资源管理器行） */
+  --vsc-suggest:#04395e;   /* 补全 / 命令面板的选中行 */
+  --vsc-blue:#007acc;      /* 状态栏 / 活动标签顶条 / 角标 */
+  --vsc-blue2:#007fd4;     /* 焦点 / 悬停 */
+  --vsc-select:rgba(38, 79, 120, .95);  /* 编辑器选区 */
+  --vsc-curline:rgba(255, 255, 255, .06); /* 当前行 */
+  --vsc-ln:#858585;        /* 行号 */
+  --vsc-caret:#aeafad;     /* 光标 */
+  --vsc-mod:#e2c08d;       /* 已修改标签的顶条 / 脏点 */
+  --vsc-js:#f0db4f;        /* JS 文件徽标（官方黄） */
+  --vsc-jsink:#26261a;     /* 徽标上的深字 */
+  --vsc-lncur:#c6c6c6;     /* 当前行号 */
+  --vsc-err:#f48771;       /* 错误文字（官方错误红） */
   --shadow-card:0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.3);
   --shadow-card-hover:0 4px 14px rgba(227, 166, 60, .2), 0 1px 3px rgba(0,0,0,.5);
   --glow:0 0 14px rgba(227, 166, 60, .45), 0 0 28px rgba(227, 166, 60, .18);
@@ -1423,95 +1440,178 @@ button.sb-btn:hover { background-color: rgba(227, 166, 60, .16);
 /* 15 · 加载幕：不要一块死黑 */
 #loading { background: radial-gradient(60% 50% at 50% 34%, rgba(227, 166, 60, .14), transparent 70%), var(--bg0); }
 
-/* ==================== 脚本工作区：VS Code 同构 ====================
-   VS Code 的布局语言是五件套：活动栏 → 侧栏 → 编辑组（标签页 + 面包屑 + 编辑器）
-   → 面板（问题 / 输出）→ 状态栏。这一节把脚本页按这个骨架排。
+/* ==================== 脚本工作区：VS Code Dark+ 原色 ====================
+   上一版只搬了 VS Code 的骨架（活动栏/标签页/面板），颜色还是产品暖色，一眼就"不像"。
+   这一版把脚本工作区整块换回 VS Code Dark+ 官方主题原色，连同它最有辨识度的细节：
+   蓝色状态栏、官方同值的选区、补全选中、脏标签的琥珀顶条与圆点、小地图。
    标签 = "打开的文件"，关标签不删文件；脏点 = 改过但世界还没保存。 */
 
-/* 活动栏：最左一条图标栏 */
+/* 整屏换底色：脚本 / 界面 / 商城 / 代码包都是 IDE 屏 */
+.script-screen { background: var(--vsc-bg); }
+.ss-head { background-color: var(--vsc-side); background-image: none; border-bottom: 1px solid var(--vsc-line); }
+.ss-head b { color: #fff; }
+.ss-dim { color: var(--vsc-fg3); }
+
+/* 活动栏：VS Code 的深灰档，选中 = 白色图标 + 左侧 2px 白条（官方就是白色指示条） */
 .act-bar { width: 44px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 7px 0; background: var(--code-side); border-right: 1px solid var(--code-line); }
-.act-btn { width: 36px; height: 36px; border-radius: 8px; color: var(--fg3); display: flex;
-  align-items: center; justify-content: center;
+  padding: 7px 0; background: var(--vsc-act); border-right: 1px solid var(--vsc-line); }
+.act-btn { width: 36px; height: 36px; border-radius: 5px; color: var(--vsc-fg2); display: flex;
+  align-items: center; justify-content: center; position: relative;
   transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
 .act-btn svg { width: 17px; height: 17px; }
-.act-btn:hover { background: rgba(255, 255, 255, .07); color: #fff; }
-.act-btn.active { color: var(--primary-hover); background: var(--code-sel);
-  box-shadow: inset 2px 0 0 var(--primary); }
+.act-btn:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+.act-btn.active { color: #fff; background: transparent; box-shadow: inset 2px 0 0 #fff; }
+.act-badge { position: absolute; top: 1px; right: 1px; min-width: 15px; height: 15px; padding: 0 4px;
+  border-radius: 8px; background: var(--vsc-blue); color: #fff; font: 600 9.5px/15px var(--mono);
+  text-align: center; font-style: normal; }
 
 /* 资源管理器 */
-.ss-files { background: var(--code-side); }
+.ss-files { background: var(--vsc-side); }
 .ss-files.hidden { display: none; }
-.ss-files-head { color: var(--fg3); font-size: 10.5px; letter-spacing: .1em; }
-.ss-files-head button { color: var(--fg3); }
+.ss-files-head { color: var(--vsc-fg2); font-size: 10.5px; letter-spacing: .1em; }
+.ss-files-head button { color: var(--vsc-fg2); }
 .ss-files-head button:hover { background: rgba(255, 255, 255, .09); color: #fff; }
-.sfile { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px;
-  font-size: 12.5px; color: var(--fg2); border: 1px solid transparent; }
-.sfile:hover { background: rgba(255, 255, 255, .055); color: #fff; }
-.sfile.active { background: var(--code-sel); color: #fff; }
+.sfile { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 4px;
+  font-size: 12.5px; color: var(--vsc-fg2); border: 1px solid transparent; }
+.sfile:hover { background: var(--vsc-hover); color: var(--vsc-fg); }
+.sfile.active { background: var(--vsc-sel); color: #fff; }
 .sfile .js-badge, .ed-tab .js-badge { width: 16px; height: 16px; border-radius: 4px; flex: none;
-  background: rgba(227, 166, 60, .15); color: var(--primary-hover);
-  font: 600 8.5px/16px var(--mono); text-align: center; letter-spacing: .02em; }
+  background: var(--vsc-js); color: var(--vsc-jsink);
+  font: 700 8.5px/16px var(--mono); text-align: center; letter-spacing: .02em; }
 .sfile .sname, .ed-tab .tname { flex: 1; min-width: 0; text-align: left; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .sfile .ed-dot, .ed-tab .ed-dot { display: none; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--primary); flex: none; }
+  background: var(--vsc-mod); flex: none; }
 .sfile.dirty .ed-dot { display: block; }
 
-/* 编辑组头顶：标签页 + 面包屑 */
-.ed-tabs { flex: none; display: flex; align-items: stretch; height: 34px; background: var(--code-tab);
-  border-bottom: 1px solid var(--code-line); overflow-x: auto; overflow-y: hidden;
+/* 编辑组头顶：标签页（VS Code 的盒状标签：非活动带描边，活动融进编辑区 + 蓝色顶条） */
+.ed-tabs { flex: none; display: flex; align-items: stretch; height: 35px; background: var(--vsc-side);
+  border-bottom: 1px solid var(--vsc-line); overflow-x: auto; overflow-y: hidden;
   scrollbar-width: none; min-width: 0; }
 .ed-tabs::-webkit-scrollbar { display: none; }
 .ed-tab { display: flex; align-items: center; gap: 7px; padding: 0 8px 0 12px; font-size: 12.5px;
-  color: var(--fg2); border-right: 1px solid var(--code-line); cursor: pointer;
-  white-space: nowrap; position: relative; user-select: none; flex: 0 0 auto; max-width: 210px; }
-.ed-tab:hover { color: #fff; background: rgba(255, 255, 255, .04); }
-.ed-tab.active { background: var(--code-bg); color: #fff; }
-.ed-tab.active::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
-  background: var(--primary); }
-.ed-close { width: 18px; height: 18px; border-radius: 4px; color: var(--fg3); font-size: 13px;
+  color: var(--vsc-fg2); background: var(--vsc-tab); border: 1px solid var(--vsc-line);
+  border-bottom: none; margin-right: -1px; cursor: pointer; white-space: nowrap;
+  position: relative; user-select: none; flex: 0 0 auto; max-width: 210px; }
+.ed-tab:hover { color: #fff; background: rgba(255, 255, 255, .06); }
+.ed-tab.active { background: var(--vsc-bg); color: #fff; }
+.ed-tab.active::before, .ed-tab.modified::before { content: ""; position: absolute; left: -1px;
+  right: -1px; top: -1px; height: 1px; }
+.ed-tab.active::before { background: var(--vsc-blue); }
+.ed-tab.modified::before { background: var(--vsc-mod); }
+.ed-close { width: 18px; height: 18px; border-radius: 4px; color: var(--vsc-fg2); font-size: 14px;
   line-height: 1; display: flex; align-items: center; justify-content: center; flex: none; opacity: 0;
   transition: background-color var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease); }
 .ed-tab:hover .ed-close, .ed-tab.active .ed-close { opacity: 1; }
 .ed-close:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+/* 脏标签：× 的位置换成一颗圆点（官方行为——点它一样是关闭） */
+.ed-close.dot { opacity: 1; font-size: 11px; }
 .ed-crumbs { flex: none; display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 14px;
-  font-size: 11px; color: var(--fg3); background: var(--code-bg); border-bottom: 1px solid var(--code-line);
+  font-size: 11px; color: var(--vsc-fg3); background: var(--vsc-bg); border-bottom: 1px solid var(--vsc-line);
   white-space: nowrap; overflow: hidden; }
 .ed-crumbs .sep { opacity: .6; }
-.ed-crumbs .crumb-file { font: inherit; color: var(--fg2); border-radius: 4px; padding: 0 5px; }
-.ed-crumbs .crumb-file:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+.ed-crumbs .crumb-file { font: inherit; color: var(--vsc-fg2); border-radius: 4px; padding: 0 5px; }
+.ed-crumbs .crumb-file:hover { background: var(--vsc-sel); color: #fff; }
 
-/* 编辑区与行号槽 */
-.code-area { background: var(--code-bg); }
-.code-gutter { background: var(--code-bg); border-right: 1px solid var(--code-line); color: var(--fg3); }
+/* 编辑区 + 小地图 */
+.ed-row { flex: 1; display: flex; min-width: 0; position: relative; }
+.code-area { background: var(--vsc-bg); flex: 1; min-width: 0; }
+.code-gutter { background: var(--vsc-bg); border-right: 1px solid var(--vsc-line); color: var(--vsc-ln); }
+#scriptCode { caret-color: var(--vsc-caret); }
+#scriptCode::selection { background: var(--vsc-select); color: transparent; }
+/* 当前行：VS Code 是灰一档 + 行号变亮，不用强调色 */
+.cur-row { background: var(--vsc-curline); opacity: 1; }
+#scriptGutter .ln.cur { color: var(--vsc-lncur); background: transparent; box-shadow: none; }
+.minimap { flex: none; width: 96px; display: none; position: relative; overflow: hidden;
+  background: var(--vsc-bg); border-left: 1px solid var(--vsc-line); }
+@media (min-width: 1100px) { .minimap { display: block; } }
+.mmap-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; opacity: .42;
+  pointer-events: none; }
+.mmap-canvas pre { margin: 0; padding: 12px 14px; font-family: Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.6; white-space: pre; color: var(--vsc-fg); overflow: hidden; }
+.mmap-slider { position: absolute; left: 0; right: 0; background: rgba(255, 255, 255, .10);
+  border-left: 2px solid var(--vsc-blue); box-sizing: border-box; pointer-events: none; }
 
-/* 底部读数：VS Code 状态栏同款，段与段之间可以 hover */
-#codeStatus { background-color: var(--code-side); background-image: none;
-  border-top: 1px solid var(--code-line); color: var(--fg3); font: 11px/1.6 var(--mono);
-  padding: 3px 6px; gap: 2px; }
-#codeStatus span { padding: 1px 7px; border-radius: 4px; }
-#codeStatus span:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+/* 底部读数 + 主状态栏：VS Code 的官方蓝（进入任何 IDE 屏时主状态栏也变蓝） */
+#codeStatus { background-color: var(--vsc-blue); background-image: none;
+  border-top: 1px solid rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .92);
+  font: 11px/1.6 var(--mono); padding: 3px 6px; gap: 2px; }
+#codeStatus span { padding: 1px 7px; border-radius: 3px; }
+#codeStatus span:hover { background: rgba(255, 255, 255, .16); color: #fff; }
+body:has(.script-screen.show) #hud { background-color: var(--vsc-blue); background-image: none;
+  border-top: 1px solid rgba(255, 255, 255, .14); color: rgba(255, 255, 255, .92); }
+body:has(.script-screen.show) #hud .sb-seg { color: rgba(255, 255, 255, .85); }
+body:has(.script-screen.show) #hud b { color: #fff; }
+body:has(.script-screen.show) #hud button.sb-btn { background-color: rgba(255, 255, 255, .10);
+  border-color: rgba(255, 255, 255, .25); }
+body:has(.script-screen.show) #hud button.sb-btn:hover { background-color: rgba(255, 255, 255, .2);
+  color: #fff; border-color: rgba(255, 255, 255, .4); }
 
-/* 面板：问题 / 输出 页签 + 条目 */
-.ss-console { background: var(--code-side); }
-.ss-console-head { color: var(--fg3); letter-spacing: .08em; }
-.ss-tabs { background: var(--code-tab); border-bottom: 1px solid var(--code-line); padding: 3px 8px; }
+/* 面板：问题 / 输出 */
+.ss-console { background: var(--vsc-bg); }
+.ss-console-head { color: var(--vsc-fg2); letter-spacing: .08em; }
+.ss-tabs { background: var(--vsc-side); border-bottom: 1px solid var(--vsc-line); padding: 3px 8px; }
 .ss-tab { background: none; border: 0; box-shadow: none; font-size: 11px; letter-spacing: .08em;
-  color: var(--fg3); padding: 3px 10px; border-radius: 4px; }
+  color: var(--vsc-fg2); padding: 3px 10px; border-radius: 3px; }
 .ss-tab:hover { background: none; color: #fff; }
-.ss-tab.active { background: none; color: #fff; box-shadow: inset 0 -1.5px 0 var(--primary); }
-.ss-tab b { font-weight: 600; }
+.ss-tab.active { background: none; color: #fff; box-shadow: inset 0 -1.5px 0 var(--vsc-blue); }
+.ss-tab b { font-weight: 600; color: var(--vsc-fg); }
 .dg-item { font-family: var(--font); }
-.cs-bar { background: var(--code-tab); }
+.dg-item:hover { background: rgba(255, 255, 255, .05); }
+.cs-bar { background: var(--vsc-bg); }
+.cs-row:hover { background: rgba(255, 255, 255, .05); }
+.scriptout { color: var(--vsc-fg); }
+.dg-chip { color: var(--vsc-fg2); border-color: var(--vsc-line2); }
+.dg-chip.on { color: #fff; background: var(--vsc-suggest); border-color: var(--vsc-blue2); }
+.sc-head { color: #fff; }
+.sc-row:hover { background: var(--vsc-hover); }
+.sc-row span { color: var(--vsc-fg2); }
 
-/* 行内动作条（CodeLens）：贴着编辑区，不抢标签栏的戏 */
-.ss-lens { background: var(--code-side); border-bottom: 1px solid var(--code-line); }
-.lens-acts button, .lens-err { background: rgba(255, 255, 255, .06); border: 1px solid var(--ed-hair); }
+/* 行内动作条（CodeLens）：中性格 */
+.ss-lens { background: var(--vsc-side); border-bottom: 1px solid var(--vsc-line); color: var(--vsc-fg2); }
+.lens-where { color: var(--vsc-fg); }
+.lens-acts button { background: rgba(255, 255, 255, .06); border: 1px solid var(--vsc-line2);
+  color: var(--vsc-fg2); }
+.lens-acts button:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+.lens-err { background: rgba(217, 79, 95, .14); border: 1px solid rgba(217, 79, 95, .4); color: var(--vsc-err); }
+.lens-keys { color: var(--vsc-fg3); }
+
+/* 编辑区浮层：查找框 / 补全 / 命令面板 / 撤销历史——统一侧栏灰 + 浮层描边 */
+.fd-box { background-color: var(--vsc-side); background-image: none;
+  border: 1px solid var(--vsc-line2); box-shadow: 0 10px 26px rgba(0, 0, 0, .55); }
+.fd-box input { background: var(--vsc-line2); border: 1px solid transparent; color: var(--vsc-fg); }
+.fd-box input:focus { border-color: var(--vsc-blue2); box-shadow: none; }
+.fd-box button { color: var(--vsc-fg2); }
+.fd-box button:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.fd-box button.on { background: var(--vsc-suggest); color: #fff; }
+.fd-n { color: var(--vsc-fg3); }
+.ac-pop { background-color: var(--vsc-side); background-image: none;
+  border: 1px solid var(--vsc-line2); box-shadow: 0 8px 22px rgba(0, 0, 0, .55); }
+.ac-it { color: var(--vsc-fg); }
+.ac-it:hover { background: var(--vsc-hover); }
+.ac-it.on { background: var(--vsc-suggest); box-shadow: none; }
+.ac-it .ac-k { color: var(--vsc-fg3); border-color: var(--vsc-line2); }
+.ac-it .ac-d { color: var(--vsc-fg2); }
+.ac-doc { background: var(--vsc-side); border-top: 1px solid var(--vsc-line2); color: var(--vsc-fg2); }
+.pl-mask { background: rgba(0, 0, 0, .55); }
+.pl-box { background-color: var(--vsc-side); background-image: none;
+  border: 1px solid var(--vsc-blue2); border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .6); }
+.pl-in { color: var(--vsc-fg); border-bottom: 1px solid var(--vsc-line2); }
+.pl-grp { color: var(--vsc-fg3); }
+.pl-row { color: var(--vsc-fg); }
+.pl-row:hover { background: var(--vsc-hover); }
+.pl-row.on { background: var(--vsc-suggest); box-shadow: none; color: #fff; }
+.hist-menu { background-color: var(--vsc-side); background-image: none;
+  border: 1px solid var(--vsc-line2); box-shadow: 0 10px 26px rgba(0, 0, 0, .55); }
+.hh-row { color: var(--vsc-fg); }
+.hh-row:hover { background: var(--vsc-hover); }
+.hh-row.on { background: var(--vsc-suggest); box-shadow: none; }
 
 /* 窄屏：活动栏横过来放顶部 */
 @media (max-width: 960px) {
   .act-bar { flex-direction: row; width: auto; height: 40px; padding: 0 6px; gap: 2px;
-    border-right: 0; border-bottom: 1px solid var(--code-line); }
-  .act-btn.active { box-shadow: inset 0 -2px 0 var(--primary); }
+    border-right: 0; border-bottom: 1px solid var(--vsc-line); }
+  .act-btn.active { box-shadow: inset 0 -2px 0 #fff; }
+  .minimap { display: none; }
 }

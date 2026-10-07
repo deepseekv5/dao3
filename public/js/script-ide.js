@@ -130,6 +130,13 @@ export function wireScriptIde(E) {
     const n = (s) => diags.filter((d) => d.sev === s).length;
     document.getElementById("ssProbSum").textContent =
       diags.length ? `错误 ${n("error")} · 警告 ${n("warn")} · 提示 ${n("info")}` : "没有问题";
+    // 活动栏"问题"图标上的角标（VS Code 同款蓝章，错误+警告总数）
+    const badge = document.getElementById("actProbBadge");
+    if (badge) {
+      const total = n("error") + n("warn");
+      badge.hidden = !total;
+      badge.textContent = total > 99 ? "99+" : String(total);
+    }
     // 控制台空的时候会被收成一根竖条（那是它自己的设计）。但"有问题"就是它该展开的理由，
     // 收着等于把诊断藏起来——正是这次要修的毛病。
     if (diags.some((d) => d.sev !== "info")) consoleBox.classList.remove("is-closed");
@@ -288,6 +295,15 @@ export function wireScriptIde(E) {
       if (cn) closeTab(cn);
       return;
     }
+    // Ctrl+Shift+E 聚焦资源管理器；Ctrl+` 收放底部面板
+    if (mod && ev.shiftKey && ev.key.toLowerCase() === "e") {
+      ev.preventDefault();
+      filesBox.classList.remove("hidden"); syncAct();
+      const first = document.querySelector(".sfile");
+      if (first) first.focus();
+      return;
+    }
+    if (mod && ev.key === "`") { ev.preventDefault(); consoleBox.classList.toggle("is-closed"); return; }
   });
 
   /* ---------- 挂接 ---------- */
@@ -357,13 +373,13 @@ export function wireScriptIde(E) {
       edTabs.innerHTML = "";
       for (const name of openTabs) {
         const idx = idxOf(name);
+        const dirty = dirtyFiles.has(name);
         const t = document.createElement("div");
-        t.className = "ed-tab" + (name === curName ? " active" : "");
+        t.className = "ed-tab" + (name === curName ? " active" : "") + (dirty ? " modified" : "");
         t.setAttribute("role", "tab");
         t.title = name;
         t.innerHTML = `<span class="js-badge">JS</span><span class="tname"></span>` +
-          (dirtyFiles.has(name) ? `<i class="ed-dot" title="有未保存的改动"></i>` : "") +
-          `<button class="ed-close" title="关闭标签（不删除文件）" aria-label="关闭">×</button>`;
+          `<button class="ed-close${dirty ? " dot" : ""}" title="关闭标签（不删除文件）" aria-label="关闭">${dirty ? "●" : "×"}</button>`;
         t.querySelector(".tname").textContent = name;
         t.onclick = () => { if (idx >= 0) switchTo(idx); };
         t.querySelector(".ed-close").onclick = (ev) => { ev.stopPropagation(); closeTab(name); };
@@ -463,7 +479,52 @@ export function wireScriptIde(E) {
     syncAct();
   }
 
+  // 活动栏"问题"角标：图标是 data-ico 在启动时画进去的，角标得在它之后挂，否则会被洗掉
+  const probBtn = actBar && actBar.querySelector('.act-btn[data-act="prob"]');
+  if (probBtn && !probBtn.querySelector(".act-badge")) {
+    const badge = document.createElement("i");
+    badge.className = "act-badge";
+    badge.id = "actProbBadge";
+    badge.hidden = true;
+    probBtn.appendChild(badge);
+  }
+
+  /* ---------- 小地图：整份代码的缩略总览 + 视口亮带 ---------- */
+  const mm = document.getElementById("minimap");
+  const mmCanvas = document.getElementById("mmapCanvas");
+  const mmSlider = document.getElementById("mmapSlider");
+  function syncMinimap() {
+    if (!mm || !mmCanvas || !mmSlider) return;
+    if (getComputedStyle(mm).display === "none") return;
+    const t = ta();
+    const pre = mmCanvas.querySelector("pre");
+    if (!t || !pre) return;
+    // 缩放到内容宽 = 96px 减左右 padding；文字太小没有意义，夹在 [0.05, 0.14]
+    const k = Math.max(0.05, Math.min(0.14, (96 - 28) / (pre.scrollWidth || 1)));
+    mmCanvas.style.transform = `scale(${k})`;
+    mmCanvas.style.top = (-t.scrollTop * k) + "px";
+    mmSlider.style.height = Math.max(14, t.clientHeight * k) + "px";
+    mmSlider.style.top = (t.scrollTop * k) + "px";
+  }
+  function renderMinimap() {
+    if (!mmCanvas) return;
+    const src = document.getElementById("scriptHiCode");
+    if (!src) return;
+    let pre = mmCanvas.querySelector("pre");
+    if (!pre) { pre = document.createElement("pre"); mmCanvas.appendChild(pre); }
+    pre.innerHTML = src.innerHTML + "\n";
+    syncMinimap();
+  }
+  // 高亮层每次重画（输入 / 切文件）都跟着重建；输入路径走的是 features 里的裸
+  // renderCodeEditor，不进 E.renderCode，所以用观察者而不是再去包一层钩子。
+  const srcCode = document.getElementById("scriptHiCode");
+  if (srcCode) new MutationObserver(renderMinimap).observe(srcCode, { childList: true, subtree: true, characterData: true });
+  const taEl2 = ta();
+  if (taEl2) taEl2.addEventListener("scroll", syncMinimap);
+  window.addEventListener("resize", syncMinimap);
+
   renderTabs();
+  renderMinimap();
   recheck();
 }
 
