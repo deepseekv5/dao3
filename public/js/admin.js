@@ -39,13 +39,13 @@ const store = { users: null, pubs: null, comments: null, audit: null, reports: n
 
 async function load(keepTab) {
   if (!auth.me) {
-    root.innerHTML = `<div class="cm-empty"><b>先登录</b>后台只放行管理员角色。<button class="cm-btn primary" id="adLogin" style="margin-top:12px">登录</button></div>`;
+    root.innerHTML = `<div class="cm-empty"><b>先登录</b>后台只放行超级管理员。<button class="cm-btn primary" id="adLogin" style="margin-top:12px">登录</button></div>`;
     $("adLogin").onclick = () => openAuth("login");
     return;
   }
   try { data = await api("GET", "/api/community/admin/overview"); }
   catch (e) {
-    root.innerHTML = `<div class="cm-empty"><b>进不去</b>${esc(e.message)}<br>当前账号「${esc(auth.me.name)}」不是管理员。第一个注册的账号会自动成为管理员。</div>`;
+    root.innerHTML = `<div class="cm-empty"><b>进不去</b>${esc(e.message)}<br>当前账号「${esc(auth.me.name)}」不是超级管理员。第一个注册的账号会自动成为超级管理员。</div>`;
     return;
   }
   // 列表数据是分开拉的，动作之后要作废缓存，否则切回上一个 tab 看到的是旧表。
@@ -122,7 +122,7 @@ function drawOv(body) {
       <div class="ad-card">
         <div class="hd"><b>作品最多的账号</b><a class="cm-btn sm" data-goto="users">去用户页</a></div>
         ${top.length ? `<table class="ad-table"><tbody>${top.map((u) => `<tr>
-          <td><a href="/u/${encodeURIComponent(u.name)}">${esc(u.name)}</a>${u.role === "admin" ? `<span class="ad-tag">管理员</span>` : ""}</td>
+          <td><a href="/u/${encodeURIComponent(u.name)}">${esc(u.name)}</a>${u.role === "admin" ? `<span class="ad-tag">超级管理员</span>` : ""}</td>
           <td class="num">${u.pubsAll} 件</td><td class="num">${kb(u.bytes)}</td><td class="num">${u.comments} 评论</td></tr>`).join("")}</tbody></table>`
       : `<div class="cm-empty">还没有人发过作品。</div>`}
       </div>
@@ -317,7 +317,7 @@ const UCOLS = [["name", "账号"], ["new", "加入"], ["seen", "最近活跃"], 
 async function drawUsers(body) {
   body.innerHTML = `<div class="ad-bar">
     <input id="usQ" placeholder="搜昵称或签名" value="${esc(uf.q)}"/>
-    ${[["", "全部"], ["admin", "管理员"], ["banned", "已封禁"], ["online", "在线"], ["reported", "被举报"], ["quiet", "从没玩过"]].map(([k, l]) =>
+    ${[["", "全部"], ["admin", "超级管理员"], ["banned", "已封禁"], ["online", "在线"], ["reported", "被举报"], ["quiet", "从没玩过"]].map(([k, l]) =>
     `<button class="cm-btn sm ${uf.only === k ? "on" : ""}" data-only="${k}">${l}</button>`).join("")}
     <span class="grow"></span><button class="cm-btn sm" id="usGo">查询</button></div>
   <div class="ad-batch" id="usBatch" hidden>
@@ -328,7 +328,7 @@ async function drawUsers(body) {
     <button class="cm-btn sm" data-batch="unban">批量解封</button>
     <button class="cm-btn sm" data-batch="sessions">批量踢下线</button>
     <button class="cm-btn sm" data-batch="flag_off">批量取消标记</button>
-    <button class="cm-btn sm" data-batch="role_admin">提为管理员</button>
+    <button class="cm-btn sm" data-batch="role_admin">提为超级管理员</button>
     <button class="cm-btn sm" data-batch="role_user">降为普通</button>
     <button class="cm-btn sm" id="usClear">清空选择</button>
   </div>
@@ -352,7 +352,7 @@ async function drawUsers(body) {
         <th>状态</th><th></th></tr></thead>
       <tbody>${d.rows.map((u) => `<tr class="${u.banned ? "banned" : ""}">
         <td class="chk"><input type="checkbox" data-pick="${esc(u.name)}" ${picked.has(u.name) ? "checked" : ""}/></td>
-        <td><a href="/u/${encodeURIComponent(u.name)}">${esc(u.name)}</a>${u.role === "admin" ? '<span class="ad-tag">管理员</span>' : ""}
+        <td><a href="/u/${encodeURIComponent(u.name)}">${esc(u.name)}</a>${u.role === "admin" ? '<span class="ad-tag">超级管理员</span>' : ""}
           <div class="sub">${esc(u.bio || "")}${u.region ? ` · ${esc(u.region)}` : ""}${u.online ? ' <span class="cm-on">在线</span>' : ""}</div></td>
         <td class="num sub">${esc(timeAgo(u.createdAt))}</td>
         <td class="num sub">${u.lastSeen ? esc(timeAgo(u.lastSeen)) : "—"}</td>
@@ -362,7 +362,7 @@ async function drawUsers(body) {
         <td>${u.banned ? `<span class="ad-ban" title="${esc(u.bannedReason || "")}">已封禁${u.bannedUntil ? " 到 " + esc(new Date(u.bannedUntil).toLocaleDateString()) : ""}</span>` : "正常"}</td>
         <td class="ops">
           <button class="cm-btn sm" data-detail="${esc(u.name)}">详情</button>
-          <button class="cm-btn sm" data-role="${esc(u.name)}" data-r="${u.role === "admin" ? "user" : "admin"}">${u.role === "admin" ? "降为普通" : "提为管理员"}</button>
+          <button class="cm-btn sm" data-role="${esc(u.name)}" data-r="${u.role === "admin" ? "user" : "admin"}">${u.role === "admin" ? "降为普通" : "提为超级管理员"}</button>
           <button class="cm-btn sm ${u.banned ? "" : "danger"}" data-ban="${esc(u.name)}" data-b="${u.banned ? 0 : 1}">${u.banned ? "解封" : "封禁"}</button>
           <button class="cm-btn sm" data-kick="${esc(u.name)}">踢下线</button>
         </td></tr>`).join("")}</tbody></table>`;
@@ -390,7 +390,7 @@ async function drawUsers(body) {
     const a = b.dataset.batch;
     const names = [...picked];
     if (!names.length) return toast("先勾选人", true);
-    const cn = { ban: "封禁", unban: "解封", sessions: "踢下线", flag_off: "取消标记", role_admin: "提为管理员", role_user: "降为普通" }[a];
+    const cn = { ban: "封禁", unban: "解封", sessions: "踢下线", flag_off: "取消标记", role_admin: "提为超级管理员", role_user: "降为普通" }[a];
     if (!window.confirm(`对 ${names.length} 个账号执行「${cn}」？自己会被自动跳过。`)) return;
     const payload = { names, action: a.startsWith("role_") ? "role" : a, role: a === "role_admin" ? "admin" : a === "role_user" ? "user" : undefined };
     if (a === "ban") { payload.days = Number($("usDays").value) || 0; payload.reason = "批量处理"; }
@@ -462,7 +462,7 @@ async function openUser(name) {
   const u = d.user;
   mask.querySelector(".ad-drawer").innerHTML = `
     <div class="hd"><b>${esc(u.name)}</b>
-      <span class="ad-tag ${u.role === "admin" ? "" : "mute"}">${u.role === "admin" ? "管理员" : "普通用户"}</span>
+      <span class="ad-tag ${u.role === "admin" ? "" : "mute"}">${u.role === "admin" ? "超级管理员" : "普通用户"}</span>
       ${u.banned ? `<span class="ad-ban">已封禁${u.bannedUntil ? " 到 " + esc(new Date(u.bannedUntil).toLocaleDateString()) : ""}</span>` : ""}
       <button class="cm-btn sm" id="udClose">关闭</button></div>
     <div class="ad-kv">
@@ -564,7 +564,7 @@ async function openUser(name) {
 /* ---------------- 审计日志 ---------------- */
 async function drawAudit(body) {
   body.innerHTML = `<div class="ad-bar">
-    <input id="auQ" placeholder="搜对象、动作或管理员" value="${esc(af.q)}"/>
+    <input id="auQ" placeholder="搜对象、动作或超级管理员" value="${esc(af.q)}"/>
     <select id="auAct"><option value="">所有动作</option>
       ${Object.entries(ACT_CN).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
     <span class="grow"></span><button class="cm-btn sm" id="auGo">查询</button></div>
@@ -577,7 +577,7 @@ async function drawAudit(body) {
   if (!store.audit) { try { store.audit = await api("GET", `/api/community/admin/audit?q=${encodeURIComponent(af.q)}&action=${af.action}&limit=200`); } catch (e) { $("auRows").innerHTML = `<div class="cm-empty">${esc(e.message)}</div>`; return; } }
   const d = store.audit;
   $("auRows").innerHTML = `<div class="ad-count">${d.rows.length} / ${d.total} 条</div>`
-    + (d.rows.length ? `<table class="ad-table"><thead><tr><th>时间</th><th>管理员</th><th>动作</th><th>对象</th><th>说明</th></tr></thead>
+    + (d.rows.length ? `<table class="ad-table"><thead><tr><th>时间</th><th>超级管理员</th><th>动作</th><th>对象</th><th>说明</th></tr></thead>
       <tbody>${d.rows.map((a) => `<tr><td class="sub">${esc(dt(a.ts))}</td><td>${esc(a.byName)}</td>
         <td>${esc(ACT_CN[a.action] || a.action)}</td><td>${esc(a.target)}</td>
         <td class="sub">${esc(a.detail || "")}</td></tr>`).join("")}</tbody></table>`

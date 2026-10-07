@@ -450,7 +450,7 @@ async function pubView(id) {
   const reportBtn = $("cmReport");
   if (reportBtn) reportBtn.onclick = async () => {
     if (!auth.me) return openAuth("login");
-    const reason = prompt("举报理由（会进入管理员的审核队列）");
+    const reason = prompt("举报理由（会进入超级管理员的审核队列）");
     if (reason == null || !reason.trim()) return;
     try { await api("POST", `/api/community/pubs/${p.id}/report`, { reason: reason.trim() }); toast("已提交举报"); }
     catch (e) { toast(e.message, true); }
@@ -546,7 +546,7 @@ async function loadComments(pubId, authorId) {
     // 结果就是地图能举报、评论不能，而评论才是真正会长出脏话的地方。
     const rep = el.querySelector('[data-x="report"]');
     if (rep) rep.onclick = async () => {
-      const reason = window.prompt("举报这条评论的理由（会进入管理员的审核队列）");
+      const reason = window.prompt("举报这条评论的理由（会进入超级管理员的审核队列）");
       if (reason == null || !reason.trim()) return;
       try { await api("POST", `/api/community/comments/${id}/report`, { reason: reason.trim().slice(0, 200) }); toast("已提交举报"); }
       catch (e) { toast(e.message, true); }
@@ -690,7 +690,7 @@ async function friendsView() {
     const friendNames = new Set(fr.friends.map((u) => u.name));
     const label = (n) => {
       // 管理员发的通知是一段自由文本，没有固定句式可套，所以照原文显示。
-      if (n.kind === "admin_note") return n.text || "管理员通知";
+      if (n.kind === "admin_note") return n.text || "超级管理员通知";
       if (n.kind !== "friend_request") return KIND[n.kind] || n.kind;
       if (n.actor && pending.has(n.actor.name)) return KIND.friend_request;
       return n.actor && friendNames.has(n.actor.name) ? "的好友请求已通过" : "的好友请求已处理";

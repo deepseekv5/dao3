@@ -31,7 +31,7 @@ const ITEMS = [
   { href: "/friends", label: "好友", title: "好友、扩列与通知", icon: "chat", on: (p) => p.startsWith("/friends") },
   { href: EDITOR_HREF, label: "编辑器", title: "编辑器", icon: "cube", on: (p) => p.startsWith("/edit") },
   { href: "/voxa", label: "建模", title: "VOXA 体素建模", icon: "vox", on: (p) => p.startsWith("/voxa") },
-  { href: "/admin", label: "后台", title: "管理后台（仅管理员可见）", icon: "gear", on: (p) => p.startsWith("/admin"), admin: true },
+  { href: "/admin", label: "后台", title: "管理后台（仅超级管理员可见）", icon: "gear", on: (p) => p.startsWith("/admin"), admin: true },
   { href: "/site", label: "简介", title: "简介", icon: "doc", on: (p) => p === "/site" },
   { href: "/manual", label: "手册", title: "游玩手册", icon: "book", on: (p) => p.startsWith("/manual") },
   { href: "/docs/api-reference.html", label: "API", title: "API 参考", icon: "code", on: (p) => p.startsWith("/docs") },

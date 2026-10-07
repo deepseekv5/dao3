@@ -410,7 +410,7 @@ export async function profileView(name, root, setTitle, setSub) {
     <div class="pf-head">
       <div class="pf-avatar">${face(u)}${u.online ? '<i class="pf-online" title="在线"></i>' : '<i class="pf-online off" title="离线"></i>'}</div>
       <div class="pf-id">
-        <h2>${esc(u.name)}${u.role === "admin" ? '<span class="pf-role">管理员</span>' : ""}</h2>
+        <h2>${esc(u.name)}${u.role === "admin" ? '<span class="pf-role">超级管理员</span>' : ""}</h2>
         <p class="pf-bio">${esc(u.bio || "")}</p>
         <p class="pf-meta">加入于 ${esc(new Date(u.createdAt).toLocaleDateString())} · ${c.pubs || 0} 张发布 · ${c.friends || 0} 好友 · ${c.followers || 0} 关注者</p>
       </div>

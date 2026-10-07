@@ -311,7 +311,7 @@ ok("打上的审核标记进了被标记队列", await until(A, `(() => { const 
 
 /* B 不该进得来：前端藏按钮，服务端也要真的挡 */
 await B.goto(BASE + "/admin"); await sleep(1400);
-ok("普通用户打开后台看到的是拒绝", await until(B, `document.body.textContent.includes("不是管理员") && !document.querySelector(".ad-cards")`), await B.text());
+ok("普通用户打开后台看到的是拒绝", await until(B, `document.body.textContent.includes("不是超级管理员") && !document.querySelector(".ad-cards")`), await B.text());
 
 /* 用户页：搜索、批量条、详情抽屉、封禁对话框。
    这里只开对话框再取消，不真的封 B——B 后面还要进联机房，封号会踢掉它的会话，
@@ -344,7 +344,7 @@ ok("封禁弹的是带天数与无限期的对话框", await until(A, `!!documen
   && [...document.querySelectorAll("#bdDays option")].some((o)=>/无限期/.test(o.textContent))`), await A.evaluate(`document.body.innerText.slice(0,300)`));
 await A.evaluate(`document.getElementById("bdCancel").click()`);
 ok("对话框能取消，且取消之后没有真的封号", await until(A, `!document.querySelector(".ad-mask") && !document.querySelector(".ad-ban")`), await A.text());
-// 看的是那一行的"管理员"小标签，不是整行文本：操作列里那颗按钮本来就叫"提为管理员"，
+// 看的是那一行的"超级管理员"小标签，不是整行文本：操作列里那颗按钮本来就叫"提为超级管理员"，
 // 拿文本比会永远为真，等于没测。
 const adminChip = (name) => `(() => { const tr=[...document.querySelectorAll("#usRows tbody tr")].find((x)=>x.textContent.includes(${JSON.stringify(name)}));
   if(!tr) throw new Error("列表里找不到这个人"); return !!tr.querySelector(".ad-tag"); })()`;

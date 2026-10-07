@@ -1307,7 +1307,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     /* ---------------- 管理后台 ---------------- */
     if (seg[0] === "admin") {
       if (!viewerId) { reply.fail(401, "先登录"); return true; }
-      if (!isAdmin()) { reply.fail(403, "这个账号不是管理员"); return true; }
+      if (!isAdmin()) { reply.fail(403, "这个账号不是超级管理员"); return true; }
       const sub = seg[1];
       const nameOf = (id) => (docs.users.byId[id] || {}).name || "（已注销）";
       const allComments = () => {
@@ -1385,7 +1385,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         if (!u) { reply.fail(404, "没有这个用户"); return true; }
         if (!["admin", "user"].includes(body.role)) { reply.fail(400, "角色只能是 admin 或 user"); return true; }
         if (u.id === viewerId && body.role !== "admin" && Object.values(docs.users.byId).filter((x) => x.role === "admin").length < 2) {
-          reply.fail(400, "这是唯一的管理员，降下来就没人能进后台了"); return true;
+          reply.fail(400, "这是唯一的超级管理员，降下来就没人能进后台了"); return true;
         }
         u.role = body.role; store.touch("users");
         addAudit(viewerId, "role", u.name, "角色改成 " + u.role);
@@ -1704,7 +1704,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
           docs.users.byLower[u.lower] = u.id;
           store.touch("users");
           addAudit(viewerId, "rename", from, "改名成 " + to);
-          notify(u.id, "renamed", viewerId, null, `管理员把你的昵称改成「${to}」`);
+          notify(u.id, "renamed", viewerId, null, `超级管理员把你的昵称改成「${to}」`);
           reply.json(200, { ok: true, name: to }); return true;
         }
         if (body.action === "reset") {
@@ -1722,7 +1722,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
           if (String(body.confirm || "") !== u.name) { reply.fail(400, "要注销账号，得把对方的昵称原样填进确认框"); return true; }
           if (u.id === viewerId) { reply.fail(400, "不能注销自己"); return true; }
           if ((u.role || "user") === "admin" && Object.values(docs.users.byId).filter((x) => x.role === "admin").length < 2) {
-            reply.fail(400, "这是唯一的管理员，注销掉就没人能进后台了"); return true;
+            reply.fail(400, "这是唯一的超级管理员，注销掉就没人能进后台了"); return true;
           }
           const id = u.id, name = u.name;
           const pubs = Object.values(docs.pubs.byId).filter((p) => p.authorId === id);
