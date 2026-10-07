@@ -282,3 +282,17 @@ tr:hover .wb-acts, td:hover .wb-acts { opacity: 1; }
   .wb-search { width: 100%; order: 5; }
   .wb-t .opt { display: none; }
 }
+
+/* ---------------- 液态玻璃：外壳上的扫光 ----------------
+   顶栏与侧栏是"永远在场"的两块玻璃，扫光放在这里最容易被看见：
+   一条斜的亮带 11/14 秒扫过一趟，同一条配方在 tokens.css 里。 */
+.wb-top, .wb-rail { position: relative; overflow: hidden; }
+.wb-top > *, .wb-rail > * { position: relative; z-index: 1; }
+.wb-top::after, .wb-rail::after {
+  content: ""; position: absolute; top: -70%; bottom: -70%; left: 0; width: 34%; z-index: 0;
+  background: linear-gradient(96deg, transparent, rgba(255, 255, 255, .16), rgba(255, 255, 255, .04) 60%, transparent);
+  filter: blur(6px); pointer-events: none;
+  animation: sheenSweep 11s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+.wb-rail::after { animation-duration: 15s; animation-delay: -6s; }
+@media (prefers-reduced-motion: reduce) { .wb-top::after, .wb-rail::after { animation: none; opacity: 0; } }

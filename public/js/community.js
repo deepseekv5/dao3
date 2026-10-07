@@ -106,6 +106,32 @@ function drawTabs() {
 
 async function reload() { feed = { ...feed, offset: 0, rows: [] }; writeFeedUrl(); drawCats(); drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }
 
+/** 透镜：照参照页那块招牌做的——不是描一个圆边就算，是真的把底下的图放大。
+ *  做法是给透镜自己铺一张同源封面，按 1.7× 尺寸定位到光标处，于是"放大"是真的；
+ *  backdrop-filter 只负责在边缘糊一点点，别把放大结果糊掉。
+ *  只在有指针（hover）的设备上装：触屏没有"悬停"这回事，装了只会挡住手指。 */
+function mountLens(host, src) {
+  if (!host || !src || !window.matchMedia || !window.matchMedia("(hover: hover)").matches) return;
+  host.classList.add("has-lens");
+  const lens = document.createElement("span");
+  lens.className = "cm-lens";
+  lens.setAttribute("aria-hidden", "true");
+  lens.style.backgroundImage = `url("${src}")`;
+  host.appendChild(lens);
+  const R = 62, ZOOM = 1.7;   // 半径与放大倍数：太小看不出放大，太大像坏了一层膜
+  const move = (ev) => {
+    const b = host.getBoundingClientRect();
+    const x = ev.clientX - b.left, y = ev.clientY - b.top;
+    const iw = b.width, ih = b.height;
+    lens.style.opacity = "1";
+    lens.style.transform = `translate3d(${x - R}px, ${y - R}px, 0)`;
+    lens.style.backgroundSize = `${iw * ZOOM}px ${ih * ZOOM}px`;
+    lens.style.backgroundPosition = `-${x * ZOOM - R}px -${y * ZOOM - R}px`;
+  };
+  host.addEventListener("pointermove", move);
+  host.addEventListener("pointerleave", () => { lens.style.opacity = "0"; });
+}
+
 /** 右栏：这一屏没有筛选时才出现。它回答的是"然后呢"——最新的在哪、谁在线、这站是什么。
  *  筛选过的一屏是"我在找东西"，旁边挂一排推荐只会分心，所以整栏收起、列表铺满。 */
 function drawSide(plain) {
@@ -180,6 +206,7 @@ async function loadFeed(reset) {
   /* 精选封面在页面顶上渗出的一层光。官方展厅顶上就有这么一层：
      它让"这一页有内容"在图片还没解码完的时候就已经成立。没有封面就不铺，别拿渐变色假装有图。 */
   const glow = hero ? coverUrl(hero) : "";
+  mountLens(featHost.querySelector(".cm-feature-art"), glow);
   document.documentElement.style.setProperty("--cm-hero", glow ? `url("${glow}")` : "none");
   drawSide(plain);
   // 导轨要在内容够多的时候才有意义：一共三张图还分"大家都在玩"和"全部作品"两遍，是凑版式。

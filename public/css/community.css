@@ -723,3 +723,39 @@
 /* 瓷砖上有底图时，玻璃的受光棱正好给封面加一道边光 */
 .cm-tile { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
 .cm-tile.on { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
+
+/* 瓷砖与侧面板上的扫光：一屏十一块瓷砖同时反光，"液态"这件事就藏不住了。
+   瓷砖原来只有一个 ::after 渐变，所以扫光走 ::before，两者不打架。 */
+.cm-tile, .cm-panel { position: relative; overflow: hidden; }
+.cm-tile::before, .cm-panel::after {
+  content: ""; position: absolute; top: -70%; bottom: -70%; left: 0; width: 40%; z-index: 1;
+  background: linear-gradient(96deg, transparent, rgba(255, 255, 255, .18), transparent);
+  filter: blur(5px); pointer-events: none;
+  animation: sheenSweep 12s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+.cm-tile:nth-child(2n)::before { animation-duration: 15s; animation-delay: -5s; }
+.cm-tile:nth-child(3n)::before { animation-duration: 9s; animation-delay: -8s; }
+.cm-panel::after { width: 30%; animation-duration: 13s; }
+.cm-panel:nth-child(2n)::after { animation-delay: -6s; }
+@media (prefers-reduced-motion: reduce) { .cm-tile::before, .cm-panel::after { animation: none; opacity: 0; } }
+/* 扫光是铺在封面上的，别让它盖住标题与张数 */
+.cm-tile i, .cm-tile em { z-index: 2; }
+
+/* ---------------- 透镜：悬停精选封面时跟着光标的那块玻璃 ----------------
+   参照页的招牌就是它。真的放大（透镜自己铺一张同源封面按 1.7× 定位），
+   边缘一圈受光 + 一道外影，所以它看起来是一块厚玻璃压在图上，不是贴纸。 */
+.cm-feature-art.has-lens { cursor: zoom-in; }
+.cm-lens {
+  position: absolute; left: 0; top: 0; width: 124px; height: 124px; border-radius: 50%;
+  pointer-events: none; opacity: 0; transition: opacity var(--dur-1) var(--ease);
+  background-repeat: no-repeat; background-color: rgba(13, 12, 11, .35);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, .75),
+    inset 0 0 0 1px rgba(255, 255, 255, .28),
+    inset -2px -2px 6px rgba(0, 0, 0, .45),
+    0 18px 34px -14px rgba(0, 0, 0, .75);
+  backdrop-filter: blur(1.5px) saturate(1.25);
+  -webkit-backdrop-filter: blur(1.5px) saturate(1.25);
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) { .cm-lens { transition: none; } }

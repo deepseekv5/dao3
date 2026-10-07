@@ -115,3 +115,16 @@ textarea:focus, input:focus, select:focus { outline: none; border-color: var(--p
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
   box-shadow: var(--glass-lit), var(--glass-dark), 0 30px 70px -34px rgba(0, 0, 0, .85);
 }
+
+/* 后台的数据卡同样是玻璃，扫光错开走，避免一排同步闪 */
+.ad-cards > div, .ad-card { position: relative; overflow: hidden; }
+.ad-cards > div::after, .ad-card::after {
+  content: ""; position: absolute; top: -70%; bottom: -70%; left: 0; width: 42%; z-index: 0;
+  background: linear-gradient(96deg, transparent, rgba(255, 255, 255, .13), transparent);
+  filter: blur(6px); pointer-events: none;
+  animation: sheenSweep 13s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+.ad-cards > div:nth-child(2n)::after { animation-delay: -4s; animation-duration: 10s; }
+.ad-cards > div:nth-child(3n)::after { animation-delay: -8s; animation-duration: 16s; }
+.ad-cards > div > *, .ad-card > * { position: relative; z-index: 1; }
+@media (prefers-reduced-motion: reduce) { .ad-cards > div::after, .ad-card::after { animation: none; opacity: 0; } }
