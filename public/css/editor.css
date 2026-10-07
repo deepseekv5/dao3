@@ -21,6 +21,16 @@
   --elevated:#1b1917;
   --glass-bg:#1b1917; --glass-bg-hover:#221f1c; --glass-border:#2c2926;
   --glass-border-hover:rgba(227, 166, 60, .45); --glass-nav-bg:rgba(13, 12, 11, .88);
+  /* 材质浓度：名字仍然来自 tokens.css，这里只改值。
+     编辑器这一屏的玻璃必须比社区更实——chrome 压在任意亮度的 3D 画面上，
+     .40 的底色在白天场景里等于没有：11px 的读数会直接糊进天空里读不出来。 */
+  --glass-fill:rgba(22, 20, 18, .62); --glass-fill-strong:rgba(20, 18, 16, .84);
+  --ed-chrome:rgba(20, 18, 16, .78);   /* 顶栏 / 状态栏 / 工具条：窄条，透一点 */
+  --ed-panel:rgba(19, 17, 16, .90);    /* 右栏 / 卡片 / 弹窗：大面积小字，要实 */
+  --ed-hair:rgba(255, 255, 255, .07);  /* 分隔用一条亮发丝；#000 的 1px 在暗底上是"脏"不是"分隔" */
+  --ed-hair-2:rgba(255, 255, 255, .13);
+  --ed-inset:rgba(0, 0, 0, .32);       /* 输入框、代码区、缩略图槽这类"凹进去"的底 */
+  --ed-lift:0 18px 44px -22px rgba(0, 0, 0, .92), 0 2px 10px -4px rgba(0, 0, 0, .5);
   --shadow-card:0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.3);
   --shadow-card-hover:0 4px 14px rgba(227, 166, 60, .2), 0 1px 3px rgba(0,0,0,.5);
   --glow:0 0 14px rgba(227, 166, 60, .45), 0 0 28px rgba(227, 166, 60, .18);
@@ -1054,43 +1064,356 @@ body.playing .view-gizmo{display:none}
 .ac-doc em,.ac-doc i{font-style:normal;margin-left:8px;color:var(--font-white-minor)}
 .ac-doc em{color:var(--fg3)}
 
-/* 编辑器里的按钮也换上同一块玻璃：状态栏、工具条、面板主按钮。
-   只动外观（底色/描边/受光棱/按下手感），尺寸与布局一律不碰——
-   这一屏的密度是调过的，动了尺寸整排工具会错位。 */
-button.sb-btn, .pg-btn, .vx-btn, .gh-btns button, .playbtn, button.primary, button.danger {
+/* ==================== IDE 材质与层次 ====================
+   这一屏"难看"的直接原因是玻璃根本没生效：editor.html 没引 tokens.css，
+   于是 --glass-fill-strong / --btn-fill / --r-pill / --dur-1 全是未定义变量，
+   而 background:var(未定义) 会退化成 transparent —— 顶栏、状态栏、方块库、
+   右栏、弹窗一起变成了透明片，直接糊在 3D 画面上。tokens.css 现在跟着页面一起到了。
+
+   补完之后这一节做的事，是把"哪一层该是什么材质"定清楚，而不是到处刷玻璃：
+     · 画布**上**的层（右栏、方块库、工具条、属性卡、弹窗、命令面板）→ 真玻璃，
+       它们身后就是 3D 场景，糊得出来；
+     · 画布**外**的两条（顶栏、状态栏）→ 实心 chrome 加一道上缘受光，
+       它们身后是纯底色，刷玻璃只会得到一块灰。
+   另外三件：纯黑 1px 描边全部换成亮发丝（#000 的细线在暗底上是"脏"不是"分隔"）；
+   可点的小件统一手感（悬停亮一档、按下缩一点）；输入件统一凹底 + 琥珀焦点环。
+
+   尺寸一律不碰：test/ide.test.mjs 钉着状态栏 24px、画布让位 24px、工具条不压两侧
+   面板、行号槽行距 20px、补全弹窗跨两行差 40px。颜色只用 var() 与 rgba()：
+   本文件 :root 之外不许出现杂色 hex（同一条测试里的静态审查）。 */
+
+/* 0 · 不支持毛玻璃的浏览器：把底填实，半透明不加模糊只会糊成一片灰 */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  :root { --ed-chrome: rgba(20, 18, 16, .98); --ed-panel: rgba(19, 17, 16, .99); }
+}
+
+/* 1 · 画布上的层：真玻璃 */
+#rightPanel, .float-card, .float-toolbar, .modal-box, .drawer,
+.pl-box, .hist-menu, .ac-pop, .worldlist, #ctxmenu, .fd-box,
+.ui-palette, #collabPanel, .pk-menu, #toast {
+  background-color: var(--ed-panel);
   background-image: var(--glass-sheen);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(0, 0, 0, .34);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--ed-lift);
+  border: 1px solid var(--ed-hair-2);
+}
+/* 临时弹出来的那几个（命令面板、补全、历史、右键、toast）描边带一点琥珀：
+   它们跟常驻面板不是一类东西，得一眼分得出"这是浮在我上面的" */
+.pl-box, .hist-menu, .ac-pop, #ctxmenu, #toast, .pk-menu { border-color: rgba(227, 166, 60, .26); }
+.modal-box { border-color: rgba(227, 166, 60, .22); border-radius: 16px; }
+.float-toolbar { border-radius: 14px; }
+.float-card { border-radius: 16px; }
+.pl-box, .ui-palette, #collabPanel { border-radius: 14px; }
+.hist-menu, .ac-pop, .worldlist { border-radius: 12px; }
+#ctxmenu, .pk-menu { border-radius: 11px; }
+.fd-box { border-radius: 10px; }
+#toast { border-radius: var(--r-pill); }
+
+/* 2 · 画布外的两条：实心 chrome，只留一道上缘受光 */
+#topbar, #hud, .ss-head, .code-status {
+  background-color: var(--ed-chrome);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, 0) 62%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 1px 0 rgba(0, 0, 0, .55);
+}
+#topbar, .ss-head { border-bottom: 1px solid var(--ed-hair); }
+#hud, .code-status { border-top: 1px solid var(--ed-hair); }
+
+/* 3 · 剩下的分隔线统一成一条亮发丝 */
+.rp-sec { border-bottom: 1px solid var(--ed-hair); }
+#rightPanel { border-left: 1px solid var(--ed-hair); }
+.rp-tabs, .pp-rail, .lc-rail, .lc-foot, .lc-scene, .model-hint, .weather-row,
+.ss-files, .ss-files-head, .ss-console, .ss-console-head, .ss-console-tip,
+.ss-lens, .ss-tabs, .dg-filter, .code-gutter, .drawer-head, .drawer-foot,
+.pk-rail, .pk-thead, .pk-row, .pk-space, .sc-panel, .model-panel .ent-props { border-color: var(--ed-hair); }
+
+/* 4 · 顶栏：工作区页签做成"填色的那一个"。
+   原来是一条 bottom:-14px 的下划线——它落在 48px 顶栏外面，等于没有；
+   而且七颗页签之间还夹着六根 1px 竖线，看着像没对齐的表格。 */
+.tabs { gap: 3px; }
+.tabs .div { display: none; }
+.mtab { font-size: 13px; letter-spacing: .01em; border-radius: 9px;
+  transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.mtab:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+.mtab.active { background: rgba(227, 166, 60, .16); color: var(--primary-hover);
+  box-shadow: inset 0 0 0 1px rgba(227, 166, 60, .30); }
+.mtab.active::after { display: none; }
+/* 图标按钮与运行键 */
+.tb-ico { border-radius: 9px; transition: background-color var(--dur-1) var(--ease),
+  color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease-spring); }
+.tb-ico:hover { background: rgba(255, 255, 255, .08); color: #fff; transform: translateY(-1px); }
+.tb-ico:active { transform: scale(.93); }
+#btnCollab.on { background: rgba(227, 166, 60, .18); color: var(--primary-hover);
+  box-shadow: inset 0 0 0 1px rgba(227, 166, 60, .32); }
+.savestate { color: rgba(255, 255, 255, .40); }
+.play { background-image: linear-gradient(180deg, var(--primary-hover), var(--primary) 58%, var(--primary-press));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset 0 -1px 0 rgba(0, 0, 0, .28),
+    0 8px 20px -8px rgba(227, 166, 60, .75);
+  transition: transform var(--dur-1) var(--ease-spring), box-shadow var(--dur-1) var(--ease); }
+.play:hover { background-image: linear-gradient(180deg, var(--primary-hover), var(--primary) 58%, var(--primary-press));
+  transform: translateY(-1px) scale(1.05); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5),
+    0 12px 26px -8px rgba(227, 166, 60, .85); }
+.play:active { transform: scale(.94); }
+
+/* 5 · 中央工具条：工具格、更多、视角分段 */
+.ft { border-radius: 9px; transition: background-color var(--dur-1) var(--ease),
+  color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease-spring); }
+.ft:hover { background: rgba(255, 255, 255, .09); color: #fff; }
+.ft:active { transform: scale(.92); }
+.ft.active { background-image: linear-gradient(180deg, var(--primary-hover), var(--primary));
+  color: var(--on-accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45),
+    0 4px 12px -6px rgba(227, 166, 60, .8); }
+.ft-sep { background: var(--ed-hair-2); }
+.ft-more { border-radius: 9px; background-color: rgba(255, 255, 255, .05);
+  box-shadow: inset 0 0 0 1px var(--ed-hair); }
+.ft-more:hover { background-color: rgba(255, 255, 255, .10); color: #fff; }
+.ft-more.on { background-color: rgba(227, 166, 60, .16); color: var(--primary-hover);
+  box-shadow: inset 0 0 0 1px rgba(227, 166, 60, .32); }
+.mode-seg { background: rgba(0, 0, 0, .30); border: 1px solid var(--ed-hair); border-radius: var(--r-pill); }
+.mode-seg .msb { background: transparent; border-radius: var(--r-pill);
+  transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.mode-seg .msb:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.mode-seg .msb.active { background-image: linear-gradient(180deg, var(--primary-hover), var(--primary));
+  color: var(--on-accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45); }
+
+/* 6 · 方块库 / 模型面板 / 属性卡 */
+.lc-tabs { background: rgba(0, 0, 0, .22); box-shadow: inset 0 -1px 0 var(--ed-hair); }
+.lc-tab { transition: color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease); }
+.lc-tab:hover { color: #fff; background: rgba(255, 255, 255, .04); }
+.lc-tab.active { color: var(--primary-hover); }
+.lc-tab.active::after { left: 24%; right: 24%; border-radius: 2px 2px 0 0;
+  box-shadow: 0 0 8px rgba(227, 166, 60, .55); }
+.lc-add .round { background-image: linear-gradient(180deg, var(--primary-hover), var(--primary));
+  color: var(--on-accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45),
+    0 4px 12px -6px rgba(227, 166, 60, .7);
+  transition: transform var(--dur-1) var(--ease-spring); }
+.lc-add .round:hover { transform: scale(1.08) rotate(90deg); }
+.model-panel .lc-add:nth-of-type(2) .round { background-image: none;
+  background-color: rgba(255, 255, 255, .07); color: var(--primary-hover);
+  box-shadow: inset 0 0 0 1px var(--ed-hair-2); }
+.lc-search { border-radius: var(--r-pill); background: var(--ed-inset); border: 1px solid var(--ed-hair);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease); }
+.lc-search:focus-within { border-color: var(--primary-line); box-shadow: 0 0 0 3px rgba(227, 166, 60, .14); }
+.lc-search span { color: var(--fg3); }
+.lc-rail { background: rgba(0, 0, 0, .12); }
+.lc-rail button { border-radius: 8px; transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.lc-rail button:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.lc-rail button.active { background: rgba(227, 166, 60, .16); color: var(--primary-hover);
+  box-shadow: inset 0 0 0 1px rgba(227, 166, 60, .28); }
+.block { background: rgba(255, 255, 255, .035); border: 1px solid var(--ed-hair); border-radius: 10px;
+  transition: transform var(--dur-1) var(--ease-spring), background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease); }
+.block:hover { background: rgba(255, 255, 255, .075); border-color: var(--ed-hair-2);
+  transform: translateY(-1px); box-shadow: 0 8px 18px -12px rgba(0, 0, 0, .95); }
+.block.active { background: rgba(227, 166, 60, .16); border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px rgba(227, 166, 60, .35), 0 6px 16px -10px rgba(227, 166, 60, .6); }
+.block .nm { color: var(--fg2); }
+.block:hover .nm, .block.active .nm { color: #fff; }
+.mitem { background: rgba(255, 255, 255, .035); border: 1px solid var(--ed-hair); border-radius: 10px;
+  transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease); }
+.mitem:hover { background: rgba(255, 255, 255, .07); border-color: var(--ed-hair-2); }
+.mitem.active { background: rgba(227, 166, 60, .14); border-color: var(--primary); }
+.mitem .mico { background: rgba(227, 166, 60, .16); color: var(--primary-hover); border-radius: 6px; }
+.mitem .mbadge { border-color: var(--ed-hair-2); color: var(--fg3); border-radius: 5px; }
+.model-hint, .lc-foot b { color: var(--fg2); }
+
+/* 7 · 右栏：段头、页签、导览树、属性轨 */
+.rp-head { letter-spacing: .04em; }
+.rp-head .caret { border-top-color: var(--primary); }
+.rp-tabs button { transition: color var(--dur-1) var(--ease); }
+.rp-tabs button:hover { color: #fff; }
+.rp-tabs button.active::after { border-radius: 2px 2px 0 0; box-shadow: 0 0 8px rgba(227, 166, 60, .5); }
+.rp-tabs .rp-search { background: var(--ed-inset); border: 1px solid transparent; border-radius: var(--r-pill); }
+.rp-tabs .rp-search:focus { border: 1px solid var(--primary-line); box-shadow: 0 0 0 3px rgba(227, 166, 60, .14); }
+.tnode { margin: 1px 6px; padding: 5px 8px; border-radius: 7px;
+  transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.tnode.child { padding-left: 22px; }
+.tnode:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+.tnode.active { background: rgba(227, 166, 60, .14); color: var(--primary-hover);
+  box-shadow: inset 2px 0 0 var(--primary); }
+.pp-rail { background: rgba(0, 0, 0, .14); }
+.pp-ico { border-radius: 8px; transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.pp-ico:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.pp-ico.active { background: rgba(227, 166, 60, .16); color: var(--primary-hover);
+  box-shadow: inset 0 0 0 1px rgba(227, 166, 60, .28); }
+.pp-body { background: rgba(0, 0, 0, .10); }
+/* 属性分组：小节标题压成小字距的灰，第二组起加一条发丝——一列 40 个字段
+   没有分组线的话就是一堵墙 */
+.pp-sub { font-size: 11px; letter-spacing: .08em; color: var(--fg2); }
+.pp-sub:not(:first-child) { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--ed-hair); }
+.pp-sub .caret { border-top-color: var(--fg3); }
+.panel-title { color: var(--fg3); letter-spacing: .06em; }
+
+/* 8 · 输入件：统一凹底 + 琥珀焦点环（原来只给了 .finput，
+   数字框、下拉、色块各吃各的边框，一个面板里出现四种输入框） */
+.frow input[type=number], .frow input[type=text], .frow select, .finput, .posnum,
+.zrow input, .ztriple input, .zname, .size-custom input, .pk-search input,
+.pp-cell > select, .pp-cell > input[type=text], .trow input[type=color],
+.fd-box input, .cb-input, .cp-input input, #gameDialog .d-input, .quat .finput {
+  background: var(--ed-inset); border: 1px solid var(--ed-hair); border-radius: 7px;
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.frow input:hover, .frow select:hover, .finput:hover, .posnum:hover, .pk-search input:hover,
+.pp-cell > select:hover, .pp-cell > input:hover, .zrow input:hover, .ztriple input:hover {
+  border-color: var(--ed-hair-2);
+}
+.frow input:focus, .frow select:focus, .finput:focus, .posnum:focus, .zrow input:focus,
+.ztriple input:focus, .zname:focus, .size-custom input:focus, .pk-search input:focus,
+.pp-cell > select:focus, .pp-cell > input:focus, .fd-box input:focus, .cb-input:focus,
+.cp-input input:focus, #gameDialog .d-input:focus {
+  outline: none; border-color: var(--primary-line); box-shadow: 0 0 0 3px rgba(227, 166, 60, .14);
+}
+.frow label, .quat label, .poslbl, .pp-cell > label, .ui-props .frow label,
+#playerPanel .frow label, .size-custom label, .gh-row { color: var(--fg2); }
+.fval { color: #fff; font-variant-numeric: tabular-nums; }
+.finput.mono { font-family: var(--mono); color: var(--fg2); }
+.frow input[type=checkbox], .pp-chk input, .sc-row input { accent-color: var(--primary); }
+
+/* 9 · 芯片类小件：同一套底、同一套手感（含 VOXA 的 .vx-btn） */
+.ftag, .global-toolbar button, .weather-row button, .zhead button, .pg-btn,
+.modal-actions button, .ss-head button, .ss-back, .lens-acts button, .lens-err,
+.cs-act, .ss-tab, .dg-chip, .dg-fix, .vx-btn, .gh-btns button, .cp-friend, .pk-more {
+  background-color: rgba(255, 255, 255, .055);
+  background-image: var(--glass-sheen);
+  border: 1px solid var(--ed-hair);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), inset 0 -1px 0 rgba(0, 0, 0, .26);
   transition: transform var(--dur-1) var(--ease-spring), background-color var(--dur-1) var(--ease),
     color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
-button.sb-btn { background-color: var(--btn-fill); border-radius: var(--r-pill); }
-button.sb-btn:hover { background-color: var(--btn-fill-hover); }
-button.sb-btn:active, .pg-btn:active, .vx-btn:active { transform: scale(.96); }
+.ftag:hover, .global-toolbar button:hover, .weather-row button:hover, .zhead button:hover,
+.pg-btn:hover, .modal-actions button:hover, .ss-head button:hover, .ss-back:hover,
+.lens-acts button:hover, .cs-act:hover, .ss-tab:hover, .cp-friend:hover, .pk-more:hover {
+  background-color: rgba(255, 255, 255, .10); color: #fff; border-color: var(--ed-hair-2);
+}
+.ftag:active, .global-toolbar button:active, .weather-row button:active, .zhead button:active,
+.pg-btn:active, .modal-actions button:active, .ss-head button:active, .ss-back:active,
+.lens-acts button:active, .cs-act:active, .gh-btns button:active { transform: scale(.95); }
+.pg-btn.on, .weather-row button.active, .ss-tab.active, .dg-chip.on, .cs-chip.on, #btnCollab.on {
+  background-color: rgba(227, 166, 60, .16); color: var(--primary-hover);
+  border-color: rgba(227, 166, 60, .38);
+}
+.ftag, .pg-btn, .modal-actions button, .ss-head button, .ss-back { border-radius: var(--r-pill); }
+/* 主按钮：底色归各自的主题（琥珀 / 运行绿），这里只补一层上缘受光，
+   让它们跟旁边的玻璃芯片是同一块材料，只是更实 */
+.modal-actions button.primary, .ss-head button.primary, .ss-head button.play-ss,
+.playbtn, .pk-fab, .drawer-foot button.primary, #gameDialog .playbtn {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .20), rgba(255, 255, 255, 0) 54%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38), inset 0 -1px 0 rgba(0, 0, 0, .26),
+    0 8px 20px -12px rgba(0, 0, 0, .95);
+}
+.modal-actions button.primary:hover, .ss-head button.primary:hover, .playbtn:hover { filter: brightness(1.07); }
 
-/* ---------------- 编辑器：浮起来的每一层都是同一块玻璃 ----------------
-   顶部菜单栏、底部状态栏、右侧属性面板、浮动方块库、浮动工具条、弹窗。
-   尺寸一律不碰：这一屏密度是调过的，动 padding/height 会让整排工具错位。
-   颜色只用 rgba/var，不引新色号（editor.css 有一条"不许出现杂色 hex"的静态审查）。 */
-#topbar, #hud, .float-toolbar, #rightPanel, .float-card, .modal-box {
-  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+/* 10 · 弹窗：遮罩要糊，盒子要实 */
+.modal { background: rgba(8, 7, 6, .58); backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2); }
+.modal-title { letter-spacing: .01em; }
+.mode-row button, .size-presets button { border-radius: 10px; background-color: rgba(255, 255, 255, .05);
+  border: 1px solid var(--ed-hair); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
+  transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.mode-row button:hover, .size-presets button:hover { background-color: rgba(255, 255, 255, .09);
+  border-color: var(--primary-line); }
+.mode-row button.active, .size-presets button.active { background-color: rgba(227, 166, 60, .18);
+  border-color: var(--primary); color: var(--primary-hover);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18); }
+.zitem { background: rgba(0, 0, 0, .24); border: 1px solid var(--ed-hair); border-radius: 11px; }
+
+/* 11 · 命令面板 / 撤销历史 / 补全：同一套浮层语言 */
+.pl-mask { background: rgba(10, 9, 8, .58); backdrop-filter: blur(8px) saturate(1.25);
+  -webkit-backdrop-filter: blur(8px) saturate(1.25); }
+.pl-box { box-shadow: var(--glass-lit), var(--glass-dark), 0 40px 90px -30px rgba(0, 0, 0, .95); }
+.pl-in { border-bottom: 1px solid var(--ed-hair); }
+.pl-grp { letter-spacing: .1em; }
+.pl-row, .hh-row { border-radius: 8px; }
+.pl-row:hover, .hh-row:hover { background: rgba(255, 255, 255, .06); }
+.pl-row.on, .hh-row.on { background: rgba(227, 166, 60, .16); color: #fff;
+  box-shadow: inset 2px 0 0 var(--primary); }
+.ac-it { border-radius: 7px; }
+.ac-it:hover { background: rgba(255, 255, 255, .06); }
+.ac-it.on { background: rgba(227, 166, 60, .16); box-shadow: inset 2px 0 0 var(--primary); }
+.ac-it .ac-k { border-color: var(--ed-hair-2); border-radius: 5px; }
+#ctxmenu button { border-radius: 7px; }
+#ctxmenu button:hover { background: rgba(227, 166, 60, .16); color: var(--primary-hover); }
+.worldlist { box-shadow: var(--glass-lit), var(--glass-dark), 0 24px 60px -24px rgba(0, 0, 0, .95); }
+.witem { border-radius: 8px; }
+.witem:hover { background: rgba(255, 255, 255, .06); }
+.witem span { color: var(--fg3); }
+
+/* 12 · 脚本 / 界面 / 商城 / 代码包 工作区 */
+.script-screen { background: linear-gradient(180deg, var(--bg1), var(--bg0)); }
+.ss-head b { letter-spacing: .02em; }
+.ss-dim { color: var(--fg3); }
+.ss-files { background: rgba(0, 0, 0, .20); }
+.ss-files-head { letter-spacing: .08em; color: var(--fg3); }
+.ss-files-head button { border-radius: 7px; }
+.ss-files-head button:hover { background: rgba(255, 255, 255, .09); color: #fff; }
+.sfile { border-radius: 8px; transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.sfile:hover { background: rgba(255, 255, 255, .06); color: #fff; }
+.sfile.active { background: rgba(227, 166, 60, .14); color: var(--primary-hover);
+  box-shadow: inset 2px 0 0 var(--primary); }
+.ss-console { background: rgba(0, 0, 0, .24); }
+.code-gutter { background: rgba(0, 0, 0, .30); color: var(--fg3); }
+.fd-box { box-shadow: var(--glass-lit), var(--glass-dark), 0 18px 40px -18px rgba(0, 0, 0, .95); }
+.fd-box button { border-radius: 6px; }
+.fd-box button:hover { background: rgba(255, 255, 255, .09); color: #fff; }
+.fd-box button.on { background: rgba(227, 166, 60, .18); color: var(--primary-hover); }
+.cs-bar { background: rgba(0, 0, 0, .20); }
+.cs-row:hover, .dg-item:hover { background: rgba(255, 255, 255, .045); }
+.cs-chip { border-radius: var(--r-pill); }
+.cs-time { font-variant-numeric: tabular-nums; }
+/* 代码包（文件管理） */
+.pk-rail { background: rgba(0, 0, 0, .16); }
+.pk-cat { color: var(--fg2); transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.pk-cat:hover { background: rgba(255, 255, 255, .045); color: #fff; }
+.pk-cat.on { background: rgba(227, 166, 60, .10); color: #fff; }
+.pk-thead { color: var(--fg3); letter-spacing: .04em; }
+.pk-row:hover { background: rgba(255, 255, 255, .04); }
+.pk-name b { color: #fff; }
+.pk-thumb { background: var(--ed-inset); border: 1px solid var(--ed-hair); }
+.pk-space-head { color: var(--fg3); }
+.pk-space-head b { color: var(--fg2); }
+/* 界面编辑器：节点条与舞台 */
+.ui-palette { box-shadow: var(--glass-lit), var(--glass-dark), 0 18px 44px -20px rgba(0, 0, 0, .95); }
+.ui-palette button { border-radius: 9px; transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.ui-palette button:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+.ui-stage { border: 1px solid var(--ed-hair-2);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45), 0 30px 70px -40px rgba(0, 0, 0, .95); }
+.sc-row { border-radius: 7px; }
+.sc-row span { color: var(--fg2); }
+.sc-row:hover { background: rgba(255, 255, 255, .045); }
+
+/* 13 · 状态栏：读数是等宽数字，按钮是药丸 */
+#hud { letter-spacing: .01em; }
+#hud b { font-variant-numeric: tabular-nums; }
+.sb-seg + .sb-seg::before { opacity: .28; }
+button.sb-btn { border-radius: var(--r-pill); background-color: rgba(255, 255, 255, .05);
+  border: 1px solid var(--ed-hair); }
+button.sb-btn:hover { background-color: rgba(227, 166, 60, .16);
+  border-color: rgba(227, 166, 60, .40); color: var(--primary-hover); }
+#sbDiag.err { color: #fff; background-color: var(--accent2-dim); border-color: rgba(217, 79, 95, .5); }
+#sbDiag.warn { color: #fff; background-color: rgba(217, 122, 69, .20); border-color: rgba(217, 122, 69, .5); }
+#sbSave.dirty { color: var(--primary-hover); }
+
+/* 14 · 运行态浮层：底不动（游戏 HUD 要轻），只补同一道受光棱 */
+.hud-map, .hud-play, .hud-tools, .pe-readout, #gameLockHint, #gameInteract, #gameHint,
+.game-hud-settings, .gm-card, .chat-panel, .q-panel, .game-store, #gameConsole, #gameDialog {
+  border-color: var(--ed-hair-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 14px 34px -18px rgba(0, 0, 0, .9);
 }
-#topbar { position: relative; overflow: hidden; }
-#topbar > * { position: relative; z-index: 1; }
-#topbar::after, #hud::after {
-  content: ""; position: absolute; top: -70%; bottom: -70%; left: 0; width: 30%; z-index: 0;
-  background: linear-gradient(96deg, transparent, rgba(255, 255, 255, .10), transparent);
-  filter: blur(6px); pointer-events: none;
-  animation: sheenSweep 14s cubic-bezier(.45, .05, .55, .95) infinite;
-}
-#hud::after { animation-duration: 18s; animation-delay: -9s; }
-#rightPanel { border-left: 1px solid var(--glass-border); }
-.float-card, .float-toolbar { border: 1px solid var(--glass-border); }
-.modal-box { border: 1px solid var(--glass-border-hover); }
-/* 模式开关（全局/角色）与状态栏按钮：玻璃槽 + 里面一颗亮玻璃 */
-.mode-seg { background: var(--btn-fill); border: 1px solid rgba(255, 255, 255, .08); border-radius: var(--r-pill); }
-.mode-seg .msb { background: transparent; border-radius: var(--r-pill); }
-.mode-seg .msb.active { background: var(--primary); color: var(--on-accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45); }
-@media (prefers-reduced-motion: reduce) { #topbar::after, #hud::after { animation: none; opacity: 0; } }
+.pe-store { border-radius: 8px; transition: background-color var(--dur-1) var(--ease),
+  color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease-spring); }
+.pe-store:hover { background: rgba(255, 255, 255, .10); color: #fff; }
+.pe-store:active { transform: scale(.94); }
+.gm-card header, .chat-panel > header, .q-panel > header {
+  background: rgba(255, 255, 255, .045); border-bottom: 1px solid var(--ed-hair); }
+.gm-list button, .q-list button { border-radius: 10px; }
+.gm-list button:hover, .q-list button:hover { background: rgba(255, 255, 255, .07); }
+.gm-list kbd { border-color: var(--ed-hair-2); border-radius: 6px; }
+.cp-chips { background: rgba(0, 0, 0, .34); border-radius: 9px; }
+.cp-chips button { border-radius: 7px; }
+.gs-item { border-top-color: var(--ed-hair); }
+.gs-buy { border-radius: 9px; }
+#gameDead .dead-card { border-radius: 18px; border: 1px solid var(--ed-hair-2); }
+.cb-people, .cb-feed, .cb-chat { background: rgba(0, 0, 0, .22); border: 1px solid var(--ed-hair); }
+
+/* 15 · 加载幕：不要一块死黑 */
+#loading { background: radial-gradient(60% 50% at 50% 34%, rgba(227, 166, 60, .14), transparent 70%), var(--bg0); }

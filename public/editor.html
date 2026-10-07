@@ -17,6 +17,11 @@
 <meta property="og:locale" content="zh_CN"/>
 <meta name="twitter:card" content="summary"/>
 <link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
+<!-- tokens.css 必须排在 editor.css 前面：全站设计变量的唯一真相在那里，
+     editor.css 的 :root 只覆盖自己这一屏需要更实的值。
+     漏掉它的后果不是"没有玻璃"，是 background:var(--glass-fill-strong) 退化成
+     transparent——顶栏、状态栏、方块库、右栏、弹窗全部变成透明片。 -->
+<link rel="stylesheet" href="/css/tokens.css"/>
 <link rel="stylesheet" href="/css/editor.css"/>
 <link rel="stylesheet" href="/css/social.css"/>
 <link rel="stylesheet" href="/css/community.css"/>
