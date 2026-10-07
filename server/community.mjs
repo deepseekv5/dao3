@@ -83,9 +83,12 @@ function createStore(root) {
   const DEFAULTS = {
     users: () => ({ byId: {}, byLower: {} }),
     sessions: () => ({}),
-    graph: () => ({ follows: [], requests: [], friends: [] }),
+    graph: () => ({ follows: [], requests: [], friends: [], blocks: [] }),
     pubs: () => ({ byId: {} }),
     comments: () => ({ byPub: {} }),
+    // 主页留言板：一个人的墙上别人能写几句，和评论区分开存——
+    // 评论挂在作品上，留言挂在人身上，两者的删除权限与生命周期都不一样。
+    guestbook: () => ({ byUser: {} }),
     notes: () => ({ list: [] }),
     history: () => ({ byUser: {} }),
     versions: () => ({ byPub: {} }),
@@ -253,6 +256,9 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     if ("looking" in body) { const l = String(body.looking || ""); u.looking = LOOK_IDS.has(l) ? l : ""; }
   }
   const isFriend = (a, b) => !!a && !!b && docs.graph.friends.some((e) => e.k === pairKey(a, b));
+  /** 拉黑是双向生效的：我挡了你，就别再让我看见你、也别再让请求和评论找上我。
+   *  存在 graph.blocks 里，与关注/好友同一份文档——一起落盘、一起迁移。 */
+  const blockedBetween = (a, b) => !!a && !!b && docs.graph.blocks.some((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a));
   const friendEdge = (a, b) => docs.graph.friends.find((e) => e.k === pairKey(a, b)) || null;
   const pubLive = (id) => {
     const p = docs.pubs.byId && docs.pubs.byId[id];
@@ -295,6 +301,9 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       friend: docs.graph.friends.some((e) => e.k === pairKey(viewerId, u.id)),
       pendingOut: docs.graph.requests.some((e) => e.from === viewerId && e.to === u.id),
       pendingIn: docs.graph.requests.some((e) => e.from === u.id && e.to === viewerId),
+      // 拉黑是双向的，但界面要说清是"我挡的"还是"被挡的"——两者能点的按钮不一样。
+      blocked: docs.graph.blocks.some((e) => e.a === viewerId && e.b === u.id),
+      blockedBy: docs.graph.blocks.some((e) => e.a === u.id && e.b === viewerId),
     };
     const note = friendNote(viewerId, u.id);
     if (note) out.note = note;
@@ -494,6 +503,16 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       id: c.id, body: c.body, ts: c.ts, likes: (c.likes || []).length, flagged: !!c.flagged,
       likedByMe: !!viewerId && (c.likes || []).includes(viewerId),
       mine: !!viewerId && c.userId === viewerId,
+      reply: c.replyTo || null,
+      author: u ? { id: u.id, name: u.name, avatar: u.avatar || null } : { id: null, name: "已注销", avatar: null },
+    };
+  };
+
+  /** 留言板上一句话的读法：谁写的、写了什么、什么时候，以及"这条是不是我写的"。 */
+  const wallCard = (m, viewerId) => {
+    const u = docs.users.byId[m.from];
+    return {
+      id: m.id, text: m.text, ts: m.ts, flagged: !!m.flagged, mine: m.from === viewerId,
       author: u ? { id: u.id, name: u.name, avatar: u.avatar || null } : { id: null, name: "已注销", avatar: null },
     };
   };
@@ -681,6 +700,48 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       if (!u) { reply.fail(404, "没有这个用户"); return true; }
       const sub = seg[2];
       if (!sub) { reply.json(200, { user: publicUser(u, viewerId) }); return true; }
+      /* 留言板挂在人身上，所以它必须在这一段里处理——下面那句 `这里只读` 是给别的主页子路由的。 */
+      if (sub === "guestbook") {
+        const list = docs.guestbook.byUser[u.id] || (docs.guestbook.byUser[u.id] = []);
+        if (method === "GET") {
+          reply.json(200, {
+            total: list.length,
+            rows: list.slice(-60).reverse().map((m) => wallCard(m, viewerId)),
+            // 能不能写是服务端说了算：自己的墙、被拉黑、没登录，三种都给不出输入框
+            canPost: !!viewerId && viewerId !== u.id && !blockedBetween(viewerId, u.id),
+            mine: viewerId === u.id,
+          });
+          return true;
+        }
+        if (method === "POST") return login(() => {
+          if (viewerId === u.id) { reply.fail(400, "这是你自己的墙，想说什么写进签名里"); return true; }
+          if (blockedBetween(viewerId, u.id)) { reply.fail(403, "你们之间有一方拉黑了对方"); return true; }
+          const r = screen(body.text, { field: "留言", max: 200 });
+          if (r.blocked) { reply.fail(400, r.reason); return true; }
+          const text = r.clean.trim();
+          if (!text) { reply.fail(400, "留言不能是空的"); return true; }
+          if (limited("wall", viewerId, 10, 60 * 1000)) { reply.fail(429, "留言太频繁了，缓一分钟再写"); return true; }
+          const m = { id: newId(6), from: viewerId, text, ts: now(), flagged: r.flagged };
+          list.push(m);
+          while (list.length > 200) list.shift();
+          store.touch("guestbook");
+          notify(u.id, "wall", viewerId);
+          reply.json(200, { row: wallCard(m, viewerId), total: list.length });
+          return true;
+        });
+        if (method === "DELETE" && seg[3]) return login(() => {
+          const i = list.findIndex((x) => x.id === seg[3]);
+          if (i < 0) { reply.fail(404, "没有这条留言"); return true; }
+          // 三种人删得掉：写的人、墙的主人、超级管理员。别人一概不行。
+          if (list[i].from !== viewerId && u.id !== viewerId && !isAdmin()) { reply.fail(403, "只有留言的人、墙的主人或超级管理员能删"); return true; }
+          list.splice(i, 1);
+          store.touch("guestbook");
+          reply.json(200, { ok: true });
+          return true;
+        });
+        reply.fail(405, "留言板只认 GET / POST / DELETE");
+        return true;
+      }
       if (method !== "GET") { reply.fail(405, "这里只读"); return true; }
       if (sub === "followers") {
         reply.json(200, { rows: docs.graph.follows.filter((e) => e.b === u.id).map((e) => publicUser(docs.users.byId[e.a], viewerId)).filter(Boolean) });
@@ -722,6 +783,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       const target = userParam(body.name);
       if (!target) return true;
       if (target.id === viewerId) { reply.fail(400, "不能关注自己"); return true; }
+      if (blockedBetween(viewerId, target.id)) { reply.fail(403, "你们之间有一方拉黑了对方"); return true; }
       const i = docs.graph.follows.findIndex((e) => e.a === viewerId && e.b === target.id);
       if (i >= 0) docs.graph.follows.splice(i, 1);
       else { docs.graph.follows.push({ a: viewerId, b: target.id, ts: now() }); notify(target.id, "follow", viewerId); }
@@ -747,7 +809,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       for (const f of docs.graph.follows) {
         if (friendIds.has(f.a) && !known.has(f.b)) followers.set(f.b, (followers.get(f.b) || 0) + 1);
       }
-      const suggested = [...followers].filter(([id]) => docs.users.byId[id])
+      const suggested = [...followers].filter(([id]) => docs.users.byId[id] && !blockedBetween(viewerId, id))
         .map(([id, mutual]) => ({ ...publicUser(docs.users.byId[id], viewerId), mutual }))
         .sort((x, y) => y.mutual - x.mutual || x.name.localeCompare(y.name, "zh"));
       reply.json(200, { friends, incoming, outgoing, suggested: suggested.slice(0, 12) });
@@ -759,6 +821,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       const target = userParam(body.name);
       if (!target) return true;
       if (target.id === viewerId) { reply.fail(400, "不能加自己为好友"); return true; }
+      if (blockedBetween(viewerId, target.id)) { reply.fail(403, "你们之间有一方拉黑了对方"); return true; }
       const k = pairKey(viewerId, target.id);
       const isIncoming = docs.graph.requests.findIndex((e) => e.from === target.id && e.to === viewerId);
       const isOutgoing = docs.graph.requests.findIndex((e) => e.from === viewerId && e.to === target.id);
@@ -829,6 +892,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       for (const p of livePubs()) if (!lastPub.has(p.authorId) || p.created > lastPub.get(p.authorId)) lastPub.set(p.authorId, p.created);
       let rows = Object.values(docs.users.byId)
         .filter((u) => !bannedNow(u) && u.id !== viewerId)
+        .filter((u) => !blockedBetween(viewerId, u.id))   // 拉黑过的两边都别再互相出现在"找人"里
         .filter((u) => !expand || (u.looking && u.looking !== "none"))
         .filter((u) => !region || u.region === region)
         .filter((u) => !gender || u.gender === gender)
@@ -912,12 +976,31 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         ids.add(viewerId);
         rows = rows.filter((p) => ids.has(p.authorId));
       }
+      // 拉黑的人不进我的任何一条流：筛选发生在排序之前，免得"第 2 页突然全是同一个人"。
+      if (viewerId) rows = rows.filter((p) => !blockedBetween(viewerId, p.authorId));
       const score = (p) => (p.likes || []).length * 3 + (p.plays || 0) + commentsOf(p.id).length * 2
         + (p.favs || []).length * 2 + voteScore(p);
       rows.sort((a, b) => (sort === "hot" || sort === "foryou" ? score(b) - score(a) || b.created - a.created : b.created - a.created));
       const offset = clamp(url.searchParams.get("offset") || 0, 0, 1e6);
       const limit = clamp(url.searchParams.get("limit") || 24, 1, 100);
-      reply.json(200, { total: rows.length, sort, cat, cats: CATEGORIES, offset, rows: rows.slice(offset, offset + limit).map((p) => pubCard(p, viewerId)) });
+      /* 首页右侧那一栏要的三样东西在这里一起给：分类瓷砖的底图、最新发布、当前在线的人。
+         分类瓷砖没有图时前端退回纯色——不去编一张图，也不留一个空格子。 */
+      const pool = livePubs();
+      const catCovers = {}, catCounts = {};
+      for (const c of CATEGORIES) {
+        const hit = pool.filter((p) => (p.tags || []).includes(c))
+          .sort((a, b) => (b.plays || 0) - (a.plays || 0) || (b.updated || 0) - (a.updated || 0))[0];
+        if (hit && hit.hasCover) catCovers[c] = hit.id;
+        // 分类里有几张是真数出来的：瓷砖上写"竞速 · 3"，比一个只有名字的按钮有信息
+        catCounts[c] = pool.filter((p) => (p.tags || []).includes(c)).length;
+      }
+      const online = chat.onlineIds().map((id) => docs.users.byId[id]).filter(Boolean)
+        .filter((u) => !blockedBetween(viewerId, u.id)).slice(0, 30)
+        .map((u) => ({ name: u.name, avatar: u.avatar || null, role: u.role || "user" }));
+      const recent = pool.slice().sort((a, b) => b.created - a.created).slice(0, 6)
+        .filter((p) => !blockedBetween(viewerId, p.authorId)).map((p) => pubCard(p, viewerId));
+      reply.json(200, { total: rows.length, sort, cat, cats: CATEGORIES, catCovers, catCounts, recent, online,
+        offset, rows: rows.slice(offset, offset + limit).map((p) => pubCard(p, viewerId)) });
       return true;
     }
 
@@ -1235,11 +1318,21 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
           if (r.blocked) { reply.fail(400, r.reason); return true; }
           const text = r.clean.trim();
           if (!text) { reply.fail(400, "评论不能是空的"); return true; }
+          if (blockedBetween(viewerId, p.authorId)) { reply.fail(403, "你们之间有一方拉黑了对方"); return true; }
           if (limited("cmt", viewerId, RATE.comment, 60 * 1000)) { reply.fail(429, "评论太频繁了，一分钟后再发"); return true; }
-          const c = { id: newId(6), pubId: p.id, userId: viewerId, body: text, ts: now(), likes: [], flagged: r.flagged };
+          /** 回复是同一张表上的一根线，不是一个新楼层：引用只存 id + 昵称 + 摘要快照，
+           *  原评论被删之后，这句"回复某某"仍然读得通，而不是变成一条没有头的回声。 */
+          let replyTo = null;
+          if (body.replyTo) {
+            const parent = list.find((x) => x.id === String(body.replyTo));
+            if (!parent) { reply.fail(404, "要回复的那条评论已经不在了"); return true; }
+            replyTo = { id: parent.id, name: (docs.users.byId[parent.userId] || {}).name || "?", excerpt: String(parent.body || "").slice(0, 60) };
+          }
+          const c = { id: newId(6), pubId: p.id, userId: viewerId, body: text, ts: now(), likes: [], flagged: r.flagged, replyTo };
           list.push(c);
           store.touch("comments");
           notify(p.authorId, "comment", viewerId, p.id);
+          if (replyTo) notify(list.find((x) => x.id === replyTo.id).userId, "reply", viewerId, p.id);
           reply.json(200, { row: commentCard(c, viewerId), total: list.length });
           return true;
         });
@@ -1285,6 +1378,34 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         return true;
       });
     }
+
+    /* ---------------- 拉黑 ---------------- */
+    if (seg[0] === "blocks" && method === "GET") return login(() => {
+      const rows = docs.graph.blocks.filter((e) => e.a === viewerId)
+        .map((e) => Object.assign({ ts: e.ts }, publicUser(docs.users.byId[e.b], viewerId) || {}))
+        .filter((u) => u.id);
+      reply.json(200, { rows });
+      return true;
+    });
+    if (seg[0] === "block" && method === "POST") return login(() => {
+      const target = userParam(body.name);
+      if (!target) return true;
+      if (target.id === viewerId) { reply.fail(400, "不能拉黑自己"); return true; }
+      const on = body.blocked !== false;
+      const at = docs.graph.blocks.findIndex((e) => e.a === viewerId && e.b === target.id);
+      if (on && at < 0) docs.graph.blocks.push({ a: viewerId, b: target.id, ts: now() });
+      if (!on && at >= 0) docs.graph.blocks.splice(at, 1);
+      if (on) {
+        // 拉黑要顺手把两边的关注、好友与待处理请求收干净：只收一半，
+        // 界面上就会出现"已拉黑但仍是好友"这种自相矛盾的状态。
+        docs.graph.follows = docs.graph.follows.filter((e) => !(e.a === viewerId && e.b === target.id) && !(e.a === target.id && e.b === viewerId));
+        docs.graph.friends = docs.graph.friends.filter((e) => e.k !== pairKey(viewerId, target.id));
+        docs.graph.requests = docs.graph.requests.filter((e) => !(e.from === viewerId && e.to === target.id) && !(e.from === target.id && e.to === viewerId));
+      }
+      store.touch("graph");
+      reply.json(200, { ok: true, blocked: on, relation: publicUser(target, viewerId).relation, counts: countsOf(target.id) });
+      return true;
+    });
 
     if (seg[0] === "notifications") {
       if (method === "GET") return login(() => {
@@ -1747,13 +1868,19 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
           docs.graph.requests = docs.graph.requests.filter((e) => e.from !== id && e.to !== id);
           docs.notes.list = docs.notes.list.filter((n) => n.to !== id && n.actorId !== id);
           docs.reports.list = docs.reports.list.filter((r) => r.owner !== id && r.by !== id);
+          docs.graph.blocks = docs.graph.blocks.filter((e) => e.a !== id && e.b !== id);
+          delete docs.guestbook.byUser[id];
+          for (const [owner, list] of Object.entries(docs.guestbook.byUser)) {
+            const keep = list.filter((m) => m.from !== id);
+            if (keep.length) docs.guestbook.byUser[owner] = keep; else delete docs.guestbook.byUser[owner];
+          }
           for (const p of Object.values(docs.pubs.byId)) {
             p.likes = (p.likes || []).filter((x) => x !== id);
             if (p.votes) { p.votes.up = (p.votes.up || []).filter((x) => x !== id); p.votes.down = (p.votes.down || []).filter((x) => x !== id); }
             p.favs = (p.favs || []).filter((x) => x !== id);
           }
           for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === id) delete docs.sessions[h];
-          for (const key of ["pubs", "versions", "comments", "users", "graph", "notes", "reports", "history", "sessions"]) store.touch(key);
+          for (const key of ["pubs", "versions", "comments", "users", "graph", "notes", "reports", "history", "sessions", "guestbook"]) store.touch(key);
           addAudit(viewerId, "delete_user", name, `注销账号：${pubs.length} 件作品、${cmts} 条评论、${files} 个文件`);
           reply.json(200, { ok: true, pubs: pubs.length, comments: cmts, files });
           return true;

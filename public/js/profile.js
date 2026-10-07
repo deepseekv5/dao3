@@ -438,6 +438,7 @@ export async function profileView(name, root, setTitle, setSub) {
       <button class="cm-btn" data-t="following">关注中</button>
       ${mine ? '<button class="cm-btn" data-t="favorites">收藏</button>' : ""}
       <button class="cm-btn" data-t="recent">最近游玩</button>
+      <button class="cm-btn" data-t="wall">留言板</button>
     </div>
     <div id="pfBody"></div>
   </div>`;
@@ -468,34 +469,102 @@ export async function profileView(name, root, setTitle, setSub) {
     acts.querySelector("#pfEdit").onclick = () => openEditor(u, (nu) => profileView(nu.name, root, setTitle, setSub));
   } else {
     const rel = u.relation || {};
-    acts.innerHTML = `<button class="cm-btn ${rel.following ? "" : "primary"}" id="pfFollow">${rel.following ? "已关注" : "关注"}</button>
-      <button class="cm-btn" id="pfFriend">${rel.friend ? "已是好友" : rel.pendingOut ? "等待回应" : rel.pendingIn ? "接受好友请求" : "加好友"}</button>
-      ${rel.friend ? '<button class="cm-btn" id="pfDm">私聊</button>' : ""}`;
-    if (rel.friend) {
-      acts.querySelector("#pfDm").onclick = async () => {
-        const m = await import("/js/social.js");
-        m.openDm({ id: u.id, name: u.name, note: u.note });
+    // 拉黑之后这一栏只剩一件事可做：解除。关注/加好友/私聊摆在这里只会点了报错。
+    if (rel.blocked || rel.blockedBy) {
+      acts.innerHTML = `<span class="cm-blockbar">${rel.blocked ? `你拉黑了 ${esc(u.name)}` : `${esc(u.name)} 拉黑了你`}
+        —— 关注、好友、私聊与评论都走不通。</span>`
+        + (rel.blocked ? '<button class="cm-btn" id="pfBlock">解除拉黑</button>' : "");
+    } else {
+      acts.innerHTML = `<button class="cm-btn ${rel.following ? "" : "primary"}" id="pfFollow">${rel.following ? "已关注" : "关注"}</button>
+        <button class="cm-btn" id="pfFriend">${rel.friend ? "已是好友" : rel.pendingOut ? "等待回应" : rel.pendingIn ? "接受好友请求" : "加好友"}</button>
+        ${rel.friend ? '<button class="cm-btn" id="pfDm">私聊</button>' : ""}
+        <button class="cm-btn" id="pfBlock" title="拉黑之后互相看不到，也发不出请求">拉黑</button>`;
+      if (rel.friend) {
+        acts.querySelector("#pfDm").onclick = async () => {
+          const m = await import("/js/social.js");
+          m.openDm({ id: u.id, name: u.name, note: u.note });
+        };
+      }
+      acts.querySelector("#pfFollow").onclick = async () => {
+        if (!auth.me) return auth.openAuth("login");
+        try {
+          const r = await api("POST", "/api/community/follow", { name: u.name });
+          acts.querySelector("#pfFollow").textContent = r.following ? "已关注" : "关注";
+          acts.querySelector("#pfFollow").classList.toggle("primary", !r.following);
+        } catch (e) { toast(e.message, true); }
+      };
+      acts.querySelector("#pfFriend").onclick = async () => {
+        if (!auth.me) return auth.openAuth("login");
+        try {
+          await api("POST", `/api/community/friend/${rel.pendingIn ? "accept" : "request"}`, { name: u.name });
+          profileView(name, root, setTitle, setSub);
+        } catch (e) { toast(e.message, true); }
       };
     }
-    acts.querySelector("#pfFollow").onclick = async () => {
+    const blk = acts.querySelector("#pfBlock");
+    if (blk) blk.onclick = async () => {
       if (!auth.me) return auth.openAuth("login");
-      const r = await api("POST", "/api/community/follow", { name: u.name });
-      acts.querySelector("#pfFollow").textContent = r.following ? "已关注" : "关注";
-      acts.querySelector("#pfFollow").classList.toggle("primary", !r.following);
-    };
-    acts.querySelector("#pfFriend").onclick = async () => {
-      if (!auth.me) return auth.openAuth("login");
+      const on = !rel.blocked;
+      if (on && !window.confirm(`拉黑 ${u.name}？会同时解除你们的好友与关注，之后互相看不到对方的作品与评论。`)) return;
       try {
-        await api("POST", `/api/community/friend/${rel.pendingIn ? "accept" : "request"}`, { name: u.name });
+        await api("POST", "/api/community/block", { name: u.name, blocked: on });
+        toast(on ? "已拉黑" : "已解除拉黑");
         profileView(name, root, setTitle, setSub);
       } catch (e) { toast(e.message, true); }
     };
   }
 
   const tabs = $("pfTabs"), body = $("pfBody");
+  /** 留言板：挂在人身上的短句，和作品评论区分开——评论是对作品的，留言是对这个人的。
+   *  谁能写、谁能删都由服务端说了算，这里只是照着 canPost / mine 画。 */
+  async function showWall() {
+    let d;
+    try { d = await api("GET", `/api/community/users/${encodeURIComponent(name)}/guestbook`); }
+    catch (e) { body.innerHTML = `<div class="cm-empty">${esc(e.message)}</div>`; return; }
+    const rows = d.rows || [];
+    const canDel = (m) => m.mine || mine || (auth.me && auth.me.role === "admin");
+    body.innerHTML = `<div class="cm-wall">
+      ${d.canPost ? `<div class="cm-wall-compose">
+          <input id="wText" maxlength="200" placeholder="在 ${esc(u.name)} 的墙上写一句（最多 200 字）"/>
+          <button class="cm-btn primary" id="wSend">留言</button></div>`
+        : mine ? `<p class="cm-hint">这是你自己的墙——别人写给你的话都在下面。</p>`
+          : `<p class="cm-hint">${auth.me ? "你们之间现在写不了留言。" : "登录后可以在这里留言。"}</p>`}
+      ${rows.length ? rows.map((m) => `<div class="cm-wall-row" data-id="${esc(m.id)}">
+        <a href="/u/${encodeURIComponent(m.author.name)}" style="text-decoration:none">${face(m.author)}</a>
+        <div class="grow">
+          <div class="hd"><a href="/u/${encodeURIComponent(m.author.name)}">${esc(m.author.name)}</a><time>${esc(timeAgo(m.ts))}</time></div>
+          <p>${esc(m.text)}</p>
+          ${canDel(m) ? '<div class="ops"><button data-x="del">删除</button></div>' : ""}
+        </div></div>`).join("")
+        : `<div class="cm-empty">墙上还空着${d.canPost ? "，写第一句吧。" : "。"}</div>`}
+    </div>`;
+    const sendW = $("wSend");
+    if (sendW) {
+      const post = async () => {
+        const text = $("wText").value.trim();
+        if (!text) return toast("先写点内容", true);
+        sendW.disabled = true;
+        try { await api("POST", `/api/community/users/${encodeURIComponent(name)}/guestbook`, { text }); await showWall(); }
+        catch (e) { toast(e.message, true); }
+        finally { sendW.disabled = false; }
+      };
+      sendW.onclick = post;
+      $("wText").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); post(); } };
+    }
+    for (const el of body.querySelectorAll(".cm-wall-row")) {
+      const del = el.querySelector('[data-x="del"]');
+      if (del) del.onclick = async () => {
+        if (!window.confirm("删掉这条留言？")) return;
+        try { await api("DELETE", `/api/community/users/${encodeURIComponent(name)}/guestbook/${el.dataset.id}`); await showWall(); }
+        catch (e) { toast(e.message, true); }
+      };
+    }
+  }
+
   async function show(which) {
     for (const b of tabs.querySelectorAll("[data-t]")) b.classList.toggle("on", b.dataset.t === which);
     body.innerHTML = `<div class="cm-empty">读取中…</div>`;
+    if (which === "wall") return showWall();
     if (which === "favorites") {
       // 上一轮加收藏开关时没给地方看，等于一个按下去只会亮起来的按钮。
       // 这里复用广场那张卡（cardHtml + bindCards），所以"我收藏的"和广场长得一样，
@@ -538,7 +607,7 @@ export async function profileView(name, root, setTitle, setSub) {
    *  甩给别人。跟广场用同一套规矩——replaceState，不压历史，否则后退键会变成
    *  "回到我三分钟前点过的那个页签"。收藏那一格只有自己看得见，所以白名单要连着
    *  页签是否真的存在一起判。 */
-  const PF_TABS = ["map", "model", "followers", "following", "favorites", "recent"];
+  const PF_TABS = ["map", "model", "followers", "following", "favorites", "recent", "wall"];
   const fromUrl = () => {
     const t = new URLSearchParams(location.search).get("tab");
     return PF_TABS.includes(t) && tabs.querySelector(`[data-t="${t}"]`) ? t : "map";

@@ -760,6 +760,60 @@ try {
   ok("非好友发不出私聊（先加好友这条规矩在服务端）",
     dmNoFriend.status === 401 || dmNoFriend.status === 400 || dmNoFriend.status === 403, JSON.stringify(dmNoFriend.data));
 
+  /* ---------- 15c. 社交三件套：评论回复、主页留言板、拉黑 ---------- */
+  // 14b 里管理员把 C 的会话踢掉了（那是刻意的），这里要让 C 重新登录；
+  // A 也被 15 节改过名，所以留言板要用他现在的昵称去读。
+  await C.call("POST", "/api/community/login", { name: nameC, password: PW });
+  const curAName = (await A.call("GET", "/api/community/me")).data.user.name;
+  const wallUrl = `/api/community/users/${encodeURIComponent(curAName)}/guestbook`;
+  const cidB = (await B.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "这一层我占着" })).data?.row?.id;
+  const cReply = await C.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "回你一层", replyTo: cidB });
+  ok("回复带着被回复人的名字与原文摘要",
+    cReply.status === 200 && cReply.data.row.reply && cReply.data.row.reply.name === nameB && cReply.data.row.reply.excerpt === "这一层我占着",
+    cReply.status + " " + JSON.stringify(cReply.data).slice(0, 200));
+  ok("回复一条已经不存在的评论是 404",
+    (await C.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "回个空气", replyTo: "000000" })).status === 404);
+  const notesB = await B.call("GET", "/api/community/notifications");
+  ok("被回复的人会收到 reply 通知", notesB.data.rows.some((n) => n.kind === "reply"), JSON.stringify(notesB.data.rows.map((n) => n.kind)));
+
+  const wall0 = await C.call("GET", `${wallUrl}`);
+  ok("留言板默认空着、登录的人能写", wall0.status === 200 && wall0.data.total === 0 && wall0.data.canPost === true, JSON.stringify(wall0.data).slice(0, 160));
+  const wallPost = await B.call("POST", `${wallUrl}`, { text: "来你家坐坐" });
+  ok("别人能在墙上留言", wallPost.status === 200 && wallPost.data.row.text === "来你家坐坐", JSON.stringify(wallPost.data).slice(0, 160));
+  ok("自己的墙写不了（服务端说去写签名）",
+    (await A.call("POST", `${wallUrl}`, { text: "自言自语" })).status === 400);
+  ok("墙主人收到留言通知", (await A.call("GET", "/api/community/notifications")).data.rows.some((n) => n.kind === "wall"));
+  ok("路人删不掉别人的留言",
+    (await C.call("DELETE", `${wallUrl}/${wallPost.data.row.id}`)).status === 403);
+  ok("墙的主人删得掉",
+    (await A.call("DELETE", `${wallUrl}/${wallPost.data.row.id}`)).status === 200);
+  const wallGuest = await client().call("GET", `${wallUrl}`);
+  ok("没登录读得到留言板，但 canPost 是 false", wallGuest.status === 200 && wallGuest.data.canPost === false, JSON.stringify(wallGuest.data).slice(0, 160));
+
+  await C.call("POST", "/api/community/follow", { name: nameB });
+  const blk = await A.call("POST", "/api/community/block", { name: nameC, blocked: true });
+  ok("拉黑会把关注与待处理请求一起收掉",
+    blk.status === 200 && blk.data.blocked === true && blk.data.relation.blocked === true && blk.data.relation.following === false,
+    JSON.stringify(blk.data));
+  const cFollowBlocked = await C.call("POST", "/api/community/follow", { name: curAName });
+  ok("被拉黑的人关注不了我", cFollowBlocked.status === 403, cFollowBlocked.status + " " + JSON.stringify(cFollowBlocked.data));
+  ok("被拉黑的人评不了我的作品",
+    (await C.call("POST", `/api/community/pubs/${pubId}/comments`, { body: "还评论得了吗" })).status === 403);
+  const feedA = await A.call("GET", "/api/community/feed?sort=new");
+  ok("拉黑之后他的东西不进我的广场", !feedA.data.rows.some((p) => p.author && p.author.name === nameC), JSON.stringify(feedA.data.rows.map((p) => p.author && p.author.name)));
+  ok("黑名单列得出这个人", (await A.call("GET", "/api/community/blocks")).data.rows.some((u) => u.name === nameC));
+  ok("不能拉黑自己", (await A.call("POST", "/api/community/block", { name: curAName, blocked: true })).status === 400);
+  const unblk = await A.call("POST", "/api/community/block", { name: nameC, blocked: false });
+  const cFollowBack = await C.call("POST", "/api/community/follow", { name: curAName });
+  ok("解除之后又能关注了", unblk.status === 200 && cFollowBack.status === 200,
+    unblk.status + " " + cFollowBack.status + " " + JSON.stringify(cFollowBack.data));
+
+  const feedX = await A.call("GET", "/api/community/feed?sort=new");
+  ok("广场接口给首页右栏备好了三样：分类底图、最新发布、在线的人",
+    typeof feedX.data.catCovers === "object" && typeof feedX.data.catCounts === "object"
+    && Array.isArray(feedX.data.recent) && Array.isArray(feedX.data.online),
+    JSON.stringify({ c: feedX.data.catCovers, n: feedX.data.catCounts, r: (feedX.data.recent || []).length }).slice(0, 200));
+
   /* ---------- 16. 限流是真的在数次数 ---------- */
   let blocked = 0;
   for (let i = 0; i < RATE_COMMENT + 2; i++) {

@@ -68,6 +68,9 @@ export const coverArt = () => "background-color:#161616;"
   + "background-image:linear-gradient(rgba(255,255,255,.045) 0 1px,transparent 1px),"
   + "linear-gradient(90deg,rgba(255,255,255,.045) 0 1px,transparent 1px);"
   + "background-size:22px 22px";
+/** 封面地址单独给一个函数：首页那条"图上渗出来的光"要拿它当背景，不该在别处再拼一次路径。 */
+export const coverUrl = (p) => (p && (p.hasCover || p.kind === "model"))
+  ? `/api/community/pubs/${p.id}/${p.hasCover ? "cover" : "preview"}` : "";
 export const coverHtml = (p) => p.hasCover
   ? `<img src="/api/community/pubs/${p.id}/cover" alt="" loading="lazy" onerror="this.remove()"/>`
   : p.kind === "model"
@@ -95,6 +98,9 @@ const kfmt = (n) => {
   if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
   return String(v);
 };
+/** 卡片：照官方展厅的读法——图占主导，标题落在图下面，而不是压在图上。
+ *  压在图上时，亮底封面会把字吃掉，而我们的封面全是服务端拿体素快照画的，
+ *  什么底色都有可能。标题单独一行，字才永远读得清。 */
 export function cardHtml(p) {
   const isModel = p.kind === "model";
   const isSkin = p.kind === "skin";
@@ -107,9 +113,9 @@ export function cardHtml(p) {
       ${isSkin ? `<span class="cm-badge">皮肤</span>` : ""}
       ${p.shape && !isModel && !isSkin ? `<span class="cm-shape">${esc(p.shape.join("×"))}</span>` : ""}
       ${isSkin || isModel ? "" : `<span class="cm-play">${PLAY}</span>`}
-      <span class="cm-scrim"><span class="cm-t">${esc(p.title)}</span></span>
     </div>
     <div class="cm-lines">
+      <h4 class="cm-title" title="${esc(p.title)}">${esc(p.title)}</h4>
       <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span></div>
       <div class="cm-views">
         ${isSkin || isModel ? "" : `<span class="now${p.playing ? " on" : ""}" title="现在有几层里有人">${kfmt(p.playing || 0)}</span>`}
@@ -132,7 +138,8 @@ export function railHtml(title, rows, { more = "" } = {}) {
 }
 
 /** 精选位：整屏最大的一块，给当前列表里最热的那张。
- *  没有它，广场就是一张只有三格内容的空桌子。 */
+ *  标题压在图上——这是官方展厅的做法，也是唯一能让人一眼知道"这是什么"的位置。
+ *  与我们自己的卡片不同：这里只有一张，底下的暗带可以按它自己那张图压够黑。 */
 export function heroHtml(p) {
   if (!p) return "";
   const isModel = p.kind === "model";
@@ -140,23 +147,20 @@ export function heroHtml(p) {
     <div class="cm-feature-art" ${p.hasCover || isModel ? "" : `style="${coverArt()}"`}>
       ${coverHtml(p)}
       <span class="cm-feature-scrim"></span>
-    </div>
-    <div class="cm-feature-body">
-      <span class="cm-feature-kicker">${isModel ? "精选模型" : "精选地图"}</span>
-      <h2>${esc(p.title)}</h2>
-      ${p.desc ? `<p>${esc(p.desc).slice(0, 150)}</p>`
-        : (p.tags && p.tags.length ? `<div class="cm-tags">${p.tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>`
-          // 没简介也没标签：留一行诚实的话，而不是让右栏空出一大块看起来像坏了
-          : `<p class="cm-feature-none">作者没写简介 —— 直接开一局看看是什么。</p>`)}
-      <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span>
-        <em>· ${esc(timeAgo(p.updated || p.created))}发布</em></div>
-      <div class="cm-feature-stats">
-        <span>${EYE}${kfmt(p.plays)} 次游玩</span><span>${HEART}${kfmt(p.likes)}</span><span>${CHAT}${kfmt(p.comments)}</span>
-        ${p.shape ? `<span>${esc(p.shape.join("×"))}</span>` : ""}
-      </div>
-      <div class="cm-feature-acts">
-        <button class="cm-btn primary lg" data-play="${esc(p.id)}">${PLAY}${isModel ? "查看模型" : "开始游玩"}</button>
-        <a class="cm-btn lg" href="/p/${esc(p.id)}">详情与评论</a>
+      <div class="cm-feature-cap">
+        <span class="cm-feature-kicker">${isModel ? "精选模型" : "精选地图"}</span>
+        <h2>${esc(p.title)}</h2>
+        <div class="cm-author">${face(p.author)}<span>${esc(p.author ? p.author.name : "匿名")}</span>
+          <em>· ${esc(timeAgo(p.updated || p.created))}发布</em></div>
+        ${p.desc ? `<p>${esc(p.desc).slice(0, 120)}</p>` : `<p class="cm-feature-none">作者没写简介 —— 直接开一局看看是什么。</p>`}
+        <div class="cm-feature-acts">
+          <button class="cm-btn primary lg" data-play="${esc(p.id)}">${PLAY}${isModel ? "查看模型" : "开始游玩"}</button>
+          <a class="cm-btn lg" href="/p/${esc(p.id)}">详情与评论</a>
+          <div class="cm-feature-stats">
+            <span>${EYE}${kfmt(p.plays)}</span><span>${HEART}${kfmt(p.likes)}</span><span>${CHAT}${kfmt(p.comments)}</span>
+            ${p.shape ? `<span>${esc(p.shape.join("×"))}</span>` : ""}
+          </div>
+        </div>
       </div>
     </div>
   </section>`;

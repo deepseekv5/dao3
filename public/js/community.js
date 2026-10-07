@@ -1,7 +1,7 @@
 // community.js — 社区页：广场、地图详情、用户主页、好友与关注。
 // 一个 HTML 壳 + 按路径分派，因为这几屏共用同一条数据管线（发布卡片、关注按钮、头像）。
 import * as auth from "/js/auth.js";
-import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, cardHtml, railHtml, heroHtml, bindCards, playPub, materialize, pullModel, openPublishDialog, icons } from "/js/pubs.js";
+import { timeAgo, kb, toast, modal, face, coverHtml, coverArt, coverUrl, cardHtml, railHtml, heroHtml, bindCards, playPub, materialize, pullModel, openPublishDialog, icons } from "/js/pubs.js";
 import { profileView } from "/js/profile.js";
 const { api, esc, mountAuth, onLogin, openAuth } = auth;
 
@@ -49,27 +49,44 @@ async function feedView() {
   pageSub.textContent = "别人发布的世界，点进去就能跑一圈";
   qBox.closest(".wb-search").hidden = false;
   readFeedUrl();
-  root.innerHTML = `<div id="cmFeature"></div>
-    <div class="cm-cats" id="cmCats"></div>
-    <div class="cm-tabs" id="cmTabs"></div>
-    <div id="cmContinue"></div>
-    <div id="cmRails"></div>
-    <section class="cm-sect"><header><h3 id="cmSectTitle">全部作品</h3><span class="cm-count" id="cmCount"></span></header>
-      <div class="cm-grid" id="cmGrid"></div></section>
-    <div id="cmMore" style="text-align:center"></div>`;
+  root.innerHTML = `<div class="cm-portal">
+    <div class="cm-main">
+      <div id="cmFeature"></div>
+      <div class="cm-catgrid" id="cmCats"></div>
+      <div class="cm-tabs" id="cmTabs"></div>
+      <div id="cmContinue"></div>
+      <div id="cmRails"></div>
+      <section class="cm-sect"><header><h3 id="cmSectTitle">全部作品</h3><span class="cm-count" id="cmCount"></span></header>
+        <div class="cm-grid" id="cmGrid"></div></section>
+      <div id="cmMore" style="text-align:center"></div>
+    </div>
+    <aside class="cm-sidecol" id="cmSide" hidden></aside>
+  </div>`;
   drawTabs();
   await loadFeed(true);
 }
 
 /** 玩法分类是主导航：玩家找的是"有没有能跑一圈的图"，不是被运营位推荐。
-    列表由服务端给（/feed 的 cats 字段），不在前端再抄一份，否则两边会慢慢长歪。 */
+    列表由服务端给（/feed 的 cats 字段），不在前端再抄一份，否则两边会慢慢长歪。
+    每一格拿该分类下最热那张图的封面当底图——瓷砖上有一张真图，人扫一眼就知道里面是什么；
+    没有图就不铺渐变，退回一格纯色，空着也要空得诚实。 */
 function drawCats() {
   const el = $("cmCats");
   if (!el) return;
   const cats = feed.cats.length ? feed.cats : ["竞速", "跑酷", "解谜", "生存", "角色扮演", "模拟经营", "创造", "对战", "恐怖", "休闲"];
-  el.innerHTML = [`<button class="cm-cat ${feed.cat ? "" : "on"}" data-c="">全部`]
-    .concat(cats.map((c) => `<button class="cm-cat ${feed.cat === c ? "on" : ""}" data-c="${esc(c)}">${esc(c)}`))
-    .join("</button>") + "</button>";
+  const tile = (key, label) => {
+    const cov = feed.catCovers && feed.catCovers[key];
+    const art = cov ? ` style="background-image:url('/api/community/pubs/${esc(cov)}/cover')"` : "";
+    const n = key ? (feed.catCounts && feed.catCounts[key]) || 0 : feed.total;
+    // 空分类不假装有图：去掉底图与描边，字退到第三档灰
+    const empty = key && !n ? " gap" : "";
+    return `<button class="cm-tile ${feed.cat === key ? "on" : ""}${empty}" data-c="${esc(key)}"${art}>
+      <i>${esc(label)}</i><em>${n}${key ? " 张" : " 件"}</em></button>`;
+  };
+  const anyTagged = cats.some((c) => (feed.catCounts && feed.catCounts[c]) > 0);
+  el.innerHTML = tile("", "全部") + cats.map((c) => tile(c, c)).join("")
+    // 全新库里十个分类全是空的：那是"还没人打标签"，不是界面坏了，所以要有一句话说明白
+    + (anyTagged ? "" : `<p class="cm-cathint">分类是按发布时填的标签归位的——现在这些作品都还没打标签，所以每一类都是空的。</p>`);
   for (const b of el.querySelectorAll("[data-c]")) b.onclick = () => { feed.cat = b.dataset.c; reload(); };
 }
 
@@ -89,6 +106,38 @@ function drawTabs() {
 
 async function reload() { feed = { ...feed, offset: 0, rows: [] }; writeFeedUrl(); drawCats(); drawTabs(); $("cmGrid").innerHTML = ""; await loadFeed(true); }
 
+/** 右栏：这一屏没有筛选时才出现。它回答的是"然后呢"——最新的在哪、谁在线、这站是什么。
+ *  筛选过的一屏是"我在找东西"，旁边挂一排推荐只会分心，所以整栏收起、列表铺满。 */
+function drawSide(plain) {
+  const el = $("cmSide");
+  if (!el) return;
+  const on = !!plain;
+  el.hidden = !on;
+  root.classList.toggle("has-side", on);
+  if (!on) { el.innerHTML = ""; return; }
+  const recent = feed.recent || [];
+  const online = feed.online || [];
+  el.innerHTML = `
+    <section class="cm-panel cm-notice">
+      <h4>这是什么</h4>
+      <p>本机上的一间社区：别人发布的地图、模型和皮肤，点开就能跑。数据全在这台电脑上，没有云端账号。</p>
+      <a class="cm-btn sm primary" href="/">去工作台做一张图</a>
+    </section>
+    ${recent.length ? `<section class="cm-panel"><h4>最新发布</h4>
+      <div class="cm-minilist">${recent.map(miniRow).join("")}</div>
+      <a class="cm-morelink" href="/community?sort=new">全部新作 →</a></section>` : ""}
+    ${online.length ? `<section class="cm-panel"><h4>现在在线 ${online.length}</h4>
+      <div class="cm-people">${online.map((u) => `<a href="/u/${encodeURIComponent(u.name)}" title="${esc(u.name)}${u.role === "admin" ? " · 超级管理员" : ""}">${face(u)}<span>${esc(u.name)}</span></a>`).join("")}</div></section>` : ""}`;
+}
+
+/** 右栏里的一行：小图 + 两行字。图比字先被看到，所以图必须在左边、且真的是那张作品的封面。 */
+function miniRow(p) {
+  return `<a class="cm-mini" href="/p/${esc(p.id)}">
+    <span class="cm-mini-art">${coverHtml(p)}</span>
+    <span class="cm-mini-txt"><b>${esc(p.title)}</b><i>${esc(p.author ? p.author.name : "匿名")} · ${esc(timeAgo(p.created))}</i></span>
+  </a>`;
+}
+
 async function loadFeed(reset) {
   const grid = $("cmGrid");
   if (!grid) return;
@@ -103,6 +152,10 @@ async function loadFeed(reset) {
     return;
   }
   if (Array.isArray(r.cats) && r.cats.join() !== feed.cats.join()) feed.cats = r.cats;
+  feed.catCovers = r.catCovers || {};
+  feed.catCounts = r.catCounts || {};
+  feed.recent = r.recent || [];
+  feed.online = r.online || [];
   drawCats();
   feed.total = r.total;
   feed.rows = feed.rows.concat(r.rows);
@@ -119,7 +172,13 @@ async function loadFeed(reset) {
   const plain = !feed.cat && !feed.kind && !feed.q && feed.sort !== "following";
   const featHost = $("cmFeature"), railHost = $("cmRails");
   const byPlays = [...feed.rows].sort((a, b) => (b.plays || 0) - (a.plays || 0) || (b.updated || 0) - (a.updated || 0));
-  featHost.innerHTML = plain && byPlays.length ? heroHtml(byPlays[0]) : "";
+  const hero = plain && byPlays.length ? byPlays[0] : null;
+  featHost.innerHTML = hero ? heroHtml(hero) : "";
+  /* 精选封面在页面顶上渗出的一层光。官方展厅顶上就有这么一层：
+     它让"这一页有内容"在图片还没解码完的时候就已经成立。没有封面就不铺，别拿渐变色假装有图。 */
+  const glow = hero ? coverUrl(hero) : "";
+  document.documentElement.style.setProperty("--cm-hero", glow ? `url("${glow}")` : "none");
+  drawSide(plain);
   // 导轨要在内容够多的时候才有意义：一共三张图还分"大家都在玩"和"全部作品"两遍，是凑版式。
   const rest = plain && byPlays.length > 7 ? byPlays.slice(1, 7) : [];
   railHost.innerHTML = rest.length ? railHtml("大家都在玩", rest, { href: "/community?sort=hot", label: "按热度看" }) : "";
@@ -514,13 +573,18 @@ async function loadComments(pubId, authorId) {
   catch (e) { list.innerHTML = `<p class="cm-hint">${esc(e.message)}</p>`; return; }
   // 一张地图的评论区里，作者那句话的分量不一样，所以要先认得出哪条是他。
   const badge = (c) => authorId && c.author && c.author.id === authorId ? '<em class="op">作者</em>' : "";
+  /** 回复是"挂在一条评论上的第二句"，不是新楼层：所以输入框上方留一条引用条，
+   *  点的时候看得见自己在回谁，发出去的那条正文里也带着那根线。 */
+  let replyTarget = null;
   list.innerHTML = rows.length ? rows.map((c) => `<div class="cm-cmt" data-id="${esc(c.id)}">
       <a href="/u/${encodeURIComponent(c.author.name)}" style="text-decoration:none">${face(c.author)}</a>
       <div class="txt">
         <div class="hd"><a href="/u/${encodeURIComponent(c.author.name)}">${esc(c.author.name)}</a>${badge(c)}<time>${esc(timeAgo(c.ts))}</time></div>
+        ${c.reply ? `<span class="quote"><b>${esc(c.reply.name)}</b>：${esc(c.reply.excerpt)}</span>` : ""}
         <p>${esc(c.body)}</p>
         <div class="ops">
           <button data-x="like" class="${c.likedByMe ? "on" : ""}">♥ <span>${c.likes}</span></button>
+          ${auth.me && !c.mine ? '<button data-x="reply">回复</button>' : ""}
           ${c.mine ? '<button data-x="del">删除</button>'
             : auth.me ? '<button data-x="report">举报</button>' : ""}
         </div>
@@ -528,6 +592,14 @@ async function loadComments(pubId, authorId) {
     </div>`).join("") : `<p class="cm-hint">还没有评论。</p>`;
   for (const el of list.querySelectorAll(".cm-cmt")) {
     const id = el.dataset.id;
+    const mine = rows.find((x) => x.id === id);
+    const back = el.querySelector('[data-x="reply"]');
+    if (back) back.onclick = () => {
+      replyTarget = mine || null;
+      drawChip();
+      const ta = $("cBody");
+      if (ta) { ta.focus(); if (!ta.value) ta.placeholder = `回复 ${mine && mine.author ? mine.author.name : ""}…`; }
+    };
     const like = el.querySelector('[data-x="like"]');
     if (like) like.onclick = async () => {
       if (!requireLogin()) return;
@@ -552,8 +624,18 @@ async function loadComments(pubId, authorId) {
       catch (e) { toast(e.message, true); }
     };
   }
+  function drawChip() {
+    const box = $("cReply");
+    if (!box) return;
+    box.innerHTML = replyTarget
+      ? `<div class="cm-replyto">回复 <b>${esc(replyTarget.author ? replyTarget.author.name : "")}</b>：${esc(String(replyTarget.body || "").slice(0, 42))}<button id="cReplyX">取消</button></div>`
+      : "";
+    const x = $("cReplyX");
+    if (x) x.onclick = () => { replyTarget = null; drawChip(); };
+  }
   compose.innerHTML = auth.me
-    ? `<div class="cm-compose"><textarea id="cBody" maxlength="500" placeholder="说点什么（最多 500 字，⌘/Ctrl + Enter 发送）"></textarea>
+    ? `<div class="cm-compose"><div class="grow"><div id="cReply"></div>
+        <textarea id="cBody" maxlength="500" placeholder="说点什么（最多 500 字，⌘/Ctrl + Enter 发送）"></textarea></div>
         <button class="cm-btn primary" id="cSend">发送</button></div>`
     : `<div class="cm-compose is-guest"><textarea disabled placeholder="登录后就能评论这张地图"></textarea>
         <button class="cm-btn primary" id="cLogin">登录</button></div>`;
@@ -565,7 +647,7 @@ async function loadComments(pubId, authorId) {
     if (!body) return toast("先写点内容", true);
     send.disabled = true;
     try {
-      await api("POST", `/api/community/pubs/${pubId}/comments`, { body });
+      await api("POST", `/api/community/pubs/${pubId}/comments`, { body, replyTo: replyTarget ? replyTarget.id : undefined });
       $("cBody").value = "";
       await loadComments(pubId, authorId); bumpCount(1);
     } catch (e) { toast(e.message, true); }

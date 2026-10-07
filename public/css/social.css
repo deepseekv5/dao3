@@ -114,3 +114,10 @@ button.so-thread{width:100%;text-align:left;cursor:pointer;font:inherit}
   .so-drawer{width:100%;border-left:0}
   .so-conv{height:calc(100dvh - 58px)}
 }
+
+/* 手机上抽屉铺满，底部留出安全区与键盘位；发消息那一行不跟输入框抢高度 */
+@media (max-width: 760px) {
+  .so-drawer { padding-bottom: env(safe-area-inset-bottom); }
+  .so-row { padding: 12px 10px; }
+  .so-ib { min-width: 34px; min-height: 30px; }
+}

@@ -175,8 +175,14 @@ async function draw() {
 
 /* ---------------- 好友 ---------------- */
 async function friendsPane() {
-  let fr;
-  try { fr = await api("GET", "/api/community/friends"); } catch (e) { body.innerHTML = `<div class="so-empty">${esc(e.message)}</div>`; return; }
+  let fr, blocks = [];
+  try {
+    const [a, b] = await Promise.all([
+      api("GET", "/api/community/friends"),
+      api("GET", "/api/community/blocks").catch(() => ({ rows: [] })),
+    ]);
+    fr = a; blocks = b.rows || [];
+  } catch (e) { body.innerHTML = `<div class="so-empty">${esc(e.message)}</div>`; return; }
   counts.friends = fr.friends.length;
   const reqs = fr.incoming || [];
   const row = (u, ops) => `<div class="so-row" data-u="${esc(u.id)}">
@@ -195,7 +201,10 @@ async function friendsPane() {
       ${fr.friends.length ? fr.friends.map((u) => row(u, ops(u))).join("") : `<div class="so-empty">还没有好友。到「扩列」那一页按地区或性格找人。</div>`}</div>
     ${fr.outgoing && fr.outgoing.length ? `<div class="so-sec"><b>等对方回应 ${fr.outgoing.length}</b>${fr.outgoing.map(({ user }) =>
       `<div class="so-row">${face(user)}<div class="so-main"><b>${esc(user.name)}</b>${chips(user)}</div>
-        <div class="so-ops"><button class="so-ib warn" data-rm="${esc(user.name)}">撤回</button></div></div>`).join("")}</div>` : ""}`;
+        <div class="so-ops"><button class="so-ib warn" data-rm="${esc(user.name)}">撤回</button></div></div>`).join("")}</div>` : ""}
+    ${blocks.length ? `<div class="so-sec"><b>黑名单 ${blocks.length}<i>互相看不到</i></b>${blocks.map((u) => `<div class="so-row">
+      ${face(u)}<div class="so-main"><b>${esc(u.name)}</b><div class="so-chips"><span>${esc(timeAgo(u.ts))}拉黑</span></div></div>
+      <div class="so-ops"><button class="so-ib ok" data-unblk="${esc(u.name)}">解除</button></div></div>`).join("")}</div>` : ""}`;
 
   bind(body, "[data-dm]", (el) => openDm({ id: el.dataset.dm, name: el.dataset.n }));
   bind(body, "[data-note]", async (el) => {
@@ -209,6 +218,10 @@ async function friendsPane() {
   });
   bind(body, "[data-acc]", async (el) => { await act("/api/community/friend/accept", el.dataset.acc); });
   bind(body, "[data-dec]", async (el) => { await act("/api/community/friend/decline", el.dataset.dec); });
+  bind(body, "[data-unblk]", async (el) => {
+    try { await api("POST", "/api/community/block", { name: el.dataset.unblk, blocked: false }); toast("已解除拉黑"); friendsPane(); }
+    catch (e) { toast(e.message, true); }
+  });
 }
 async function act(path, name) {
   try { await api("POST", path, { name }); friendsPane(); } catch (e) { toast(e.message, true); }
