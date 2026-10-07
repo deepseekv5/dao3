@@ -129,3 +129,12 @@ button.so-thread{width:100%;text-align:left;cursor:pointer;font:inherit}
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(var(--glass-sat));
   box-shadow: inset 1px 0 0 rgba(255, 255, 255, .06), -30px 0 60px -30px rgba(0, 0, 0, .85);
 }
+
+/* 抽屉里的圆形图标按钮（聊/页/注/除）：同一块玻璃，尺寸按触屏友好来 */
+.so-ib {
+  background: var(--btn-fill); backdrop-filter: blur(10px) saturate(1.4); -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, .10); border-radius: var(--r-pill);
+  box-shadow: var(--btn-lit); transition: transform var(--dur-1) var(--ease-spring), background var(--dur-1);
+}
+.so-ib:hover { background: var(--btn-fill-hover); }
+.so-ib:active { transform: scale(.94); }

@@ -1053,3 +1053,16 @@ body.playing .view-gizmo{display:none}
 .ac-doc b{font-family:var(--mono);font-weight:500;color:var(--primary)}
 .ac-doc em,.ac-doc i{font-style:normal;margin-left:8px;color:var(--font-white-minor)}
 .ac-doc em{color:var(--fg3)}
+
+/* 编辑器里的按钮也换上同一块玻璃：状态栏、工具条、面板主按钮。
+   只动外观（底色/描边/受光棱/按下手感），尺寸与布局一律不碰——
+   这一屏的密度是调过的，动了尺寸整排工具会错位。 */
+button.sb-btn, .pg-btn, .vx-btn, .gh-btns button, .playbtn, button.primary, button.danger {
+  background-image: var(--glass-sheen);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(0, 0, 0, .34);
+  transition: transform var(--dur-1) var(--ease-spring), background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+button.sb-btn { background-color: var(--btn-fill); border-radius: var(--r-pill); }
+button.sb-btn:hover { background-color: var(--btn-fill-hover); }
+button.sb-btn:active, .pg-btn:active, .vx-btn:active { transform: scale(.96); }

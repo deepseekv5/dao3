@@ -296,3 +296,12 @@ tr:hover .wb-acts, td:hover .wb-acts { opacity: 1; }
 }
 .wb-rail::after { animation-duration: 15s; animation-delay: -6s; }
 @media (prefers-reduced-motion: reduce) { .wb-top::after, .wb-rail::after { animation: none; opacity: 0; } }
+
+/* 侧栏导航与顶栏按钮：玻璃小件。当前那一项是"亮着的一颗玻璃"，不是一整条高亮 */
+.wb-railnav a { border-radius: var(--r-2); transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease-spring); }
+.wb-railnav a:hover { background: var(--btn-fill); }
+.wb-railnav a.on { background: rgba(227, 166, 60, .16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), var(--btn-shadow); }
+.wb-railnav a:active { transform: scale(.95); }
+.wb-mark { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), var(--btn-shadow); }
+.wb-railfoot button, .wb-t, .wb-auth .cm-btn { border-radius: var(--r-pill); }
+.wb-railfoot button { background: var(--btn-fill); box-shadow: var(--btn-lit); }

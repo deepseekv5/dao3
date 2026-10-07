@@ -759,3 +759,38 @@
   will-change: transform;
 }
 @media (prefers-reduced-motion: reduce) { .cm-lens { transition: none; } }
+
+/* ---------------- 所有按钮：同一块玻璃 ----------------
+   这一条覆盖全站（社区、主页、后台、好友、编辑器里用到 .cm-btn 的地方）。
+   主按钮保留琥珀实心——那是"这一屏只有一颗的重点"，但受光棱与按下手感一致。 */
+.cm-btn {
+  background: var(--btn-fill); background-image: var(--glass-sheen);
+  backdrop-filter: blur(12px) saturate(1.5); -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: var(--r-pill);
+  box-shadow: var(--btn-lit), var(--btn-shadow);
+  transition: transform var(--dur-1) var(--ease-spring), background var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.cm-btn:hover {
+  background: var(--btn-fill-hover); border-color: rgba(255, 255, 255, .2);
+  color: var(--fg); transform: translateY(-1px);
+  box-shadow: var(--btn-lit), 0 14px 26px -16px rgba(0, 0, 0, .85);
+}
+.cm-btn:active { transform: scale(.97); }
+.cm-btn.primary {
+  background: linear-gradient(180deg, rgba(255, 216, 148, .96), rgba(227, 166, 60, .94));
+  border-color: rgba(255, 255, 255, .32); color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), inset 0 -1px 0 rgba(0, 0, 0, .22),
+    0 14px 28px -16px rgba(227, 166, 60, .55);
+}
+.cm-btn.primary:hover { background: linear-gradient(180deg, #ffdf9c, var(--primary-hover)); color: var(--on-accent); }
+.cm-btn.on { background: rgba(227, 166, 60, .20); border-color: var(--primary-line); color: var(--primary); }
+.cm-btn.danger { color: #f0b8bd; border-color: rgba(217, 79, 95, .45); }
+.cm-btn.danger:hover { border-color: var(--bad); color: #ffd7d7; background: rgba(217, 79, 95, .14); }
+.cm-btn.ghost { background: var(--btn-fill); }
+.cm-btn[disabled] { transform: none; box-shadow: var(--btn-lit); }
+/* 平铺的开关组（最新/最热、地图/模型/皮肤）：外框是一块玻璃，里面的选中项是一颗玻璃药丸 */
+.cm-kinds { background: var(--btn-fill); border: 1px solid rgba(255, 255, 255, .08);
+  backdrop-filter: blur(10px) saturate(1.4); -webkit-backdrop-filter: blur(10px) saturate(1.4); }
+.cm-kind.on { background: rgba(227, 166, 60, .22); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18); }
