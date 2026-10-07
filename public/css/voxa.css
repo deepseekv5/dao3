@@ -340,3 +340,15 @@ body.voxa{
 .vx-pop-i.on{color:var(--vx-accent);box-shadow:inset 2px 0 0 var(--vx-accent)}
 .vx-pop-i.danger:hover{background:rgba(255,91,91,.16);color:#ff5b5b}
 .vx-pop-sep{border:0;border-top:1px solid #2c2926;margin:4px 2px}
+
+/* ---------------- VOXA：同一块玻璃 ----------------
+   面板头、工具条、弹窗、左右两栏面板。VOXA 的底色比编辑器更暗，
+   所以填充用强档，免得工具图标糊在背景上。 */
+.ap-head, .vx-modal-box, .vx-panel, .vx-bar {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+}
+.vx-modal-box { border-color: var(--glass-border-hover); }

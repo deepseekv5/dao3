@@ -103,3 +103,16 @@ details.fine > summary::before { content: "+ "; color: var(--p); font-family: va
 details.fine[open] > summary::before { content: "− "; }
 details.fine > summary:hover { color: var(--ink); }
 details.fine > *:not(summary) { margin-top: 20px; }
+
+/* ---------------- 简介页：同一块玻璃 ----------------
+   顶部导航是常驻的一块，展示卡与事实表跟着走。正文段落不加玻璃——
+   那是一篇要读的字，不是面板。 */
+.sp-top, .sc-card, .facts {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+}
+.sp-top { position: sticky; top: 0; z-index: 30; }
+.sp-nav a, .sp-top .btn { border-radius: var(--r-pill); }

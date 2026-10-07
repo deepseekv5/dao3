@@ -305,3 +305,61 @@ tr:hover .wb-acts, td:hover .wb-acts { opacity: 1; }
 .wb-mark { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), var(--btn-shadow); }
 .wb-railfoot button, .wb-t, .wb-auth .cm-btn { border-radius: var(--r-pill); }
 .wb-railfoot button { background: var(--btn-fill); box-shadow: var(--btn-lit); }
+
+/* ---------------- 工作台：同一块玻璃 ----------------
+   工作台是入口那一屏，它得和社区长得像一家人：按钮、搜索、指标卡、启动卡、
+   弹窗全部换料，扫光错开走。表格行不加玻璃——那里要让每一行的状态点先被看见。 */
+.wb-btn, .wb-ico, .wb-search, .wb-seg {
+  background: var(--btn-fill); background-image: var(--glass-sheen);
+  backdrop-filter: blur(12px) saturate(1.5); -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow: var(--btn-lit), var(--btn-shadow);
+  transition: transform var(--dur-1) var(--ease-spring), background var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.wb-btn, .wb-ico { border-radius: var(--r-pill); }
+.wb-btn:hover, .wb-ico:hover { background: var(--btn-fill-hover); color: var(--fg); transform: translateY(-1px); }
+.wb-btn:active, .wb-ico:active { transform: scale(.97); }
+.wb-btn.primary {
+  background: linear-gradient(180deg, rgba(255, 216, 148, .96), rgba(227, 166, 60, .94)); color: var(--on-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), inset 0 -1px 0 rgba(0, 0, 0, .22), 0 14px 28px -16px rgba(227, 166, 60, .5);
+}
+.wb-search, .wb-seg { border-radius: var(--r-pill); }
+.wb-metrics > *, .wb-start {
+  background: var(--glass-fill); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+}
+.wb-metrics > *, .wb-start { position: relative; overflow: hidden; }
+.wb-metrics > *::after, .wb-start::after {
+  content: ""; position: absolute; top: -70%; bottom: -70%; left: 0; width: 40%; z-index: 0;
+  background: linear-gradient(96deg, transparent, rgba(255, 255, 255, .12), transparent);
+  filter: blur(6px); pointer-events: none;
+  animation: sheenSweep 12s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+.wb-metrics > *:nth-child(2n)::after { animation-duration: 15s; animation-delay: -5s; }
+.wb-start:nth-of-type(2n)::after { animation-duration: 9s; animation-delay: -7s; }
+.wb-metrics > * > *, .wb-start > * { position: relative; z-index: 1; }
+.wb-start:hover { border-color: var(--glass-border-hover); }
+/* 工作台的弹窗与遮罩 */
+.wb-modal { backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); }
+.wb-modal > * {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border-hover);
+  box-shadow: var(--glass-lit), var(--glass-dark), 0 30px 70px -34px rgba(0, 0, 0, .85);
+}
+@media (prefers-reduced-motion: reduce) { .wb-metrics > *::after, .wb-start::after { animation: none; opacity: 0; } }
+
+/* ---------------- 手册页：同一块玻璃 ----------------
+   手册用的是 bar/nav/note/faq 这几个通用类（不走 .wb-*），所以单独点一次名。 */
+body.lm-page .bar, .manual .nav, body:has(.faq) .note, .faq > * {
+  background: var(--glass-fill); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+}

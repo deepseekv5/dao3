@@ -1066,3 +1066,31 @@ button.sb-btn, .pg-btn, .vx-btn, .gh-btns button, .playbtn, button.primary, butt
 button.sb-btn { background-color: var(--btn-fill); border-radius: var(--r-pill); }
 button.sb-btn:hover { background-color: var(--btn-fill-hover); }
 button.sb-btn:active, .pg-btn:active, .vx-btn:active { transform: scale(.96); }
+
+/* ---------------- 编辑器：浮起来的每一层都是同一块玻璃 ----------------
+   顶部菜单栏、底部状态栏、右侧属性面板、浮动方块库、浮动工具条、弹窗。
+   尺寸一律不碰：这一屏密度是调过的，动 padding/height 会让整排工具错位。
+   颜色只用 rgba/var，不引新色号（editor.css 有一条"不许出现杂色 hex"的静态审查）。 */
+#topbar, #hud, .float-toolbar, #rightPanel, .float-card, .modal-box {
+  background: var(--glass-fill-strong); background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-lit), var(--glass-dark), var(--glass-shadow);
+}
+#topbar { position: relative; overflow: hidden; }
+#topbar > * { position: relative; z-index: 1; }
+#topbar::after, #hud::after {
+  content: ""; position: absolute; top: -70%; bottom: -70%; left: 0; width: 30%; z-index: 0;
+  background: linear-gradient(96deg, transparent, rgba(255, 255, 255, .10), transparent);
+  filter: blur(6px); pointer-events: none;
+  animation: sheenSweep 14s cubic-bezier(.45, .05, .55, .95) infinite;
+}
+#hud::after { animation-duration: 18s; animation-delay: -9s; }
+#rightPanel { border-left: 1px solid var(--glass-border); }
+.float-card, .float-toolbar { border: 1px solid var(--glass-border); }
+.modal-box { border: 1px solid var(--glass-border-hover); }
+/* 模式开关（全局/角色）与状态栏按钮：玻璃槽 + 里面一颗亮玻璃 */
+.mode-seg { background: var(--btn-fill); border: 1px solid rgba(255, 255, 255, .08); border-radius: var(--r-pill); }
+.mode-seg .msb { background: transparent; border-radius: var(--r-pill); }
+.mode-seg .msb.active { background: var(--primary); color: var(--on-accent); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45); }
+@media (prefers-reduced-motion: reduce) { #topbar::after, #hud::after { animation: none; opacity: 0; } }
