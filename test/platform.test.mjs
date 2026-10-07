@@ -283,16 +283,93 @@ ok("详情页显示版本 2 与可回滚的历史", await until(A, `!!document.q
 
 /* ---------------- 管理后台 ---------------- */
 await A.goto(BASE + "/admin"); await sleep(1600);
-const adm = await A.evaluate(`(() => ({ cards: document.querySelectorAll(".ad-cards > div").length, tabs: [...document.querySelectorAll("[data-t]")].map((b)=>b.dataset.t) }))()`);
+const adm = await A.evaluate(`(() => ({ cards: document.querySelectorAll(".ad-cards > div").length,
+  tabs: [...document.querySelectorAll("[data-t]")].map((b)=>b.dataset.t), bars: document.querySelectorAll(".ad-spark svg rect").length }))()`);
 ok("后台总览有数据卡", adm.cards >= 6, JSON.stringify(adm));
+ok("后台五个页签都在：概览/举报/内容/用户/审计", ["ov", "reports", "content", "users", "audit"].every((t) => adm.tabs.includes(t)), JSON.stringify(adm.tabs));
+ok("14 天走势一天一组柱", adm.bars >= 14 * 3, adm.bars);
+const goTab = (t) => A.evaluate(`(() => { const b=document.querySelector('[data-t="${t}"]'); if(!b) throw new Error("没有 ${t} tab"); b.click(); return 1; })()`);
+await goTab("reports");
 ok("举报队列里躺着 B 的那条举报", await until(A, `document.body.textContent.includes("纯色小图")`), await A.text());
-await A.evaluate(`(() => { const b=document.querySelector('[data-t="users"]'); if(!b) throw new Error("没有用户 tab"); b.click(); })()`);
-ok("后台列出两个账号", await until(A, `document.querySelectorAll(".ad-table tbody tr").length === 2 && document.body.textContent.includes(${JSON.stringify(nameB)})`), await A.text());
-await A.shot(path.join(ROOT, "tmp/ui-admin.png"));
+
+/* 内容审核：下架 → 恢复这一整圈，只有后台走得通（作者自己下架的东西没有自助上架）。 */
+await goTab("content");
+ok("内容审核列出作品，每行带下架与删干净", await until(A, `document.querySelectorAll("#ctRows tbody tr").length >= 1 && !!document.querySelector("[data-purge]")`), await A.text());
+await A.evaluate(`(() => {
+  const row = [...document.querySelectorAll("#ctRows tbody tr")].find((tr) => tr.querySelector("a").getAttribute("href") === "/p/${pubId}");
+  if (!row) throw new Error("作品列表里找不到那张图");
+  row.querySelector("[data-down]").click(); return 1; })()`);
+ok("点下架之后这一行只剩'恢复上架'", await until(A, `!!document.querySelector("[data-up]")`), await A.text());
+ok("下架的图在广场已经读不到", (await (await fetch(`${BASE}/api/community/pubs/${pubId}`)).json()).error !== undefined, await A.text());
+await A.evaluate(`document.querySelector("[data-up]").click()`);
+ok("恢复上架后广场又读得到这张图", await until(A, `!!document.querySelector("[data-down]")`), await A.text());
+const live = await (await fetch(`${BASE}/api/community/pubs/${pubId}`)).json();
+ok("恢复是真的回到 live（详情页有 pub）", !!live.pub, JSON.stringify(live).slice(0, 120));
+await A.evaluate(`document.querySelector("#ctRows [data-flag]").click()`);
+ok("打上的审核标记进了被标记队列", await until(A, `(() => { const b=document.querySelector('[data-ct="flagged"]'); b.click();
+  return document.querySelectorAll(".ad-row").length >= 1 && document.body.textContent.includes("取消标记"); })()`), await A.text());
 
 /* B 不该进得来：前端藏按钮，服务端也要真的挡 */
 await B.goto(BASE + "/admin"); await sleep(1400);
 ok("普通用户打开后台看到的是拒绝", await until(B, `document.body.textContent.includes("不是管理员") && !document.querySelector(".ad-cards")`), await B.text());
+
+/* 用户页：搜索、批量条、详情抽屉、封禁对话框。
+   这里只开对话框再取消，不真的封 B——B 后面还要进联机房，封号会踢掉它的会话，
+   那条链就测不到了。封禁本身的效果由 community.test.mjs 从服务端那侧断言。 */
+await A.goto(BASE + "/admin"); await sleep(1500);
+await goTab("users");
+ok("后台列出两个账号", await until(A, `document.querySelectorAll("#usRows tbody tr").length === 2 && document.body.textContent.includes(${JSON.stringify(nameB)})`), await A.text());
+// 搜的是这个人的前缀而不是后缀：两个账号都带同一个随机后缀，拿后缀搜会同时命中两个，
+// 那条"只剩一个人"就测不出搜索到底有没有在工作。
+await A.evaluate(`(() => { const i=document.getElementById("usQ"); i.value=${JSON.stringify(nameB.slice(0, 3))}; document.getElementById("usGo").click(); return 1; })()`);
+ok("按昵称搜只剩一个人", await until(A, `document.querySelectorAll("#usRows tbody tr").length === 1`), await A.text());
+await A.evaluate(`(() => { const i=document.getElementById("usQ"); i.value=""; document.getElementById("usGo").click(); return 1; })()`);
+// 清空搜索会重发一次请求，那一瞬间 #usRows 里是"读取中…"而不是表格——
+// 不等一下就去点表头，点到的是一层还没有表的壳。
+await until(A, `document.querySelectorAll("#usRows tbody tr").length === 2`);
+await A.evaluate(`(() => { const h=document.querySelector('#usRows th[data-s="pubs"]'); if(!h) throw new Error("没有可排序的表头"); h.click(); return 1; })()`);
+ok("表头点一下能重排（带排序箭头）", await until(A, `/[↑↓]/.test(document.querySelector('#usRows th[data-s="pubs"]').textContent)`), await A.text());
+await A.evaluate(`(() => { const c=document.querySelector("[data-pick]"); if(!c) throw new Error("没有勾选框"); c.checked=true; c.dispatchEvent(new Event("change",{bubbles:true})); return 1; })()`);
+ok("勾一个人就浮出批量条", await until(A, `!document.getElementById("usBatch").hidden && document.getElementById("usPickN").textContent.includes("1")`), await A.text());
+// 抽屉里固定的三段是 作品 / 评论 / 关系，其余（签名、被举报、最近游玩、后台动作）看人而有；
+// 被点开的那个账号只有评论，所以断言写 >= 3。
+await A.evaluate(`(() => { const bs=[...document.querySelectorAll("[data-detail]")]; bs[bs.length-1].click(); return 1; })()`);
+ok("用户详情抽屉打开并给出作品/评论/关系", await until(A, `!!document.querySelector(".ad-drawer .ad-kv")
+  && document.querySelectorAll(".ad-drawer .ad-sec").length >= 3 && !!document.querySelector('.ad-ops [data-op="delete"]')`), await A.evaluate(`document.body.innerText.slice(0,300)`));
+ok("抽屉里备着导出数据与改昵称这些管理动作", await until(A, `["export","rename","reset","kick","note"].every((o)=>document.querySelector('.ad-ops [data-op="' + o + '"]'))`), await A.text());
+await A.evaluate(`document.getElementById("udClose").click()`);
+ok("抽屉能关掉", await until(A, `!document.querySelector(".ad-drawer")`), await A.text());
+await A.evaluate(`(() => { document.querySelector('[data-ban=${JSON.stringify(nameB)}]').click(); return 1; })()`);
+ok("封禁弹的是带天数与无限期的对话框", await until(A, `!!document.querySelector("#bdDays")
+  && [...document.querySelectorAll("#bdDays option")].some((o)=>/无限期/.test(o.textContent))`), await A.evaluate(`document.body.innerText.slice(0,300)`));
+await A.evaluate(`document.getElementById("bdCancel").click()`);
+ok("对话框能取消，且取消之后没有真的封号", await until(A, `!document.querySelector(".ad-mask") && !document.querySelector(".ad-ban")`), await A.text());
+// 看的是那一行的"管理员"小标签，不是整行文本：操作列里那颗按钮本来就叫"提为管理员"，
+// 拿文本比会永远为真，等于没测。
+const adminChip = (name) => `(() => { const tr=[...document.querySelectorAll("#usRows tbody tr")].find((x)=>x.textContent.includes(${JSON.stringify(name)}));
+  if(!tr) throw new Error("列表里找不到这个人"); return !!tr.querySelector(".ad-tag"); })()`;
+await A.evaluate(`(() => { document.querySelector('[data-role=${JSON.stringify(nameB)}]').click(); return 1; })()`);
+ok("提这个人为管理员，他那一行立刻挂上管理员标记", await until(A, adminChip(nameB)), await A.evaluate(`document.body.innerText.slice(0,300)`));
+await A.evaluate(`(() => { document.querySelector('[data-role=${JSON.stringify(nameB)}]').click(); return 1; })()`);
+ok("再点一下降回普通（角色是可逆的）", await until(A, "!" + adminChip(nameB)), await A.evaluate(`document.body.innerText.slice(0,300)`));
+await A.goto(BASE + "/admin"); await sleep(1600);
+// 先问接口，再画界面：这两层分开断言，坏掉的时候才知道坏在哪一层。
+const audApi = await pageFetch(A, "GET", "/api/community/admin/audit?limit=50");
+ok("审计接口给得出动作流水，每条都写着谁做的",
+  audApi.status === 200 && audApi.json && audApi.json.rows.length >= 3 && audApi.json.rows.every((r) => r.byName && r.action),
+  JSON.stringify(audApi.json && audApi.json.rows.slice(0, 4).map((r) => r.action + "·" + r.byName)));
+const audFilter = await pageFetch(A, "GET", "/api/community/admin/audit?action=takedown");
+ok("审计接口认 action 筛选", audFilter.status === 200 && audFilter.json.rows.length >= 1 && audFilter.json.rows.every((r) => r.action === "takedown"),
+  JSON.stringify(audFilter.json && audFilter.json.rows.map((r) => r.action)));
+await goTab("audit");
+ok("审计页把流水画成表格", await until(A, `document.querySelectorAll("#auRows tbody tr").length >= 3`),
+  await A.evaluate(`(() => ({ href: location.href, head: document.body.innerText.replace(/\\s+/g, " ").slice(0, 200), errs: (window.__errs || []).slice(0, 3) }))()`));
+ok("审计页里写着管理员的昵称", await until(A, `document.body.textContent.includes(${JSON.stringify(nameA)})`),
+  await A.evaluate(`document.body.innerText.slice(0, 200)`));
+ok("审计能按动作筛", await until(A, `(() => { const s = document.getElementById("auAct");
+  return !!s && [...s.options].some((o) => /删除作品|封禁|改角色/.test(o.textContent)); })()`),
+  await A.evaluate(`document.body.innerText.slice(0, 200)`));
+await A.shot(path.join(ROOT, "tmp/ui-admin.png"));
 
 /* ---------------- 运行时：昵称 / 皮肤 / 内嵌菜单 ---------------- */
 await A.goto(BASE + `/edit/216d665d3ca92bd1b9a2?play=1&pub=${pubId}&title=${encodeURIComponent("老攸赛道")}&author=${encodeURIComponent(nameA)}`);

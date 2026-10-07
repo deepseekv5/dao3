@@ -7,7 +7,8 @@
  *
  * 自己起一个服务、自己挑一个干净的数据目录（见下面 freePort 那段）。
  * 测试账号用随机后缀，跑完把自己的发布下架，不给广场留垃圾；
- * 用户记录删不掉（社区没有注销接口，这是刻意的：发布内容要能追责）。
+ * 用户本人删不掉自己的账号（追责要留得住人），后台的注销接口只有管理员能用，
+ * 所以最后一节专门拿一个"牺牲丁"账号去走那条不可回退的路。
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -587,6 +588,113 @@ try {
   const goneModel = await client().call("GET", "/api/community/pubs/" + modelId);
   ok("下架的模型不在广场了", goneModel.status === 404, goneModel.status);
 
+  /* ---------- 14b. 后台扩到"管理所有用户" ---------- */
+  const uAll = await A.call("GET", "/api/community/admin/users");
+  ok("后台能列出所有账号，带上会话数、占用与总计作品数",
+    uAll.status === 200 && uAll.data.rows.length >= 3
+    && uAll.data.rows.every((u) => "sessions" in u && "bytes" in u && "pubsAll" in u && "lastSeen" in u),
+    JSON.stringify(uAll.data.rows[0]).slice(0, 220));
+  const uQ = await A.call("GET", `/api/community/admin/users?q=${encodeURIComponent(nameB)}`);
+  ok("用户能按昵称搜", uQ.status === 200 && uQ.data.rows.length === 1 && uQ.data.rows[0].name === nameB, JSON.stringify(uQ.data.rows.map((u) => u.name)));
+  const uNone = await A.call("GET", "/api/community/admin/users?q=" + encodeURIComponent("查无此人" + suffix));
+  ok("搜不到给空表而不是报错", uNone.status === 200 && uNone.data.rows.length === 0, JSON.stringify(uNone.data).slice(0, 120));
+  const uSort = await A.call("GET", "/api/community/admin/users?sort=pubs&dir=desc");
+  const pn = uSort.data.rows.map((u) => u.pubsAll);
+  ok("按作品数排序真的是单调的", pn.every((v, i) => !i || pn[i - 1] >= v), JSON.stringify(pn));
+  const uRep = await A.call("GET", "/api/community/admin/users?filter=reported");
+  ok("能筛出被举报的人", uRep.status === 200 && uRep.data.rows.some((u) => u.name === nameA), JSON.stringify(uRep.data.rows.map((u) => u.name)));
+
+  const banT = await A.call("POST", "/api/community/admin/ban", { name: nameC, banned: true, days: 7, reason: "定时封禁" });
+  ok("封禁能带天数并写下到期时间", banT.status === 200 && banT.data.bannedUntil > Date.now() + 6 * 86400000, JSON.stringify(banT.data));
+  const uBanned = await A.call("GET", "/api/community/admin/users?filter=banned");
+  ok("筛'已封禁'只剩被封的那个", uBanned.data.rows.length === 1 && uBanned.data.rows[0].name === nameC, JSON.stringify(uBanned.data.rows.map((u) => u.name)));
+  await A.call("POST", "/api/community/admin/ban", { name: nameC, banned: false });
+
+  const detB = await A.call("GET", `/api/community/admin/user?name=${encodeURIComponent(nameB)}`);
+  ok("用户详情把作品/评论/关系/举报/审计一次给齐",
+    detB.status === 200 && ["pubs", "comments", "reports", "audit", "history"].every((k) => Array.isArray(detB.data[k]))
+    && detB.data.comments.length >= 1 && detB.data.reports.some((x) => x.targetType === "comment"),
+    JSON.stringify({ c: detB.data.comments && detB.data.comments.length, r: detB.data.reports && detB.data.reports.map((x) => x.targetType) }).slice(0, 200));
+  ok("详情里的评论带着所在作品的标题", detB.status === 200 && !!detB.data.comments[0].pubTitle, JSON.stringify(detB.data.comments && detB.data.comments[0]));
+  const det404 = await A.call("GET", "/api/community/admin/user?name=" + encodeURIComponent("没这个人" + suffix));
+  ok("查不存在的用户是 404", det404.status === 404, det404.status);
+
+  const exp = await A.call("GET", `/api/community/admin/export?name=${encodeURIComponent(nameB)}`);
+  const expRaw = JSON.stringify(exp.data);
+  ok("能导出一个人的全部数据", exp.status === 200 && exp.data.user.name === nameB && exp.data.comments.length >= 1, expRaw.slice(0, 160));
+  ok("导出里没有口令散列或盐", !/"hash"|"salt"/.test(expRaw), expRaw.slice(0, 200));
+
+  const pubRemoved = await A.call("GET", "/api/community/admin/pubs?state=removed");
+  ok("内容审核能单独列出已下架的作品", pubRemoved.status === 200 && pubRemoved.data.rows.some((p) => p.id === modelId && p.authorName === nameA), JSON.stringify(pubRemoved.data.rows.map((p) => p.id)));
+  const pubModel = await A.call("GET", "/api/community/admin/pubs?state=all&kind=model");
+  ok("按类型筛作品就只剩那个类型", pubModel.data.rows.length >= 1 && pubModel.data.rows.every((p) => p.kind === "model"), JSON.stringify(pubModel.data.rows.map((p) => p.kind)));
+  const cmtFind = await A.call("GET", "/api/community/admin/comments?q=" + encodeURIComponent("收到通知"));
+  ok("后台能跨作品搜评论", cmtFind.status === 200 && cmtFind.data.rows.some((c) => c.userName === nameB && c.pubId === pubId), JSON.stringify(cmtFind.data.rows.slice(0, 2)).slice(0, 200));
+  const repHist = await A.call("GET", "/api/community/admin/reports?state=all");
+  ok("举报历史可以连已处理的一起翻", repHist.status === 200 && repHist.data.rows.length >= repHist.data.counts.open && typeof repHist.data.counts.dismissed === "number", JSON.stringify(repHist.data.counts));
+  const aud0 = await A.call("GET", "/api/community/admin/audit");
+  ok("封号与下架都留了痕，还能查出是谁做的",
+    aud0.status === 200 && ["ban", "takedown"].every((a) => aud0.data.rows.some((x) => x.action === a && x.byName === nameA)),
+    JSON.stringify(aud0.data.rows.slice(0, 8).map((x) => x.action)));
+  const ov2 = await A.call("GET", "/api/community/admin/overview");
+  ok("总览带在线数、封禁数与已处理举报数",
+    "online" in ov2.data && "banned" in ov2.data && "reportsHandled" in ov2.data && ov2.data.totals.removed >= 1,
+    JSON.stringify({ o: ov2.data.online, b: ov2.data.banned, h: ov2.data.reportsHandled, r: ov2.data.totals.removed }));
+  ok("总览给一条 14 天的走势，最后一格装得下这轮的注册",
+    Array.isArray(ov2.data.series) && ov2.data.series.length === 14 && ov2.data.series[13].users >= 3,
+    JSON.stringify(ov2.data.series.slice(-2)));
+
+  const back = await A.call("POST", "/api/community/admin/restore", { pubId: modelId });
+  ok("被下架的作品能恢复上架", back.status === 200 && back.data.status === "live", JSON.stringify(back.data));
+  ok("恢复之后广场又能读到这个模型", (await client().call("GET", "/api/community/pubs/" + modelId)).status === 200);
+  ok("恢复一件不存在的作品是 404", (await A.call("POST", "/api/community/admin/restore", { pubId: "000000000000" })).status === 404);
+  const flagP = await A.call("POST", "/api/community/admin/pub", { pubId: modelId, action: "flag", flagged: true });
+  ok("能给作品打上审核标记", flagP.status === 200 && flagP.data.flagged === true, JSON.stringify(flagP.data));
+  const fl = await A.call("GET", "/api/community/admin/flagged");
+  ok("被标记的东西自成一个队列", fl.status === 200 && fl.data.pubs.some((p) => p.id === modelId) && fl.data.total >= 1, JSON.stringify(fl.data).slice(0, 200));
+  const cflag = await A.call("POST", "/api/community/admin/comment", { id: cmt2, action: "flag", flagged: true });
+  ok("评论也能单独标记", cflag.status === 200 && cflag.data.flagged === true, JSON.stringify(cflag.data));
+  ok("删一条不存在的评论是 404", (await A.call("POST", "/api/community/admin/comment", { id: "000000" })).status === 404);
+  ok("不认识的管理动作被拒绝", (await A.call("POST", "/api/community/admin/pub", { pubId: modelId, action: "explode" })).status === 400);
+
+  /* 一个专门用来被折腾的账号：动它不会牵连上面任何一条断言。 */
+  const D = client();
+  const nameD = `牺牲丁${suffix}`;
+  const nameD2 = `改过名${suffix}`;
+  ok("为后台测试建一个专用账号", (await D.call("POST", "/api/community/register", { name: nameD, password: PW })).status === 200);
+  const reC = client();
+  ok("解封之后能重新登录", (await reC.call("POST", "/api/community/login", { name: nameC, password: PW })).status === 200);
+  const kick = await A.call("POST", "/api/community/admin/sessions", { name: nameC });
+  ok("管理员能把人踢下线", kick.status === 200 && kick.data.killed >= 1, JSON.stringify(kick.data));
+  ok("被踢掉的会话立刻作废", (await reC.call("POST", "/api/community/follow", { name: nameA })).status === 401, JSON.stringify(reC.data));
+  const batch = await A.call("POST", "/api/community/admin/batch", { names: [nameD, nameA], action: "ban", days: 1, reason: "批量测试" });
+  ok("批量封禁跳过执行的人自己", batch.status === 200 && batch.data.done === 1 && batch.data.names[0] === nameD, JSON.stringify(batch.data));
+  const batchBad = await A.call("POST", "/api/community/admin/batch", { names: [nameD], action: "nuke" });
+  ok("不认识的批量动作被拒绝", batchBad.status === 400, JSON.stringify(batchBad.data));
+  const unbatch = await A.call("POST", "/api/community/admin/batch", { names: [nameD], action: "unban" });
+  ok("批量解封能收回来", unbatch.status === 200 && (await A.call("GET", "/api/community/admin/users?filter=banned")).data.rows.length === 0);
+  // 批量封禁顺带踢了会话（这是刻意的），所以要看通知得先让人登回来。
+  ok("批量解封后本人能重新登录", (await D.call("POST", "/api/community/login", { name: nameD, password: PW })).status === 200);
+  const noteAll = await A.call("POST", "/api/community/admin/note", { all: true, text: "今晚十点例行维护" });
+  ok("系统通知能发给全体", noteAll.status === 200 && noteAll.data.sent >= 4, JSON.stringify(noteAll.data));
+  const noteD = await D.call("GET", "/api/community/notifications");
+  ok("收到通知的人看得到原文", noteD.data.rows.some((n) => n.kind === "admin_note" && n.text === "今晚十点例行维护"), JSON.stringify(noteD.data.rows.slice(0, 3).map((n) => n.kind)));
+  ok("空通知被拒绝", (await A.call("POST", "/api/community/admin/note", { all: true, text: "  " })).status === 400);
+  const rn = await A.call("POST", "/api/community/admin/user", { name: nameD, action: "rename", name2: nameD2 });
+  ok("管理员能给账号改昵称", rn.status === 200 && rn.data.name === nameD2, JSON.stringify(rn.data));
+  const rnDup = await A.call("POST", "/api/community/admin/user", { name: nameD2, action: "rename", name2: nameB });
+  ok("管理员改名也不能撞车", rnDup.status === 400, JSON.stringify(rnDup.data));
+  await D.call("PATCH", "/api/community/me", { bio: "我是签名", region: "广东" });
+  const rsBad = await A.call("POST", "/api/community/admin/user", { name: nameD2, action: "reset", fields: ["hash"] });
+  ok("资料清理只认列出来的字段，口令这类碰不到", rsBad.status === 400, JSON.stringify(rsBad.data));
+  const rs = await A.call("POST", "/api/community/admin/user", { name: nameD2, action: "reset", fields: ["bio", "region"] });
+  ok("能点名清空某几项资料", rs.status === 200 && rs.data.cleared.length === 2, JSON.stringify(rs.data));
+  const rsCheck = await D.call("GET", "/api/community/me");
+  ok("清完真的是空的", rsCheck.status === 200 && !rsCheck.data.user.bio && !rsCheck.data.user.region, JSON.stringify({ b: rsCheck.data.user.bio, r: rsCheck.data.user.region }));
+  const aud2 = await A.call("GET", "/api/community/admin/audit?limit=50");
+  ok("后台的每一次写都进了审计日志", ["rename", "reset", "batch_ban", "note", "sessions"].every((a) => aud2.data.rows.some((x) => x.action === a)),
+    JSON.stringify([...new Set(aud2.data.rows.map((x) => x.action))]));
+
   /* ---------- 15. 昵称与皮肤 ---------- */
   const rename = await A.call("PATCH", "/api/community/me", { name: "改名后" + suffix });
   ok("昵称可以改", rename.status === 200 && rename.data.user.name === "改名后" + suffix, JSON.stringify(rename.data).slice(0, 160));
@@ -669,6 +777,42 @@ try {
   ok("这颗按钮对作品真的会下架，不只是改状态", (await client().call("GET", "/api/community/pubs/" + pubId)).status === 404);
   ok("处理完的举报不再占着待处理队列",
     !(await A.call("GET", "/api/community/admin/overview")).data.reports.some((x) => x.id === repRow?.id));
+
+  /* ---------- 16c. 不可回退的那两颗：硬删作品、注销账号 ---------- */
+  const PUBS = path.join(DATA_DIR, "community", "pubs");
+  const dDoc = { name: "d", parts: [{ name: "p", size: [2, 2, 2], voxels: [{ x: 0, y: 0, z: 0, c: 1 }] }], colors: ["#00ff00"] };
+  const dModel = await D.call("POST", "/api/community/publish", { kind: "model", title: RUN + " 丁的模型", slug: "ding-model", doc: dDoc });
+  const dId = dModel.data.pub?.id;
+  ok("丁发了一件模型，盘上有它的正文", dModel.status === 200 && fs.existsSync(path.join(PUBS, `${dId}.voxa.json`)), dId);
+  const dModel2 = await D.call("POST", "/api/community/publish", { kind: "model", title: RUN + " 丁的第二件", slug: "ding-model2", doc: dDoc });
+  const dId2 = dModel2.data.pub?.id;
+  ok("丁又发了一件（留给注销那一步）", dModel2.status === 200 && !!dId2, dId2);
+  // 评论落在别人还在架的作品上：落在丁自己名下会被"连作品一起删"那条路先带走，
+  // 那样就测不到"注销要清掉他写在别人家的评论"这一支。
+  const dCmt = await D.call("POST", `/api/community/pubs/${modelId}/comments`, { body: "丁路过留个脚印" });
+  ok("丁也留了一条评论", dCmt.status === 200, JSON.stringify(dCmt.data).slice(0, 140));
+  await D.call("POST", "/api/community/follow", { name: nameA });
+  const purgeBad = await A.call("POST", "/api/community/admin/user", { name: nameD2, action: "delete", confirm: "随便写的确认词" });
+  ok("注销要求把对方昵称原样回填", purgeBad.status === 400, JSON.stringify(purgeBad.data));
+  const purge = await A.call("POST", "/api/community/admin/pub", { pubId: dId, action: "purge" });
+  ok("硬删作品会把正文文件一起从盘上清走", purge.status === 200 && purge.data.files >= 1 && !fs.existsSync(path.join(PUBS, `${dId}.voxa.json`)), JSON.stringify(purge.data));
+  ok("删掉的正文文件取不回来了", (await client().call("GET", `/api/community/pubs/${dId}/model`)).status === 404);
+  ok("这件作品在后台列表里也消失了", !(await A.call("GET", "/api/community/admin/pubs?state=all")).data.rows.some((p) => p.id === dId));
+  const del = await A.call("POST", "/api/community/admin/user", { name: nameD2, action: "delete", confirm: nameD2 });
+  ok("注销账号会带走剩下的作品与评论", del.status === 200 && del.data.pubs === 1 && del.data.comments >= 1, JSON.stringify(del.data));
+  ok("注销把留下的作品文件也从盘上清走", !fs.existsSync(path.join(PUBS, `${dId2}.voxa.json`)), dId2);
+  const usersDoc = JSON.parse(fs.readFileSync(path.join(DATA_DIR, "community", "users.json"), "utf8"));
+  ok("盘上的用户记录真的没了", !Object.values(usersDoc.byId).some((u) => u.name === nameD2), Object.keys(usersDoc.byId).length);
+  ok("注销之后这个账号登不进来", (await client().call("POST", "/api/community/login", { name: nameD2, password: PW })).status !== 200);
+  ok("注销从后台的用户列表里也消失了", (await A.call("GET", `/api/community/admin/users?q=${encodeURIComponent(nameD2)}`)).data.rows.length === 0);
+  // 第 15 节把 A 改过名，这里要按他现在的昵称查，不然拿到的是 404。
+  const curA = (await A.call("GET", "/api/community/me")).data.user.name;
+  const detA = await A.call("GET", `/api/community/admin/user?name=${encodeURIComponent(curA)}`);
+  ok("注销带走他发出的关注关系", detA.status === 200 && !detA.data.graph.followers.includes(nameD2), JSON.stringify(detA.data.graph && detA.data.graph.followers));
+  const cmtAfter = await A.call("GET", "/api/community/admin/comments?q=" + encodeURIComponent("丁路过留个脚印"));
+  ok("注销带走他写过的评论", cmtAfter.data.rows.length === 0, JSON.stringify(cmtAfter.data.rows.slice(0, 2)));
+  ok("注销自己记进审计日志", (await A.call("GET", "/api/community/admin/audit?action=delete_user")).data.rows.some((x) => x.target === nameD2));
+  ok("唯一的管理员不能被注销", (await A.call("POST", "/api/community/admin/user", { name: curA, action: "delete", confirm: curA })).status === 400);
 
   /* ---------- 收尾：把测试造的一次性世界删掉，测试发布下架 ---------- */
   await A.call("DELETE", `/api/community/pubs/${pubId}`);

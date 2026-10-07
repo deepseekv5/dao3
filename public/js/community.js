@@ -675,7 +675,7 @@ async function friendsView() {
       catch (e) { toast(e.message, true); }
     };
   } else {
-    const KIND = { follow: "关注了你", friend_request: "想加你为好友", friend: "接受了你的好友请求", like: "赞了你的地图", vote: "给这张图表了态", comment: "评论了你的地图", publish: "发布了新地图" };
+    const KIND = { follow: "关注了你", friend_request: "想加你为好友", friend: "接受了你的好友请求", like: "赞了你的地图", vote: "给这张图表了态", comment: "评论了你的地图", publish: "发布了新地图", restored: "把你的作品重新上架了", renamed: "调整了你的昵称", admin_note: "系统通知" };
     // 一屏通知被看到就算处理完，但页签上那个 (1) 会一直挂着到下次进页面——
     // 所以标记已读之后要顺手把那一格的字改掉，否则读数在说谎。
     const clearBadge = () => {
@@ -689,6 +689,8 @@ async function friendsView() {
     const pending = new Set(fr.incoming.map((r) => r.user && r.user.name));
     const friendNames = new Set(fr.friends.map((u) => u.name));
     const label = (n) => {
+      // 管理员发的通知是一段自由文本，没有固定句式可套，所以照原文显示。
+      if (n.kind === "admin_note") return n.text || "管理员通知";
       if (n.kind !== "friend_request") return KIND[n.kind] || n.kind;
       if (n.actor && pending.has(n.actor.name)) return KIND.friend_request;
       return n.actor && friendNames.has(n.actor.name) ? "的好友请求已通过" : "的好友请求已处理";

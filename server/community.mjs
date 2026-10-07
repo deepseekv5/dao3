@@ -90,6 +90,9 @@ function createStore(root) {
     history: () => ({ byUser: {} }),
     versions: () => ({ byPub: {} }),
     reports: () => ({ list: [] }),
+    // 管理员动作单独记一份：封号、改角色、下架、删评论都要能回答"是谁在什么时候干的"。
+    // 没有这一份的话后台是个黑箱，出问题时唯一能查的东西是 git log 和记忆。
+    audit: () => ({ list: [] }),
   };
   const docs = {};
   for (const key of Object.keys(DEFAULTS)) {
@@ -308,9 +311,42 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
     store.touch("reports");
   }
 
-  function notify(to, kind, actorId, pubId) {
+  /** 封禁到没到期。到期就**当场把标记清掉**并落盘：解封不靠有人来点按钮，
+   *  否则一张过期封条会一直挂着，直到某个管理员恰好想起这个人。 */
+  function bannedNow(u) {
+    if (!u || !u.banned) return false;
+    if (u.bannedUntil && u.bannedUntil <= now()) {
+      u.banned = false; delete u.bannedUntil; delete u.bannedReason;
+      store.touch("users");
+      return false;
+    }
+    return true;
+  }
+
+  /** 管理员动作留痕。只记"谁对谁做了什么"，不记参数原文（封禁原因已经在用户身上）。 */
+  function addAudit(byId, action, targetName, detail) {
+    docs.audit.list.unshift({ id: newId(6), by: byId, action, target: String(targetName || "").slice(0, 64), detail: String(detail || "").slice(0, 160), ts: now() });
+    while (docs.audit.list.length > 800) docs.audit.list.pop();
+    store.touch("audit");
+  }
+
+  /** 删掉一件作品留在盘上的全部痕迹：快照、封面、预览、模型/皮肤正文、资产目录、历史版本。
+   *  它们共用 `<id>.` 前缀，所以按前缀清一次，而不是逐个猜扩展名（封面可能是 .jpg）。 */
+  function dropPubArtifacts(id) {
+    const dir = path.dirname(store.pubFile(id));
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch { return 0; }
+    let n = 0;
+    for (const name of names) {
+      if (name !== id && !name.startsWith(id + ".")) continue;
+      try { fs.rmSync(path.join(dir, name), { recursive: true, force: true }); n++; } catch { /* 删不掉就留着，别把接口 500 */ }
+    }
+    return n;
+  }
+
+  function notify(to, kind, actorId, pubId, text) {
     if (!to || to === actorId) return;
-    docs.notes.list.unshift({ id: newId(6), to, kind, actorId: actorId || null, pubId: pubId || null, ts: now(), read: false });
+    docs.notes.list.unshift({ id: newId(6), to, kind, actorId: actorId || null, pubId: pubId || null, text: text ? String(text).slice(0, 200) : "", ts: now(), read: false });
     while (docs.notes.list.length > 800) docs.notes.list.pop();
     store.touch("notes");
   }
@@ -497,7 +533,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       reply.cookie(`${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Lax; Max-Age=${SESSION_TTL}`);
     }
 
-    if (viewerId && docs.users.byId[viewerId] && docs.users.byId[viewerId].banned) {
+    if (viewerId && bannedNow(docs.users.byId[viewerId])) {
       reply.fail(403, "这个账号已被封禁，只能浏览"); return true;
     }
     if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
@@ -591,7 +627,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       const u = userByName(name);
       const ok = verifyPassword(body.password, u || DUMMY) && !!u;
       if (!ok) { reply.fail(401, "名字或口令不对"); return true; }
-      if (u.banned) { reply.fail(403, "这个账号已被封禁：" + String(u.bannedReason || "违反社区规则")); return true; }
+      if (bannedNow(u)) { reply.fail(403, "这个账号已被封禁：" + String(u.bannedReason || "违反社区规则")); return true; }
       const c = startSession(reply, u.id);
       reply.json(200, { user: publicUser(u, u.id), csrf: c });
       return true;
@@ -792,7 +828,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       const lastPub = new Map();
       for (const p of livePubs()) if (!lastPub.has(p.authorId) || p.created > lastPub.get(p.authorId)) lastPub.set(p.authorId, p.created);
       let rows = Object.values(docs.users.byId)
-        .filter((u) => !u.banned && u.id !== viewerId)
+        .filter((u) => !bannedNow(u) && u.id !== viewerId)
         .filter((u) => !expand || (u.looking && u.looking !== "none"))
         .filter((u) => !region || u.region === region)
         .filter((u) => !gender || u.gender === gender)
@@ -1273,18 +1309,54 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
       if (!viewerId) { reply.fail(401, "先登录"); return true; }
       if (!isAdmin()) { reply.fail(403, "这个账号不是管理员"); return true; }
       const sub = seg[1];
+      const nameOf = (id) => (docs.users.byId[id] || {}).name || "（已注销）";
+      const allComments = () => {
+        const out = [];
+        for (const [pid, list] of Object.entries(docs.comments.byPub)) {
+          for (const c of list) out.push({ ...c, pubId: pid });
+        }
+        return out.sort((a, b) => b.ts - a.ts);
+      };
+      /** 后台看到的人行：比 publicUser 多角色、封禁、会话数、被举报数——
+       *  这些都不是能公开出去的字段，所以单独一份，不给前端复用。 */
+      const userRow = (u) => {
+        const mine = Object.values(docs.pubs.byId).filter((p) => p.authorId === u.id);
+        const hist = docs.history.byUser[u.id] || [];
+        return {
+          id: u.id, name: u.name, role: u.role || "user", createdAt: u.createdAt,
+          banned: bannedNow(u), bannedReason: u.bannedReason || "", bannedUntil: u.bannedUntil || 0,
+          bio: u.bio || "", region: u.region || "", gender: u.gender || "", looking: u.looking || "",
+          avatar: u.avatar || null, online: chat.isOnline(u.id),
+          pubs: mine.filter((p) => p.status === "live").length, pubsAll: mine.length,
+          bytes: mine.reduce((a, p) => a + (p.bytes || 0), 0),
+          comments: Object.values(docs.comments.byPub).reduce((a, l) => a + l.filter((c) => c.userId === u.id).length, 0),
+          friends: docs.graph.friends.filter((e) => e.a === u.id || e.b === u.id).length,
+          followers: docs.graph.follows.filter((e) => e.b === u.id).length,
+          plays: hist.length, lastSeen: hist.length ? hist[0].ts : 0,
+          reports: docs.reports.list.filter((r) => r.owner === u.id && r.state === "open").length,
+          sessions: Object.values(docs.sessions).filter((s) => s.userId === u.id).length,
+        };
+      };
 
       if (sub === "overview" && method === "GET") {
         const pubs = livePubs();
-        const perUser = (id) => Object.values(docs.pubs.byId).filter((p) => p.authorId === id).length;
+        const DAY = 86400000;
+        // 14 天走势：注册/新发/评论各按自己的真实时间戳落桶。active 是"当天留下过
+        // 游玩记录的人次"——history 只存最近一次时间，所以它是活跃代理不是 DAU，
+        // 界面也就照这个说法写，不冒充日活。
+        const series = [];
+        for (let i = 13; i >= 0; i--) {
+          const end = now() - i * DAY, start = end - DAY;
+          series.push({
+            day: new Date(start).toISOString().slice(5, 10),
+            users: Object.values(docs.users.byId).filter((u) => u.createdAt > start && u.createdAt <= end).length,
+            pubs: Object.values(docs.pubs.byId).filter((p) => p.created > start && p.created <= end).length,
+            comments: Object.values(docs.comments.byPub).flat().filter((c) => c.ts > start && c.ts <= end).length,
+            active: Object.values(docs.history.byUser).flat().filter((h) => h.ts > start && h.ts <= end).length,
+          });
+        }
         reply.json(200, {
-          users: Object.values(docs.users.byId).map((u) => ({
-            id: u.id, name: u.name, role: u.role || "user", createdAt: u.createdAt,
-            banned: !!u.banned, bannedReason: u.bannedReason || "", bio: u.bio || "",
-            pubs: perUser(u.id), comments: Object.values(docs.comments.byPub).reduce((a, l) => a + l.filter((c) => c.userId === u.id).length, 0),
-            friends: docs.graph.friends.filter((e) => e.a === u.id || e.b === u.id).length,
-            plays: (docs.history.byUser[u.id] || []).length,
-          })).sort((a, b) => b.createdAt - a.createdAt),
+          users: Object.values(docs.users.byId).map(userRow).sort((a, b) => b.createdAt - a.createdAt),
           reports: docs.reports.list.filter((r) => r.state === "open").map((r) => ({
             ...r, target: r.target, byName: (docs.users.byId[r.by] || {}).name || "?",
             ownerName: (docs.users.byId[r.owner] || {}).name || "?",
@@ -1292,10 +1364,15 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
               ? (Object.values(docs.comments.byPub).flat().find((c) => c.id === r.target) || {}).body || ""
               : (docs.pubs.byId[r.target] || {}).title || "",
           })),
+          online: chat.stats().online,
+          banned: Object.values(docs.users.byId).filter((u) => bannedNow(u)).length,
+          reportsHandled: docs.reports.list.filter((r) => r.state !== "open").length,
+          series,
           flagged: { pubs: pubs.filter((p) => p.flagged).length, comments: Object.values(docs.comments.byPub).flat().filter((c) => c.flagged).length },
           totals: {
             users: Object.keys(docs.users.byId).length, pubs: pubs.length, models: pubs.filter((p) => p.kind === "model").length,
             skins: pubs.filter((p) => p.kind === "skin").length,
+            removed: Object.values(docs.pubs.byId).filter((p) => p.status !== "live").length,
             comments: Object.values(docs.comments.byPub).reduce((a, v) => a + v.length, 0),
             plays: pubs.reduce((a, p) => a + (p.plays || 0), 0), reports: docs.reports.list.length,
             bytes: pubs.reduce((a, p) => a + (p.bytes || 0), 0),
@@ -1311,6 +1388,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
           reply.fail(400, "这是唯一的管理员，降下来就没人能进后台了"); return true;
         }
         u.role = body.role; store.touch("users");
+        addAudit(viewerId, "role", u.name, "角色改成 " + u.role);
         reply.json(200, { ok: true, role: u.role });
         return true;
       }
@@ -1318,10 +1396,19 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         const u = userByName(body.name);
         if (!u) { reply.fail(404, "没有这个用户"); return true; }
         if (u.id === viewerId) { reply.fail(400, "不能封自己"); return true; }
-        u.banned = !!body.banned; u.bannedReason = String(body.reason || "").slice(0, 120);
-        if (u.banned) for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === u.id) delete docs.sessions[h];
+        u.banned = !!body.banned;
+        if (u.banned) {
+          u.bannedReason = String(body.reason || "").slice(0, 120) || "违反社区规则";
+          // 天数是可选的：不填就是无限期。填了要真到期就自己解开，
+          // 而不是等某个管理员哪天想起来点一下"解封"。
+          const days = Math.round(Number(body.days) || 0);
+          if (days > 0) u.bannedUntil = now() + Math.min(3650, days) * 86400000;
+          else delete u.bannedUntil;
+          for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === u.id) delete docs.sessions[h];
+        } else { delete u.bannedUntil; delete u.bannedReason; }
         store.touch("users"); store.touch("sessions");
-        reply.json(200, { ok: true, banned: u.banned });
+        addAudit(viewerId, u.banned ? "ban" : "unban", u.name, u.banned ? `${u.bannedReason}${u.bannedUntil ? " · 到 " + new Date(u.bannedUntil).toLocaleDateString() : " · 无限期"}` : "");
+        reply.json(200, { ok: true, banned: u.banned, bannedUntil: u.bannedUntil || 0 });
         return true;
       }
       if (sub === "takedown" && method === "POST") {
@@ -1329,6 +1416,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         if (!p) { reply.fail(404, "没有这个发布"); return true; }
         p.status = "removed"; p.removedBy = "admin"; p.updated = now();
         store.touch("pubs");
+        addAudit(viewerId, "takedown", p.title, "下架 " + p.id);
         reply.json(200, { ok: true });
         return true;
       }
@@ -1358,6 +1446,372 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         reply.json(200, { ok: true, state: r.state });
         return true;
       }
+      /* ---- 后台的读接口：一次 overview 装不下所有列表，所以各开一条，
+       *      前端要哪个拉哪个，而不是把整个数据库塞进一个响应里。 ---- */
+      if (sub === "users" && method === "GET") {
+        const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+        const only = url.searchParams.get("filter");
+        let rows = Object.values(docs.users.byId).map(userRow);
+        if (q) rows = rows.filter((u) => u.name.toLowerCase().includes(q) || (u.bio || "").toLowerCase().includes(q));
+        if (only === "banned") rows = rows.filter((u) => u.banned);
+        if (only === "admin") rows = rows.filter((u) => u.role === "admin");
+        if (only === "online") rows = rows.filter((u) => u.online);
+        if (only === "quiet") rows = rows.filter((u) => !u.online && !u.lastSeen);
+        if (only === "reported") rows = rows.filter((u) => u.reports);
+        const key = url.searchParams.get("sort") || "new";
+        const dir = url.searchParams.get("dir") === "asc" ? 1 : -1;
+        const cmp = { new: (a, b) => a.createdAt - b.createdAt, name: (a, b) => a.name.localeCompare(b.name),
+          pubs: (a, b) => a.pubsAll - b.pubsAll, bytes: (a, b) => a.bytes - b.bytes,
+          comments: (a, b) => a.comments - b.comments, plays: (a, b) => a.plays - b.plays,
+          seen: (a, b) => (a.lastSeen || a.createdAt) - (b.lastSeen || b.createdAt),
+          reports: (a, b) => a.reports - b.reports }[key] || ((a, b) => a.createdAt - b.createdAt);
+        rows.sort((a, b) => cmp(a, b) * dir || a.name.localeCompare(b.name));
+        reply.json(200, { rows, total: Object.keys(docs.users.byId).length });
+        return true;
+      }
+
+      if (sub === "user" && method === "GET") {
+        const u = userByName(url.searchParams.get("name"));
+        if (!u) { reply.fail(404, "没有这个用户"); return true; }
+        const mine = Object.values(docs.pubs.byId).filter((p) => p.authorId === u.id)
+          .sort((a, b) => (b.updated || 0) - (a.updated || 0)).slice(0, 40)
+          .map((p) => ({ id: p.id, title: p.title, kind: p.kind || "map", status: p.status, version: p.version || 1,
+            updated: p.updated, plays: p.plays || 0, flagged: !!p.flagged, bytes: p.bytes || 0, comments: commentsOf(p.id).length }));
+        const cmts = allComments().filter((c) => c.userId === u.id).slice(0, 30)
+          .map((c) => ({ id: c.id, pubId: c.pubId, pubTitle: (docs.pubs.byId[c.pubId] || {}).title || "（作品已删除）",
+            body: c.body, ts: c.ts, flagged: !!c.flagged, likes: (c.likes || []).length }));
+        reply.json(200, {
+          user: userRow(u),
+          detail: { id: u.id, lower: u.lower, persona: u.persona || [], skin: !!u.skin, wearables: (u.wearables || []).length,
+            createdAtText: new Date(u.createdAt).toLocaleString(), hasAvatar: !!u.avatar },
+          pubs: mine, comments: cmts,
+          graph: {
+            following: docs.graph.follows.filter((e) => e.a === u.id).map((e) => nameOf(e.b)).slice(0, 40),
+            followers: docs.graph.follows.filter((e) => e.b === u.id).map((e) => nameOf(e.a)).slice(0, 40),
+            friends: docs.graph.friends.filter((e) => e.a === u.id || e.b === u.id)
+              .map((e) => nameOf(e.a === u.id ? e.b : e.a)).slice(0, 40),
+          },
+          reports: docs.reports.list.filter((r) => r.owner === u.id).slice(0, 20)
+            .map((r) => ({ id: r.id, targetType: r.targetType, reason: r.reason, state: r.state, ts: r.ts, byName: nameOf(r.by) })),
+          audit: docs.audit.list.filter((a) => a.target === u.name).slice(0, 20)
+            .map((a) => ({ action: a.action, by: nameOf(a.by), detail: a.detail, ts: a.ts })),
+          history: (docs.history.byUser[u.id] || []).slice(0, 20)
+            .map((h) => ({ title: (docs.pubs.byId[h.pubId] || {}).title || h.pubId, ts: h.ts })),
+        });
+        return true;
+      }
+
+      // 导出一个人的全部数据：明文密码永远不出去，散列/盐也不出去。
+      if (sub === "export" && method === "GET") {
+        const u = userByName(url.searchParams.get("name"));
+        if (!u) { reply.fail(404, "没有这个用户"); return true; }
+        const drop = ["pw", "hash", "salt", "pwHash", "pwSalt"];
+        const clone = (o) => JSON.parse(JSON.stringify(o));
+        const pubFiles = (p) => {
+          const dir = path.dirname(store.pubFile(p.id));
+          let names = [];
+          try { names = fs.readdirSync(dir); } catch { /* 目录不在就是没文件 */ }
+          return names.filter((n) => n === p.id || n.startsWith(p.id + "."));
+        };
+        const pubs = Object.values(docs.pubs.byId).filter((p) => p.authorId === u.id).map((p) => ({ ...clone(p), files: pubFiles(p) }));
+        reply.json(200, {
+          exportedAt: now(), by: nameOf(viewerId),
+          user: (({ pw, hash, salt, pwHash, pwSalt, ...rest }) => rest)(clone(u)),
+          pubs,
+          comments: allComments().filter((c) => c.userId === u.id),
+          graph: {
+            follows: docs.graph.follows.filter((e) => e.a === u.id || e.b === u.id),
+            friends: docs.graph.friends.filter((e) => e.a === u.id || e.b === u.id),
+            requests: docs.graph.requests.filter((e) => e.from === u.id || e.to === u.id),
+          },
+          notes: docs.notes.list.filter((n) => n.to === u.id || n.actorId === u.id),
+          history: docs.history.byUser[u.id] || [],
+          versions: Object.fromEntries(Object.entries(docs.versions.byPub)
+            .filter(([pid]) => (docs.pubs.byId[pid] || {}).authorId === u.id)),
+          reports: docs.reports.list.filter((r) => r.owner === u.id || r.by === u.id),
+        });
+        return true;
+      }
+
+      if (sub === "pubs" && method === "GET") {
+        const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+        const state = url.searchParams.get("state") || "live";
+        const kind = ["map", "model", "skin"].includes(url.searchParams.get("kind")) ? url.searchParams.get("kind") : "";
+        let rows = Object.values(docs.pubs.byId);
+        if (state !== "all") rows = rows.filter((p) => p.status === state);
+        if (kind) rows = rows.filter((p) => (p.kind || "map") === kind);
+        if (q) rows = rows.filter((p) => (p.title || "").toLowerCase().includes(q)
+          || (p.desc || "").toLowerCase().includes(q) || nameOf(p.authorId).toLowerCase().includes(q));
+        rows.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+        const total = rows.length;
+        reply.json(200, {
+          total, rows: rows.slice(0, 200).map((p) => ({
+            id: p.id, title: p.title, kind: p.kind || "map", status: p.status, worldId: p.worldId,
+            authorName: nameOf(p.authorId), authorId: p.authorId, version: p.version || 1,
+            created: p.created, updated: p.updated, plays: p.plays || 0, likes: (p.likes || []).length,
+            up: (p.votes && p.votes.up || []).length, down: (p.votes && p.votes.down || []).length,
+            comments: commentsOf(p.id).length, flagged: !!p.flagged, bytes: p.bytes || 0, assets: p.assets || 0,
+            removedBy: p.removedBy || "", versions: (docs.versions.byPub[p.id] || []).length,
+          })),
+        });
+        return true;
+      }
+
+      if (sub === "restore" && method === "POST") {
+        const p = docs.pubs.byId[String(body.pubId || "")];
+        if (!p) { reply.fail(404, "没有这个发布"); return true; }
+        if (p.status === "live") { reply.fail(400, "这件本来就在线"); return true; }
+        p.status = "live"; delete p.removedBy; p.updated = now();
+        store.touch("pubs");
+        addAudit(viewerId, "restore", p.title, "恢复上架 " + p.id);
+        notify(p.authorId, "restored", viewerId, p.id);
+        reply.json(200, { ok: true, status: p.status });
+        return true;
+      }
+
+      if (sub === "pub" && method === "POST") {
+        const p = docs.pubs.byId[String(body.pubId || "")];
+        if (!p) { reply.fail(404, "没有这个发布"); return true; }
+        if (body.action === "flag") {
+          p.flagged = !!body.flagged; p.updated = now(); store.touch("pubs");
+          addAudit(viewerId, "flag", p.title, p.flagged ? "标记待审" : "取消标记");
+          reply.json(200, { ok: true, flagged: p.flagged }); return true;
+        }
+        if (body.action === "purge") {
+          // 硬删：作者自己的下架只是 status=removed，文件还在盘上。
+          // 后台这颗按钮说的是"删掉"，那就得真的把快照和版本一起清走。
+          const id = p.id;
+          delete docs.comments.byPub[id];
+          delete docs.versions.byPub[id];
+          delete docs.pubs.byId[id];
+          const files = dropPubArtifacts(id);
+          docs.reports.list = docs.reports.list.filter((r) => r.target !== id && r.pubId !== id);
+          store.touch("pubs"); store.touch("comments"); store.touch("versions"); store.touch("reports");
+          addAudit(viewerId, "purge", p.title, `删除作品 ${id} 与 ${files} 个文件`);
+          reply.json(200, { ok: true, files }); return true;
+        }
+        reply.fail(400, "不认识的动作：" + body.action); return true;
+      }
+
+      if (sub === "comments" && method === "GET") {
+        const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+        const only = url.searchParams.get("filter");
+        let rows = allComments();
+        if (only === "flagged") rows = rows.filter((c) => c.flagged);
+        if (q) rows = rows.filter((c) => (c.body || "").toLowerCase().includes(q)
+          || (docs.pubs.byId[c.pubId] || {}).title?.toLowerCase().includes(q)
+          || nameOf(c.userId).toLowerCase().includes(q));
+        const limit = clamp(url.searchParams.get("limit") || 120, 1, 400);
+        reply.json(200, {
+          total: rows.length,
+          rows: rows.slice(0, limit).map((c) => ({
+            id: c.id, pubId: c.pubId, pubTitle: (docs.pubs.byId[c.pubId] || {}).title || "（作品已删除）",
+            pubStatus: (docs.pubs.byId[c.pubId] || {}).status || "gone",
+            userName: nameOf(c.userId), userId: c.userId, body: c.body, ts: c.ts,
+            flagged: !!c.flagged, likes: (c.likes || []).length,
+            reports: docs.reports.list.filter((r) => r.target === c.id).length,
+          })),
+        });
+        return true;
+      }
+
+      if (sub === "comment" && method === "POST") {
+        const id = String(body.id || "");
+        const where = Object.entries(docs.comments.byPub).find(([, list]) => list.some((c) => c.id === id));
+        if (!where) { reply.fail(404, "没有这条评论"); return true; }
+        if (body.action === "flag") {
+          const c = where[1].find((x) => x.id === id);
+          c.flagged = !!body.flagged; store.touch("comments");
+          addAudit(viewerId, "flag", nameOf(c.userId), (c.flagged ? "标记" : "取消标记") + "评论 " + id);
+          reply.json(200, { ok: true, flagged: c.flagged }); return true;
+        }
+        const [pid, list] = where;
+        const c = list.find((x) => x.id === id);
+        list.splice(list.indexOf(c), 1);
+        if (!list.length) delete docs.comments.byPub[pid];
+        docs.reports.list = docs.reports.list.filter((r) => r.target !== id);
+        store.touch("comments"); store.touch("reports");
+        addAudit(viewerId, "comment_delete", nameOf(c.userId), "删掉评论 " + id + "（作品：" + ((docs.pubs.byId[pid] || {}).title || pid) + "）");
+        reply.json(200, { ok: true }); return true;
+      }
+
+      if (sub === "flagged" && method === "GET") {
+        const pubs = Object.values(docs.pubs.byId).filter((p) => p.flagged)
+          .map((p) => ({ id: p.id, title: p.title, kind: p.kind || "map", authorName: nameOf(p.authorId), updated: p.updated, status: p.status }));
+        const comments = allComments().filter((c) => c.flagged)
+          .map((c) => ({ id: c.id, pubId: c.pubId, pubTitle: (docs.pubs.byId[c.pubId] || {}).title || "", userName: nameOf(c.userId), body: c.body, ts: c.ts }));
+        reply.json(200, { pubs, comments, total: pubs.length + comments.length });
+        return true;
+      }
+
+      if (sub === "reports" && method === "GET") {
+        const state = url.searchParams.get("state") || "open";
+        let rows = docs.reports.list;
+        if (state !== "all") rows = rows.filter((r) => r.state === state);
+        reply.json(200, {
+          total: rows.length,
+          counts: { open: docs.reports.list.filter((r) => r.state === "open").length,
+            resolved: docs.reports.list.filter((r) => r.state === "resolved").length,
+            dismissed: docs.reports.list.filter((r) => r.state === "dismissed").length },
+          rows: rows.slice(0, 200).map((r) => ({ ...r,
+            byName: nameOf(r.by), ownerName: nameOf(r.owner), handledByName: r.by2 ? nameOf(r.by2) : "",
+            excerpt: r.targetType === "comment"
+              ? (allComments().find((c) => c.id === r.target) || {}).body || "（这条评论已经不在了）"
+              : (docs.pubs.byId[r.target] || {}).title || "（这件作品已经不在了）",
+          })),
+        });
+        return true;
+      }
+
+      if (sub === "audit" && method === "GET") {
+        const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+        const action = url.searchParams.get("action") || "";
+        let rows = docs.audit.list;
+        if (action) rows = rows.filter((a) => a.action === action);
+        if (q) rows = rows.filter((a) => a.target.toLowerCase().includes(q) || (a.detail || "").toLowerCase().includes(q)
+          || nameOf(a.by).toLowerCase().includes(q));
+        const limit = clamp(url.searchParams.get("limit") || 150, 1, 500);
+        reply.json(200, {
+          total: rows.length,
+          actions: [...new Set(docs.audit.list.map((a) => a.action))].sort(),
+          rows: rows.slice(0, limit).map((a) => ({ ...a, byName: nameOf(a.by) })),
+        });
+        return true;
+      }
+
+      /* ---- 后台的写接口：每一个都留痕，涉及内容或删除的都通知当事人 ---- */
+      if (sub === "sessions" && method === "POST") {
+        const u = userByName(body.name);
+        if (!u) { reply.fail(404, "没有这个用户"); return true; }
+        let n = 0;
+        for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === u.id) { delete docs.sessions[h]; n++; }
+        store.touch("sessions");
+        addAudit(viewerId, "sessions", u.name, `踢掉 ${n} 个登录会话`);
+        reply.json(200, { ok: true, killed: n });
+        return true;
+      }
+
+      if (sub === "user" && method === "POST") {
+        const u = userByName(body.name);
+        if (!u) { reply.fail(404, "没有这个用户"); return true; }
+        if (body.action === "rename") {
+          const to = normName(body.name2);
+          if (!to || to === u.name) { reply.fail(400, "新昵称没变或不能为空"); return true; }
+          if (userByName(to)) { reply.fail(400, "这个昵称已经被占用"); return true; }
+          const from = u.name;
+          delete docs.users.byLower[u.lower];
+          u.name = to; u.lower = to.toLowerCase();
+          docs.users.byLower[u.lower] = u.id;
+          store.touch("users");
+          addAudit(viewerId, "rename", from, "改名成 " + to);
+          notify(u.id, "renamed", viewerId, null, `管理员把你的昵称改成「${to}」`);
+          reply.json(200, { ok: true, name: to }); return true;
+        }
+        if (body.action === "reset") {
+          // 只清资料里的脏东西（简介/头像/皮肤），不碰密码：
+          // 后台没有"替人设密码"这条路，因为那条路的尽头是管理员登进别人账号。
+          const what = ["bio", "avatar", "banner", "skin", "region", "gender", "persona", "looking"];
+          const hit = Array.isArray(body.fields) ? what.filter((f) => body.fields.includes(f)) : [];
+          if (!hit.length) { reply.fail(400, "要说清楚清哪几项资料"); return true; }
+          for (const f of hit) delete u[f];
+          store.touch("users");
+          addAudit(viewerId, "reset", u.name, "清空资料字段：" + hit.join("/"));
+          reply.json(200, { ok: true, cleared: hit }); return true;
+        }
+        if (body.action === "delete") {
+          if (String(body.confirm || "") !== u.name) { reply.fail(400, "要注销账号，得把对方的昵称原样填进确认框"); return true; }
+          if (u.id === viewerId) { reply.fail(400, "不能注销自己"); return true; }
+          if ((u.role || "user") === "admin" && Object.values(docs.users.byId).filter((x) => x.role === "admin").length < 2) {
+            reply.fail(400, "这是唯一的管理员，注销掉就没人能进后台了"); return true;
+          }
+          const id = u.id, name = u.name;
+          const pubs = Object.values(docs.pubs.byId).filter((p) => p.authorId === id);
+          let files = 0;
+          for (const p of pubs) {
+            files += dropPubArtifacts(p.id);
+            delete docs.pubs.byId[p.id];
+            delete docs.versions.byPub[p.id];
+            delete docs.comments.byPub[p.id];
+          }
+          let cmts = 0;
+          for (const [pid, list] of Object.entries(docs.comments.byPub)) {
+            const keep = list.filter((c) => c.userId !== id);
+            cmts += list.length - keep.length;
+            if (keep.length) docs.comments.byPub[pid] = keep; else delete docs.comments.byPub[pid];
+          }
+          delete docs.users.byId[id];
+          delete docs.users.byLower[normName(name).toLowerCase()];
+          delete docs.history.byUser[id];
+          docs.graph.follows = docs.graph.follows.filter((e) => e.a !== id && e.b !== id);
+          docs.graph.friends = docs.graph.friends.filter((e) => e.a !== id && e.b !== id);
+          docs.graph.requests = docs.graph.requests.filter((e) => e.from !== id && e.to !== id);
+          docs.notes.list = docs.notes.list.filter((n) => n.to !== id && n.actorId !== id);
+          docs.reports.list = docs.reports.list.filter((r) => r.owner !== id && r.by !== id);
+          for (const p of Object.values(docs.pubs.byId)) {
+            p.likes = (p.likes || []).filter((x) => x !== id);
+            if (p.votes) { p.votes.up = (p.votes.up || []).filter((x) => x !== id); p.votes.down = (p.votes.down || []).filter((x) => x !== id); }
+            p.favs = (p.favs || []).filter((x) => x !== id);
+          }
+          for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === id) delete docs.sessions[h];
+          for (const key of ["pubs", "versions", "comments", "users", "graph", "notes", "reports", "history", "sessions"]) store.touch(key);
+          addAudit(viewerId, "delete_user", name, `注销账号：${pubs.length} 件作品、${cmts} 条评论、${files} 个文件`);
+          reply.json(200, { ok: true, pubs: pubs.length, comments: cmts, files });
+          return true;
+        }
+        reply.fail(400, "不认识的动作：" + body.action);
+        return true;
+      }
+
+      if (sub === "batch" && method === "POST") {
+        const names = Array.isArray(body.names) ? body.names.slice(0, 200) : [];
+        const action = String(body.action || "");
+        if (!names.length) { reply.fail(400, "先勾选人"); return true; }
+        if (!["ban", "unban", "role", "sessions", "flag_off"].includes(action)) { reply.fail(400, "不认识的批量动作"); return true; }
+        const done = [];
+        for (const nm of names) {
+          const u = userByName(nm);
+          if (!u || u.id === viewerId) continue;                 // 批量里跳过自己：一键封掉全后台是事故
+          if (action === "ban") {
+            u.banned = true; u.bannedReason = String(body.reason || "").slice(0, 120) || "批量处理";
+            const days = Math.round(Number(body.days) || 0);
+            u.bannedUntil = days > 0 ? now() + Math.min(3650, days) * 86400000 : 0;
+            for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === u.id) delete docs.sessions[h];
+          } else if (action === "unban") {
+            u.banned = false; delete u.bannedUntil; delete u.bannedReason;
+          } else if (action === "role") {
+            if (["admin", "user"].includes(body.role)) u.role = body.role;
+          } else if (action === "sessions") {
+            for (const [h, sess] of Object.entries(docs.sessions)) if (sess.userId === u.id) delete docs.sessions[h];
+          } else if (action === "flag_off") {
+            for (const p of Object.values(docs.pubs.byId)) if (p.authorId === u.id) p.flagged = false;
+            for (const list of Object.values(docs.comments.byPub)) for (const c of list) if (c.userId === u.id) c.flagged = false;
+            store.touch("pubs"); store.touch("comments");
+          }
+          done.push(u.name);
+        }
+        for (const key of ["users", "sessions", "pubs", "comments"]) store.touch(key);
+        addAudit(viewerId, "batch_" + action, done.join("、").slice(0, 64), `批量处理 ${done.length} 人`);
+        reply.json(200, { ok: true, done: done.length, names: done });
+        return true;
+      }
+
+      if (sub === "note" && method === "POST") {
+        const text = String(body.text || "").trim().slice(0, 200);
+        if (!text) { reply.fail(400, "通知内容不能空着"); return true; }
+        let to = [];
+        if (body.all) to = Object.keys(docs.users.byId).filter((id) => !bannedNow(docs.users.byId[id]));
+        else {
+          const u = userByName(body.name);
+          if (!u) { reply.fail(404, "没有这个用户"); return true; }
+          to = [u.id];
+        }
+        for (const id of to) notify(id, "admin_note", null, null, text);
+        store.touch("notes");
+        addAudit(viewerId, "note", body.all ? `全体（${to.length} 人）` : (docs.users.byId[to[0]] || {}).name, text);
+        reply.json(200, { ok: true, sent: to.length });
+        return true;
+      }
+
       reply.fail(404, "后台没有这个接口：" + sub);
       return true;
     }
@@ -1394,7 +1848,7 @@ export function createCommunity({ dataRoot, worldsDir, assetRoot, assetRoots, mo
         delete docs.sessions[hashOf(tok)]; store.touch("sessions"); return null;
       }
       const u = docs.users.byId[sess.userId];
-      if (!u || u.banned) return null;
+      if (!u || bannedNow(u)) return null;
       return { id: u.id, name: u.name, skin: u.skin || null, avatar: u.avatar || "", role: u.role || "user" };
     },
     /** 房间必须对应一件还在架上的作品，否则任何人都能凭空开一个频道。 */
