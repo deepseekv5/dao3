@@ -257,7 +257,10 @@ async function save() {
   const entities = collectEntities();
   const payload = world.toPayload({ ...state.meta, terrain: state.terrain, scripts: state.scripts, entities, models: [], meshNames: state.assets && state.assets.meshNames });
   const res = await io.apiSaveWorld(worldId, payload);
-  if (res.ok) { markSaved(); toast("已保存"); captureCover(); } else toast("保存失败: " + (res.error || ""));
+  if (res.ok) { markSaved(); toast("已保存"); captureCover();
+    // 脚本标签页的脏点以"世界保存成功"为准清掉
+    if (window.__editor && typeof window.__editor.__scriptSaved === "function") window.__editor.__scriptSaved();
+  } else toast("保存失败: " + (res.error || ""));
 }
 // 工作台要的封面：保存成功后抓一张视口缩略图存进该项目资产目录
 let _coverAt = 0;

@@ -40,7 +40,7 @@ export function wireScriptIde(E) {
   const consoleBox = document.getElementById("scriptConsole");
   const tabs = document.createElement("div");
   tabs.className = "ss-tabs";
-  tabs.innerHTML = `<button class="ss-tab active" data-t="out">控制台</button>
+  tabs.innerHTML = `<button class="ss-tab active" data-t="out">输出</button>
     <button class="ss-tab" data-t="prob">问题<b id="ssProbN"></b></button>
     <span class="ss-spacer"></span>
     <span class="ss-dim" id="ssProbSum"></span>`;
@@ -264,6 +264,10 @@ export function wireScriptIde(E) {
     if (i < 0) return E.toast(`没有这个文件：${name}`, true);
     E.__scriptIdx = i;
     if (E.refreshScriptView) E.refreshScriptView(list[i].name);
+    if (!openTabs.includes(list[i].name)) openTabs.push(list[i].name);
+    renderTabs();
+    const fl = document.getElementById("scriptFiles");
+    if (fl) fl.querySelectorAll(".sfile").forEach((x, xi) => x.classList.toggle("active", xi === i));
     recheck();
   }
   screen.addEventListener("keydown", (ev) => {
@@ -275,7 +279,15 @@ export function wireScriptIde(E) {
       if (n > 0) gotoLine(n);
       return;
     }
-    if (mod && !ev.shiftKey && ev.key.toLowerCase() === "p") { ev.preventDefault(); quickOpen(); }
+    if (mod && !ev.shiftKey && ev.key.toLowerCase() === "p") { ev.preventDefault(); quickOpen(); return; }
+    // VS Code 的两条肌肉记忆：Ctrl+B 收放资源管理器，Ctrl+W 关当前标签（不删文件）
+    if (mod && ev.key.toLowerCase() === "b") { ev.preventDefault(); filesBox.classList.toggle("hidden"); syncAct(); return; }
+    if (mod && !ev.shiftKey && ev.key.toLowerCase() === "w") {
+      ev.preventDefault();
+      const cn = E.__scriptIdx == null ? null : ((E.state.scripts || [])[E.__scriptIdx] || {}).name;
+      if (cn) closeTab(cn);
+      return;
+    }
   });
 
   /* ---------- 挂接 ---------- */
@@ -323,6 +335,135 @@ export function wireScriptIde(E) {
   // 给测试用：断言"屏幕上的诊断"必须能拿到这一层的真实输入，
   // 否则探针只能猜（第一次就误判成 lint 读错了文件）。
   E.ideState = () => ({ code: editingCode().slice(0, 40), lines: editingCode().split("\n").length, diags, lens: cursorLine });
+
+  /* ---------- VS Code 化：活动栏 / 编辑器标签页 / 面包屑 ----------
+     标签 = "打开的文件"，与"文件存不存在"是两回事：关标签不删文件（删文件在资源管理器）。
+     脏点 = 改过但世界还没保存；保存成功的钩子由 main.js 的 save() 打回来。 */
+  const actBar = screen.querySelector(".act-bar");
+  const filesBox = screen.querySelector(".ss-files");
+  const edTabs = document.getElementById("edTabs");
+  const crumbs = document.getElementById("edCrumbs");
+  let openTabs = [];
+  const dirtyFiles = new Set();
+  const nameAt = (i) => ((E.state.scripts || [])[i] || {}).name;
+  const idxOf = (name) => (E.state.scripts || []).findIndex((f) => f.name === name);
+
+  function renderTabs() {
+    const scripts = E.state.scripts || [];
+    const curName = E.__scriptIdx == null ? null : nameAt(E.__scriptIdx);
+    openTabs = openTabs.filter((n) => idxOf(n) >= 0);
+    if (curName && !openTabs.includes(curName)) openTabs.push(curName);
+    if (edTabs) {
+      edTabs.innerHTML = "";
+      for (const name of openTabs) {
+        const idx = idxOf(name);
+        const t = document.createElement("div");
+        t.className = "ed-tab" + (name === curName ? " active" : "");
+        t.setAttribute("role", "tab");
+        t.title = name;
+        t.innerHTML = `<span class="js-badge">JS</span><span class="tname"></span>` +
+          (dirtyFiles.has(name) ? `<i class="ed-dot" title="有未保存的改动"></i>` : "") +
+          `<button class="ed-close" title="关闭标签（不删除文件）" aria-label="关闭">×</button>`;
+        t.querySelector(".tname").textContent = name;
+        t.onclick = () => { if (idx >= 0) switchTo(idx); };
+        t.querySelector(".ed-close").onclick = (ev) => { ev.stopPropagation(); closeTab(name); };
+        edTabs.appendChild(t);
+      }
+    }
+    if (crumbs) {
+      crumbs.textContent = "";
+      const seg = document.createElement("span");
+      seg.textContent = "脚本";
+      crumbs.appendChild(seg);
+      const chev = document.createElement("span");
+      chev.className = "sep";
+      chev.textContent = "›";
+      crumbs.appendChild(chev);
+      if (curName) {
+        const last = document.createElement("button");
+        last.className = "crumb-file";
+        last.textContent = curName;
+        last.title = "Ctrl+P 快速切换文件";
+        last.onclick = quickOpen;
+        crumbs.appendChild(last);
+      }
+    }
+  }
+
+  /** 切到第 i 个脚本：换文件的全套动作（内容/高亮/行号/诊断/标签），
+      features.js 的文件列表点击走自己的老路，最后通过 __openScriptTab 归到这儿。 */
+  function switchTo(i) {
+    const f = (E.state.scripts || [])[i];
+    if (!f) return;
+    E.__scriptIdx = i;
+    const t = ta();
+    if (t) { t.value = f.code || ""; t.focus(); }
+    cursorLine = 1;
+    if (E.renderCode) E.renderCode();
+    if (t) t.dispatchEvent(new Event("scroll"));
+    const list = document.getElementById("scriptFiles");
+    if (list) list.querySelectorAll(".sfile").forEach((x, xi) => x.classList.toggle("active", xi === i));
+    renderTabs();
+    recheck();
+  }
+
+  function closeTab(name) {
+    if (openTabs.length <= 1) { E.toast("这是最后一个打开的标签", true); return; }
+    const at = openTabs.indexOf(name);
+    if (at < 0) return;
+    openTabs.splice(at, 1);
+    const curName = E.__scriptIdx == null ? null : nameAt(E.__scriptIdx);
+    if (name === curName) {
+      const next = openTabs[Math.max(0, at - 1)];
+      const ni = idxOf(next);
+      if (ni >= 0) switchTo(ni); else renderTabs();
+    } else {
+      renderTabs();
+    }
+  }
+
+  // features.js 的挂点 + main.js 的保存钩子
+  E.__refreshScriptTabs = renderTabs;
+  E.__openScriptTab = (i) => {
+    const n = nameAt(i);
+    if (n && !openTabs.includes(n)) openTabs.push(n);
+    renderTabs();
+    recheck();   // 列表点文件以前不重查：屏幕上标的是上一个文件的问题（真 bug）
+  };
+  E.__markScriptDirty = (name) => {
+    if (dirtyFiles.has(name)) return;
+    dirtyFiles.add(name);
+    renderTabs();
+  };
+  E.__scriptDirty = dirtyFiles;
+  E.__scriptSaved = () => { if (!dirtyFiles.size) return; dirtyFiles.clear(); renderTabs(); };
+
+  // 活动栏：active 只跟着"持久状态"走（资源管理器是否展开、面板是否停在问题页）
+  const syncAct = (force) => {
+    const on = force !== undefined ? force
+      : consoleBox.dataset.pane === "prob" ? "prob"
+      : filesBox.classList.contains("hidden") ? "" : "files";
+    actBar.querySelectorAll(".act-btn").forEach((x) => x.classList.toggle("active", x.dataset.act === on));
+  };
+  if (actBar) {
+    actBar.onclick = (ev) => {
+      const b = ev.target.closest(".act-btn");
+      if (!b) return;
+      const a = b.dataset.act;
+      if (a === "files") { filesBox.classList.toggle("hidden"); syncAct(); }
+      else if (a === "find") { if (E.codeFind) E.codeFind(false); }
+      else if (a === "prob") {
+        const pb = consoleBox.querySelector('.ss-tab[data-t="prob"]');
+        if (pb) pb.click();
+        consoleBox.classList.remove("is-closed");
+      } else if (a === "run") { document.getElementById("scriptRun")?.click(); }
+    };
+    // 面板页签切到问题/输出时，活动栏的"问题"亮灭要跟着走
+    tabs.addEventListener("click", () => syncAct());
+    syncAct();
+  }
+
+  renderTabs();
   recheck();
 }
 

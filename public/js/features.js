@@ -510,6 +510,8 @@ function wireScript() {
   ta.addEventListener("input", () => {
     const cur = curScript();
     if (cur) cur.code = ta.value;
+    // 标签页的脏点（未保存改动）跟着每一次输入走
+    if (cur && typeof E.__markScriptDirty === "function") E.__markScriptDirty(cur.name);
     // 协作：改动 1.2 秒后整份发出去（见 collab.js），并告诉别人"我在写这个文件"
     if (cur && E.collab && E.collab.notifyEdit) E.collab.notifyEdit(cur.name);
     if (_errLine >= 0) { _errLine = -1; } // 编辑即清除错误标记
@@ -520,6 +522,8 @@ function wireScript() {
   document.getElementById("scriptRun").onclick = runScript;
   document.getElementById("scriptNew").onclick = () => {
     e.state.scripts.push({ name: prompt("新脚本文件名（.js）", "script" + (e.state.scripts.length) + ".js") || "script.js", code: "" });
+    // 新建即打开：VS Code 建完文件光标就在里面，而不是建了却还看着旧文件
+    e.__scriptIdx = e.state.scripts.length - 1;
     renderScriptFiles();
   };
   document.getElementById("scriptDel").onclick = () => {
@@ -563,14 +567,18 @@ function renderScriptFiles() {
   list.innerHTML = "";
   e.state.scripts.forEach((f, i) => {
     const it = document.createElement("button");
-    it.className = "sfile" + (e.__scriptIdx === i ? " active" : "");
-    it.innerHTML = `<span class="sdot"></span><span>${f.name}</span>`;
+    const dirty = E.__scriptDirty instanceof Set && E.__scriptDirty.has(f.name);
+    it.className = "sfile" + (e.__scriptIdx === i ? " active" : "") + (dirty ? " dirty" : "");
+    it.innerHTML = `<span class="js-badge">JS</span><span class="sname"></span><i class="ed-dot" title="有未保存的改动"></i>`;
+    it.querySelector(".sname").textContent = f.name;
     it.onclick = () => {
       e.__scriptIdx = i;
       document.getElementById("scriptCode").value = f.code;
       list.querySelectorAll(".sfile").forEach((x) => x.classList.remove("active"));
       it.classList.add("active");
       renderCodeEditor(); syncCodeScroll();
+      // 标签页与诊断跟着切：这一行是脚本工作区 VS Code 化的挂点
+      if (typeof E.__openScriptTab === "function") E.__openScriptTab(i);
     };
     list.appendChild(it);
   });
@@ -587,6 +595,8 @@ function renderScriptFiles() {
     const ln = document.getElementById("scriptLines");
     if (ln) ln.textContent = "";
   }
+  // 文件增删改名都会走到这里：标签页栏要跟着重建（关掉的标签、删掉的文件都要丢）
+  if (typeof E.__refreshScriptTabs === "function") E.__refreshScriptTabs();
 }
 
 /* ---- 代码编辑器：零依赖 JS 语法高亮 + 行号 + 滚动同步 ---- */

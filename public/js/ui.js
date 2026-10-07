@@ -51,6 +51,8 @@ const I = window.__icons = {
   treeArrowOpen: '<svg viewBox="0 0 10 10" class="tw-svg"><path d="M1.5 2.5h7l-3.5 5.5-3.5-5.5z" fill="currentColor"/></svg>',
   people: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.6 19c0-3 2.4-5 5.4-5s5.4 2 5.4 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M15.6 14.3c2.5.3 4.6 2 4.6 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
   cubeDot: '<svg viewBox="0 0 14 14"><rect x="2.5" y="2.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" transform="rotate(20 7 7)"/></svg>',
+  warn: '<svg viewBox="0 0 24 24"><path d="M12 3.5L22 20H2L12 3.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="16.6" r=".9" fill="currentColor"/></svg>',
+  split: '<svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 4v16" stroke="currentColor" stroke-width="1.4"/></svg>',
 };
 // 静态按钮直接由 data-ico 填充
 document.querySelectorAll("[data-ico]").forEach((b) => {

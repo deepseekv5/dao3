@@ -31,6 +31,13 @@
   --ed-hair-2:rgba(255, 255, 255, .13);
   --ed-inset:rgba(0, 0, 0, .32);       /* 输入框、代码区、缩略图槽这类"凹进去"的底 */
   --ed-lift:0 18px 44px -22px rgba(0, 0, 0, .92), 0 2px 10px -4px rgba(0, 0, 0, .5);
+  /* 脚本工作区（VS Code 同构）：编辑区单独一套色温，等价于"给 VS Code 换了一副主题"。
+     chrome 与编辑区分两种底色是 VS Code 自己就在做的事（#252526 的侧栏 + #1e1e1e 的编辑区）。 */
+  --code-bg:#201d19;                    /* 编辑区：VS Code #1e1e1e 的暖调同值 */
+  --code-tab:#1b1815;                   /* 非活动标签 / 面板页签行 */
+  --code-side:#171411;                  /* 活动栏 / 资源管理器 / 面板 / 底部读数 */
+  --code-line:rgba(255, 255, 255, .055);/* 编辑区发丝线 */
+  --code-sel:rgba(227, 166, 60, .14);   /* 列表选中 / 活动栏选中 */
   --shadow-card:0 1px 3px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.3);
   --shadow-card-hover:0 4px 14px rgba(227, 166, 60, .2), 0 1px 3px rgba(0,0,0,.5);
   --glow:0 0 14px rgba(227, 166, 60, .45), 0 0 28px rgba(227, 166, 60, .18);
@@ -380,8 +387,6 @@ body.playing .prop-card{display:none !important}
 .sfile{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:7px;color:var(--font-white-minor);font-size:12px;border:1px solid transparent;cursor:pointer;background:none;text-align:left}
 .sfile:hover{background:var(--grey2)}
 .sfile.active{background:var(--primary-light);color:var(--primary);border-color:var(--primary)}
-.sfile .sdot{width:7px;height:7px;border-radius:50%;background:var(--primary);flex:none}
-.sfile:not(.active) .sdot{background:var(--grey4,var(--grey4))}
 .drawer-act{width:26px;height:26px;border-radius:6px;color:var(--font-white-minor);display:flex;align-items:center;justify-content:center}
 .drawer-act:hover{background:var(--grey2);color:#fff}
 .drawer-head .drawer-act{margin-left:auto}
@@ -1417,3 +1422,96 @@ button.sb-btn:hover { background-color: rgba(227, 166, 60, .16);
 
 /* 15 · 加载幕：不要一块死黑 */
 #loading { background: radial-gradient(60% 50% at 50% 34%, rgba(227, 166, 60, .14), transparent 70%), var(--bg0); }
+
+/* ==================== 脚本工作区：VS Code 同构 ====================
+   VS Code 的布局语言是五件套：活动栏 → 侧栏 → 编辑组（标签页 + 面包屑 + 编辑器）
+   → 面板（问题 / 输出）→ 状态栏。这一节把脚本页按这个骨架排。
+   标签 = "打开的文件"，关标签不删文件；脏点 = 改过但世界还没保存。 */
+
+/* 活动栏：最左一条图标栏 */
+.act-bar { width: 44px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 7px 0; background: var(--code-side); border-right: 1px solid var(--code-line); }
+.act-btn { width: 36px; height: 36px; border-radius: 8px; color: var(--fg3); display: flex;
+  align-items: center; justify-content: center;
+  transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.act-btn svg { width: 17px; height: 17px; }
+.act-btn:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+.act-btn.active { color: var(--primary-hover); background: var(--code-sel);
+  box-shadow: inset 2px 0 0 var(--primary); }
+
+/* 资源管理器 */
+.ss-files { background: var(--code-side); }
+.ss-files.hidden { display: none; }
+.ss-files-head { color: var(--fg3); font-size: 10.5px; letter-spacing: .1em; }
+.ss-files-head button { color: var(--fg3); }
+.ss-files-head button:hover { background: rgba(255, 255, 255, .09); color: #fff; }
+.sfile { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px;
+  font-size: 12.5px; color: var(--fg2); border: 1px solid transparent; }
+.sfile:hover { background: rgba(255, 255, 255, .055); color: #fff; }
+.sfile.active { background: var(--code-sel); color: #fff; }
+.sfile .js-badge, .ed-tab .js-badge { width: 16px; height: 16px; border-radius: 4px; flex: none;
+  background: rgba(227, 166, 60, .15); color: var(--primary-hover);
+  font: 600 8.5px/16px var(--mono); text-align: center; letter-spacing: .02em; }
+.sfile .sname, .ed-tab .tname { flex: 1; min-width: 0; text-align: left; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.sfile .ed-dot, .ed-tab .ed-dot { display: none; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--primary); flex: none; }
+.sfile.dirty .ed-dot { display: block; }
+
+/* 编辑组头顶：标签页 + 面包屑 */
+.ed-tabs { flex: none; display: flex; align-items: stretch; height: 34px; background: var(--code-tab);
+  border-bottom: 1px solid var(--code-line); overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; min-width: 0; }
+.ed-tabs::-webkit-scrollbar { display: none; }
+.ed-tab { display: flex; align-items: center; gap: 7px; padding: 0 8px 0 12px; font-size: 12.5px;
+  color: var(--fg2); border-right: 1px solid var(--code-line); cursor: pointer;
+  white-space: nowrap; position: relative; user-select: none; flex: 0 0 auto; max-width: 210px; }
+.ed-tab:hover { color: #fff; background: rgba(255, 255, 255, .04); }
+.ed-tab.active { background: var(--code-bg); color: #fff; }
+.ed-tab.active::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: var(--primary); }
+.ed-close { width: 18px; height: 18px; border-radius: 4px; color: var(--fg3); font-size: 13px;
+  line-height: 1; display: flex; align-items: center; justify-content: center; flex: none; opacity: 0;
+  transition: background-color var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease); }
+.ed-tab:hover .ed-close, .ed-tab.active .ed-close { opacity: 1; }
+.ed-close:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+.ed-crumbs { flex: none; display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 14px;
+  font-size: 11px; color: var(--fg3); background: var(--code-bg); border-bottom: 1px solid var(--code-line);
+  white-space: nowrap; overflow: hidden; }
+.ed-crumbs .sep { opacity: .6; }
+.ed-crumbs .crumb-file { font: inherit; color: var(--fg2); border-radius: 4px; padding: 0 5px; }
+.ed-crumbs .crumb-file:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+
+/* 编辑区与行号槽 */
+.code-area { background: var(--code-bg); }
+.code-gutter { background: var(--code-bg); border-right: 1px solid var(--code-line); color: var(--fg3); }
+
+/* 底部读数：VS Code 状态栏同款，段与段之间可以 hover */
+#codeStatus { background-color: var(--code-side); background-image: none;
+  border-top: 1px solid var(--code-line); color: var(--fg3); font: 11px/1.6 var(--mono);
+  padding: 3px 6px; gap: 2px; }
+#codeStatus span { padding: 1px 7px; border-radius: 4px; }
+#codeStatus span:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+
+/* 面板：问题 / 输出 页签 + 条目 */
+.ss-console { background: var(--code-side); }
+.ss-console-head { color: var(--fg3); letter-spacing: .08em; }
+.ss-tabs { background: var(--code-tab); border-bottom: 1px solid var(--code-line); padding: 3px 8px; }
+.ss-tab { background: none; border: 0; box-shadow: none; font-size: 11px; letter-spacing: .08em;
+  color: var(--fg3); padding: 3px 10px; border-radius: 4px; }
+.ss-tab:hover { background: none; color: #fff; }
+.ss-tab.active { background: none; color: #fff; box-shadow: inset 0 -1.5px 0 var(--primary); }
+.ss-tab b { font-weight: 600; }
+.dg-item { font-family: var(--font); }
+.cs-bar { background: var(--code-tab); }
+
+/* 行内动作条（CodeLens）：贴着编辑区，不抢标签栏的戏 */
+.ss-lens { background: var(--code-side); border-bottom: 1px solid var(--code-line); }
+.lens-acts button, .lens-err { background: rgba(255, 255, 255, .06); border: 1px solid var(--ed-hair); }
+
+/* 窄屏：活动栏横过来放顶部 */
+@media (max-width: 960px) {
+  .act-bar { flex-direction: row; width: auto; height: 40px; padding: 0 6px; gap: 2px;
+    border-right: 0; border-bottom: 1px solid var(--code-line); }
+  .act-btn.active { box-shadow: inset 0 -2px 0 var(--primary); }
+}

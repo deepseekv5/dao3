@@ -387,8 +387,16 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <button id="scriptPlay" class="play-ss" title="进入完整运行模式（官方 GameAPI）"><svg viewBox="0 0 24 24" width="13" height="13"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>运行游戏</button>
   </div>
   <div class="ss-body">
+    <!-- 活动栏：VS Code 最左那条图标栏。资源管理器 / 搜索 / 问题 / 运行，
+         各自接到已经做好的能力上（文件列表、查找框、诊断面板、运行脚本）。 -->
+    <nav class="act-bar" aria-label="脚本工作区活动栏">
+      <button class="act-btn active" data-act="files" title="资源管理器：脚本文件（Ctrl+B 收起/展开）" data-ico="doc"></button>
+      <button class="act-btn" data-act="find" title="搜索：在脚本里查找（Ctrl+F）" data-ico="search"></button>
+      <button class="act-btn" data-act="prob" title="问题：诊断与一键修复" data-ico="warn"></button>
+      <button class="act-btn" data-act="run" title="运行脚本（Ctrl+Enter）" data-ico="play"></button>
+    </nav>
     <div class="ss-files">
-      <div class="ss-files-head"><span>文件</span>
+      <div class="ss-files-head"><span>资源管理器</span>
         <button id="scriptNew" title="新建脚本文件">＋</button>
         <button id="scriptRename" title="重命名">✎</button>
         <button id="scriptDel" title="删除">－</button>
@@ -396,6 +404,10 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
       <div id="scriptFiles"></div>
     </div>
     <div class="code-col">
+      <!-- 编辑器标签页 + 面包屑：VS Code 编辑组的头顶。标签 = 打开的文件，
+           关闭标签只是不再看它，不等于删文件（删文件在左侧资源管理器）。 -->
+      <div class="ed-tabs" id="edTabs" role="tablist" aria-label="打开的脚本"></div>
+      <div class="ed-crumbs" id="edCrumbs" aria-label="面包屑"></div>
       <div class="code-area">
         <div class="code-gutter" id="scriptGutter">1</div>
         <div class="code-editor">
@@ -408,7 +420,7 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
     <button class="ss-grip" id="gripConsole" type="button" role="separator" aria-orientation="vertical"
             aria-label="控制台宽度" title="拖动调整控制台宽度（双击复位，方向键微调）"></button>
     <div class="ss-console" id="scriptConsole">
-      <button class="ss-console-head" id="scriptConsoleHead" title="运行游戏时脚本报错也会显示在这里；运行期间修改不会保存">控制台<span>▾</span></button>
+      <button class="ss-console-head" id="scriptConsoleHead" title="运行游戏时脚本报错也会显示在这里；运行期间修改不会保存">输出<span>▾</span></button>
       <div id="scriptOut" class="scriptout"></div>
     </div>
   </div>
