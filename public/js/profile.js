@@ -18,7 +18,7 @@ const timeAgo = (t) => {
   return new Date(t).toLocaleDateString();
 };
 
-const SKIN_DEFAULT = { skin: "#ffd7b0", shirt: "#c9714f", pants: "#6b625a", hair: "#6b4630", shoe: "#7b5441" };
+const SKIN_DEFAULT = { skin: "#e7b98f", shirt: "#d5a24a", pants: "#2b3440", hair: "#2a211d", shoe: "#eee9df" };
 /** 体型三档。量程与服务端 normalizeSkin 的夹取区间一致（0.80~1.25）：
  *  两边各写一套的话，滑杆能拖到一个服务端会悄悄改掉的值。 */
 const BODY_MIN = 80, BODY_MAX = 125;
@@ -386,7 +386,7 @@ async function mountSkinPreview(u, host) {
   try {
     const { previewSkin } = await import("/js/skin-rig.js");
     host.innerHTML = "";             // 画布要 append 进来，不清掉就会叠在纸片人上面
-    rigLive = previewSkin(host, u.skin || {}, { w: 172, h: 220 });
+    rigLive = previewSkin(host, u.skin || {}, { w: 210, h: 250 });
   } catch {
     host.innerHTML = fallback;       // WebGL 起不来就还原，这一格不能空
   }
@@ -439,6 +439,7 @@ export async function profileView(name, root, setTitle, setSub) {
     <div class="cm-tabs" id="pfTabs">
       <button class="cm-btn on" data-t="map">地图</button>
       <button class="cm-btn" data-t="model">模型</button>
+      <button class="cm-btn" data-t="skin">皮肤</button>
       <button class="cm-btn" data-t="followers">关注者</button>
       <button class="cm-btn" data-t="following">关注中</button>
       ${mine ? '<button class="cm-btn" data-t="favorites">收藏</button>' : ""}
@@ -450,7 +451,30 @@ export async function profileView(name, root, setTitle, setSub) {
   paintFace(root);
   mountSkinPreview(u, $("pfSkin"));
   const skinEdit = $("pfSkinEdit");
-  if (skinEdit) skinEdit.onclick = () => openEditor(u, (nu) => profileView(nu.name, root, setTitle, setSub));
+  if (skinEdit) skinEdit.onclick = async () => {
+    if (rigLive) { try { rigLive.stop(); } catch { } rigLive = null; }
+    if (u.skin && u.skin.kind === "rig") { openEditor(u, (nu) => profileView(nu.name, root, setTitle, setSub)); return; }
+    const { openSkinStudio } = await import("/js/skin-editor.js");
+    const studio = openSkinStudio({
+      skin: u.skin || {}, name: (u.name || "我的") + "的皮肤",
+      onSave: async ({ skin, png }) => {
+        const next = Object.assign({}, skin);
+        if (next.texture) {
+          const f = new File([png], "skin.png", { type: "image/png" });
+          next.texture = await uploadImage(f, "skin");
+        } else delete next.texture;
+        const r = await api("PATCH", "/api/community/me", { skin: next });
+        auth.setMe(r.user);
+        studio.close();
+        profileView(r.user.name, root, setTitle, setSub);
+      },
+      onPublish: async (skin) => {
+        const m = await import("/js/publish-skin.js");
+        m.openSkinPublishDialog(skin, (msg, bad) => toast(msg, bad));
+      },
+    });
+    studio.host.addEventListener("studio-toast", (e) => toast(e.detail, true));
+  };
   /** 没上传横幅的人占绝大多数，而那块 200px 的纯色渐变是整页最难看的地方。
    *  拿 TA 自己最近一张图的封面垫在下面：内容是真的（就是这张图），
    *  也不用再多一个上传入口。压暗 + 盖一层底色，标题文字仍然读得清。 */
@@ -605,14 +629,14 @@ export async function profileView(name, root, setTitle, setSub) {
     }
     const rows = (await api("GET", `/api/community/users/${encodeURIComponent(name)}/pubs?kind=${which}`)).rows;
     body.innerHTML = rows.length ? `<div class="cm-grid">${rows.map(cardHtml).join("")}</div>`
-      : `<div class="cm-empty"><b>${which === "model" ? "还没有发布模型" : "还没有发布地图"}</b>${mine ? (which === "model" ? "在 VOXA 里点「发布到社区」。" : "打开工作台，把这张图发出去。") : ""}</div>`;
+      : `<div class="cm-empty"><b>${which === "model" ? "还没有发布模型" : which === "skin" ? "还没有发布皮肤" : "还没有发布地图"}</b>${mine ? (which === "model" ? "在 VOXA 里点「发布到社区」。" : which === "skin" ? "在皮肤工作台里点「发布到社区」。" : "打开工作台，把这张图发出去。") : ""}</div>`;
     bindCards(body);
   }
   /** 主页的页签和广场一样要能在地址栏里活下来：刷新不丢、能直接把"他的关注者"
    *  甩给别人。跟广场用同一套规矩——replaceState，不压历史，否则后退键会变成
    *  "回到我三分钟前点过的那个页签"。收藏那一格只有自己看得见，所以白名单要连着
    *  页签是否真的存在一起判。 */
-  const PF_TABS = ["map", "model", "followers", "following", "favorites", "recent", "wall"];
+  const PF_TABS = ["map", "model", "skin", "followers", "following", "favorites", "recent", "wall"];
   const fromUrl = () => {
     const t = new URLSearchParams(location.search).get("tab");
     return PF_TABS.includes(t) && tabs.querySelector(`[data-t="${t}"]`) ? t : "map";

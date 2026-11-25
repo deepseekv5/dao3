@@ -171,7 +171,7 @@
 .cm-on::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line2); }
 .cm-on.on { color: var(--fg2); }
 .cm-on.on::before { background: #57c07a; box-shadow: 0 0 0 3px rgba(87, 192, 122, .16); }
-.cm-views { display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: var(--fg3); }
+.cm-views { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 12px; font-size: 11.5px; color: var(--fg3); }
 .cm-views span { display: inline-flex; align-items: center; gap: 4px; }
 .cm-views svg { width: 13px; height: 13px; flex: none; opacity: .8; }
 /* 「正在玩」是实时数，得和旁边那几个累计数长得不一样：绿点在前面，
@@ -533,7 +533,7 @@
 .pf-card { display: flex; gap: 22px; align-items: stretch; margin: 14px 0 18px; padding: 16px 20px;
   border: 1px solid var(--line); border-radius: var(--radius-lg); background:
     radial-gradient(58% 120% at 12% 50%, rgba(227, 166, 60, .07), transparent 70%), var(--glass-bg); }
-.pf-dollbox { flex: none; width: 190px; min-height: 220px; display: flex; align-items: center; justify-content: center;
+.pf-dollbox { flex: none; width: 220px; min-height: 250px; display: flex; align-items: center; justify-content: center;
   border-right: 1px solid var(--line); }
 .pf-dollbox .pf-doll { margin: 0 auto; transform: scale(1.35); }
 /* 3D 预览（人偶与骨骼皮肤共用 avatar.js 那一具）落地时要有一点"站着"的暗示：
@@ -637,6 +637,20 @@
 .cm-tile.gap:hover i { color: var(--fg2); }
 /* 全空时那句说明横跨整条网格，不占一格的位 */
 .cm-cathint { grid-column: 1 / -1; margin: 2px 0 0; font-size: var(--fs-11); color: var(--fg3); line-height: 1.6; }
+.cm-catfirst { margin: 0 0 16px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--r-2); background: var(--bg1); color: var(--fg2); font-size: var(--fs-12); }
+.cm-local { margin: 4px 0 24px; }
+.cm-local > header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 11px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
+.cm-local h3 { margin: 0; font-size: 14px; }
+.cm-local header span { color: var(--fg3); font-size: 11px; }
+.cm-localgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.cm-localcard { display: grid; grid-template-columns: 112px minmax(0, 1fr); min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--bg1); }
+.cm-localart { min-height: 118px; display: grid; place-items: center; background: #141311; color: var(--fg3); font-size: 28px; }
+.cm-localart img { width: 100%; height: 100%; object-fit: cover; }
+.cm-localtxt { min-width: 0; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.cm-localtxt b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.cm-localtxt i { color: var(--fg3); font: 10px/1.5 var(--mono); }
+.cm-localtxt > div { display: flex; gap: 6px; margin-top: auto; }
+@media (max-width: 1100px) { .cm-localgrid { grid-template-columns: 1fr; } }
 
 /* ================= 移动端 =================
    目标不是"能缩放"，是"一只手能读完一屏"：单列、按钮够大、表格能横着滑。

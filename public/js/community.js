@@ -17,6 +17,7 @@ const FEED_TABS = [["new", "最新"], ["hot", "最热"], ["foryou", "推荐"], [
 const FEED_KINDS = [["map", "地图"], ["model", "模型"], ["skin", "皮肤"]];
 const KIND_NOUN = { map: "地图", model: "模型", skin: "皮肤" };
 let feed = { sort: "new", cat: "", kind: "", q: "", offset: 0, total: 0, rows: [], cats: [] };
+let feedSeq = 0;
 
 /** 广场的筛选状态存在地址栏里。
  *  以前只存在内存：导轨上写着「按热度看 → /community?sort=hot」，点进去却停在最新，
@@ -84,6 +85,10 @@ function drawCats() {
       <i>${esc(label)}</i><em>${n}${key ? " 张" : " 件"}</em></button>`;
   };
   const anyTagged = cats.some((c) => (feed.catCounts && feed.catCounts[c]) > 0);
+  if (!feed.total) {
+    el.innerHTML = `<p class="cm-cathint cm-catfirst">还没有作品。分类会在第一张图发布后出现；先去工作台做一张能跑的世界。</p>`;
+    return;
+  }
   el.innerHTML = tile("", "全部") + cats.map((c) => tile(c, c)).join("")
     // 全新库里十个分类全是空的：那是"还没人打标签"，不是界面坏了，所以要有一句话说明白
     + (anyTagged ? "" : `<p class="cm-cathint">分类是按发布时填的标签归位的——现在这些作品都还没打标签，所以每一类都是空的。</p>`);
@@ -165,6 +170,7 @@ function miniRow(p) {
 }
 
 async function loadFeed(reset) {
+  const seq = ++feedSeq;
   const grid = $("cmGrid");
   if (!grid) return;
   // 读的时候给一排骨架，不给一行字：一屏空白 + 一句话，看起来像坏了而不是在加载
@@ -179,6 +185,7 @@ async function loadFeed(reset) {
     if (rt) rt.onclick = () => { feed = { ...feed, offset: 0, rows: [] }; loadFeed(true); };
     return;
   }
+  if (seq !== feedSeq) return;
   if (Array.isArray(r.cats) && r.cats.join() !== feed.cats.join()) feed.cats = r.cats;
   feed.catCovers = r.catCovers || {};
   feed.catCounts = r.catCounts || {};
@@ -188,7 +195,7 @@ async function loadFeed(reset) {
   feed.total = r.total;
   drawCats();
   feed.rows = feed.rows.concat(r.rows);
-  feed.offset = r.rows.length;
+  feed.offset += r.rows.length;
   const noun = KIND_NOUN[feed.kind] || "作品";
   const title = $("cmSectTitle");
   if (title) title.textContent = feed.cat ? `${feed.cat} · ${noun}` : (feed.q ? `“${feed.q}”的搜索结果` : `全部${noun}`);
@@ -200,7 +207,7 @@ async function loadFeed(reset) {
   // 精选位与导轨只在"没在筛选"的那一屏出现：搜索结果里放"大家都在玩"是答非所问。
   const plain = !feed.cat && !feed.kind && !feed.q && feed.sort !== "following";
   const featHost = $("cmFeature"), railHost = $("cmRails");
-  const byPlays = [...feed.rows].sort((a, b) => (b.plays || 0) - (a.plays || 0) || (b.updated || 0) - (a.updated || 0));
+  const byPlays = feed.rows.filter((p) => p.kind === "map").sort((a, b) => (b.plays || 0) - (a.plays || 0) || (b.updated || 0) - (a.updated || 0));
   const hero = plain && byPlays.length ? byPlays[0] : null;
   featHost.innerHTML = hero ? heroHtml(hero) : "";
   /* 精选封面在页面顶上渗出的一层光。官方展厅顶上就有这么一层：
@@ -214,7 +221,19 @@ async function loadFeed(reset) {
   railHost.innerHTML = rest.length ? railHtml("大家都在玩", rest, { href: "/community?sort=hot", label: "按热度看" }) : "";
   /** 「继续游玩」用真实的游玩历史，不用 localStorage 里"上次看过哪张"：
    *  前者是"我玩过这些"，后者只是浏览器记得一个 id。没登录就没有历史，这一格整块不出现。 */
-  if (plain && auth.me) {
+  if (plain && r.total === 0) {
+    api("GET", "/api/worlds").then((w) => {
+      const rows = (w.worlds || []).slice(0, 3);
+      const host = $("cmContinue");
+      if (!host || !rows.length) return;
+      host.innerHTML = `<section class="cm-local"><header><h3>本机世界</h3><span>这些是你电脑里的真实作品，不是社区发布</span></header>
+        <div class="cm-localgrid">${rows.map((x) => `<article class="cm-localcard">
+          <div class="cm-localart">${x.cover ? `<img src="/assets/worlds/${encodeURIComponent(x.id)}/cover.png" alt=""/>` : `<span>${esc((x.name || "世界").slice(0, 1))}</span>`}</div>
+          <div class="cm-localtxt"><b>${esc(x.name || "未命名世界")}</b><i>${Number(x.blockCount || 0).toLocaleString()} 个体素 · ${Number(x.entities || 0)} 个实体</i>
+            <div><a class="cm-btn sm" href="/edit/${encodeURIComponent(x.id)}">继续编辑</a><a class="cm-btn sm primary" href="/edit/${encodeURIComponent(x.id)}?play=1">试玩</a></div></div>
+        </article>`).join("")}</div></section>`;
+    }).catch(() => { });
+  } else if (plain && auth.me) {
     api("GET", `/api/community/users/${encodeURIComponent(auth.me.name)}/recent`).then((h) => {
       const seen = new Set();
       const rows = (h.rows || []).map((x) => x.pub)
@@ -279,7 +298,7 @@ async function applyCommunitySkin(p, btn) {
 /* ---------------- 详情页 ---------------- */
 let detailPoll = null;
 async function pubView(id) {
-  root.innerHTML = `<div class="cm-empty">正在读取这张地图…</div>`;
+  root.innerHTML = `<div class="cm-empty">正在读取这件作品…</div>`;
   pageTitle.textContent = "地图详情";
   pageSub.textContent = "";
   qBox.closest(".wb-search").hidden = true;
@@ -289,6 +308,8 @@ async function pubView(id) {
   const p = d.pub, a = d.author;
   const rel = a && a.relation;
   const isMap = p.kind !== "model" && p.kind !== "skin";
+  const noun = KIND_NOUN[p.kind] || "地图";
+  pageTitle.textContent = noun + "详情";
   root.innerHTML = `<div class="cm-detail">
     <div>
       <section class="cm-hero">
@@ -298,7 +319,7 @@ async function pubView(id) {
         <div class="meta">
           <div class="cm-statbar">
             <span class="st"><b id="stPlaying">${isMap ? p.playing : "—"}</b><i>正在玩</i></span>
-            <span class="st"><b>${p.plays}</b><i>累计进入</i></span>
+            <span class="st"><b>${p.plays}</b><i>${isMap ? "累计进入" : p.kind === "skin" ? "累计取用" : "累计下载"}</i></span>
             <span class="st"><b id="stFav">${p.favs}</b><i>收藏</i></span>
             <span class="st rate">
               <b>${p.rating == null ? "暂无评分" : p.rating + "%"}</b>
@@ -360,9 +381,9 @@ async function pubView(id) {
         ${p.version > 1 ? `<div style="margin-top:10px"><h4 style="margin:0 0 4px;font-size:11px;color:var(--fg3)">版本 ${p.version}</h4><div class="cm-ver" id="cmVer"></div></div>` : ""}
       </div>
       <div class="cm-panel">
-        <h4>这张地图的信息</h4>
+        <h4>这张${esc(noun)}的信息</h4>
         <dl class="cm-info">
-          <div><dt>游玩</dt><dd>${p.plays}</dd></div>
+          <div><dt>${isMap ? "游玩" : p.kind === "skin" ? "取用" : "下载"}</dt><dd>${p.plays}</dd></div>
           <div><dt>点赞</dt><dd>${p.likes}</dd></div>
           <div><dt>评论</dt><dd><b id="cmCmtN">${p.comments}</b></dd></div>
           <div><dt>存档</dt><dd>${kb(p.bytes)}</dd></div>

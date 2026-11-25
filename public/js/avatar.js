@@ -56,21 +56,24 @@ export function avatarPalette(override) {
   const src = override && typeof override === "object" ? override : {};
   const hex = (v) => (/^#[0-9a-fA-F]{6}$/.test(String(v)) ? parseInt(String(v).slice(1), 16) : null);
   const C = {
-    skin: 0xffd7b0, skinShade: 0xeab88e, blush: 0xe9ac96, hair: 0x6b4630, hairDeep: 0x54372a,
-    eye: 0x3a3644, shine: 0xffffff, lip: 0xc0705f,
-    shirt: 0xc9714f, shirtDeep: 0x9c5740, collar: 0xf6f1e8, button: 0xece2d2,
-    pants: 0x6b625a, pantsDeep: 0x524a44, belt: 0x5b4636, buckle: 0xd9b45e,
-    shoe: 0x7b5441, sole: 0x332a2b,
+    skin: 0xe7b98f, skinShade: 0xc9956c, skinLight: 0xf4d3b3, blush: 0xd98f7c,
+    hair: 0x2a211d, hairDeep: 0x171311, hairLight: 0x49362b,
+    eye: 0x26313a, shine: 0xfff8e9, lip: 0xa85f52,
+    shirt: 0xd5a24a, shirtDeep: 0x9f7030, shirtLight: 0xf0c874,
+    collar: 0xf3eee4, button: 0x39424a, accent: 0x2f7f86, accentDeep: 0x235c63,
+    pants: 0x2b3440, pantsDeep: 0x1d2530, pantsLight: 0x3c4958,
+    belt: 0x1c2026, buckle: 0xe3a63c,
+    shoe: 0xeee9df, sole: 0x30343a, shoeAccent: 0xd5a24a,
   };
   for (const [key, base] of [["skin", "skin"], ["shirt", "shirt"], ["pants", "pants"], ["hair", "hair"], ["shoe", "shoe"]]) {
     const v = hex(src[key]);
     if (v == null) continue;
     C[key] = v;
-    if (key === "skin") { C.skinShade = shade(v, 0.9); C.blush = shade(v, 0.82); }
-    if (key === "shirt") C.shirtDeep = shade(v, 0.72);
-    if (key === "pants") C.pantsDeep = shade(v, 0.78);
-    if (key === "hair") C.hairDeep = shade(v, 0.75);
-    if (key === "shoe") C.sole = shade(v, 0.45);
+    if (key === "skin") { C.skinShade = shade(v, 0.84); C.skinLight = shade(v, 1.12); C.blush = shade(v, 0.92); }
+    if (key === "shirt") { C.shirtDeep = shade(v, 0.68); C.shirtLight = shade(v, 1.18); C.shoeAccent = v; }
+    if (key === "pants") { C.pantsDeep = shade(v, 0.70); C.pantsLight = shade(v, 1.25); }
+    if (key === "hair") { C.hairDeep = shade(v, 0.58); C.hairLight = shade(v, 1.35); }
+    if (key === "shoe") C.sole = shade(v, 0.30);
   }
   return C;
 }
@@ -103,7 +106,7 @@ export function blobShadowMesh() {
  *  腿长另算：腿的原点在髋（y=0.80），绕髋放大只会把脚沉进地里，所以腿放大之后
  *  必须把躯干/头/手臂整体抬起来，`rig.base` 那三个基准高度跟着一起改——
  *  poseWalk 是按 base 值写绝对高度的，不改就会走路时上半身和腿脱开。 */
-const HIP = 0.80;
+const HIP = 0.70;
 export const BODY_LIMITS = { min: 0.8, max: 1.25 };
 function applyBody(av, body) {
   const src = body && typeof body === "object" ? body : {};
@@ -134,27 +137,19 @@ function applyBody(av, body) {
 
 export function makeAvatar(skinOverride) {
   const bodyOf = skinOverride && typeof skinOverride === "object" ? skinOverride.body : null;
-  // 带 MC 皮肤贴图时走经典六面体：把苦力怕的脸贴到 0.46×0.50 的圆角头上，
-  // 脸会被挤变形，认不出是谁。没有贴图才走下面那套细节人偶。
   const texSrc = skinOverride && typeof skinOverride === "object" ? skinOverride.texture : null;
   if (typeof texSrc === "string" && texSrc) {
     const av = applyBody(buildTexturedAvatar(null), bodyOf);
     loadSkinTexture(texSrc).then((t) => {
       av.traverse((o) => { if (o.isMesh) { o.material.map = t; o.material.needsUpdate = true; } });
-    }).catch(() => { /* 图坏了就留着白模，别把角色变没 */ });
+    }).catch(() => { });
     return av;
   }
   const g = new THREE.Group();
-  // 官方 player.metalness / emissive / shininess 是 PBR 参数，Lambert 材质读不到，
-  // 所以人偶统一用 Standard（roughness 1 / metalness 0 时观感接近原来的 Lambert）
   const std = (hex, rough = 0.78) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 });
-  // 默认配色按"低饱和场景里要跳得出来"来选：游戏光照偏暗（globalLight 0.29 起），
-  // 中蓝+深蓝裤子在这个光照下会糊成一块黑柱子。账号皮肤传进来时覆盖对应几项。
   const C = avatarPalette(skinOverride);
   const part = (name, x, y, z) => { const p = new THREE.Group(); p.position.set(x, y, z); p.name = name; g.add(p); return p; };
-  // box 的 y 是相对**所属关节**的偏移，不是世界高度。r 缺省取最短边的 32%，
-  // 所以厚 0.02 的贴片几乎仍是直角（细节要利落），而头/躯干这种体量会明显圆起来。
-  const box = (parent, w, h, d, hex, x, y, z, tint, rough, r) => {
+  const box = (parent, w, h, d, hex, x, y, z, tint, rough = 0.78, r = 0.035) => {
     const m = new THREE.Mesh(rbox(w, h, d, r == null ? Math.min(w, h, d) * 0.32 : r), std(hex, rough));
     m.position.set(x, y, z);
     m.castShadow = true; m.receiveShadow = true;
@@ -164,67 +159,77 @@ export function makeAvatar(skinOverride) {
     return m;
   };
 
-  // 头：占满 1.30..1.80，圆角收到"玩具人偶"而不是"鸡蛋"的程度
+  box(g, 0.18, 0.16, 0.18, C.skinShade, 0, 1.29, 0, "skin", 0.8, 0.045);
   const head = part("head", 0, 1.30, 0);
-  box(head, 0.46, 0.50, 0.42, C.skin, 0, 0.25, 0, "skin", 0.74, 0.12);   // 头
-  box(head, 0.045, 0.085, 0.062, C.skinShade, -0.222, 0.225, -0.02, "skin"); // 左耳（贴着颅侧，突出量只留一点）
-  box(head, 0.045, 0.085, 0.062, C.skinShade, 0.222, 0.225, -0.02, "skin");  // 右耳
-  box(head, 0.485, 0.22, 0.45, C.hair, 0, 0.41, -0.015, null, 0.62, 0.10);   // 头发帽（盖住头顶，露出额头下半）
-  box(head, 0.44, 0.36, 0.13, C.hair, 0, 0.21, -0.20, null, 0.62, 0.055);    // 后脑头发（一直收到颈后，免得脑后露出一圈头皮）
-  box(head, 0.115, 0.028, 0.028, C.hairDeep, -0.105, 0.305, 0.203);        // 左眉
-  box(head, 0.115, 0.028, 0.028, C.hairDeep, 0.105, 0.305, 0.203);         // 右眉
-  // 眼睛是"深色眼球 + 一点高光"，不是"白眼白 + 黑瞳"：0.4 格见方的白色眼白
-  // 在这个尺寸下只会连成一片，看着像戴了副墨镜。
-  box(head, 0.095, 0.115, 0.05, C.eye, -0.105, 0.225, 0.198, null, 0.28, 0.022);
-  box(head, 0.095, 0.115, 0.05, C.eye, 0.105, 0.225, 0.198, null, 0.28, 0.022);
-  box(head, 0.034, 0.040, 0.02, C.shine, -0.085, 0.258, 0.226, null, 0.2);
-  box(head, 0.034, 0.040, 0.02, C.shine, 0.125, 0.258, 0.226, null, 0.2);
-  box(head, 0.068, 0.034, 0.02, C.blush, -0.163, 0.152, 0.196, "skin", 0.95);
-  box(head, 0.068, 0.034, 0.02, C.blush, 0.163, 0.152, 0.196, "skin", 0.95);
-  box(head, 0.085, 0.026, 0.022, C.lip, 0, 0.108, 0.203, null, 0.6, 0.011);  // 嘴
+  box(head, 0.54, 0.52, 0.48, C.skin, 0, 0.26, 0, "skin", 0.72, 0.115);
+  box(head, 0.055, 0.11, 0.075, C.skinShade, -0.286, 0.245, -0.005, "skin", 0.8, 0.025);
+  box(head, 0.055, 0.11, 0.075, C.skinShade, 0.286, 0.245, -0.005, "skin", 0.8, 0.025);
+  box(head, 0.57, 0.20, 0.51, C.hair, 0, 0.445, -0.012, null, 0.56, 0.09);
+  box(head, 0.49, 0.34, 0.14, C.hairDeep, 0, 0.285, -0.225, null, 0.6, 0.055);
+  box(head, 0.15, 0.20, 0.10, C.hair, -0.245, 0.255, 0.175, null, 0.58, 0.035);
+  box(head, 0.15, 0.17, 0.10, C.hair, 0.245, 0.275, 0.175, null, 0.58, 0.035);
+  box(head, 0.17, 0.105, 0.055, C.hairLight, -0.155, 0.405, 0.245, null, 0.52, 0.025);
+  box(head, 0.15, 0.085, 0.055, C.hair, 0.005, 0.42, 0.248, null, 0.54, 0.022);
+  box(head, 0.13, 0.075, 0.055, C.hairDeep, 0.15, 0.435, 0.245, null, 0.54, 0.022);
+  box(head, 0.125, 0.028, 0.03, C.hairDeep, -0.125, 0.335, 0.247, null, 0.65, 0.01);
+  box(head, 0.125, 0.028, 0.03, C.hairDeep, 0.125, 0.335, 0.247, null, 0.65, 0.01);
+  for (const side of [-1, 1]) {
+    const x = side * 0.125;
+    box(head, 0.115, 0.125, 0.028, C.collar, x, 0.245, 0.242, null, 0.42, 0.025);
+    box(head, 0.060, 0.078, 0.022, C.eye, x + side * 0.008, 0.238, 0.263, null, 0.25, 0.018);
+    box(head, 0.020, 0.026, 0.012, C.shine, x - side * 0.012, 0.267, 0.279, null, 0.18, 0.006);
+    box(head, 0.070, 0.032, 0.018, C.blush, side * 0.183, 0.145, 0.241, "skin", 0.95, 0.012);
+  }
+  box(head, 0.048, 0.065, 0.045, C.skinLight, 0, 0.177, 0.255, "skin", 0.76, 0.015);
+  box(head, 0.092, 0.024, 0.020, C.lip, 0, 0.102, 0.25, null, 0.6, 0.009);
 
-  const body = part("body", 0, 0.80, 0);
-  box(body, 0.42, 0.56, 0.26, C.shirt, 0, 0.27, 0, "cloth", 0.8, 0.085);   // 躯干
-  box(body, 0.30, 0.075, 0.29, C.collar, 0, 0.545, 0.005, null, 0.7, 0.03); // 领口（比肩窄，才读得出是领子不是垫肩）
-  box(body, 0.055, 0.30, 0.02, C.shirtDeep, 0, 0.30, 0.132);               // 门襟
-  box(body, 0.034, 0.034, 0.022, C.button, 0, 0.40, 0.14, null, 0.4);       // 上扣
-  box(body, 0.034, 0.034, 0.022, C.button, 0, 0.26, 0.14, null, 0.4);       // 下扣
-  box(body, 0.435, 0.075, 0.275, C.belt, 0, 0.045, 0, null, 0.66, 0.028);   // 腰带
-  box(body, 0.075, 0.058, 0.03, C.buckle, 0, 0.045, 0.145, null, 0.32);     // 铜扣
+  const body = part("body", 0, 0.70, 0);
+  box(body, 0.50, 0.60, 0.30, C.shirt, 0, 0.30, 0, "cloth", 0.82, 0.075);
+  box(body, 0.55, 0.16, 0.31, C.shirtLight, 0, 0.52, -0.005, "cloth", 0.8, 0.05);
+  box(body, 0.14, 0.43, 0.035, C.accent, 0, 0.31, 0.164, null, 0.76, 0.018);
+  const collarL = box(body, 0.17, 0.075, 0.04, C.collar, -0.092, 0.535, 0.171, null, 0.68, 0.02);
+  const collarR = box(body, 0.17, 0.075, 0.04, C.collar, 0.092, 0.535, 0.171, null, 0.68, 0.02);
+  collarL.rotation.z = -0.32; collarR.rotation.z = 0.32;
+  box(body, 0.024, 0.38, 0.024, C.button, 0, 0.30, 0.19, null, 0.38, 0.008);
+  box(body, 0.034, 0.034, 0.026, C.buckle, 0, 0.43, 0.204, null, 0.32, 0.008);
+  box(body, 0.13, 0.115, 0.03, C.shirtDeep, -0.145, 0.285, 0.17, "cloth", 0.84, 0.018);
+  box(body, 0.14, 0.035, 0.035, C.accent, -0.145, 0.35, 0.184, null, 0.7, 0.012);
+  box(body, 0.52, 0.075, 0.315, C.belt, 0, 0.045, 0, null, 0.62, 0.022);
+  box(body, 0.085, 0.064, 0.035, C.buckle, 0, 0.045, 0.174, null, 0.3, 0.014);
+  for (const x of [-0.17, 0.17]) box(body, 0.035, 0.09, 0.33, C.shirtDeep, x, 0.045, 0, null, 0.7, 0.012);
 
   const rig = {};
   const arm = (name, side) => {
-    const a = part(name, side * 0.235, 1.315, 0);                           // 原点在肩
-    box(a, 0.145, 0.30, 0.155, C.shirt, 0, -0.15, 0, "cloth", 0.8, 0.05);   // 上臂（袖子）
-    box(a, 0.15, 0.05, 0.16, C.shirtDeep, 0, -0.315, 0, null, 0.75, 0.02);  // 袖口
-    const elbow = new THREE.Group(); elbow.position.set(0, -0.33, 0); a.add(elbow);
-    // 小臂和手都刻意"方"一点（倒角只给到 0.03 上下）：半径一大，手就变成
-    // 两颗球挂在腕上，看着像戴了拳击手套。
-    box(elbow, 0.125, 0.20, 0.135, C.skin, 0, -0.10, 0, "skin", 0.74, 0.034); // 小臂
-    box(elbow, 0.12, 0.15, 0.125, C.skin, 0, -0.285, 0, "skin", 0.74, 0.038); // 手
+    const a = part(name, side * 0.34, 1.22, 0);
+    box(a, 0.18, 0.34, 0.19, C.shirt, 0, -0.17, 0, "cloth", 0.82, 0.05);
+    box(a, 0.185, 0.055, 0.20, C.shirtDeep, 0, -0.35, 0, "cloth", 0.76, 0.018);
+    box(a, 0.08, 0.07, 0.205, C.accent, 0, -0.305, 0, null, 0.72, 0.016);
+    const elbow = new THREE.Group(); elbow.position.set(0, -0.37, 0); a.add(elbow);
+    box(elbow, 0.15, 0.27, 0.16, C.skin, 0, -0.135, 0, "skin", 0.74, 0.038);
+    box(elbow, 0.16, 0.18, 0.17, C.skin, 0, -0.31, 0.008, "skin", 0.72, 0.042);
+    box(elbow, 0.055, 0.10, 0.07, C.skinShade, -side * 0.085, -0.27, 0.025, "skin", 0.78, 0.018);
     rig[name === "armL" ? "elbowL" : "elbowR"] = elbow;
     return a;
   };
   const armL = arm("armL", -1), armR = arm("armR", 1);
 
   const leg = (name, side) => {
-    const l = part(name, side * 0.108, 0.80, 0);                            // 原点在髋
-    box(l, 0.175, 0.40, 0.19, C.pants, 0, -0.20, 0, "cloth", 0.82, 0.058);  // 大腿
-    const knee = new THREE.Group(); knee.position.set(0, -0.40, 0); l.add(knee);
-    // 小腿往上多长 0.03 盖住膝盖：两块圆角盒正好在关节处各退让一个半径，
-    // 不重叠就会露出一圈"可动人偶"的接缝。
-    box(knee, 0.165, 0.38, 0.18, C.pantsDeep, 0, -0.16, 0, "cloth", 0.82, 0.05); // 小腿
-    box(knee, 0.185, 0.12, 0.30, C.shoe, 0, -0.33, 0.045, null, 0.6, 0.045);     // 鞋（往前伸，有鞋头）
-    box(knee, 0.19, 0.04, 0.315, C.sole, 0, -0.375, 0.05, null, 0.85, 0.016);    // 鞋底
+    const l = part(name, side * 0.13, 0.70, 0);
+    box(l, 0.22, 0.32, 0.22, C.pants, 0, -0.16, 0, "cloth", 0.86, 0.05);
+    box(l, 0.14, 0.13, 0.028, C.pantsLight, 0, -0.15, 0.116, "cloth", 0.88, 0.018);
+    const knee = new THREE.Group(); knee.position.set(0, -0.32, 0); l.add(knee);
+    box(knee, 0.20, 0.30, 0.21, C.pantsDeep, 0, -0.15, 0, "cloth", 0.86, 0.045);
+    box(knee, 0.23, 0.15, 0.34, C.shoe, 0, -0.29, 0.065, null, 0.62, 0.045);
+    box(knee, 0.24, 0.045, 0.35, C.sole, 0, -0.365, 0.07, null, 0.82, 0.016);
+    box(knee, 0.23, 0.038, 0.055, C.shoeAccent, 0, -0.245, 0.225, null, 0.66, 0.012);
+    for (const y of [-0.27, -0.31]) box(knee, 0.13, 0.018, 0.018, C.collar, 0, y, 0.257, null, 0.8, 0.006);
     rig[name === "legL" ? "kneeL" : "kneeR"] = knee;
     return l;
   };
   const legL = leg("legL", -1), legR = leg("legR", 1);
 
-  // 静息时手臂略微外张：贴着躯干会交叉进盒子里，看着像没有胳膊
-  armL.rotation.z = -0.05; armR.rotation.z = 0.05;
+  armL.rotation.z = -0.055; armR.rotation.z = 0.055;
   g.userData.parts = { head, body, armL, armR, legL, legR };
-  // 上半身起伏要整体动，所以记下这三块各自的基准高度
-  g.userData.rig = Object.assign({ base: { head: 1.30, body: 0.80, armL: 1.315, armR: 1.315 } }, rig);
+  g.userData.rig = Object.assign({ base: { head: 1.30, body: 0.70, armL: 1.22, armR: 1.22 } }, rig);
   return applyBody(g, bodyOf);
 }

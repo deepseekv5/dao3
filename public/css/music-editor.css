@@ -1,0 +1,49 @@
+.music-studio { position: fixed; inset: 0; z-index: 521; display: flex; flex-direction: column; color: var(--fg); background: var(--bg0); }
+.music-studio .ss-head { flex: 0 0 58px; }
+.me-body { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 208px minmax(0, 1fr) 286px; }
+.me-tracks { min-height: 0; display: flex; flex-direction: column; background: var(--bg1); border-right: 1px solid var(--line); }
+.me-sidehead { flex: 0 0 42px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--fg3); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; }
+.me-sidehead b { flex: 1; }
+.me-sidehead button { height: 24px; padding: 0 8px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg2); color: var(--fg2); font: 11px var(--font); cursor: pointer; }
+.me-sidehead button:hover { color: var(--primary); border-color: var(--primary-line); }
+.me-tracklist { flex: 1 1 0; min-height: 0; overflow: auto; padding: 6px; }
+.me-track { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--fg2); text-align: left; cursor: pointer; }
+.me-track:hover { background: var(--bg2); }
+.me-track.on { background: var(--primary-dim); border-color: var(--primary-line); color: var(--fg); }
+.me-track > i { width: 8px; height: 27px; border-radius: 3px; flex: none; }
+.me-track > span { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.me-track b { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-track small { color: var(--fg3); font-size: 10px; }
+.me-track em { font-style: normal; color: var(--accent2); font-size: 9.5px; }
+.me-tip { flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid var(--line); color: var(--fg3); font-size: 10.5px; line-height: 1.65; }
+.me-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.me-toolbar { flex: 0 0 42px; display: flex; align-items: center; gap: 16px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg1); color: var(--fg2); font-size: 11.5px; }
+.me-toolbar label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.me-toolbar input[type=number], .me-toolbar select { height: 26px; border: 1px solid var(--line2); border-radius: 5px; background: var(--bg2); color: var(--fg); font: 11.5px var(--mono); }
+.me-toolbar input[type=number] { width: 54px; padding: 0 6px; }
+.me-toolbar select { padding: 0 6px; }
+.me-check input { accent-color: var(--primary); }
+.me-grow { flex: 1; }
+.me-read { color: var(--primary); font: 11px var(--mono); }
+.me-stage { position: relative; flex: 1 1 0; min-height: 0; overflow: auto; background: #10100f; }
+.me-roll { display: block; width: 100%; cursor: crosshair; touch-action: none; }
+.me-playhead { position: absolute; top: 0; bottom: 0; left: -9px; width: 1px; background: var(--primary); box-shadow: 0 0 8px rgba(227,166,60,.55); opacity: 0; pointer-events: none; transition: opacity .12s; }
+.me-playhead::before { content: ""; position: absolute; top: 0; left: -3px; border: 3.5px solid transparent; border-top-color: var(--primary); }
+.me-status { flex: 0 0 32px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border-top: 1px solid var(--line); background: var(--bg1); color: var(--fg3); font: 10.5px var(--mono); }
+.me-inspect { min-height: 0; overflow: auto; padding: 12px; border-left: 1px solid var(--line2); background: var(--bg1); }
+.me-inspect .ss-card { margin-bottom: 10px; }
+.me-inspect select { width: 100%; height: 31px; margin-top: 5px; padding: 0 8px; border: 1px solid var(--line2); border-radius: 6px; background: var(--bg1); color: var(--fg); font: 12px var(--font); }
+.me-noteinfo { padding: 8px 0 10px; color: var(--fg2); font: 11px var(--mono); line-height: 1.6; }
+.me-del { width: 100%; margin-top: 10px; color: var(--bad); border-color: rgba(217,79,95,.35); }
+.me-synthcopy { margin: 0; color: var(--fg3); font-size: 11px; line-height: 1.7; }
+@media (max-width: 900px) {
+  .me-body { grid-template-columns: 170px minmax(0, 1fr) 240px; }
+  .me-toolbar { gap: 10px; overflow-x: auto; }
+}
+@media (max-width: 720px) {
+  .me-body { display: flex; flex-direction: column; overflow: auto; }
+  .me-tracks { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .me-tracklist { max-height: 150px; }
+  .me-work { flex: 0 0 520px; }
+  .me-inspect { overflow: visible; border-left: 0; border-top: 1px solid var(--line2); }
+}

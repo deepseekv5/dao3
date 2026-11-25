@@ -153,11 +153,11 @@ export function disposeGL() {
 export function renderDoll(colors, { w = 220, h = 200 } = {}) {
   const g = gl(w, h);
   const C = colors && typeof colors === "object" ? colors : {};
-  const skin = /^#[0-9a-fA-F]{6}$/.test(String(C.head)) ? C.head : "#ffd7b0";
+  const skin = /^#[0-9a-fA-F]{6}$/.test(String(C.head)) ? C.head : "#e7b98f";
   const group = makeAvatar({
     skin,
-    shirt: C.body || "#c9714f",
-    pants: C.legL || "#6b625a",
+    shirt: C.body || "#d5a24a",
+    pants: C.legL || "#2b3440",
     // 官方 skin 槽里没有头发这一件（游戏里头发不参与染色），但预览要一眼看出
     // 不同皮肤的差别，所以让 head 同时决定"头部区域整体色调"。
     hair: C.hair || shade(skin, 0.34),

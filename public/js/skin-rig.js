@@ -286,20 +286,29 @@ function makeStage(host, { w = 230, h = 270 }) {
   host.appendChild(cv);
   const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setClearColor(0x000000, 0);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
   const sc = new THREE.Scene();
-  sc.add(new THREE.HemisphereLight(0xffffff, 0x2a3040, 2.3));
-  const key = new THREE.DirectionalLight(0xffffff, 1.3); key.position.set(3, 5, 4); sc.add(key);
+  sc.add(new THREE.HemisphereLight(0xffffff, 0x2a3040, 2.1));
+  const key = new THREE.DirectionalLight(0xfff1da, 1.45); key.position.set(3, 5, 4); sc.add(key);
+  const fill = new THREE.DirectionalLight(0xbfd9df, .7); fill.position.set(-3, 2, 1); sc.add(fill);
+  const rim = new THREE.DirectionalLight(0xffcf87, .85); rim.position.set(2, 3, -3); sc.add(rim);
   const cam = new THREE.PerspectiveCamera(34, w / h, 0.05, 60);
   cam.position.set(2.9, 1.55, 2.6); cam.lookAt(0, 0.9, 0);
-  let t = 0, raf = 0, dead = false, last = performance.now();
+  let t = 0, raf = 0, dead = false, last = performance.now(), lastPaint = 0;
   return {
     get dead() { return dead; },
     /** 内容准备好之后再开循环：早开一帧就是拍封面时抓到空背景。 */
-    start(obj, pose) {
+    start(obj, pose, animate = true) {
       sc.add(obj);
+      cancelAnimationFrame(raf);
+      if (!animate) { renderer.render(sc, cam); return; }
       const loop = () => {
         if (dead) return;
         const now = performance.now();
+        if (now - lastPaint < 32) { raf = requestAnimationFrame(loop); return; }
+        lastPaint = now;
         t += (now - last) / 1000 * 7; last = now;
         if (pose) pose(obj, t);
         renderer.render(sc, cam);
@@ -378,7 +387,7 @@ export function liveAvatar(host, skin, opts = {}) {
     wrap.add(g); wrap.add(blob);
     // 每拖一次滑杆都重新取景，否则身高调到 1.25 就是一颗被裁掉的头
     stage.frame(g.userData.bodyScale ? g.userData.bodyScale.h : 1);
-    stage.start(wrap, (o, t) => poseWalk(g, t, 0.52));
+    stage.start(wrap, (o, t) => poseWalk(g, t, 0.52), opts.animate !== false);
     cur = wrap;
   };
   set(skin);

@@ -52,7 +52,7 @@ export function initFeatures(editor) {
 }
 
 /* ------------------------------ 状态栏 ------------------------------ */
-const MODE_ZH = { build: "搭建", model: "模型", script: "脚本", blocks: "积木", ui: "界面", store: "商城", pack: "代码包" };
+const MODE_ZH = { build: "搭建", model: "模型", script: "脚本", blocks: "积木", music: "音乐", ui: "界面", store: "商城", pack: "代码包" };
 
 /** 底部那条读数带。
  *  刷新走轮询而不是在每个改动点补一次 update()：改动点会随功能一起长，
@@ -119,11 +119,20 @@ function wireTopMenu() {
       for (const el of [scriptScreen, uiScreen, playerPanel, packScreen, document.getElementById("storeScreen"), document.getElementById("blockScreen"), modelPanel]) {
         if (el) el.classList.remove("show");
       }
+      if (m !== "music") { try { window.__musicStudio?.close(); } catch { } }
       libCard.style.display = "block";
       E.ctx.mode = "build";
       if (m === "model") { libCard.style.display = "none"; modelPanel.classList.add("show"); E.ctx.mode = "model"; }
       else if (m === "script") { libCard.style.display = "none"; scriptScreen.classList.add("show"); E.ctx.mode = "script"; if (E.showScriptScreen) E.showScriptScreen(true); }
       else if (m === "blocks") { libCard.style.display = "none"; E.ctx.mode = "blocks"; const bs = document.getElementById("blockScreen"); bs.classList.add("show"); bs.__open && bs.__open(); }
+      else if (m === "music") {
+        libCard.style.display = "none"; E.ctx.mode = "music";
+        import("./music-editor.js").then(({ openMusicStudio, defaultMusicDoc }) => {
+          if (!E.state.meta.music) { E.state.meta.music = defaultMusicDoc(); E.markDirty && E.markDirty(); }
+          openMusicStudio(E);
+          document.getElementById("musicStudio")?.addEventListener("music-toast", (e) => E.toast(e.detail));
+        }).catch((err) => E.toast("音乐工作台打不开：" + err.message, true));
+      }
       else if (m === "ui") { document.getElementById("uiScreen").classList.add("show"); E.ctx.mode = "ui"; document.getElementById("uiPalette")?.classList.add("show"); if (E.renderUiEditor) E.renderUiEditor(); }
       else if (m === "player") {
         // 官方是「一个弹窗 + 左栏三节」，不是一个孤立属性遮罩。

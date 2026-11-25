@@ -47,7 +47,7 @@ export function wirePalette(E) {
   function commands() {
     const out = [];
     const g = (group, title, hint, run) => out.push({ group, title, hint, run });
-    for (const [key, zh] of [["build", "搭建"], ["model", "模型"], ["script", "脚本"], ["blocks", "积木"], ["ui", "界面"], ["store", "商城"], ["player", "玩家"], ["pack", "代码包"]]) {
+    for (const [key, zh] of [["build", "搭建"], ["model", "模型"], ["script", "脚本"], ["blocks", "积木"], ["music", "音乐"], ["ui", "界面"], ["store", "商城"], ["player", "玩家"], ["pack", "代码包"]]) {
       g("切换工作区", `去「${zh}」`, "顶部菜单", click(`.mtab[data-menu="${key}"]`));
     }
     for (const b of document.querySelectorAll("#editToolbar .ft[data-tool]")) {
@@ -102,6 +102,7 @@ export function wirePalette(E) {
     g("脚本编辑", "聚焦资源管理器", "Ctrl+Shift+E", () => { toScript(); E.ideFocusFiles?.(); });
     g("积木", "去积木编辑器", "拼块写玩法", click('.mtab[data-menu="blocks"]'));
     g("积木", "把积木出码写进 blocks.js", "右边那栏就是 JS", () => { document.getElementById("bsWrite")?.click(); });
+    g("音乐", "去音乐工作台", "钢琴卷帘与实时合成", click('.mtab[data-menu="music"]'));
     g("帮助与设置", "设置", "", click("#btnSettings"));
     g("帮助与设置", "游玩手册", "", click("#btnManual"));
     g("帮助与设置", "世界库", "", click("#btnWorlds"));

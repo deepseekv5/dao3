@@ -179,13 +179,13 @@ await S.evaluate(`(() => { const b = [...document.querySelectorAll(".cm-kind")].
 await sleep(1500);
 const feed = await S.evaluate(`(() => {
   const cards = [...document.querySelectorAll(".cm-card")];
-  return JSON.stringify({ n: cards.length, titles: cards.map((c) => (c.querySelector(".cm-t") || {}).textContent),
+  return JSON.stringify({ n: cards.length, titles: cards.map((c) => (c.querySelector(".cm-title") || {}).textContent),
     badges: cards.map((c) => (c.querySelector(".cm-badge") || {}).textContent) });
 })()`);
 const F1 = JSON.parse(feed);
 ok("切到皮肤之后只列皮肤卡", F1.n > 0 && F1.badges.every((b) => b === "皮肤") && F1.titles.some((t) => t && t.includes(RUN)),
   JSON.stringify(F1).slice(0, 220));
-await S.evaluate(`(() => { const c = [...document.querySelectorAll(".cm-card")].find((x) => (x.querySelector(".cm-t")||{}).textContent.includes(${JSON.stringify(RUN)})); c && c.click(); return 1; })()`);
+await S.evaluate(`(() => { const c = [...document.querySelectorAll(".cm-card")].find((x) => (x.querySelector(".cm-title")||{}).textContent?.includes(${JSON.stringify(RUN)})); c && c.click(); return 1; })()`);
 await sleep(1600);
 const detail = await S.evaluate(`(() => {
   const b = document.getElementById("cmApply");

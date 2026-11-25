@@ -100,6 +100,7 @@ function enterPlay() {
     const el = document.getElementById(id);
     if (el && el.classList.contains("show")) { el.classList.remove("show"); closedFs = true; }
   }
+  if (window.__musicStudio) { try { window.__musicStudio.close(); closedFs = true; } catch { } }
   // 玩家设置、地图尺寸这类浮层同样是 .modal.show，不关掉就会糊在运行画面上
   for (const el of document.querySelectorAll(".modal.show")) { el.classList.remove("show"); closedFs = true; }
   if (closedFs) {
@@ -121,6 +122,13 @@ function enterPlay() {
   game.spawnPoint = state.meta.spawnPoint || game.spawnPoint;
   game.gameRules = Object.assign({}, game.gameRules, state.meta.gameRules || {});
   game.start({ scripts: state.scripts || [], assets, player: migratePlayerMeta(state.meta.player) });
+  try { window.__musicPlayback?.dispose(); } catch { }
+  if (state.meta.music && state.meta.music.bgm) {
+    import("./music-synth.js").then((m) => {
+      window.__musicPlayback = m.createMusicPlayer(state.meta.music);
+      window.__musicPlayback.play();
+    }).catch(() => { });
+  }
   const hint = document.getElementById("gameHint");
   if (hint) {
     import("./playshell.js").then((m) => { hint.textContent = m.hintText(); });
@@ -132,6 +140,8 @@ function enterPlay() {
   }, 400);
 }
 function stopPlay() {
+  try { window.__musicPlayback?.dispose(); } catch { }
+  window.__musicPlayback = null;
   if (!game) return;
   if (game._errFlush) { clearInterval(game._errFlush); game._errFlush = null; }
   game.stop();

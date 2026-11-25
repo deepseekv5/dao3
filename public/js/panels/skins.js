@@ -27,7 +27,7 @@ const PART_SLOTS = {
   legL: ["leftUpperLeg", "leftLowerLeg", "leftFoot"],
   legR: ["rightUpperLeg", "rightLowerLeg", "rightFoot"],
 };
-const DEFAULT_COLORS = { head: "#ffd7b0", body: "#c9714f", armL: "#c9714f", armR: "#c9714f", legL: "#6b625a", legR: "#524a44" };
+const DEFAULT_COLORS = { head: "#e7b98f", body: "#d5a24a", armL: "#d5a24a", armR: "#d5a24a", legL: "#2b3440", legR: "#222b36" };
 const SORTS = [["edited", "最近编辑"], ["created", "创建时间"], ["name", "名称"]];
 
 // 预览图渲染一次就缓存：卡片可能几十张，每次刷新都重建一遍人偶会把主线程吃干净
@@ -205,6 +205,7 @@ function renderSkinPanel(ctx, skins) {
     // 回 VOXA 编辑只对从 VOXA 来的作品有意义：没有 src 就不知道开哪一份，
     // 摆一个点了只会报"模型库里没有"的按钮，比不给这个按钮更糟。
     if (s.src) entries.push(["在 VOXA 里编辑", () => { location.href = "/voxa?model=" + encodeURIComponent(s.src); }]);
+    if (s.kind !== "rig") entries.push(["编辑皮肤", () => editSkin(E, skins, s, refresh, notify)]);
     entries.push(["发布到皮肤社区", async () => {
       const c = await coverFor(s);
       import("../publish-skin.js").then((m) => m.openSkinPublishDialog(Object.assign({}, s, { cover: c }), notify));
@@ -314,27 +315,40 @@ function uploadSkinTexture(E, skins, refresh, notify) {
 /* ------------------------------ 创建 / 重命名 ------------------------------ */
 function createSkin(E, skins, refresh, notify) {
   const colors = Object.assign({}, DEFAULT_COLORS, colorsFromPlayer(E) || {});
-  formDialog({
-    title: "创建皮肤",
-    fields: [{ key: "name", label: "皮肤名称", value: uniqueName(skins, "新皮肤"), placeholder: "例如：屑坤哥" }].concat(
-      PARTS.map(([k, t]) => ({ key: k, label: t, type: "color", value: colors[k] }))),
-    live: (vals) => previewFor(vals),
-    onOk: (vals) => {
-      const name = String(vals.name || "").trim();
-      if (!name) { notify("皮肤名称不能为空"); return false; }
-      const skin = makeSkin(uniqueName(skins, name), PARTS.reduce((o, [k]) => (o[k] = vals[k], o), {}));
-      skins.push(skin);
-      touch(skin);
-      E.markDirty && E.markDirty();
-      notify(`已创建「${skin.name}」`);
-      refresh();
-    },
-  });
+  const rec = makeSkin(uniqueName(skins, "新皮肤"), colors);
+  editSkin(E, skins, rec, refresh, notify, true);
 }
 
-function previewFor(vals) {
-  const skin = { name: "", skin: PARTS.reduce((o, [k]) => (o[k] = vals[k], o), {}) };
-  return h("img", { class: "pm-form-preview", src: previewOf(skin), alt: "" });
+function editSkin(E, skins, rec, refresh, notify, isNew = false) {
+  import("../skin-editor.js").then(({ openSkinStudio }) => {
+    const studio = openSkinStudio({
+      skin: {
+        skin: rec.skin.head, shirt: rec.skin.body, pants: rec.skin.legL,
+        hair: rec.skin.hair || "#2a211d", shoe: rec.skin.shoe || "#eee9df",
+        texture: rec.texture, body: rec.body,
+      },
+      name: rec.name,
+      onSave: async ({ skin }) => {
+        rec.name = skin.name;
+        rec.skin = { head: skin.skin, body: skin.shirt, armL: skin.shirt, armR: skin.shirt, legL: skin.pants, legR: skin.pants };
+        rec.body = skin.body;
+        if (skin.texture) rec.texture = skin.texture; else delete rec.texture;
+        rec.edited = Date.now();
+        if (isNew) skins.push(rec);
+        applySkin(E, rec, notify);
+        E.markDirty && E.markDirty();
+        studio.close(); refresh();
+      },
+      onPublish: async (skin) => {
+        const m = await import("../publish-skin.js");
+        m.openSkinPublishDialog(Object.assign({}, rec, {
+          name: skin.name, skin: { head: skin.skin, body: skin.shirt, armL: skin.shirt, armR: skin.shirt, legL: skin.pants, legR: skin.pants },
+          texture: skin.texture,
+        }), notify);
+      },
+    });
+    studio.host.addEventListener("studio-toast", (e) => notify(e.detail, true));
+  }).catch((e) => notify("皮肤工作台打不开：" + e.message, true));
 }
 
 function renameSkin(E, skins, s, refresh, notify) {
