@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>老攸元宇宙 · 本地体素元宇宙</title>
+<title>老攸元宇宙（dao3复刻）· 本地体素元宇宙</title>
 <meta name="description" content="dao3.fun（神奇代码岛）编辑器与运行时的本地独立兼容实现：官方 GameAPI 语义、64ms 定步长物理（15.625 tick/秒）、383 种方块、VOXA 体素建模、项目包导入导出。零第三方依赖，291 处真实浏览器断言。"/>
 <meta name="theme-color" content="#0c0c0d"/>
-<meta property="og:title" content="老攸元宇宙"/>
+<meta property="og:title" content="老攸元宇宙（dao3复刻）"/>
 <meta property="og:description" content="官方导出的地图能打开，官方写法的脚本能跑。零依赖本地运行，291 处真实浏览器断言把守。"/>
-<meta property="og:image" content="img/editor-run.png"/>
+<meta property="og:image" content="img/editor-build.png"/>
 <meta property="og:type" content="website"/>
 <link rel="icon" type="image/svg+xml" href="img/laoyou.svg"/>
 <link rel="stylesheet" href="site.css"/>
@@ -18,7 +18,7 @@
 <header class="nav">
   <a class="brand" href="./">
     <img src="img/laoyou.svg" width="22" height="22" alt=""/>
-    <span><b>老攸元宇宙</b><i>本地体素元宇宙</i></span>
+    <span><b>老攸元宇宙<em>（dao3复刻）</em></b><i>本地体素元宇宙</i></span>
   </a>
   <nav class="links">
     <a href="https://deepseekv5.github.io/dao3play/" class="play-link">在线体验</a>
@@ -47,38 +47,35 @@ if (!/github\.io$/i.test(location.hostname)) { const a = document.querySelector(
 <!-- ── 概览 ─────────────────────────────────────────────── -->
 <section class="hero">
   <div class="hero-l">
-    <p class="kicker">老攸元宇宙 · 创作 + 社区 + 本地运行 · 零第三方依赖</p>
-    <h1>自己造的地图能发布<br/>别人发的地图<span>能跑</span></h1>
+    <p class="kicker">LAOYOU METAVERSE · 本地体素元宇宙</p>
+    <h1>创作、游玩、连接。<br/><span>都在你的机器上。</span></h1>
     <p class="lede">
-      编辑器、运行时、VOXA 建模与一套真实社区（账号 / 好友 / 关注 / 评论）跑在同一台机器上。
-      引擎接口层是对 dao3.fun（神奇代码岛）编辑器与运行时的独立兼容实现：代码全部在本仓库自行编写，
-      依据官方<b>公开</b>的文档与类型声明做到<b>接口兼容</b>——不是复刻源码，也没有源码。
-      地图与 Unity 侧 <code>.gz</code> 格式互通，官方导出的 <code>.zip</code> 项目包可直接打开继续做。
+      地图编辑、VOXA 建模、脚本、皮肤与音乐工作台、真实社区和同图联机，跑在同一台电脑里。
+      数据留在本机，运行时零第三方依赖；接口层按官方公开文档与类型声明做独立兼容实现。
     </p>
     <div class="inst">
       <code><b>macOS / Linux</b>  ./run.sh</code>
       <code><b>Windows</b>  双击 启动-Windows.bat</code>
     </div>
-    <p class="req">只需要 Node 18+，<b>不需要 npm install</b>——运行时只用 Node 内置模块。</p>
+    <p class="req">只需要 Node 18+，<b>不需要 npm install</b>。</p>
     <div class="cta">
-      <a class="btn primary" href="https://deepseekv5.github.io/dao3play/" rel="noopener">在线体验 <small>不下载 · 手机可玩 · 官方地图</small></a>
-      <a class="btn" href="#download">下载便携包 <small>约 12 MB · 免安装</small></a>
+      <a class="btn primary" href="https://deepseekv5.github.io/dao3play/" rel="noopener">在线体验 <small>不下载 · 手机可玩</small></a>
+      <a class="btn" href="#download">下载发行版 <small>约 12 MB · 免安装</small></a>
       <a class="btn" href="https://github.com/deepseekv5/dao3" rel="noopener">查看源码 <small>Apache-2.0</small></a>
     </div>
   </div>
   <figure class="hero-r">
-    <img src="img/editor-run.png" alt="运行模式：第三人称角色站在官方赛车模板赛道上，左上地图名，上方居中的暂停/单帧/tick 读数，右上手册与退出，画面中央只有准星与提示" width="1440" height="900" loading="eager"/>
-    <figcaption>运行模式实拍 · 64ms 定步长物理（15.625 tick/秒） · <code>X 115.0 Y 44.9 Z 105.0 · tick</code></figcaption>
+    <img src="img/editor-build.png" alt="老攸元宇宙体素编辑器搭建模式实拍" width="1440" height="900" loading="eager"/>
+    <figcaption>真实编辑器界面 · 383 种方块 · 世界、脚本、模型与社区共用一份项目</figcaption>
   </figure>
 </section>
 
 <!-- ── 数字 ─────────────────────────────────────────────── -->
 <section class="stats" id="proof">
-  <div class="st"><b>329<small>/329</small></b><em>官方 API 成员</em><span>逐个在真实运行时探面，类型错也算不通过</span></div>
-  <div class="st"><b>175</b><em>回归断言</em><span>全部驱动真浏览器：内核契约 77 · 端到端 39 · 体验版 38 · 发布物 21</span></div>
-  <div class="st"><b>383</b><em>方块种类</em><span>含玩法语义：弹跳 / 传送 / 流体 / 空气墙</span></div>
-  <div class="st"><b>0.22</b><em>格 / tick</em><span>官方行走单位制，按真实 tick 数量测</span></div>
-  <div class="st"><b>0</b><em>运行时依赖</em><span>只用 node:http / fs / path / zlib</span></div>
+  <div class="st"><b>383</b><em>方块种类</em><span>弹跳、传送、流体与空气墙都有运行时语义</span></div>
+  <div class="st"><b>256³</b><em>世界尺寸</em><span>区块按 16³ 合批，编辑与游玩共用一份状态</span></div>
+  <div class="st"><b>0</b><em>运行时依赖</em><span>只用 Node 内置模块与仓库内 vendored 代码</span></div>
+  <div class="st"><b>3</b><em>交付平台</em><span>便携包 zip、macOS dmg、Windows exe</span></div>
 </section>
 
 <!-- ── 界面实拍 ─────────────────────────────────────────── -->
@@ -248,8 +245,8 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
     <a class="dlc" href="https://github.com/deepseekv5/dao3/releases/latest/download/DAO3-Setup-{{VER}}.exe">
       <b>Windows 安装程序</b><span>Inno Setup 6 在 windows-latest 上编译，含开始菜单与卸载项</span><em>.exe →</em>
     </a>
-    <a class="dlc" href="https://github.com/deepseekv5/dao3/pkgs/npm/dao3-editor-clone">
-      <b>GitHub Packages</b><span><code>npx @deepseekv5/dao3-editor-clone</code> 直接起服务</span><em>npm →</em>
+    <a class="dlc" href="changelog.html">
+      <b>更新日志</b><span>每个版本改了什么、修了什么现象、素材分发策略为什么变</span><em>查看 →</em>
     </a>
   </div>
   <div class="dl" style="margin-top:10px">
@@ -308,7 +305,7 @@ cd dao3 &amp;&amp; node start.mjs</code></pre>
 
 <footer class="foot">
   <div>
-    <b>老攸元宇宙</b>
+    <b>老攸元宇宙（dao3复刻）</b>
     <span>独立兼容实现 · 代码 Apache-2.0 · 素材版权归 box3lab 及其权利人所有</span>
   </div>
   <div class="fl">

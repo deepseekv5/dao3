@@ -3,163 +3,185 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>老攸元宇宙 · LAOYOU METAVERSE</title>
-<meta name="description" content="老攸元宇宙：一套跑在自己机器上的体素元宇宙。编辑器、运行时、VOXA 建模负责创作，社区负责发布、好友、关注与评论；同图联机让造图和玩图的人待在同一个世界里。"/>
-<meta name="theme-color" content="#131211"/>
-<meta name="color-scheme" content="dark"/>
+<title>老攸元宇宙（dao3复刻）· 创作、游玩、连接</title>
+<meta name="description" content="老攸元宇宙（dao3复刻）：跑在自己机器上的体素创作工具。地图编辑、VOXA 建模、脚本、皮肤与音乐工作台、真实社区和同图联机，数据不出机器。"/>
+<meta name="theme-color" content="#f5f5f7"/>
+<meta name="color-scheme" content="light"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="老攸元宇宙"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="老攸元宇宙（dao3复刻）"/>
 <meta property="og:type" content="website"/>
-<meta property="og:site_name" content="老攸元宇宙"/>
-<meta property="og:title" content="老攸元宇宙 · LAOYOU METAVERSE"/>
-<meta property="og:description" content="老攸元宇宙：一套跑在自己机器上的体素元宇宙。编辑器、运行时、VOXA 建模负责创作，社区负责发布、好友、关注与评论；同图联机让造图和玩图的人待在同一个世界里。"/>
-<meta property="og:locale" content="zh_CN"/>
-<meta name="twitter:card" content="summary"/>
+<meta property="og:site_name" content="老攸元宇宙（dao3复刻）"/>
+<meta property="og:title" content="老攸元宇宙（dao3复刻）· 创作、游玩、连接"/>
+<meta property="og:description" content="一套跑在自己机器上的体素创作工具。创作、发布、游玩与连接，数据不出机器。"/>
+<meta property="og:image" content="/img/site/creator.png"/>
 <link rel="stylesheet" href="/css/disclaimer.css"/>
 <link rel="icon" type="image/svg+xml" href="/img/laoyou.svg"/>
 <link rel="stylesheet" href="/css/tokens.css"/>
 <link rel="stylesheet" href="/css/site.css"/>
-<link rel="stylesheet" href="/css/arcadia.css">
 </head>
-<body class="sp lm-page">
+<body class="sp apple-site">
 
 <header class="sp-top">
-  <a class="sp-brand" href="/"><img src="/img/laoyou.svg" width="22" height="22" alt=""/><span>老攸元宇宙<b>LAOYOU METAVERSE</b></span></a>
-  <nav class="sp-nav">
-    <a href="#play">玩</a><a href="#make">造</a><a href="#social">社区</a><a href="#start">跑起来</a><a href="/docs/">文档</a><a href="#limits">边界</a>
+  <a class="sp-brand" href="/" aria-label="老攸元宇宙首页">
+    <img src="/img/laoyou.svg" width="25" height="25" alt=""/>
+    <span>老攸元宇宙<em>（dao3复刻）</em></span>
+  </a>
+  <nav class="sp-nav" aria-label="主导航">
+    <a href="#make">创作</a><a href="#play">游玩</a><a href="#social">社区</a><a href="#local">本地</a><a href="#start">开始</a><a href="/docs/">文档</a>
   </nav>
-  <a class="sp-open" href="/community">进社区广场 →</a>
+  <a class="sp-open" href="/">打开创作台</a>
 </header>
 
 <main>
-
-<section id="what">
-  <h1>造一张图，发出去，别人点开就能玩</h1>
-  <p class="say"><b>老攸元宇宙</b>把<b>造</b>、<b>发</b>、<b>处</b>接在一起：体素编辑器与 VOXA 建模负责造，
-  一键发布成不可变快照负责发，账号、好友、关注、评论负责处。跑在你自己的机器上——
-  账号、地图、评论全落在本机磁盘，没有远端服务器。</p>
-
-  <!-- 展厅直接读社区广场的实时数据：官网首屏挂一张写死的截图，
-       等于替所有作者决定"我们的产品的样子"是哪一张图。 -->
-  <div id="spShowcase" class="showcase" aria-label="社区地图"></div>
-  <div class="sc-foot">
-    <span id="scCount" class="sc-count"></span>
-    <a class="sc-more" href="/community">进广场 →</a>
-  </div>
-</section>
-
-<section id="play" class="alt">
-  <h2>玩</h2>
-  <div class="cols">
-    <div>
-      <h3>点开就跑</h3>
-      <p>详情页的「开始游玩」把那份快照取回本地，跑的是完整引擎——不是视频，也不是截图。</p>
-      <h3>同图联机</h3>
-      <p>同一张图里的人互相能看见、能打字。走本机 WebSocket 房间，20 人上限，聊天有冷却和内容审查。</p>
-      <h3>键位与触屏</h3>
-      <p>桌面键鼠、手机摇杆两套都可用；屏幕按键能自己摆放，位置记在这台设备上。</p>
+  <section class="sp-hero" id="top">
+    <div class="sp-hero-copy" data-reveal>
+      <p class="sp-eyebrow">LAOYOU METAVERSE · 3.9.19</p>
+      <h1>创作、游玩、连接。<br/><span>都在你的机器上。</span></h1>
+      <p class="sp-lede">从第一块体素，到一套能穿的衣服、一段自己写的音乐，再到别人点开就能玩的世界。老攸元宇宙把创作工具和真实社区放在同一台电脑里。</p>
+      <div class="sp-ctas">
+        <a class="sp-btn primary" href="/">开始创作</a>
+        <a class="sp-btn" href="/community">探索社区</a>
+      </div>
+      <p class="sp-note">零第三方运行时依赖 · 不需要 npm install · 数据留在本机</p>
     </div>
-    <div>
-      <h3>会游泳</h3>
-      <p>进水自动切游泳，按住空格上浮、松手缓沉，头露出来就漂平。水下按流体自己的颜色染色。</p>
-      <h3>画质分档</h3>
-      <p>省电到极致五档，一个按钮解决。卡了就降一档，档位是这台机器的偏好，不写进地图。</p>
-      <h3>作品是快照</h3>
-      <p>发布时体素、脚本、实体、模型、贴图整体复制一份。之后你再怎么改，别人玩的仍是发布那一刻的版本。</p>
+    <figure class="sp-hero-visual" data-reveal>
+      <div class="sp-windowbar"><i></i><i></i><i></i><span>老攸元宇宙 · 创作台</span></div>
+      <img src="/img/site/creator.png" alt="老攸元宇宙体素编辑器实拍" width="1440" height="900" fetchpriority="high"/>
+      <figcaption>真实编辑器界面。不是演示视频，不是概念图。</figcaption>
+    </figure>
+  </section>
+
+  <section class="sp-metrics" aria-label="产品事实">
+    <div><b>383</b><span>种方块</span></div>
+    <div><b>256³</b><span>世界尺寸</span></div>
+    <div><b>0</b><span>运行时依赖</span></div>
+    <div><b>100%</b><span>数据在本机</span></div>
+  </section>
+
+  <section class="sp-section" id="make">
+    <header class="sp-section-head" data-reveal>
+      <p class="sp-eyebrow">创作</p>
+      <h2>一台机器。<br/>一整套创作工具。</h2>
+      <p>地图、模型、脚本、皮肤和音乐不再是五个孤立软件。它们共享同一份项目，也共享同一套运行结果。</p>
+    </header>
+    <div class="sp-bento">
+      <article class="sp-tile wide creator" data-reveal>
+        <div class="sp-tile-copy"><span class="sp-tag">ARENA</span><h3>体素编辑器</h3><p>383 种方块、选区变换、体素笔刷、实体与区域。你改的每一格，运行时立刻就能读。</p><a href="/">打开编辑器 →</a></div>
+        <img src="/img/site/creator.png" alt="体素编辑器" loading="lazy"/>
+      </article>
+      <article class="sp-tile script" data-reveal>
+        <div class="sp-tile-copy"><span class="sp-tag">CODE</span><h3>脚本与积木</h3><p>VS Code 式脚本工作区，和一套真正能拖拽、能出码的低代码积木编辑器。</p><a href="/">写点玩法 →</a></div>
+        <img src="/img/site/script.png" alt="脚本工作区" loading="lazy"/>
+      </article>
+      <article class="sp-tile voxa" data-reveal>
+        <div class="sp-tile-copy"><span class="sp-tag">VOXA</span><h3>模型与动画</h3><p>部件、骨骼、动画、物理盒与换肤，导出 .vox 或 .glb。</p><a href="/voxa">打开 VOXA →</a></div>
+        <img src="/img/site/voxa.png" alt="VOXA 建模器" loading="lazy"/>
+      </article>
+      <article class="sp-tile music" data-reveal>
+        <div class="sp-tile-copy"><span class="sp-tag">MUSIC</span><h3>音乐工作台</h3><p>多轨钢琴卷帘、七种实时合成乐器。写一段旋律，直接成为世界的背景音乐。</p><a href="/">去编曲 →</a></div>
+        <img src="/img/site/music.png" alt="音乐工作台" loading="lazy"/>
+      </article>
+      <article class="sp-tile skin" data-reveal>
+        <div class="sp-tile-copy"><span class="sp-tag">SKIN</span><h3>皮肤工作台</h3><p>64×64 像素绘制、实时 3D 试穿、导入导出。你画的就是进图后别人看到的样子。</p><a href="/community">去试穿 →</a></div>
+        <img src="/img/site/skin.png" alt="皮肤工作台" loading="lazy"/>
+      </article>
     </div>
-  </div>
-</section>
+  </section>
 
-<section id="make">
-  <h2>造</h2>
-  <dl class="facts">
-    <div><dt>编辑器</dt><dd>383 种方块、256³ 世界、固定步长运行时；区块按 16³ 合批，四个网格桶</dd></div>
-    <div><dt>VOXA</dt><dd>部件、骨骼、动画、物理盒、换肤一整套，可导 <code>.vox</code> 与 <code>.glb</code></dd></div>
-    <div><dt>脚本</dt><dd>按官方 <code>GameAPI.d.ts</code> 的成员与语义实现，单位是「格 / tick」</dd></div>
-    <div><dt>AI</dt><dd>写玩法脚本、生成体素模型、报错回喂；模型与密钥你自己填</dd></div>
-  </dl>
-</section>
+  <section class="sp-dark" id="play">
+    <div class="sp-dark-inner">
+      <div class="sp-dark-copy" data-reveal>
+        <p class="sp-eyebrow">游玩</p>
+        <h2>不是截图。<br/>是真的能跑。</h2>
+        <p>发布的是完整快照：体素、脚本、实体、模型、贴图和音乐一起冻结。别人打开时，跑的是发布那一刻的世界。</p>
+        <ul class="sp-checklist">
+          <li>桌面键鼠与手机触屏</li>
+          <li>同图联机、实时聊天与房间状态</li>
+          <li>游泳、飞行、第一人称与画质分档</li>
+          <li>作品版本、收藏、评论与作者关系</li>
+        </ul>
+        <a class="sp-btn light" href="/community">找一张图玩玩 →</a>
+      </div>
+      <figure class="sp-dark-visual" data-reveal><img src="/img/site/community.png" alt="社区展厅实拍" loading="lazy"/><figcaption>本机社区与真实作品展厅</figcaption></figure>
+    </div>
+  </section>
 
-<section id="social" class="alt">
-  <h2>社区不是装饰</h2>
-  <p>发布这件事最容易做成假的：存个标题、写死几个"别人"的名字、评论框只往 localStorage 里塞。
-  这里服务端真的有一组账号和一组关系边，浏览器里两个隔离会话能互相看见对方做的事。</p>
-  <p class="note">关注是单向边，好友要双向确认。非作者改不了别人的发布；路人删不掉别人的评论；
-  未登录能读但写不进去。这些由 <code>test/community.test.mjs</code> 逐条打，不是文档承诺。</p>
-</section>
+  <section class="sp-section showcase-sec" id="social">
+    <header class="sp-section-head" data-reveal>
+      <p class="sp-eyebrow">社区</p>
+      <h2>发出去。<br/>就真的有人能打开。</h2>
+      <p>账号、发布、关注、好友、评论和联机房间都落在本机服务端。没有写死的“别人”，也没有只亮起来的按钮。</p>
+    </header>
+    <div id="spShowcase" class="showcase" aria-label="社区地图"></div>
+    <div class="sc-foot"><span id="scCount" class="sc-count"></span><a class="sc-more" href="/community">进入社区广场 →</a></div>
+  </section>
 
-<section id="proof">
-  <h2>怎么算验证过</h2>
-  <p>不看编译过不过。用浏览器驱动真实页面，读像素和状态数值：按住 W 一秒走了多远、
-  关掉模型层之后画面像素差多少、两个隔离会话互相能不能看见对方的评论。
-  编译通过但面板宽度是 0，不算做完。</p>
-</section>
+  <section class="sp-section local-sec" id="local">
+    <header class="sp-section-head" data-reveal>
+      <p class="sp-eyebrow">本地优先</p>
+      <h2>你的世界，<br/>不必交给云端。</h2>
+    </header>
+    <div class="sp-local-grid">
+      <article data-reveal><b>01</b><h3>数据留在本机</h3><p>世界、账号、发布、评论与设置都写在这台电脑的磁盘上。关闭页面不会把作品交给远端。</p></article>
+      <article data-reveal><b>02</b><h3>零依赖启动</h3><p>Node 18+ 即可。首次自动构建方块图集，随后一条命令启动；不需要 npm install。</p></article>
+      <article data-reveal><b>03</b><h3>接口边界清楚</h3><p>不接官方平台服务，也不冒充官方产品。兼容的是公开文档与数据格式，不是官方源代码。</p></article>
+    </div>
+  </section>
 
-<section id="start" class="alt">
-  <h2>跑起来</h2>
-  <p>Node 18 以上，零第三方依赖。一条命令：首次自动构建方块图集，然后清掉旧实例、挑空闲端口起服务。</p>
-  <pre>./run.sh</pre>
-  <p>Windows 双击 <code>启动-Windows.bat</code>。不需要 <code>npm install</code>。</p>
-</section>
+  <section class="sp-start" id="start">
+    <div class="sp-start-inner" data-reveal>
+      <p class="sp-eyebrow">开始</p>
+      <h2>一行命令。<br/>进入你的世界。</h2>
+      <p>macOS / Linux 运行 <code>./run.sh</code>；Windows 双击 <code>启动-Windows.bat</code>。</p>
+      <div class="sp-ctas"><a class="sp-btn primary" href="/">打开创作台</a><a class="sp-btn" href="https://github.com/deepseekv5/dao3/releases/latest" rel="noopener">下载发行版</a><a class="sp-btn" href="/docs/">阅读文档</a></div>
+    </div>
+  </section>
 
-<details id="compat" class="fine">
-  <summary>接口兼容与实现边界</summary>
-  <p>引擎接口这一层是<b>照着 dao3.fun（神奇代码岛）的公开资料做的兼容实现</b>：
-  参照 <code>box3-product-document</code>、<code>GameAPI.d.ts</code> 与 <code>docs.dao3.fun</code>，
-  代码全部自己写，没有复制、反编译或分发任何官方源代码。目的是读得懂官方导出的地图、跑得动官方写法的脚本。</p>
-  <table>
-    <thead><tr><th>对象</th><th>格式或接口</th><th>情况</th></tr></thead>
-    <tbody>
-      <tr><td>官方地图包</td><td><code>.zip</code> — code / project / build / mesh / audio</td><td class="ok">导入、导出都通</td></tr>
-      <tr><td>Unity 侧地图</td><td><code>.gz</code> — gzip(JSON VoxelPayload)</td><td class="ok">双向</td></tr>
-      <tr><td>体素模型</td><td><code>.vox</code> MagicaVoxel 二进制块</td><td class="ok">导入、导出</td></tr>
-      <tr><td>模型资产</td><td><code>.glb</code> / <code>.gltf</code>，官方 <code>mesh/*.vb</code> 按文件名解析</td><td class="ok">支持</td></tr>
-      <tr><td>玩法脚本</td><td>GameAPI.d.ts 的 World / Player / Entity / Voxels</td><td class="ok">对齐</td></tr>
-      <tr><td>方块行为</td><td>block-spec 的 velocity / fluid / mass / friction / anim</td><td class="ok">构建期合成</td></tr>
-      <tr><td>官方平台联机、商城、云存档</td><td>官方服务</td><td class="no">不接，也不打算接</td></tr>
-    </tbody>
-  </table>
-  <p>还没做完的：虚拟经济与交易、VOXA 的拖拽 gizmo 与蒙皮权重、官方体素分块的逐格比对（分块是私有二进制编码，没逆向出来）。</p>
-</details>
-
-<section id="limits" class="fine">
-  <h2>边界</h2>
-  <ul class="plain">
-    <li>不是官方产品，和 box3lab 没有任何隶属、授权或背书关系。页面上提到官方名称，只是为了说清楚接口兼容的对象是谁。</li>
-    <li>方块贴图、方块 ID 表、示例地图数据、模型和音频素材的著作权在 box3lab 和相应权利人手里。这个项目把它们放在本机，用途限于学习、技术研究和兼容性验证；确认授权前服务端不会把官方模型与音效发给前端。</li>
-    <li>代码部分你可以按自己的判断用。但要把带官方素材或官方地图数据的任何东西分发出去、公开镜像、或者长得像官方产品，请先取得权利人许可。</li>
-    <li>社区是<b>本机社区</b>：账号、发布与评论都存在这台机器上，不做公网注册、不做跨机同步，也不接任何官方平台接口。</li>
-  </ul>
-</section>
-
-<section class="sp-disc">
-  <h2>免责声明</h2>
-  <p>老攸元宇宙的引擎接口层是对 dao3.fun（神奇代码岛 / DAO3 Arena）编辑器与运行时的独立兼容实现。全部代码由本仓库自行编写，未复制、未反编译、未分发任何官方源代码；实现依据为官方公开发布的文档、类型声明与开源图集仓库，属于接口与数据格式层面的兼容，而非代码同源。方块贴图、方块 ID 表、地图数据、模型与音频素材的著作权归 box3lab 及其权利人所有，仅在本机用于学习、技术研究与兼容性验证，未经权利人许可不得用于商业分发、公开镜像或冒充官方产品。本项目与 box3lab / 神奇代码岛官方无任何隶属、授权或背书关系。</p>
-</section>
-
+  <section class="sp-section fine-sec" id="limits">
+    <details class="fine">
+      <summary>接口兼容与实现边界</summary>
+      <p>引擎接口层是对 dao3.fun（神奇代码岛）编辑器与运行时的独立兼容实现。依据公开文档、类型声明与开源图集仓库，代码自行编写；不复制、不反编译、不分发官方源代码。</p>
+      <table>
+        <thead><tr><th>对象</th><th>格式或接口</th><th>情况</th></tr></thead>
+        <tbody>
+          <tr><td>官方地图包</td><td><code>.zip</code> — code / project / build / mesh / audio</td><td class="ok">导入、导出</td></tr>
+          <tr><td>Unity 侧地图</td><td><code>.gz</code> — gzip(JSON VoxelPayload)</td><td class="ok">双向</td></tr>
+          <tr><td>体素模型</td><td><code>.vox</code> MagicaVoxel 二进制块</td><td class="ok">导入、导出</td></tr>
+          <tr><td>玩法脚本</td><td>GameAPI / ClientAPI</td><td class="ok">按公开类型声明对齐</td></tr>
+          <tr><td>官方平台联机、商城、云存档</td><td>官方服务</td><td class="no">不接，也不打算接</td></tr>
+        </tbody>
+      </table>
+      <p>已知边界包括虚拟经济与交易、部分高级蒙皮权重，以及官方私有体素分块的逐格还原。完整说明见文档与依赖清单。</p>
+    </details>
+    <details class="fine">
+      <summary>授权与免责声明</summary>
+      <p>老攸元宇宙与 box3lab / 神奇代码岛官方无任何隶属、授权或背书关系。方块贴图、方块 ID 表、地图数据、模型与音频素材的著作权归相应权利人；确认授权前，服务端不会把官方模型与音效发给前端。</p>
+      <p>代码部分可按仓库许可使用。带官方素材或官方地图数据的分发、公开镜像或商业用途，请先取得权利人许可。</p>
+    </details>
+  </section>
 </main>
 
 <footer class="sp-foot">
-  <span>老攸元宇宙 · 本地运行 · 数据不出机器</span>
-  <div><a href="/">创作台</a><a href="/community">社区</a><a href="/voxa">VOXA</a><a href="/docs/">文档</a><a href="#" data-disclaimer>免责声明</a></div>
+  <div><b>老攸元宇宙（dao3复刻）</b><span>本地运行 · 数据不出机器</span></div>
+  <nav><a href="/">创作台</a><a href="/community">社区</a><a href="/voxa">VOXA</a><a href="/docs/">文档</a><a href="https://github.com/deepseekv5/dao3" rel="noopener">GitHub</a><a href="#" data-disclaimer>免责声明</a></nav>
 </footer>
 
 <script type="module" src="/js/disclaimer.js"></script>
 <script type="module" src="/js/site-showcase.js"></script>
 <script type="module">
-// 导航里既有 #锚点 也有 /docs/ 这种真链接：把后者当选择器喂给 querySelector
-// 会直接抛 SyntaxError（整段高亮逻辑从此不跑）；而先 filter 再按原下标取 links[i]
-// 会让高亮跳到错误的项上。所以先把链接和它指向的小节配成对，再筛。
-const pairs = [...document.querySelectorAll(".sp-nav a")]
-  .map((a) => { const h = a.getAttribute("href") || ""; return { a, sec: h.startsWith("#") ? document.querySelector(h) : null }; })
-  .filter((p) => p.sec);
+const pairs = [...document.querySelectorAll(".sp-nav a")].map((a) => ({ a, sec: a.getAttribute("href")?.startsWith("#") ? document.querySelector(a.getAttribute("href")) : null })).filter((p) => p.sec);
 addEventListener("scroll", () => {
   const y = scrollY + innerHeight * .32;
   let cur = null;
   pairs.forEach((p) => { if (p.sec.offsetTop <= y) cur = p.a; });
   pairs.forEach((p) => p.a.classList.toggle("on", p.a === cur));
 }, { passive: true });
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (!reduced && "IntersectionObserver" in window) {
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: .12 });
+  document.querySelectorAll("[data-reveal]").forEach((el) => io.observe(el));
+} else document.querySelectorAll("[data-reveal]").forEach((el) => el.classList.add("in"));
 </script>
 </body>
 </html>

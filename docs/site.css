@@ -1,364 +1,111 @@
-/* site.css — 老攸元宇宙文档站。
-   与官网 public/css/site.css 同一套 token：暖石墨底、单一琥珀金强调、中文优先无衬线。
-   两个"官方"页面长得不像同一个产品，比不好看更糟。
-   取向：开发者文档站，暗色、密排、数据优先。不做大字报式落地页。 */
-/* 这份副本是故意的：docs/ 要单独发到 GitHub Pages，拿不到 public/css/tokens.css。
-   值必须与 public/css/tokens.css 一致——改那边记得改这里（两边不一致的直观结果就是
-   "文档站和用起来不像同一个产品"（以前这里是偏蓝的 #0c0c0d，应用是中性 #0d0c0b）。 */
+/* GitHub Pages：与官网一致的苹果式浅色产品语言。 */
 :root {
-  --primary: #e3a63c; --primary-hover: #f0bd5e; --primary-dim: rgba(227, 166, 60, .15);
-  --bg0: #0d0c0b; --bg1: #131211; --bg2: #181715; --bg3: #1f1d1b; --bg4: #292624;
-  --line: #2c2926; --line2: #3b3733;
-  --fg: #f2ede6; --fg2: #a9a199; --fg3: #736c65;
-  --ok: #6fbf8b; --warn: #d97a45; --bad: #d94f5f;
+  --primary: #06c; --primary-hover: #0077ed; --primary-dim: rgba(0,102,204,.09);
+  --bg0: #f5f5f7; --bg1: #fff; --bg2: #ececf0; --bg3: #e3e3e8; --bg4: #d8d8de;
+  --line: #d2d2d7; --line2: #b8b8bf;
+  --fg: #1d1d1f; --fg2: #5f6368; --fg3: #86868b;
+  --ok: #248a3d; --warn: #b25e09; --bad: #b42318;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
-  --font: MiSans, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
   --maxw: 1180px;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 76px; }
-body {
-  margin: 0; background: var(--bg0); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.7;
-  -webkit-font-smoothing: antialiased;
-
-}
+body { margin: 0; background: var(--bg0); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
 a { color: inherit; text-decoration: none; }
 code, pre { font-family: var(--mono); }
-/* 行内 code 里全是 cameraFreezedAxis、/api/world/<id>/asset 这类无空格长 token，
-   不给出断词点就会把整行顶出屏幕。等宽字体本身也更宽，手机上尤其明显。 */
 code { overflow-wrap: anywhere; word-break: break-word; }
 .doc-body a, .lede a, .note a { overflow-wrap: anywhere; }
-::selection { background: rgba(227, 166, 60, .3); }
+::selection { background: rgba(0,102,204,.18); color: var(--fg); }
+:focus-visible { outline: 3px solid rgba(0,102,204,.4); outline-offset: 3px; }
 
-/* ── 顶栏 ── */
-.nav {
-  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 22px;
-  height: 62px; padding: 0 26px; background: rgba(13, 12, 11, .9); backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--line);
-}
-.brand { display: flex; align-items: center; gap: 10px; }
-.brand svg { flex: 0 0 auto; }
-.brand b { display: block; font-size: 14.5px; font-weight: 700; letter-spacing: .2px; }
-.brand i { display: block; font-style: normal; font-size: 10.5px; color: var(--fg3); letter-spacing: .3px; }
-.links { display: flex; gap: 2px; margin-left: 8px; flex-wrap: wrap; }
-.links a { padding: 6px 11px; border-radius: 7px; font-size: 13px; color: var(--fg3); transition: .13s; }
-.links a:hover { color: var(--fg); background: rgba(255, 255, 255, .06); }
-.links a.on { color: var(--primary); background: var(--primary-dim); }
-/* 在线体验是本站唯一的"零成本动作"，导航里给它一个实心块 */
-.links a.play-link { color: #2a1d05; background: var(--primary); font-weight: 600; }
-.links a.play-link:hover { color: #2a1d05; background: var(--primary-hover); }
-.gh {
-  margin-left: auto; display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 13px; border-radius: 8px;
-  font-size: 12.5px; color: var(--fg2); background: var(--bg2); border: 1px solid var(--line); font-family: var(--mono);
-}
-.gh:hover { color: var(--fg); border-color: var(--line2); background: var(--bg4); }
+.nav { position: sticky; top: 0; z-index: 50; height: 52px; display: flex; align-items: center; gap: 22px; padding: 0 max(20px, calc((100vw - 1180px)/2));
+  background: rgba(245,245,247,.84); border-bottom: 1px solid rgba(0,0,0,.07); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
+.brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; }.brand img { display: block; }
+.brand b { display: block; font-size: 13.5px; font-weight: 650; letter-spacing: -.2px; }.brand b em { font-style: normal; font-weight: 450; color: var(--fg3); font-size: 10px; }.brand i { display: block; font-style: normal; font-size: 9.5px; color: var(--fg3); letter-spacing: .05em; }
+.links { display: flex; align-items: center; gap: 2px; margin: 0 auto; }.links a { padding: 6px 10px; border-radius: 999px; font-size: 12px; color: var(--fg3); transition: .2s; white-space: nowrap; }
+.links a:hover, .links a.on { color: var(--fg); background: rgba(0,0,0,.055); }.links a.play-link { color: #fff; background: var(--primary); font-weight: 600; }.links a.play-link:hover { background: var(--primary-hover); }
+.gh, .home { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 11.5px;
+  color: var(--fg2); background: var(--bg1); border: 1px solid var(--line); font-family: var(--mono); white-space: nowrap; }.gh:hover, .home:hover { color: var(--primary); border-color: var(--primary); }
+.home + .gh { margin-left: 0; }.home[hidden] { display: none; }
 
-main { max-width: var(--maxw); margin: 0 auto; padding: 0 26px 40px; }
-section { margin: 0 0 66px; }
+main { max-width: var(--maxw); margin: 0 auto; padding: 0 22px 50px; }
+section { margin: 0 0 92px; }
+.hero { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.05fr); gap: 44px; align-items: center; padding: 86px 0 54px; }
+.kicker { margin: 0 0 16px; color: var(--fg3); font-size: 10px; font-weight: 650; letter-spacing: .16em; text-transform: uppercase; }
+.hero h1 { margin: 0 0 20px; font-size: clamp(32px,3.35vw,46px); line-height: 1.1; font-weight: 700; letter-spacing: -.05em; }.hero h1 span { color: var(--fg3); }
+.lede { margin: 0 0 22px; color: var(--fg2); font-size: 16px; line-height: 1.7; }.lede b { color: var(--fg); font-weight: 600; }
+.lede code, .note code, .sub code, td code, p code { font-size: .88em; padding: 2px 5px; border-radius: 5px; background: rgba(0,0,0,.06); color: #004f9e; }
+.inst { display: flex; flex-direction: column; gap: 7px; margin: 0 0 11px; }.inst code { display: block; padding: 10px 13px; border-radius: 10px; background: var(--bg1); border: 1px solid var(--line); font-size: 12px; color: var(--fg); }
+.inst code b { color: var(--fg3); font-weight: 600; margin-right: 8px; font-family: var(--font); font-size: 10.5px; }.req { margin: 0 0 22px; font-size: 11.5px; color: var(--fg3); }.req b { color: var(--fg2); }
+.cta { display: flex; gap: 9px; flex-wrap: wrap; }.btn { display: inline-flex; flex-direction: column; gap: 1px; min-height: 42px; justify-content: center; padding: 9px 17px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; background: var(--bg1); border: 1px solid var(--line); color: var(--fg); transition: transform .2s, background .2s, border-color .2s; }
+.btn small { font-size: 9.5px; font-weight: 400; color: var(--fg3); font-family: var(--mono); }.btn:hover { background: var(--bg2); border-color: var(--line2); transform: translateY(-1px); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }.btn.primary small { color: rgba(255,255,255,.7); }.btn.primary:hover { background: var(--primary-hover); }
+.hero-r { margin: 0; padding: 9px; border-radius: 24px; background: var(--bg1); box-shadow: 0 28px 70px rgba(0,0,0,.13); }.hero-r img { display: block; width: 100%; border-radius: 17px; }
+.hero-r figcaption { margin-top: 10px; color: var(--fg3); font: 10px/1.5 var(--mono); text-align: center; }
 
-/* ── 概览 ── */
-.hero { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); gap: 40px; align-items: center; padding: 54px 0 44px; }
-.kicker { margin: 0 0 14px; font-family: var(--mono); font-size: 11px; letter-spacing: 1.1px; color: var(--primary); text-transform: uppercase; }
-.hero h1 { margin: 0 0 18px; font-size: clamp(28px, 3.6vw, 41px); line-height: 1.22; font-weight: 800; letter-spacing: -.6px; }
-.hero h1 span { color: var(--primary); }
-.lede { margin: 0 0 20px; color: var(--fg2); font-size: 14.5px; line-height: 1.85; }
-.lede b { color: var(--fg); font-weight: 600; }
-.lede code, .note code, .sub code, td code, p code {
-  font-size: .89em; padding: 1px 5px; border-radius: 5px; background: rgba(255, 255, 255, .07); color: #ffc489;
-}
-.inst { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; }
-.inst code {
-  display: block; padding: 9px 13px; border-radius: 8px; background: var(--bg1); border: 1px solid var(--line);
-  font-size: 12.5px; color: var(--fg); letter-spacing: .1px;
-}
-.inst code b { color: var(--fg3); font-weight: 600; margin-right: 8px; font-family: var(--font); font-size: 11.5px; }
-.req { margin: 0 0 20px; font-size: 12.5px; color: var(--fg3); }
-.req b { color: var(--fg2); }
-.cta { display: flex; gap: 10px; flex-wrap: wrap; }
-.btn {
-  display: inline-flex; flex-direction: column; gap: 1px; padding: 10px 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
-  background: var(--bg2); border: 1px solid var(--line2); color: var(--fg); transition: .14s;
-}
-.btn small { font-size: 10.5px; font-weight: 400; color: var(--fg3); font-family: var(--mono); }
-.btn:hover { background: var(--bg4); transform: translateY(-1px); }
-.btn.primary { background: var(--primary); border-color: transparent; color: #2a1d05; box-shadow: 0 10px 26px rgba(227, 166, 60, .22); }
-.btn.primary small { color: rgba(26, 16, 0, .62); }
-.btn.primary:hover { background: var(--primary-hover); }
+.stats { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+.st { padding: 22px; background: var(--bg1); }.st b { display: block; font-size: 30px; font-weight: 650; letter-spacing: -.04em; line-height: 1.15; }.st b small { font-size: 14px; color: var(--fg3); }
+.st em { display: block; font-style: normal; font-size: 12px; color: var(--fg2); margin-top: 3px; }.st span { display: block; font-size: 10.5px; color: var(--fg3); line-height: 1.55; margin-top: 7px; }
+.sec > h2 { margin: 0 0 6px; font-size: clamp(32px,4vw,48px); line-height: 1.1; font-weight: 700; letter-spacing: -.045em; }.sec > .sub { margin: 0 0 26px; color: var(--fg2); font-size: 15px; }
+.note { margin: 18px 0 0; padding: 14px 17px; border-radius: 14px; font-size: 12.5px; line-height: 1.75; color: var(--fg2); background: var(--bg1); border: 1px solid var(--line); }
+.note a { color: var(--primary); }
 
-.hero-r { margin: 0; }
-.hero-r img {
-  display: block; width: 100%; border-radius: 12px; border: 1px solid var(--line2);
-  box-shadow: 0 26px 70px rgba(0, 0, 0, .6), 0 0 0 1px rgba(227, 166, 60, .08);
-}
-.hero-r figcaption { margin-top: 9px; font-family: var(--mono); font-size: 11px; color: var(--fg3); text-align: center; }
+.tour { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }.tour figure { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: var(--bg1); transition: transform .25s, box-shadow .25s; }
+.tour figure:hover { transform: translateY(-3px); box-shadow: 0 18px 42px rgba(0,0,0,.11); }.tour figure.wide { grid-column: span 2; }
+.tour img { display: block; width: 100%; height: auto; aspect-ratio: 16/10; object-fit: cover; object-position: top left; }.tour figcaption { padding: 12px 15px; color: var(--fg3); font-size: 11.5px; line-height: 1.65; border-top: 1px solid var(--line); }
+.tour figcaption b { color: var(--primary); font-weight: 650; margin-right: 6px; }.tour figcaption code { font-size: 10.5px; }
+.starts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }.sc { padding: 20px; border-radius: 18px; background: var(--bg1); border: 1px solid var(--line); }
+.sc h3 { margin: 0 0 12px; font-size: 14px; font-weight: 650; }.sc pre { margin: 0; padding: 13px; border-radius: 10px; background: #1d1d1f; overflow-x: auto; }.sc code { font-size: 11.5px; line-height: 1.75; color: #f5f5f7; }
+.sc p { margin: 12px 0 0; font-size: 11.5px; color: var(--fg3); line-height: 1.65; }
+.tbl-wrap { border: 1px solid var(--line); border-radius: 16px; overflow-x: auto; -webkit-overflow-scrolling: touch; background: var(--bg1); }.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl thead th { text-align: left; padding: 12px 15px; background: var(--bg2); font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--fg3); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl tbody tr { border-bottom: 1px solid var(--bg2); }.tbl tbody tr:last-child { border-bottom: 0; }.tbl tbody tr:hover { background: rgba(0,102,204,.035); }
+.tbl td { padding: 12px 15px; color: var(--fg2); vertical-align: top; line-height: 1.65; }.tbl td:first-child { color: var(--fg); font-weight: 550; white-space: nowrap; }.tbl td:last-child { font-family: var(--mono); font-size: 11px; color: var(--fg3); white-space: nowrap; }
+.tbl.lic td:nth-child(3) { font-family: var(--font); font-size: 11.5px; white-space: normal; }.tbl .yes { color: var(--ok); }.tbl .no { color: var(--bad); }
+.docs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }.dc { display: block; padding: 18px; border-radius: 16px; background: var(--bg1); border: 1px solid var(--line); transition: transform .2s, border-color .2s; }
+.dc:hover { border-color: var(--primary); transform: translateY(-2px); }.dc b { display: block; font-size: 14px; font-weight: 650; margin-bottom: 5px; }.dc:hover b { color: var(--primary); }.dc span { display: block; font-size: 11.5px; color: var(--fg3); line-height: 1.65; }
+.dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }.dlc { display: flex; flex-direction: column; gap: 4px; padding: 19px; border-radius: 16px; background: var(--bg1); border: 1px solid var(--line); transition: transform .2s, border-color .2s; }
+.dlc:hover { border-color: var(--primary); transform: translateY(-2px); }.dlc b { font-size: 15px; font-weight: 650; }.dlc span { font-size: 11px; color: var(--fg3); line-height: 1.6; }.dlc em { margin-top: 8px; font-style: normal; font-size: 10.5px; font-family: var(--mono); color: var(--fg2); }
+.dlc.feat { background: var(--primary-dim); border-color: rgba(0,102,204,.3); }.dlc.feat b, .dlc.feat em { color: var(--primary); }
+.foot { max-width: var(--maxw); margin: 0 auto; padding: 30px 22px 46px; border-top: 1px solid var(--line); }.foot > div:first-child { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }.foot b { font-size: 13px; }.foot > div:first-child span { font-size: 10.5px; color: var(--fg3); }
+.fl { display: flex; gap: 15px; flex-wrap: wrap; margin: 14px 0 0; }.fl a { font-size: 11.5px; color: var(--fg2); }.fl a:hover { color: var(--primary); }.disc { margin: 16px 0 0; font-size: 10.5px; line-height: 1.75; color: var(--fg3); max-width: 800px; }
 
-/* ── 数字 ── */
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
-.st {
-  padding: 15px 16px 14px; border-radius: 12px; border: 1px solid var(--line);
-  background: var(--bg1); position: relative; overflow: hidden;
-}
-.st::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--primary); opacity: .45; }
-.st b { display: block; font-family: var(--mono); font-size: 25px; font-weight: 600; letter-spacing: -1px; line-height: 1.2; }
-.st b small { font-size: 13px; color: var(--fg3); letter-spacing: -.3px; }
-.st em { display: block; font-style: normal; font-size: 12.5px; color: var(--fg2); margin-top: 2px; }
-.st span { display: block; font-size: 11px; color: var(--fg3); line-height: 1.55; margin-top: 5px; }
+.doc { max-width: var(--maxw); margin: 0 auto; padding: 0 22px 60px; display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 46px; align-items: start; }
+.doc-side { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 18px; max-height: calc(100vh - 92px); overflow-y: auto; padding: 26px 0 20px; }
+.doc-side > nav > b, .doc-side .edit { display: block; font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--fg3); margin: 0 0 8px; }
+.doclist a, .toc a { display: block; padding: 5px 9px; border-radius: 7px; font-size: 11.5px; color: var(--fg2); line-height: 1.5; border-left: 2px solid transparent; }.doclist a:hover { color: var(--fg); background: var(--bg2); }
+.doclist a.on { color: var(--primary); background: var(--primary-dim); border-left-color: var(--primary); font-weight: 600; }.doclist .grp { margin-top: 13px; }.toc a { font-size: 11px; color: var(--fg3); padding: 4px 9px; }.toc a.t3 { padding-left: 20px; font-size: 10.5px; }.toc a:hover { color: var(--primary); background: none; }
+.doc-side .edit { border: 1px dashed var(--line2); border-radius: 8px; padding: 7px 9px; text-align: center; text-transform: none; letter-spacing: 0; }.doc-side .edit:hover { color: var(--primary); border-color: var(--primary); }
+.doc-body { padding: 30px 0 0; min-width: 0; }.crumb { margin: 0 0 18px; font-family: var(--mono); font-size: 10.5px; color: var(--fg3); }.crumb a:hover { color: var(--primary); }.crumb span { color: var(--fg2); }
+.doc-body > h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.2; font-weight: 700; letter-spacing: -.045em; }.doc-body h2 { margin: 36px 0 12px; font-size: 21px; font-weight: 650; letter-spacing: -.025em; scroll-margin-top: 82px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.doc-body > h2:first-of-type { margin-top: 10px; }.doc-body h3 { margin: 27px 0 8px; font-size: 16px; font-weight: 650; scroll-margin-top: 82px; }.doc-body h2 code, .doc-body h3 code { font-size: .92em; }
+.doc-body p { margin: 0 0 14px; color: var(--fg2); font-size: 14px; line-height: 1.85; }.doc-body p > b:first-child, .doc-body strong, .doc-body b { color: var(--fg); font-weight: 600; }.doc-body a { color: var(--primary); border-bottom: 1px solid rgba(0,102,204,.25); }.doc-body a:hover { border-bottom-color: var(--primary); }
+.doc-body ul, .doc-body ol { margin: 0 0 15px; padding-left: 21px; color: var(--fg2); font-size: 14px; line-height: 1.85; }.doc-body li::marker { color: var(--primary); }.doc-body ul.lv-2, .doc-body ol.lv-2 { margin: 4px 0 0; font-size: 13px; }
+.doc-body hr { margin: 32px 0; border: 0; border-top: 1px solid var(--line); }.doc-body blockquote { margin: 0 0 17px; padding: 14px 17px; border-radius: 12px; background: var(--bg1); border: 1px solid var(--line); }.doc-body blockquote p { margin: 0; color: var(--fg2); font-size: 13px; }
+.doc-body .tbl-wrap { margin: 0 0 19px; }.doc-body .tbl td:last-child { white-space: normal; }.doc-body .cta { margin: 0 0 30px; }.doc-body .btn { border-bottom: none; color: var(--fg); }.doc-body .btn:hover { border-bottom: none; }.doc-body .btn.primary { color: #fff; }
+.doc-body .docs { margin: 0 0 22px; }.doc-body .dc { border-bottom: 1px solid var(--line); }.doc-body .dc b { color: var(--fg); }.doc-body .dc span { color: var(--fg3); }.doc-body .dc:hover { border-color: var(--primary); }.doc-body .dc:hover b { color: var(--primary); }
+.code { position: relative; margin: 0 0 19px; border-radius: 12px; background: #1d1d1f; overflow: hidden; }.code pre { margin: 0; padding: 16px 18px; overflow-x: auto; max-width: 100%; }.code code { font-size: 12px; line-height: 1.8; color: #f5f5f7; }
+.code-lang { position: absolute; top: 0; right: 0; padding: 4px 10px; border-radius: 0 0 0 8px; font-family: var(--mono); font-size: 9px; letter-spacing: .08em; color: #a1a1a6; background: #2c2c2e; }
+.c-cm { color: #8e8e93; font-style: italic; }.c-st { color: #9bd67b; }.c-kw { color: #ffbf69; }.c-nu { color: #d8c9a8; }
+.pager { display: flex; gap: 10px; margin: 44px 0 0; padding-top: 24px; border-top: 1px solid var(--line); }.pager a { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 15px 17px; border-radius: 14px; background: var(--bg1); border: 1px solid var(--line); }
+.pager a.next { text-align: right; }.pager a:hover { border-color: var(--primary); }.pager small { font-family: var(--mono); font-size: 9.5px; color: var(--fg3); }.pager b { font-size: 12.5px; font-weight: 600; }.pager span { flex: 1 1 0; }
 
-/* ── 通用小节头 ── */
-.sec > h2 { margin: 0 0 4px; font-size: 21px; font-weight: 700; letter-spacing: -.3px; }
-.sec > .sub { margin: 0 0 20px; font-size: 13.5px; color: var(--fg3); }
-.note {
-  margin: 16px 0 0; padding: 12px 15px; border-radius: 10px; font-size: 12.5px; line-height: 1.75; color: var(--fg2);
-  background: var(--bg1); border: 1px solid var(--line); border-left: 2px solid rgba(227, 166, 60, .45);
-}
-.note a { color: var(--primary); border-bottom: 1px solid rgba(227, 166, 60, .3); }
-
-/* ── 界面实拍 ── */
-.tour { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.tour figure { margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg1); transition: .16s; }
-.tour figure:hover { border-color: var(--line2); transform: translateY(-2px); box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
-.tour figure.wide { grid-column: span 2; }
-.tour img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; object-position: top left; }
-.tour figcaption { padding: 10px 13px; font-size: 12px; color: var(--fg3); line-height: 1.65; border-top: 1px solid var(--line); }
-.tour figcaption b { color: var(--primary); font-weight: 600; margin-right: 6px; }
-.tour figcaption code { font-size: 11px; }
-
-/* ── 上手 ── */
-.starts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-.sc { padding: 15px 16px; border-radius: 12px; background: var(--bg1); border: 1px solid var(--line); }
-.sc h3 { margin: 0 0 10px; font-size: 13px; font-weight: 700; letter-spacing: .3px; color: var(--fg); }
-.sc pre { margin: 0; padding: 11px 12px; border-radius: 8px; background: #14120f; border: 1px solid var(--line); overflow-x: auto; }
-.sc code { font-size: 12px; line-height: 1.75; color: #f2ede6; }
-.sc p { margin: 10px 0 0; font-size: 12px; color: var(--fg3); line-height: 1.65; }
-
-/* ── 表格 ── */
-.tbl-wrap { border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.tbl thead th {
-  text-align: left; padding: 10px 14px; background: var(--bg2); font-size: 11px; font-weight: 600;
-  letter-spacing: .5px; text-transform: uppercase; color: var(--fg3); border-bottom: 1px solid var(--line); white-space: nowrap;
-}
-.tbl tbody tr { border-bottom: 1px solid rgba(255, 255, 255, .04); }
-.tbl tbody tr:last-child { border-bottom: none; }
-.tbl tbody tr:hover { background: rgba(227, 166, 60, .04); }
-.tbl td { padding: 10px 14px; color: var(--fg2); vertical-align: top; line-height: 1.65; }
-.tbl td:first-child { color: var(--fg); font-weight: 500; white-space: nowrap; }
-.tbl td:first-child code { white-space: nowrap; }
-.tbl td:last-child { font-family: var(--mono); font-size: 11.5px; color: var(--fg3); white-space: nowrap; }
-.tbl.lic td:nth-child(3) { font-family: var(--font); font-size: 12.5px; white-space: normal; }
-.tbl .yes { color: var(--ok); }
-.tbl .no { color: var(--bad); }
-
-/* ── 文档卡 ── */
-.docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 10px; }
-.dc {
-  display: block; padding: 14px 16px; border-radius: 11px; background: var(--bg1); border: 1px solid var(--line); transition: .15s;
-}
-.dc:hover { border-color: rgba(227, 166, 60, .4); background: var(--bg3); transform: translateY(-1px); }
-.dc b { display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-.dc:hover b { color: var(--primary); }
-.dc span { display: block; font-size: 12px; color: var(--fg3); line-height: 1.65; }
-
-/* ── 下载 ── */
-.dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 10px; }
-.dlc {
-  display: flex; flex-direction: column; gap: 3px; padding: 15px 17px; border-radius: 12px;
-  background: var(--bg1); border: 1px solid var(--line); transition: .15s;
-}
-.dlc:hover { border-color: var(--line2); background: var(--bg3); transform: translateY(-2px); }
-.dlc b { font-size: 15px; font-weight: 700; }
-.dlc span { font-size: 11.5px; color: var(--fg3); line-height: 1.6; }
-.dlc em { margin-top: 8px; font-style: normal; font-size: 11.5px; font-family: var(--mono); color: var(--fg2); }
-.dlc.feat { background: var(--p-dim, rgba(227, 166, 60, .1)); border-color: rgba(227, 166, 60, .38); }
-.dlc.feat b { color: var(--primary); }
-.dlc.feat em { color: var(--primary); }
-
-/* ── 页脚 ── */
-.foot { max-width: var(--maxw); margin: 0 auto; padding: 26px; border-top: 1px solid var(--line); }
-.foot > div:first-child { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-.foot b { font-size: 14px; font-weight: 700; }
-.foot > div:first-child span { font-size: 11.5px; color: var(--fg3); }
-.fl { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0 0; }
-.fl a { font-size: 12.5px; color: var(--fg2); border-bottom: 1px solid transparent; }
-.fl a:hover { color: var(--primary); border-bottom-color: var(--primary); }
-.disc { margin: 16px 0 0; font-size: 11.5px; line-height: 1.75; color: var(--fg3); max-width: 780px; }
-
-/* ── 响应式 ── */
-/* ══ 文档页（scripts/build-docs.mjs 生成） ══════════════════ */
-.doc {
-  max-width: var(--maxw); margin: 0 auto; padding: 0 26px 56px;
-  display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 44px; align-items: start;
-}
-.doc-side { position: sticky; top: 88px; display: flex; flex-direction: column; gap: 18px; max-height: calc(100vh - 104px); overflow-y: auto; padding: 26px 0 20px; }
-.doc-side > nav > b, .doc-side .edit { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .9px; text-transform: uppercase; color: var(--fg3); margin: 0 0 8px; }
-.doclist a, .toc a { display: block; padding: 5px 10px; border-radius: 7px; font-size: 12.5px; color: var(--fg2); line-height: 1.5; border-left: 2px solid transparent; }
-.doclist a:hover { color: var(--fg); background: rgba(255, 255, 255, .05); }
-.doclist a.on { color: var(--primary); background: var(--primary-dim); border-left-color: var(--primary); font-weight: 600; }
-/* 侧栏分组小标题（入门 / 内核 / 交付）：排版沿用上面的标签，只拉开间距 */
-.doclist .grp { margin-top: 13px; }
-.toc a { font-size: 12px; color: var(--fg3); padding: 4px 10px; }
-.toc a.t3 { padding-left: 22px; font-size: 11.5px; }
-.toc a:hover { color: var(--primary); background: none; }
-.doc-side .edit { margin-top: 2px; color: var(--fg3); border: 1px dashed var(--line2); border-radius: 8px; padding: 7px 9px; text-align: center; text-transform: none; letter-spacing: 0; }
-.doc-side .edit:hover { color: var(--primary); border-color: rgba(227, 166, 60, .5); }
-
-.doc-body { padding: 26px 0 0; min-width: 0; }
-.crumb { margin: 0 0 18px; font-family: var(--mono); font-size: 11.5px; color: var(--fg3); }
-.crumb a:hover { color: var(--primary); }
-.crumb span { color: var(--fg2); }
-
-.doc-body > h1 { margin: 0 0 6px; font-size: 29px; line-height: 1.28; font-weight: 800; letter-spacing: -.7px; }
-.doc-body h2 { margin: 34px 0 12px; font-weight: 700; letter-spacing: -.3px; scroll-margin-top: 82px; }
-.doc-body h2 { font-size: 19px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
-.doc-body > h2:first-of-type { margin-top: 8px; }
-.doc-body h3 { margin: 26px 0 8px; font-size: 15.5px; font-weight: 700; color: var(--fg); scroll-margin-top: 82px; }
-.doc-body h2 code, .doc-body h3 code { font-size: .92em; }
-.doc-body p { margin: 0 0 13px; color: var(--fg2); font-size: 14px; line-height: 1.85; }
-.doc-body p > b:first-child { color: var(--fg); }
-.doc-body strong, .doc-body b { color: var(--fg); font-weight: 600; }
-.doc-body a { color: var(--primary); border-bottom: 1px solid rgba(227, 166, 60, .28); }
-.doc-body a:hover { border-bottom-color: var(--primary); }
-.doc-body ul, .doc-body ol { margin: 0 0 14px; padding-left: 20px; color: var(--fg2); font-size: 14px; line-height: 1.85; }
-.doc-body li::marker { color: var(--primary); }
-.doc-body ul.lv-2, .doc-body ol.lv-2 { margin: 4px 0 0; font-size: 13.5px; }
-.doc-body hr { margin: 30px 0; border: none; border-top: 1px solid var(--line); }
-.doc-body blockquote { margin: 0 0 16px; padding: 12px 16px; border-radius: 10px; background: var(--bg1); border: 1px solid var(--line); border-left: 2px solid rgba(227, 166, 60, .45); }
-.doc-body blockquote p { margin: 0; color: var(--fg2); font-size: 13.5px; }
-.doc-body .tbl-wrap { margin: 0 0 18px; }
-.doc-body .tbl td:last-child { white-space: normal; }
-
-/* 文档中心（documentation.html）在正文里复用介绍站的 .dc 卡片与 .btn 入口。
-   .doc-body a 会把所有链接刷成主色并加下划线，这里把样式还回给卡片和按钮。 */
-.doc-body .cta { margin: 0 0 30px; }
-.doc-body .btn { border-bottom: none; color: var(--fg); }
-.doc-body .btn:hover { border-bottom: none; }
-.doc-body .btn.primary { color: #2a1d05; }
-.doc-body .docs { margin: 0 0 22px; }
-.doc-body .dc { border-bottom: 1px solid var(--line); }
-.doc-body .dc b { color: var(--fg); }
-.doc-body .dc span { color: var(--fg3); }
-.doc-body .dc:hover { border-color: rgba(227, 166, 60, .4); }
-.doc-body .dc:hover b { color: var(--primary); }
-
-.code { position: relative; margin: 0 0 18px; border-radius: 10px; border: 1px solid var(--line); background: #14120f; overflow: hidden; }
-.code pre { margin: 0; padding: 14px 16px; overflow-x: auto; }
-.code code { font-size: 12.5px; line-height: 1.78; color: #e6e0d8; }
-.code-lang { position: absolute; top: 0; right: 0; padding: 3px 9px; border-radius: 0 0 0 7px; font-family: var(--mono); font-size: 10px; letter-spacing: .5px; color: var(--fg3); background: var(--bg2); }
-.c-cm { color: #736c65; font-style: italic; }
-.c-st { color: #b5cf8a; }
-.c-kw { color: #f0bd5e; }
-.c-nu { color: #d8c9a8; }
-
-.pager { display: flex; gap: 10px; margin: 42px 0 0; padding-top: 22px; border-top: 1px solid var(--line); }
-.pager a { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 13px 16px; border-radius: 11px; background: var(--bg1); border: 1px solid var(--line); }
-.pager a.next { text-align: right; }
-.pager a:hover { border-color: rgba(227, 166, 60, .4); background: var(--bg3); }
-.pager small { font-family: var(--mono); font-size: 10.5px; color: var(--fg3); }
-.pager b { font-size: 13.5px; font-weight: 600; }
-.pager span { flex: 1 1 0; }
-
-
-/* ── 返回工作台（仅本地服务显示） ── */
-.home {
-  margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 13px;
-  border-radius: 8px; font-size: 12.5px; color: var(--fg2); background: var(--bg2); border: 1px solid var(--line);
-}
-.home:hover { color: var(--primary); border-color: rgba(227, 166, 60, .45); background: var(--bg4); }
-.home[hidden] { display: none; }
-.home + .gh { margin-left: 0; }
-/* 不在窄屏藏 .home：手机上它往往是唯一的返回出口 */
-
-/* ══ 响应式：必须放在文件末尾 ══════════════════════════════
-   之前这些规则写在文件中部，而 .doc / .hero 的基础定义在后面，
-   同特异度下后来者胜，媒体查询等于没写——手机上 .doc 仍是 232px+1fr 两栏，
-   文档页因此横向溢出。全部移到末尾才真正生效。 */
-/* ── 平板 / 窄屏 ───────────────────────────────────────────── */
 @media (max-width: 940px) {
-  .hero { grid-template-columns: minmax(0, 1fr); gap: 26px; padding-top: 34px; }
-  .tour { grid-template-columns: minmax(0, 1fr); }
-  .tour figure.wide { grid-column: auto; }
-  .nav { padding: 0 14px; gap: 12px; }
-  main { padding: 0 16px 30px; }
-  .tbl td:first-child { white-space: normal; }
-  /* 必须 minmax(0,1fr)：写 1fr 时轨道最小宽度等于 min-content，
-     一张宽表格或一行长 code 就能把整条轨道顶破，页面随之横向溢出 */
-  .doc { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0 16px 40px; }
-  .doc-side { position: static; max-height: none; overflow: visible; padding-top: 20px; }
-  .toc { display: none; }
-  .doc-body { padding-top: 4px; }
+  .hero { grid-template-columns: 1fr; gap: 30px; padding-top: 52px; }.tour { grid-template-columns: 1fr; }.tour figure.wide { grid-column: auto; }.stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .starts, .docs, .dl { grid-template-columns: repeat(2,minmax(0,1fr)); }.nav { padding: 0 14px; gap: 12px; }main { padding: 0 16px 34px; }.tbl td:first-child { white-space: normal; }
+  .doc { grid-template-columns: minmax(0,1fr); gap: 0; padding: 0 16px 44px; }.doc-side { position: static; max-height: none; overflow: visible; padding-top: 20px; }.toc { display: none; }.doc-body { padding-top: 5px; }
 }
-
-/* ── 手机 ────────────────────────────────────────────────────
-   原来这里只有一句 .links{display:none}，等于手机上完全没有导航。
-   改成可横向滑动的链接条：不占额外高度，又能一跳到位。 */
 @media (max-width: 700px) {
-  html { font-size: 15px; scroll-padding-top: 112px; }
-  .nav { flex-wrap: wrap; height: auto; min-height: 56px; padding: 8px 12px; row-gap: 4px; }
-  .brand b { font-size: 13.5px; }
-  .gh { margin-left: auto; height: 30px; padding: 0 10px; }
-  .links {
-    display: flex; order: 3; flex-basis: 100%; margin-left: 0;
-    overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
-    padding-bottom: 2px; -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent);
-            mask-image: linear-gradient(90deg, #000 88%, transparent);
-  }
-  .links::-webkit-scrollbar { display: none; }
-  .links a { padding: 7px 11px; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
-  .home { display: inline-flex; height: 30px; padding: 0 10px; font-size: 12px; }
-
-  .hero { padding: 26px 0 30px; gap: 22px; }
-  .hero h1 { font-size: 25px; letter-spacing: -.3px; line-height: 1.3; }
-  .kicker { font-size: 10px; letter-spacing: .8px; }
-  .lede { font-size: 13.5px; line-height: 1.8; }
-  .inst code { font-size: 11.5px; padding: 9px 11px; word-break: break-all; }
-  .cta { gap: 8px; }
-  .btn { flex: 1 1 100%; justify-content: center; padding: 12px 14px; min-height: 46px; }
-
-  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .st { padding: 12px 13px; }
-  .st b { font-size: 21px; }
-  .sec > h2 { font-size: 18px; }
-  .sec > .sub { font-size: 12.5px; }
-  .starts, .docs, .dl { grid-template-columns: minmax(0, 1fr); }
-  .tour img { aspect-ratio: 16 / 10; }
-
-  /* 表格在手机上横向滚动：靠 .tbl-wrap 的 overflow-x。
-     但 nowrap 会让表格的 min-content 宽度超过视口，反而把整页撑宽，
-     所以窄屏一律允许换行，只有真正很长的 token 才靠滚动。 */
-  .tbl { font-size: 12.5px; }
-  .tbl td, .tbl thead th { padding: 9px 11px; white-space: normal; }
-  .tbl td:first-child { white-space: normal; }
-  .tbl code { white-space: normal; }
-  .note { font-size: 12px; padding: 11px 13px; }
-  /* 代码块本身可横向滚动，但 .code 是 overflow:hidden 的圆角容器；
-     给 pre 明确的 max-width 才不会让长行把文档撑开 */
-  .code pre { max-width: 100%; }
-  blockquote, .doc-body blockquote { overflow-wrap: anywhere; }
-
-  .doc-body > h1 { font-size: 22px; }
-  .doc-body h2 { font-size: 17px; }
-  .doc-body p, .doc-body ul, .doc-body ol { font-size: 13.5px; line-height: 1.85; }
-  .code pre { padding: 12px 13px; }
-  .code code { font-size: 11.5px; }
-  .doclist { display: flex; flex-wrap: wrap; gap: 4px; }
-  .doclist a { border-left: none; border: 1px solid var(--line); border-radius: 20px; padding: 5px 11px; font-size: 12px; }
-  .doclist a.on { border-color: var(--primary); }
-  .doclist .grp { flex-basis: 100%; margin-top: 6px; }
-  .pager { flex-direction: column; }
-  .pager a.next { text-align: left; }
-  .crumb { font-size: 11px; }
-  .foot { padding: 22px 16px; }
-  .fl a { font-size: 13px; padding: 4px 0; }
+  html { font-size: 15px; scroll-padding-top: 108px; }.nav { flex-wrap: wrap; height: auto; min-height: 54px; padding: 8px 12px; row-gap: 4px; }.brand b { font-size: 12.5px; }.gh, .home { height: 28px; padding: 0 9px; }
+  .links { display: flex; order: 3; flex-basis: 100%; margin-left: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }.links::-webkit-scrollbar { display: none; }.links a { padding: 6px 9px; font-size: 11.5px; }
+  .hero { padding: 34px 0 30px; }.hero h1 { font-size: clamp(31px,9vw,42px); }.kicker { font-size: 9px; }.lede { font-size: 14px; }.inst code { font-size: 10.5px; word-break: break-all; }.cta { gap: 7px; }.btn { flex: 1 1 100%; justify-content: center; min-height: 44px; }
+  section { margin-bottom: 66px; }.sec > h2 { font-size: 30px; }.sec > .sub { font-size: 13px; }.starts, .docs, .dl { grid-template-columns: 1fr; }.tour img { aspect-ratio: 16/10; }
+  .tbl { font-size: 11.5px; }.tbl td, .tbl thead th { padding: 10px 11px; white-space: normal; }.tbl code { white-space: normal; }.note { font-size: 11.5px; }
+  .doc-body > h1 { font-size: 25px; }.doc-body h2 { font-size: 18px; }.doc-body p, .doc-body ul, .doc-body ol { font-size: 13px; }.code pre { padding: 13px 14px; }.code code { font-size: 11px; }
+  .doclist { display: flex; flex-wrap: wrap; gap: 4px; }.doclist a { border-left: 0; border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; font-size: 11px; }.doclist a.on { border-color: var(--primary); }.doclist .grp { flex-basis: 100%; margin-top: 6px; }
+  .pager { flex-direction: column; }.pager a.next { text-align: left; }.foot { padding: 24px 16px; }.fl a { font-size: 12px; }
 }
-
-/* 触屏设备：把 hover 才有的反馈改成常态，避免点上去没反应 */
-@media (hover: none) {
-  .tour figure:hover { transform: none; box-shadow: none; }
-  .dc:hover, .dlc:hover, .btn:hover { transform: none; }
-}
-
-/* 极窄屏（≤360px）：数字条退回单列，防止三字符换行 */
-@media (max-width: 360px) {
-  .stats { grid-template-columns: minmax(0, 1fr); }
-  .hero h1 { font-size: 22px; }
-}
+@media (hover: none) { .tour figure:hover, .dc:hover, .dlc:hover, .btn:hover { transform: none; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; }.tour figure, .dc, .dlc, .btn { transition: none; } }
