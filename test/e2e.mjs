@@ -916,7 +916,7 @@ await page.waitForTimeout(4000);
 const gen = await page.evaluate(() => {
   const e = window.__editor, w = e.world;
   const waterId = e.atlas.get("water") ? e.atlas.get("water").id : 364;
-  let water = 0; for (const [, c] of w.map) if (c.id === waterId) water++;
+  let water = 0; for (const [, c] of w.map) if ((c & 0xffff) === waterId) water++;
   return { shape: w.shape, cells: w.size(), water, models: e.renderer.models.children.length, gen: e._lastGen };
 });
 await shot("terrain-islands-e2e");   // 趁页面还活着先截图：排在最后会拍到已关闭的 context

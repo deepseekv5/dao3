@@ -10,6 +10,41 @@ export async function apiLoadWorld(id) {
   if (!r.ok) return null;
   return r.json();
 }
+export async function apiLoadWorldFast(id, onProgress) {
+  const r = await fetch(`/api/world/${id}?format=binary`);
+  if (!r.ok || r.headers.get("x-world-format") !== "binary-v1") {
+    const payload = await apiLoadWorld(id);
+    if (!payload) return null;
+    const world = VoxelWorld.fromPayload(payload);
+    world.meta = payload.meta || {};
+    return world;
+  }
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const metaLen = view.getUint32(0, true);
+  let p = 4 + metaLen;
+  if (p + 16 > bytes.byteLength) throw new Error("世界二进制头不完整");
+  const meta = JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + metaLen)) || "{}");
+  const shape = [view.getUint32(p, true), view.getUint32(p + 4, true), view.getUint32(p + 8, true)];
+  const count = view.getUint32(p + 12, true);
+  p += 16;
+  if (p + count * 7 > bytes.byteLength) throw new Error("世界二进制数据不完整");
+  const world = new VoxelWorld(shape);
+  for (let i = 0; i < count; i++) {
+    const idx = view.getUint32(p, true);
+    const id = view.getUint16(p + 4, true);
+    const rot = bytes[p + 6];
+    if (id) world.map.set(idx, id | (rot << 16));
+    p += 7;
+    if ((i & 0x7ffff) === 0x7ffff) {
+      onProgress?.((i + 1) / count);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  world.meta = meta;
+  onProgress?.(1);
+  return world;
+}
 export async function apiSaveWorld(id, payload) {
   const json = JSON.stringify(payload);
   const headers = { "Content-Type": "application/json" };
@@ -54,7 +89,7 @@ export async function importGz(file, atlas) {
   return VoxelWorld.fromPayload(payload);
 }
 export function exportVox(world, atlas) {
-  const ids = [...new Set([...world.map.values()].map((c) => c.id))];
+  const ids = [...new Set([...world.map.values()].map((v) => v & 0xffff))];
   const vox = encodeVox(world, ids);
   downloadBlob(new Blob([vox], { type: "application/octet-stream" }), (world.meta?.name || "model") + ".vox");
 }

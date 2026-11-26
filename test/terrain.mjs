@@ -74,7 +74,7 @@ console.log("== 只用图集里存在的方块（写错 id 会渲染成紫色缺
 for (const p of PRESETS) {
   const { w } = run(p.id, 777, {}, [40, 32, 40]);
   const bad = new Set();
-  for (const [, c] of w.map) if (!NAME_OF[c.id]) bad.add(c.id);
+  for (const [, c] of w.map) if (!NAME_OF[c & 0xffff]) bad.add(c & 0xffff);
   ok(`${p.id} 无未知 id`, bad.size === 0, [...bad].slice(0, 5).join(","));
 }
 

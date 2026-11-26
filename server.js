@@ -146,8 +146,36 @@ function readWorld(id) {
 }
 function writeWorld(id, payload) {
   const gz = zlib.gzipSync(Buffer.from(JSON.stringify(payload), "utf8"), { level: 6 });
-  fs.writeFileSync(worldPath(id), gz);
+  const path = worldPath(id);
+  fs.writeFileSync(path, gz);
+  fs.rmSync(path.replace(/\.json\.gz$/, ".bin.gz"), { force: true });
   return gz.length;
+}
+function worldBinaryPath(id) { return worldPath(id).replace(/\.json\.gz$/, ".bin.gz"); }
+function readWorldBinary(id) {
+  const cached = worldBinaryPath(id);
+  if (fs.existsSync(cached)) return fs.readFileSync(cached);
+  const payload = readWorld(id);
+  if (!payload) return null;
+  const meta = Buffer.from(JSON.stringify(payload.meta || {}), "utf8");
+  const shape = payload.shape || [64, 64, 64];
+  const count = (payload.data || []).length;
+  const header = 4 + meta.length + 12 + 4;
+  const out = Buffer.allocUnsafe(header + count * 7);
+  let p = 0;
+  out.writeUInt32LE(meta.length, p); p += 4;
+  meta.copy(out, p); p += meta.length;
+  for (let i = 0; i < 3; i++) { out.writeUInt32LE(shape[i] | 0, p); p += 4; }
+  out.writeUInt32LE(count, p); p += 4;
+  const indices = payload.indices || [], data = payload.data || [], rot = payload.rot || [];
+  for (let i = 0; i < count; i++) {
+    out.writeUInt32LE(indices[i] | 0, p); p += 4;
+    out.writeUInt16LE(data[i] | 0, p); p += 2;
+    out.writeUInt8(rot[i] || 0, p); p += 1;
+  }
+  const gz = zlib.gzipSync(out, { level: 6 });
+  fs.writeFileSync(cached, gz);
+  return gz;
 }
 const worldMetaCache = new Map(); // id -> { mtimeMs, name, blockCount }
 function worldMeta(id, st) {
@@ -631,6 +659,21 @@ const server = http.createServer((req, res) => {
       if (req.method === "GET") {
         const p = worldPath(id);
         const ae = String(req.headers["accept-encoding"] || "");
+        if (url.searchParams.get("format") === "binary" && fs.existsSync(p)) {
+          try {
+            const bin = readWorldBinary(id);
+            res.writeHead(200, {
+              "Content-Type": "application/octet-stream",
+              "Content-Encoding": "gzip",
+              "Content-Length": bin.length,
+              "X-World-Format": "binary-v1",
+              "Cache-Control": "no-store"
+            });
+            return res.end(bin);
+          } catch (err) {
+            console.error("world binary cache failed", id, err);
+          }
+        }
         if (fs.existsSync(p) && /gzip/i.test(ae)) {
           // 存的就是 gzip(JSON)，原样送出，浏览器自动解压
           res.writeHead(200, { "Content-Type": MIME[".json"], "Content-Encoding": "gzip", "Cache-Control": "no-store" });

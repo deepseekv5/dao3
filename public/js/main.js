@@ -303,60 +303,96 @@ async function applySceneModels(meta) {
   const legacy = (meta && meta.models) || [];
   const withMesh = ents.filter((d) => d.mesh);
   const { addPlacedModel, addEntityMarker, suspendModelList, refreshModelList } = await import("./features.js");
+  if (renderer._modelStreamCleanup) renderer._modelStreamCleanup();
   suspendModelList(true);
-  // 幂等：boot 与切世界都会调用，先清空上一批场景模型
   for (const m of state.models || []) { if (m.object && m.object.parent) m.object.parent.remove(m.object); }
   state.models = [];
   state.selectedModel = null;
-  const missed = new Set();   // 取不到就记住：不然 17 个实体各发一次请求，全 404
-  const ensure = async (base) => {
-    if (!base) return null;
-    const a = state.assets.meshes[base];
-    if (a && a.object) return a;
-    if (missed.has(base)) return null;
-    const got = await ensureMeshAsset(base).catch(() => null);
-    if (!got || !got.object) missed.add(base);
-    return got;
-  };
-  const placedSrc = new Set();
+  const unplaced = new Set(ents), marked = new Set(), missing = new Set();
+  const byMesh = new Map();
   for (const d of withMesh) {
-    const a = await ensure(d.mesh);
-    if (!a || !a.object) continue;
-    addPlacedModel({
-      id: d.id, name: d.name, meshName: d.mesh, meshId: d.meshId, parentId: d.parentId,
-      pos: d.position, orientation: d.orientation, scaleVec: d.scale, scale: Array.isArray(d.scale) ? d.scale[0] : d.scale,
-      bounds: d.bounds, tags: d.tags, collision: d.collision, fixed: d.fixed, gravity: d.gravity,
-      mass: d.mass, friction: d.friction, restitution: d.restitution, emissive: d.emissive,
-      metalness: d.metalness, shininess: d.shininess, tint: d.tint, damage: d.damage,
-      particle: d.particle, sound: d.sound, defaultMotionId: d.defaultMotionId, meshInvisible: d.meshInvisible, anchorOffset: d.anchorOffset, source: a.object,
-    });
-    placedSrc.add(d);
+    if (!byMesh.has(d.mesh)) byMesh.set(d.mesh, []);
+    byMesh.get(d.mesh).push(d);
   }
-  for (const d of legacy) {
-    const a = await ensure(d.meshName);
-    if (!a || !a.object) continue;
-    addPlacedModel({ name: d.name, meshName: d.meshName, pos: d.pos, scale: d.scale, rotY: d.rotY || 0, source: a.object });
-  }
-  // 没摆上的实体必须留在 state.entities 里。旧写法一律按"!d.mesh"过滤，于是资产
-  // 403/404 时那 194 个带 mesh 的实体既进不了场景模型、又被这条丢掉，
-  // 编辑器下一次保存就把整张图的实体清零——读不到素材不该变成地图数据丢失。
-  state.entities = ents.filter((d) => !d.mesh || !placedSrc.has(d));
-  // 没摆上模型的实体必须留下标记框。之前它们既进不了场景模型、又没人画，
-  // 于是"导入成功、433 个实体"在画面上一片空白——用户只能理解成"没解析出来"。
-  // 标记也从这里统一出：以前另有一个人在切世界时补一遍标记，但紧接着
-  // 下面那句 state.models = [] 就把它们抹掉了，等于白做还多一处真相。
-  let noAsset = 0;
-  for (const d of state.entities) {
+  const spawn = (meta && meta.player && meta.player.initialPosition) || { x: 0, y: 0, z: 0 };
+  const dist2 = (d, target) => {
+    const p = d.position || d.pos || spawn;
+    return (p[0] - target.x) ** 2 + (p[1] - target.y) ** 2 + (p[2] - target.z) ** 2;
+  };
+  const addMarker = (d) => {
+    if (marked.has(d)) return;
+    marked.add(d);
     addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || d.position || [4, 4, 4],
       bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys, mesh: d.mesh });
-    if (d.mesh) noAsset++;
-  }
-  // 模型没带进来的图必须说清楚，而不是默默画几十个框让人以为"编辑器坏了"。
-  if (noAsset) {
+  };
+  const place = (base, asset, target, radius) => {
+    let changed = 0;
+    for (const d of byMesh.get(base)) {
+      if (!unplaced.has(d) || dist2(d, target) > radius * radius) continue;
+      addPlacedModel({
+        id: d.id, name: d.name, meshName: d.mesh, meshId: d.meshId, parentId: d.parentId,
+        pos: d.position, orientation: d.orientation, scaleVec: d.scale, scale: Array.isArray(d.scale) ? d.scale[0] : d.scale,
+        bounds: d.bounds, tags: d.tags, collision: d.collision, fixed: d.fixed, gravity: d.gravity,
+        mass: d.mass, friction: d.friction, restitution: d.restitution, emissive: d.emissive,
+        metalness: d.metalness, shininess: d.shininess, tint: d.tint, damage: d.damage,
+        particle: d.particle, sound: d.sound, defaultMotionId: d.defaultMotionId, meshInvisible: d.meshInvisible, anchorOffset: d.anchorOffset, source: asset.object,
+      });
+      unplaced.delete(d); changed++;
+    }
+    return changed;
+  };
+  let noAsset = 0, missingNotified = false;
+  const notifyMissing = () => {
+    if (!noAsset || missingNotified) return;
+    missingNotified = true;
     const why = state.meta && state.meta.assetRoot ? "对应的 .gltf 不在这个目录里" : "这张图没有记录素材目录（导入时没带模型字节）";
     toast(`${noAsset} 个实体引用的模型加载不出来（${why}）`, true, 6000);
     console.warn(`[models] ${noAsset} 个实体的模型没加载：${why}`);
+  };
+  const loadBase = async (base, target, radius) => {
+    if (missing.has(base)) { for (const d of byMesh.get(base)) if (dist2(d, target) <= radius * radius) addMarker(d); return 0; }
+    let asset = state.assets.meshes[base];
+    if (!asset || !asset.object) asset = await ensureMeshAsset(base).catch(() => null);
+    if (!asset || !asset.object) {
+      missing.add(base); noAsset += byMesh.get(base).length;
+      for (const d of byMesh.get(base)) addMarker(d);
+      return 0;
+    }
+    return place(base, asset, target, radius);
+  };
+  const nearest = (target, radius) => [...byMesh.keys()]
+    .filter((base) => byMesh.get(base).some((d) => unplaced.has(d) && dist2(d, target) <= radius * radius))
+    .sort((a, b) => Math.min(...byMesh.get(a).map((d) => dist2(d, target))) - Math.min(...byMesh.get(b).map((d) => dist2(d, target))));
+  for (const base of nearest(spawn, 64)) {
+    await loadBase(base, spawn, 64);
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
+  for (const d of legacy) {
+    const a = await ensureMeshAsset(d.meshName).catch(() => null);
+    if (!a || !a.object) { noAsset++; continue; }
+    addPlacedModel({ name: d.name, meshName: d.meshName, pos: d.pos, scale: d.scale, rotY: d.rotY || 0, source: a.object });
+  }
+  for (const d of unplaced) if (!d.mesh) addMarker(d);
+  state.entities = [...unplaced];
+  notifyMissing();
+  let timer = 0, pumping = false;
+  const pump = async () => {
+    if (pumping) return;
+    pumping = true;
+    let changed = 0;
+    const target = renderer.controls.target;
+    for (const base of nearest(target, 128).slice(0, 4)) {
+      changed += await loadBase(base, target, 128);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    state.entities = [...unplaced];
+    if (changed) refreshModelList();
+    notifyMissing();
+    pumping = false;
+  };
+  const onChange = () => { clearTimeout(timer); timer = setTimeout(pump, 600); };
+  renderer.controls.addEventListener("change", onChange);
+  renderer._modelStreamCleanup = () => { clearTimeout(timer); renderer.controls.removeEventListener("change", onChange); };
   suspendModelList(false);
   refreshModelList();
   ui && ui.refreshTree && ui.refreshTree();
@@ -433,20 +469,20 @@ async function ensureMeshAsset(base) {
 }
 
 async function loadWorld(id) {
-  const p = await io.apiLoadWorld(id);
-  if (!p) { toast("世界不存在，使用空世界"); return; }
-  const w = VoxelWorld.fromPayload(p);
-  state.meta = p.meta || { name: "世界" };
-  if (p.meta?.terrain) Object.assign(state.terrain, p.meta.terrain);
-  if (p.meta?.scripts && p.meta.scripts.length) state.scripts = p.meta.scripts;
-  if (p.meta?.entities) state.entities = p.meta.entities;
-  if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(p.meta); }
+  const w = await io.apiLoadWorldFast(id);
+  if (!w) { toast("世界不存在，使用空世界"); return; }
+  state.meta = w.meta || { name: "世界" };
+  if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain);
+  if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts;
+  if (state.meta.entities) state.entities = state.meta.entities;
+  if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); }
   replaceWorld(w);
   ui.setWorldName(state.meta.name);
   markSaved();
 }
 function replaceWorld(w) {
   world = w; ctx.world = w; history.world = w; history.clear();
+  w.meta = state.meta;
   state.selection = null; ctx.selection = null;
   renderer.setSelectionBox(null); renderer.setHighlight(null); renderer.setGhost(null);
   if (game) game.stop();
@@ -455,7 +491,7 @@ function replaceWorld(w) {
   // 的 199 个检查点、车、灯柱全都留在画面里（实测：新地形直接浮在旧赛道上面）。
   // 只 remove 不 dispose：这些几何体在 state.assets.meshes 里被跨放置共享。
   while (renderer.models.children.length) renderer.models.remove(renderer.models.children[0]);
-  renderer.setWorld(w);
+  renderer.setWorld(w, state.meta.player && state.meta.player.initialPosition);
   renderer.fpControls.setWorld(world);
   applyTerrain();
   updateStatus();
@@ -493,13 +529,20 @@ async function boot() {
   renderer.setAtlasParams(atlas);
   state.currentBlock = atlas.get("grass")?.id || 127;
   bootUi.stage(24, "正在读取世界存档…");
-  const seed = await io.apiLoadWorld(worldId);
-  if (seed) { world = VoxelWorld.fromPayload(seed); ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (seed.meta?.terrain) Object.assign(state.terrain, seed.meta.terrain); if (seed.meta?.scripts && seed.meta.scripts.length) state.scripts = seed.meta.scripts; if (seed.meta?.entities) state.entities = seed.meta.entities; if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(seed.meta); } }
-  bootUi.stage(46, "正在生成体素网格…");
-  renderer.setWorld(world);
+  const seed = await io.apiLoadWorldFast(worldId, (progress) => {
+    bootUi.stage(24 + progress * 22, `正在解码体素 ${Math.round(progress * 100)}%`);
+  });
+  if (seed) { world = seed; ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain); if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts; if (state.meta.entities) state.entities = state.meta.entities; if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); } }
+  bootUi.stage(46, "正在生成可见区块…");
+  renderer.setWorld(world, state.meta.player && state.meta.player.initialPosition);
   applyTerrain();
   bootUi.title(state.meta.name || worldId);
   renderer.start();
+  if (world.size() > 2000 && Math.max(world.shape[0], world.shape[2]) > 256) {
+    await renderer.waitForVisibleChunks((progress) => {
+      bootUi.stage(46 + progress * 16, `正在生成可见区块 ${Math.round(progress * 100)}%`);
+    });
+  }
   // 工具指针调度（非 FP + FP 模式统一通过指针事件驱动 TOOLS；模型模式下拖放/放置模型）
   const viewport = document.getElementById("viewport");
   if (viewport) {
@@ -678,7 +721,7 @@ async function boot() {
     createWorld(q.get("mode") || "flat", num("X", 100, 8, 256), num("Y", 32, 8, 128), num("Z", 100, 8, 256), num("T", 5, 1, 64), (q.get("name") || "").trim() || null);
     updateStatus();
     save();
-  } else if (seed && seed.indices && seed.indices.length > 2000) {
+  } else if (seed && seed.map.size > 2000) {
     updateStatus(); bootUi.done();
   } else {
     if (window.__openSizeModal) window.__openSizeModal(); // 进入即选择大小并生成

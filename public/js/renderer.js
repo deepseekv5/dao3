@@ -4,6 +4,7 @@ import { nightFromElev } from "./sun.js";
 import { OrbitControls } from "../vendor/three/OrbitControls.js";
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : +v || 0);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // 官方颜色既可能是 {red,green,blue}(0~1)，也可能是 {r,g,b}，统一成 THREE.Color
 function colorOf(c, fallbackHex) {
   const out = new THREE.Color(fallbackHex);
@@ -239,6 +240,10 @@ export class VoxelRenderer {
     this.controls.dampingFactor = 0.12;
     this.controls.target.set(24, 10, 24);
     this.controls.maxPolarAngle = Math.PI * 0.495;
+    this._streamReady = false;
+    this._viewKey = "";
+    this._viewTimer = 0;
+    this.controls.addEventListener("change", () => this.queueVisibleChunks());
     // 第一人称控制
     this.fpControls = new FirstPersonControls(this.camera, canvas, atlas);
     this.fpMode = false;
@@ -581,10 +586,12 @@ vec2 fxTileRect(float t){
     setTimeout(() => { this.scene.remove(bolt); g.dispose(); bolt.material.dispose(); }, 220);
   }
 
-  setWorld(world) {
+  setWorld(world, spawn = null) {
     this.world = world;
     const [X, Y, Z] = world.shape;
     const size = Math.max(X, Z);
+    const large = size > 256;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, large ? 1.25 : 2));
     this.baseplate.geometry.dispose();
     this.baseplate.geometry = new THREE.PlaneGeometry(size + 8, size + 8);
     this.baseplate.position.set(X / 2, -0.02, Z / 2);
@@ -593,12 +600,27 @@ vec2 fxTileRect(float t){
     const g = new THREE.GridHelper(size, size, 0x5a6b5a, 0x455145);
     this.grid.geometry = g.geometry;
     this.grid.position.set(X / 2, 0.002, Z / 2);
-    // 阴影相机贴合世界
     const s = size * 0.75;
     Object.assign(this.sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, far: size * 4 });
     this.sun.shadow.camera.updateProjectionMatrix();
-    this.controls.target.set(X / 2, 0, Z / 2);
-    this.frameCamera();
+    if (large) {
+      this._quality = "fast";
+      this.applyQuality();
+      const p = spawn && Number.isFinite(+spawn.x) ? [+spawn.x, +spawn.y || 0, +spawn.z] : [X / 2, Math.min(40, Y / 2), Z / 2];
+      this.controls.target.set(p[0], p[1] + 1.5, p[2]);
+      this.camera.position.set(p[0] + 34, p[1] + 24, p[2] + 42);
+      this.camera.near = .1; this.camera.far = 720; this.camera.updateProjectionMatrix();
+      this.scene.fog.near = 55; this.scene.fog.far = 250;
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+      this.sun.shadow.mapSize.set(1024, 1024);
+      this.sun.shadow.camera.left = -90; this.sun.shadow.camera.right = 90;
+      this.sun.shadow.camera.top = 90; this.sun.shadow.camera.bottom = -90; this.sun.shadow.camera.far = 320;
+      this.sun.shadow.camera.updateProjectionMatrix();
+    } else {
+      this.controls.target.set(X / 2, 0, Z / 2);
+      this.frameCamera();
+      this.scene.fog.near = 120; this.scene.fog.far = 520;
+    }
     this.rebuildAll();
   }
   frameCamera() {
@@ -685,7 +707,12 @@ vec2 fxTileRect(float t){
 
   markChunk(cx, cy, cz) {
     this._build.set(cx + "," + cy + "," + cz, [cx, cy, cz]);
-    if (!this._buildQueued) { this._buildQueued = true; queueMicrotask(() => this.flushChunks()); }
+    this._scheduleFlush();
+  }
+  _scheduleFlush() {
+    if (this._buildQueued || !this._build.size) return;
+    this._buildQueued = true;
+    requestAnimationFrame(() => this.flushChunks());
   }
   markDirty(x, y, z) {
     const cx = Math.floor(x / CHUNK), cy = Math.floor(y / CHUNK), cz = Math.floor(z / CHUNK);
@@ -699,7 +726,6 @@ vec2 fxTileRect(float t){
     if (lz === CHUNK - 1) this.markChunk(cx, cy, cz + 1);
   }
   rebuildAll() {
-    // 彻底清空 group（含任何未被 chunkMeshes 追踪的孤儿网格），杜绝残留
     for (let i = this.group.children.length - 1; i >= 0; i--) {
       const m = this.group.children[i];
       this.group.remove(m);
@@ -707,18 +733,61 @@ vec2 fxTileRect(float t){
     }
     this.chunkMeshes.clear();
     this._build.clear(); this._buildQueued = false;
+    this._viewKey = "";
     if (!this.world) return;
+    this._streamReady = true;
+    this.queueVisibleChunks(true);
+  }
+  /** 大地图不再一次生成 32768 个区块：只把镜头附近按距离排队，每帧只花几毫秒。
+   *  镜头移动/缩放时继续补周围区块；编辑操作仍用 markDirty 精确重建。 */
+  queueVisibleChunks(force = false) {
+    if (!this.world || !this._streamReady) return;
+    if (this._viewTimer) { if (!force) return; clearTimeout(this._viewTimer); this._viewTimer = 0; }
+    if (!force) { this._viewTimer = setTimeout(() => { this._viewTimer = 0; this.queueVisibleChunks(true); }, 120); return; }
     const [X, Y, Z] = this.world.shape;
-    for (let cx = 0; cx < Math.ceil(X / CHUNK); cx++)
-      for (let cy = 0; cy < Math.ceil(Y / CHUNK); cy++)
-        for (let cz = 0; cz < Math.ceil(Z / CHUNK); cz++)
-          this._build.set(cx + "," + cy + "," + cz, [cx, cy, cz]);
-    this.flushChunks();
+    const maxX = Math.ceil(X / CHUNK), maxY = Math.ceil(Y / CHUNK), maxZ = Math.ceil(Z / CHUNK);
+    const tx = this.controls.target.x, ty = this.controls.target.y, tz = this.controls.target.z;
+    const cx = clamp(Math.floor(tx / CHUNK), 0, maxX - 1), cy = clamp(Math.floor(ty / CHUNK), 0, maxY - 1), cz = clamp(Math.floor(tz / CHUNK), 0, maxZ - 1);
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    const large = Math.max(X, Z) > 256;
+    const radius = large ? clamp(Math.ceil(dist / CHUNK) - 2, 1, 3) : clamp(Math.ceil(dist / CHUNK) + 3, 4, 8);
+    const key = `${cx},${cy},${cz},${radius}`;
+    if (!force && key === this._viewKey) return;
+    this._viewKey = key;
+    const candidates = [];
+    for (let dz = -radius; dz <= radius; dz++) for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+      const x = cx + dx, y = cy + dy, z = cz + dz;
+      if (x < 0 || y < 0 || z < 0 || x >= maxX || y >= maxY || z >= maxZ) continue;
+      const k = x + "," + y + "," + z;
+      if (this.chunkMeshes.has(k) || this._build.has(k)) continue;
+      candidates.push({ x, y, z, d: dx * dx + dy * dy + dz * dz });
+    }
+    candidates.sort((a, b) => a.d - b.d);
+    for (const c of candidates) this._build.set(c.x + "," + c.y + "," + c.z, [c.x, c.y, c.z]);
+    this._scheduleFlush();
   }
   flushChunks() {
     this._buildQueued = false;
-    for (const [key, [cx, cy, cz]] of this._build) this.buildChunk(cx, cy, cz, key);
-    this._build.clear();
+    const started = performance.now();
+    for (const [key, [cx, cy, cz]] of this._build) {
+      this.buildChunk(cx, cy, cz, key);
+      this._build.delete(key);
+      if (performance.now() - started > 7) break;
+    }
+    if (this._build.size) this._scheduleFlush();
+  }
+  waitForVisibleChunks(onProgress) {
+    const total = this._build.size;
+    if (!total) { onProgress?.(1); return Promise.resolve(); }
+    return new Promise((resolve) => {
+      const tick = () => {
+        const progress = Math.min(1, (total - this._build.size) / total);
+        onProgress?.(progress);
+        if (!this._build.size) resolve();
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
   }
   /** 编辑器的实体标记盒在运行模式里没有意义：一个半透明盒加一圈描边，
    *  模型没加载上的图里就是几十个额外绘制与透明覆盖，还会把相机的回拉射线

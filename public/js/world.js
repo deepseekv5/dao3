@@ -1,11 +1,58 @@
 // world.js — 体素数据模型。稀疏存储，与 box3lab .gz VoxelPayload 格式互转。
 // 坐标打包：index = x + y*shapeX + z*shapeX*shapeY（与 Unity 导出一致）。
 
+// 大世界用密集 ID 数组，旋转仍按稀疏 Map 保存；避免上千万个 Map 条目触发长 GC。
+class DenseVoxelMap {
+  constructor(cells) {
+    this.ids = new Uint16Array(cells);
+    this.rotations = new Map();
+    this.count = 0;
+  }
+  get size() { return this.count; }
+  get(index) {
+    const id = this.ids[index];
+    return id ? id | ((this.rotations.get(index) || 0) << 16) : undefined;
+  }
+  has(index) { return this.ids[index] !== 0; }
+  set(index, value) {
+    const id = value & 0xffff, old = this.ids[index];
+    if (id && !old) this.count++;
+    else if (!id && old) this.count--;
+    this.ids[index] = id;
+    const rot = (value >>> 16) & 0xffff;
+    if (rot) this.rotations.set(index, rot);
+    else if (this.rotations.size) this.rotations.delete(index);
+    return this;
+  }
+  delete(index) {
+    if (!this.ids[index]) return false;
+    this.ids[index] = 0; this.rotations.delete(index); this.count--;
+    return true;
+  }
+  clear() { this.ids.fill(0); this.rotations.clear(); this.count = 0; }
+  *keys() {
+    const ids = this.ids;
+    for (let i = 0; i < ids.length; i++) if (ids[i]) yield i;
+  }
+  *values() {
+    const ids = this.ids, rotations = this.rotations;
+    for (let i = 0; i < ids.length; i++) if (ids[i]) yield ids[i] | ((rotations.get(i) || 0) << 16);
+  }
+  *entries() {
+    const ids = this.ids, rotations = this.rotations;
+    for (let i = 0; i < ids.length; i++) if (ids[i]) yield [i, ids[i] | ((rotations.get(i) || 0) << 16)];
+  }
+  forEach(cb, thisArg) {
+    for (const [key, value] of this.entries()) cb.call(thisArg, value, key, this);
+  }
+  [Symbol.iterator]() { return this.entries(); }
+}
+
 export class VoxelWorld {
   constructor(shape = [64, 64, 64]) {
     this.shape = shape.slice();
     this.cells = shape[0] * shape[1] * shape[2];
-    this.map = new Map(); // packedIndex -> { id, rot }
+    this.map = this.cells >= 16 * 1024 * 1024 && this.cells <= 160 * 1024 * 1024 ? new DenseVoxelMap(this.cells) : new Map();
   }
   inBounds(x, y, z) {
     return x >= 0 && y >= 0 && z >= 0 && x < this.shape[0] && y < this.shape[1] && z < this.shape[2];
@@ -17,12 +64,12 @@ export class VoxelWorld {
     const y = Math.floor(r / X), x = r - y * X;
     return [x, y, z];
   }
-  get(x, y, z) { if (x < 0 || y < 0 || z < 0 || x >= this.shape[0] || y >= this.shape[1] || z >= this.shape[2]) return 0; const c = this.map.get(this.pack(x, y, z)); return c ? c.id : 0; }
-  getRot(x, y, z) { if (x < 0 || y < 0 || z < 0 || x >= this.shape[0] || y >= this.shape[1] || z >= this.shape[2]) return 0; const c = this.map.get(this.pack(x, y, z)); return c ? c.rot : 0; }
+  get(x, y, z) { if (x < 0 || y < 0 || z < 0 || x >= this.shape[0] || y >= this.shape[1] || z >= this.shape[2]) return 0; return (this.map.get(this.pack(x, y, z)) || 0) & 0xffff; }
+  getRot(x, y, z) { if (x < 0 || y < 0 || z < 0 || x >= this.shape[0] || y >= this.shape[1] || z >= this.shape[2]) return 0; return (this.map.get(this.pack(x, y, z)) || 0) >>> 16; }
   set(x, y, z, id, rot = 0) {
     const i = this.pack(x, y, z);
     if (id === 0) { this.map.delete(i); return; }
-    this.map.set(i, { id, rot });
+    this.map.set(i, (id & 0xffff) | ((rot & 0xffff) << 16));
   }
   has(x, y, z) { return this.map.has(this.pack(x, y, z)); }
   size() { return this.map.size; }
@@ -41,9 +88,9 @@ export class VoxelWorld {
   toPayload(meta = {}) {
     const indices = [], data = [];
     let rot = null;
-    for (const [i, c] of this.map) {
-      indices.push(i); data.push(c.id);
-      const r = c.rot || 0;
+    for (const [i, v] of this.map) {
+      indices.push(i); data.push(v & 0xffff);
+      const r = v >>> 16;
       if (r) {
         if (!rot) rot = new Array(indices.length - 1).fill(0);
         rot.push(r);
@@ -57,9 +104,9 @@ export class VoxelWorld {
     const w = new VoxelWorld(p.shape || [64, 64, 64]);
     const idx = p.indices || [], dat = p.data || [], rt = p.rot || [];
     for (let k = 0; k < idx.length; k++) {
-      if (!dat[k]) continue;
-      const [x, y, z] = w.unpack(idx[k]);
-      w.set(x, y, z, dat[k], rt[k] || 0);
+      const id = dat[k];
+      if (!id) continue;
+      w.map.set(idx[k], (id & 0xffff) | (((rt[k] || 0) & 0xffff) << 16));
     }
     return w;
   }
@@ -85,9 +132,9 @@ export function encodeVox(world, palette, colors = null) {
   const put = (...xs) => { for (const x of xs) body.push(...(x instanceof Uint8Array ? Array.from(x) : x)); };
   put(id4("SIZE"), u32(12), u32(0), u32(sx), u32(sy), u32(sz));
   const xyz = [];
-  for (const [i, c] of world.map) {
+  for (const [i, v] of world.map) {
     const [x, y, z] = world.unpack(i);
-    const pal = palette.indexOf(c.id);
+    const pal = palette.indexOf(v & 0xffff);
     if (x < minx || y < miny || z < minz) continue;
     xyz.push(x - minx, y - miny, z - minz, Math.max(1, Math.min(255, pal + 1)));
   }

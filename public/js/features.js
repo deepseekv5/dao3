@@ -75,7 +75,8 @@ function wireStatusBar() {
     set("tool", ft ? (ft.title || "").replace(/\s*\([^)]*\)\s*$/, "") : "未选工具");
     set("mode", MODE_ZH[(E.ctx || {}).mode] || "—");
     const s = E.state.selection;
-    nodes.sel.hidden = !s;
+    const selHidden = !s;
+    if (nodes.sel.hidden !== selHidden) nodes.sel.hidden = selHidden;
     if (s) set("sel", `选区 ${s.max.x - s.min.x + 1}×${s.max.y - s.min.y + 1}×${s.max.z - s.min.z + 1}`);
     set("world", (E.state.meta || {}).name || "未命名");
     const d = E.ideDiags ? E.ideDiags() : [];
@@ -97,8 +98,9 @@ function wireStatusBar() {
     // 这里再自己判一次 dirty 就会和顶栏对不上。
     const sv = el("saveState");
     if (sv) set("save", sv.textContent || "");
-    nodes.save.hidden = !(E.state.dirty || (sv && sv.textContent));
-  }, 250);
+    const saveHidden = !(E.state.dirty || (sv && sv.textContent));
+    if (nodes.save.hidden !== saveHidden) nodes.save.hidden = saveHidden;
+  }, 500);
 }
 
 /* ------------------------------ 顶部菜单模式 ------------------------------ */

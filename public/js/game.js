@@ -3735,7 +3735,7 @@ void main() {
       countVoxel: (id) => {
         const base = baseId(Number(id));
         let n = 0;
-        for (const c of w.map.values()) if (c.id === base) n++;
+        for (const c of w.map.values()) if ((c & 0xffff) === base) n++;
         return n;
       },
     };
