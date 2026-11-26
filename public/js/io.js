@@ -11,7 +11,14 @@ export async function apiLoadWorld(id) {
   return r.json();
 }
 export async function apiSaveWorld(id, payload) {
-  const r = await fetch(`/api/world/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  const json = JSON.stringify(payload);
+  const headers = { "Content-Type": "application/json" };
+  let body = json;
+  try {
+    body = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+    headers["Content-Encoding"] = "gzip";
+  } catch { /* 浏览器不支持压缩就按原样发，服务端也认 */ }
+  const r = await fetch(`/api/world/${id}`, { method: "POST", headers, body });
   return r.json();
 }
 export async function apiListWorlds() {

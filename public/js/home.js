@@ -303,8 +303,7 @@ function importFile(file) {
     if (res.projectCfg && res.projectCfg.ambientSound) meta.ambientSound = res.projectCfg.ambientSound;
     if (res.projectCfg && res.projectCfg.displayName) { meta.displayName = res.projectCfg.displayName; meta.name = res.projectCfg.displayName; }
     const payload = res.world.toPayload(meta);
-    const r = await fetch("/api/world/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const j = await r.json();
+    const j = await io.apiSaveWorld(id, payload);
     if (!j.ok) throw new Error(j.error || "保存失败");
     tip("已保存，正在打开编辑器…", 0);
     setTimeout(() => (location.href = "/edit/" + id), 400);

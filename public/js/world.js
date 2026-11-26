@@ -39,9 +39,19 @@ export class VoxelWorld {
   }
 
   toPayload(meta = {}) {
-    const indices = [], data = [], rot = [];
-    for (const [i, c] of this.map) { indices.push(i); data.push(c.id); rot.push(c.rot || 0); }
-    return { formatVersion: "unity", shape: this.shape, dir: [1, 1, 1], indices, data, rot, meta };
+    const indices = [], data = [];
+    let rot = null;
+    for (const [i, c] of this.map) {
+      indices.push(i); data.push(c.id);
+      const r = c.rot || 0;
+      if (r) {
+        if (!rot) rot = new Array(indices.length - 1).fill(0);
+        rot.push(r);
+      } else if (rot) rot.push(0);
+    }
+    const out = { formatVersion: "unity", shape: this.shape, dir: [1, 1, 1], indices, data, meta };
+    if (rot) out.rot = rot;
+    return out;
   }
   static fromPayload(p) {
     const w = new VoxelWorld(p.shape || [64, 64, 64]);

@@ -641,10 +641,12 @@ const server = http.createServer((req, res) => {
       }
       if (req.method === "POST" || req.method === "PUT") {
         const chunks = []; let len = 0;
-        req.on("data", (c) => { len += c.length; if (len > 80 * 1024 * 1024) { req.destroy(); return; } chunks.push(c); });
+        req.on("data", (c) => { len += c.length; if (len > 256 * 1024 * 1024) { req.destroy(); return; } chunks.push(c); });
         req.on("end", () => {
           try {
-            const payload = JSON.parse(Buffer.concat(chunks, len).toString("utf8"));
+            let raw = Buffer.concat(chunks, len);
+            if (/gzip/i.test(String(req.headers["content-encoding"] || ""))) raw = zlib.gunzipSync(raw);
+            const payload = JSON.parse(raw.toString("utf8"));
             if (!Array.isArray(payload.data)) return json(res, 400, { error: "invalid payload" });
             const size = writeWorld(id, payload);
             worldMetaCache.delete(id);
