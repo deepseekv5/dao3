@@ -139,9 +139,9 @@ jobs:
           fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$zip_f" "$dmg_f" "$exe_f" --clobber
-            gh release edit "$TAG" --title "$TAG" --notes "$notes"
+            gh release edit "$TAG" --title "老攸元宇宙（dao3复刻） $TAG" --notes "$notes"
           else
-            gh release create "$TAG" "$zip_f" "$dmg_f" "$exe_f" --title "$TAG" --notes "$notes" --target "$(git rev-parse HEAD)"
+            gh release create "$TAG" "$zip_f" "$dmg_f" "$exe_f" --title "老攸元宇宙（dao3复刻） $TAG" --notes "$notes" --target "$(git rev-parse HEAD)"
           fi
           # tag 与 release 必须成对；dispatch 触发时 tag 可能还不存在
           git fetch --tags --force
