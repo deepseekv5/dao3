@@ -131,9 +131,15 @@ jobs:
             echo "取不到 $TAG 的更新日志小节："; echo "$notes"; exit 1
           fi
           notes="$notes"$'\n\n---\n\n'"便携包 zip / macOS .dmg / Windows 安装程序 exe 三件同内容，按平台挑一件。"
-          notes="$notes"$'\n\n'"GitHub Packages（npm）：npx @deepseekv5/dao3-editor-clone"
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          if [[ "$PACKAGE_NAME" == @deepseekv5/* ]]; then
+            notes="$notes"$'\n\n'"GitHub Packages（npm）：npx $PACKAGE_NAME"
+          else
+            notes="$notes"$'\n\n'"本次发行只提供上述三件安装包；当前包名不是 GitHub Packages 可接受的 @deepseekv5/* scoped 包，未发布 npm。"
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$zip_f" "$dmg_f" "$exe_f" --clobber
+            gh release edit "$TAG" --title "$TAG" --notes "$notes"
           else
             gh release create "$TAG" "$zip_f" "$dmg_f" "$exe_f" --title "$TAG" --notes "$notes" --target "$(git rev-parse HEAD)"
           fi
@@ -151,10 +157,16 @@ jobs:
           printf '@deepseekv5:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' \
             "$NODE_AUTH_TOKEN" > "$RUNNER_TEMP/.npmrc"
           VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          if [[ "$PACKAGE_NAME" != @deepseekv5/* ]]; then
+            echo "$PACKAGE_NAME 不是 GitHub Packages 可接受的 @deepseekv5/* scoped 包，跳过 npm 发布"
+            rm -f "$RUNNER_TEMP/.npmrc"
+            exit 0
+          fi
           # GitHub Packages 不允许覆盖同版本，重跑会 E409。
           # 发布必须可重入：已经存在就当作成功，而不是让整条流水线红掉。
-          if npm view "@deepseekv5/dao3-editor-clone@$VERSION" version --userconfig "$RUNNER_TEMP/.npmrc" >/dev/null 2>&1; then
-            echo "@deepseekv5/dao3-editor-clone@$VERSION 已在 registry 里，跳过发布"
+          if npm view "$PACKAGE_NAME@$VERSION" version --userconfig "$RUNNER_TEMP/.npmrc" >/dev/null 2>&1; then
+            echo "$PACKAGE_NAME@$VERSION 已在 registry 里，跳过发布"
           else
             npm publish --userconfig "$RUNNER_TEMP/.npmrc" --registry=https://npm.pkg.github.com
           fi
