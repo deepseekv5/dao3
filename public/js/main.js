@@ -325,106 +325,55 @@ async function applySceneModels(meta) {
   const ents = (meta && meta.entities) || [];
   const legacy = (meta && meta.models) || [];
   const withMesh = ents.filter((d) => d.mesh);
-  const streaming = Math.max(world.shape[0], world.shape[2]) > 256;
   const { addPlacedModel, addEntityMarker, suspendModelList, refreshModelList } = await import("./features.js");
   if (renderer._modelStreamCleanup) renderer._modelStreamCleanup();
   suspendModelList(true);
   for (const m of state.models || []) { if (m.object && m.object.parent) m.object.parent.remove(m.object); }
   state.models = [];
   state.selectedModel = null;
-  const unplaced = new Set(ents), marked = new Set(), missing = new Set();
-  let streamActive = true;
-  const byMesh = new Map();
+  const placed = new Set(), byMesh = new Map();
   for (const d of withMesh) {
     if (!byMesh.has(d.mesh)) byMesh.set(d.mesh, []);
     byMesh.get(d.mesh).push(d);
   }
-  const spawn = (meta && meta.player && meta.player.initialPosition) || { x: 0, y: 0, z: 0 };
-  const dist2 = (d, target) => {
-    const p = d.position || d.pos || spawn;
-    return (p[0] - target.x) ** 2 + (p[1] - target.y) ** 2 + (p[2] - target.z) ** 2;
-  };
-  const addMarker = (d) => {
-    if (marked.has(d)) return;
-    marked.add(d);
-    addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || d.position || [4, 4, 4],
-      bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys, mesh: d.mesh });
-  };
-  const place = (base, asset, target, radius) => {
-    if (!streamActive) return 0;
-    let changed = 0;
-    for (const d of byMesh.get(base)) {
-      if (!unplaced.has(d) || dist2(d, target) > radius * radius) continue;
-      addPlacedModel({
-        id: d.id, name: d.name, meshName: d.mesh, meshId: d.meshId, parentId: d.parentId,
-        pos: d.position, orientation: d.orientation, scaleVec: d.scale, scale: Array.isArray(d.scale) ? d.scale[0] : d.scale,
-        bounds: d.bounds, tags: d.tags, collision: d.collision, fixed: d.fixed, gravity: d.gravity,
-        mass: d.mass, friction: d.friction, restitution: d.restitution, emissive: d.emissive,
-        metalness: d.metalness, shininess: d.shininess, tint: d.tint, damage: d.damage,
-        particle: d.particle, sound: d.sound, defaultMotionId: d.defaultMotionId, meshInvisible: d.meshInvisible, anchorOffset: d.anchorOffset, source: asset.object,
-      });
-      unplaced.delete(d); changed++;
+  const queue = [...byMesh.keys()];
+  let cursor = 0, noAsset = 0;
+  const worker = async () => {
+    while (cursor < queue.length) {
+      const base = queue[cursor++];
+      let asset = state.assets.meshes[base];
+      if (!asset || !asset.object) asset = await ensureMeshAsset(base).catch(() => null);
+      if (!asset || !asset.object) { noAsset += byMesh.get(base).length; continue; }
+      for (const d of byMesh.get(base)) {
+        addPlacedModel({
+          id: d.id, name: d.name, meshName: d.mesh, meshId: d.meshId, parentId: d.parentId,
+          pos: d.position, orientation: d.orientation, scaleVec: d.scale, scale: Array.isArray(d.scale) ? d.scale[0] : d.scale,
+          bounds: d.bounds, tags: d.tags, collision: d.collision, fixed: d.fixed, gravity: d.gravity,
+          mass: d.mass, friction: d.friction, restitution: d.restitution, emissive: d.emissive,
+          metalness: d.metalness, shininess: d.shininess, tint: d.tint, damage: d.damage,
+          particle: d.particle, sound: d.sound, defaultMotionId: d.defaultMotionId, meshInvisible: d.meshInvisible, anchorOffset: d.anchorOffset, source: asset.object,
+        });
+        placed.add(d);
+      }
     }
-    return changed;
   };
-  let noAsset = 0, missingNotified = false;
-  const notifyMissing = () => {
-    if (!noAsset || missingNotified) return;
-    missingNotified = true;
-    const why = state.meta && state.meta.assetRoot ? "对应的 .gltf 不在这个目录里" : "这张图没有记录素材目录（导入时没带模型字节）";
-    toast(`${noAsset} 个实体引用的模型加载不出来（${why}）`, true, 6000);
-    console.warn(`[models] ${noAsset} 个实体的模型没加载：${why}`);
-  };
-  const loadBase = async (base, target, radius) => {
-    if (missing.has(base)) { for (const d of byMesh.get(base)) if (dist2(d, target) <= radius * radius) addMarker(d); return 0; }
-    let asset = state.assets.meshes[base];
-    if (!asset || !asset.object) asset = await ensureMeshAsset(base).catch(() => null);
-    if (!streamActive) return 0;
-    if (!asset || !asset.object) {
-      missing.add(base); noAsset += byMesh.get(base).length;
-      for (const d of byMesh.get(base)) addMarker(d);
-      return 0;
-    }
-    return place(base, asset, target, radius);
-  };
-  const nearest = (target, radius) => {
-    if (!streaming) return [...byMesh.keys()].filter((base) => byMesh.get(base).some((d) => unplaced.has(d)));
-    return [...byMesh.keys()]
-      .filter((base) => byMesh.get(base).some((d) => unplaced.has(d) && dist2(d, target) <= radius * radius))
-      .sort((a, b) => Math.min(...byMesh.get(a).map((d) => dist2(d, target))) - Math.min(...byMesh.get(b).map((d) => dist2(d, target))));
-  };
-  for (const base of nearest(spawn, streaming ? 64 : Infinity)) {
-    await loadBase(base, spawn, streaming ? 64 : Infinity);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
+  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
   for (const d of legacy) {
     const a = await ensureMeshAsset(d.meshName).catch(() => null);
     if (!a || !a.object) { noAsset++; continue; }
     addPlacedModel({ name: d.name, meshName: d.meshName, pos: d.pos, scale: d.scale, rotY: d.rotY || 0, source: a.object });
   }
-  for (const d of unplaced) if (!d.mesh) addMarker(d);
-  state.entities = [...unplaced];
-  notifyMissing();
-  let timer = 0, pumping = false;
-  const pump = async () => {
-    if (pumping || !streamActive) return;
-    pumping = true;
-    let changed = 0;
-    const target = renderer.controls.target;
-    for (const base of nearest(target, 128).slice(0, 4)) {
-      if (!streamActive) break;
-      changed += await loadBase(base, target, 128);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    state.entities = [...unplaced];
-    if (!streamActive) { pumping = false; return; }
-    if (changed) refreshModelList();
-    notifyMissing();
-    pumping = false;
-  };
-  const onChange = () => { clearTimeout(timer); timer = setTimeout(pump, 600); };
-  renderer.controls.addEventListener("change", onChange);
-  renderer._modelStreamCleanup = () => { streamActive = false; clearTimeout(timer); renderer.controls.removeEventListener("change", onChange); };
+  state.entities = ents.filter((d) => !placed.has(d));
+  for (const d of state.entities) {
+    addEntityMarker({ id: d.id, tags: d.tags || [], pos: d.pos || d.position || [4, 4, 4],
+      bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys, mesh: d.mesh });
+  }
+  if (noAsset) {
+    const why = state.meta && state.meta.assetRoot ? "对应的 .gltf 不在这个目录里" : "这张图没有记录素材目录（导入时没带模型字节）";
+    toast(`${noAsset} 个实体引用的模型加载不出来（${why}）`, true, 6000);
+    console.warn(`[models] ${noAsset} 个实体的模型没加载：${why}`);
+  }
+  renderer._modelStreamCleanup = null;
   suspendModelList(false);
   refreshModelList();
   ui && ui.refreshTree && ui.refreshTree();
@@ -765,16 +714,15 @@ async function boot() {
     if (window.__openSizeModal) window.__openSizeModal(); // 进入即选择大小并生成
     updateStatus();
   }
+  let renderStarted = false;
+  const startRenderer = () => { if (renderStarted) return; renderStarted = true; renderer.start(); };
   bootUi.stage(88, "正在准备界面…");
   requestAnimationFrame(() => {
     bootUi.done();
-    if (Math.max(world.shape[0], world.shape[2]) > 256) setTimeout(() => restoreSceneModels(state.meta), 800);
-    else restoreSceneModels(state.meta);
+    restoreSceneModels(state.meta);
+    setTimeout(() => renderer.prepareFirstFrame().then(startRenderer).catch(startRenderer), 0);
+    setTimeout(startRenderer, 1500);
   });
-  let renderStarted = false;
-  const startRenderer = () => { if (renderStarted) return; renderStarted = true; renderer.start(); };
-  renderer.prepareFirstFrame().then(startRenderer).catch(startRenderer);
-  setTimeout(startRenderer, 1500);
   if (q.get("export") === "1") {
     io.exportProjectZip({ world, state, name: state.meta.name || worldId, download: true })
       .then(() => toast("已导出项目包"))

@@ -9,7 +9,8 @@ npm start &                      # 起本地服务（测试自己另起端口的
 # —— 不需要 playwright、真的跑得起来的 ——
 npm run test:ide                 # test/ide.test.mjs · 编辑器外壳与脚本补全
 npm run test:creative            # test/creative.test.mjs · 皮肤与 DAW 创作回归
-npm run test:pro-features        # test/pro-features.test.mjs · 801 积木/天气/自动化/分轨/相机/大地图
+npm run test:pro-features        # test/pro-features.test.mjs · 积木/天气/自动化/分轨/相机/大地图
+npm run test:source-render       # test/source-render.test.mjs · 源码精灵天空/雾/像素比/帧缓冲
 npm run test:voxa                # test/voxa.test.mjs · VOXA 模型层纯函数（裸 Node）
 npm run test:voxa-ui             # test/voxa-ui.test.mjs · VOXA 交互层（真指针 + 真 DOM）
 npm run test:community           # test/community.test.mjs · 社区后端 HTTP 全量

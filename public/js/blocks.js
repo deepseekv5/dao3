@@ -93,9 +93,12 @@ const TYPES = {
   var_say: { cat: "var", needs: true, label: "把变量", unit: "飘给 TA 看", fields: { name: { t: "name", d: "得分" } },
     vars: (b) => [b.f.name], emit: (b) => [`entity.say(String(${safeName(b.f.name)}));`] },
 
-  set_voxel: { cat: "world", label: "在 XYZ", unit: "放一个方块", fields: {
-    x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 }, name: { t: "text", d: "stone" } },
-    emit: (b) => [`world.setVoxel(${num(b.f.x)}, ${num(b.f.y)}, ${num(b.f.z)}, ${lit(b.f.name)});`] },
+  set_voxel: { cat: "voxel", label: "在 XYZ 放置方块", fields: {
+    x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 }, name: { t: "block", d: "grass" } },
+    emit: (b) => [`world.setVoxel(${num(b.f.x)}, ${num(b.f.y)}, ${num(b.f.z)}, ${lit(blockName(b.f.name))});`] },
+  if_voxel: { cat: "voxel", body: true, label: "如果 XYZ 是方块", fields: {
+    x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 }, name: { t: "block", d: "grass" } },
+    emit: (b, inner) => [`if (world.getVoxelName(${num(b.f.x)}, ${num(b.f.y)}, ${num(b.f.z)}) === ${lit(blockName(b.f.name))}) {`, ...inner, "}"] },
   weather: { cat: "world", label: "设置天气", fields: { rain: { t: "num", d: 0 }, snow: { t: "num", d: 0 }, thunder: { t: "num", d: 0 } },
     emit: (b) => [`world.rainDensity = ${clamp(+b.f.rain || 0, 0, 1)};`, `world.snowDensity = ${clamp(+b.f.snow || 0, 0, 1)};`, `world.thunderDensity = ${clamp(+b.f.thunder || 0, 0, 1)};`] },
   spawn: { cat: "world", label: "把出生点设到 XYZ", fields: {
@@ -139,19 +142,21 @@ const TYPES = {
     emit: (b) => [`world.setGameRule(${lit(b.f.name)}, ${b.f.value || "null"});`] },
 };
 
-function expandVoxelBlocks(atlas) {
-  const zh = { grass: "草", stone: "石头", rock: "岩石", sand: "沙子", wood: "木头", log: "原木", plank: "木板", brick: "砖块", glass: "玻璃", water: "水", lava: "岩浆", snow: "雪", ice: "冰", cloud: "云", light: "灯", glow: "发光", red: "红", orange: "橙", yellow: "黄", green: "绿", blue: "蓝", purple: "紫", pink: "粉", black: "黑", white: "白", grey: "灰", gray: "灰", dark: "深色", pale: "浅色", all: "全", road: "道路", wall: "墙", door: "门", window: "窗", flower: "花", leaf: "树叶", leaves: "树叶", metal: "金属", iron: "铁", gold: "金", diamond: "钻石", crystal: "水晶", fire: "火", mud: "泥", soil: "土壤", chest: "箱子", fence: "栅栏", roof: "屋顶", floor: "地板", tile: "瓷砖" };
-  const pretty = (name) => name.split("_").map((part) => zh[part] || part).join("");
-  const blocks = atlas && typeof atlas.list === "function" ? atlas.list() : [];
-  for (const b of blocks) {
-    const name = String(b.name || b.id), label = pretty(name);
-    TYPES[`vox_set_${b.id}`] = { cat: "voxel", label: `放置 ${label}`, keywords: `${name} ${label}`, fields: {
-      x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 } },
-      emit: (v) => [`world.setVoxel(${num(v.f.x)}, ${num(v.f.y)}, ${num(v.f.z)}, ${lit(name)});`] };
-    TYPES[`vox_if_${b.id}`] = { cat: "voxel", body: true, label: `如果 XYZ 是 ${label}`, keywords: `${name} ${label}`, fields: {
-      x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 } },
-      emit: (v, inner) => [`if (world.getVoxelName(${num(v.f.x)}, ${num(v.f.y)}, ${num(v.f.z)}) === ${lit(name)}) {`, ...inner, "}"] };
-  }
+const BLOCK_ZH = { grass: "草", stone: "石头", rock: "岩石", sand: "沙子", wood: "木头", log: "原木", plank: "木板", brick: "砖块", glass: "玻璃", water: "水", lava: "岩浆", snow: "雪", ice: "冰", cloud: "云", light: "灯", glow: "发光", red: "红", orange: "橙", yellow: "黄", green: "绿", blue: "蓝", purple: "紫", pink: "粉", black: "黑", white: "白", grey: "灰", gray: "灰", dark: "深色", pale: "浅色", all: "全", road: "道路", wall: "墙", door: "门", window: "窗", flower: "花", leaf: "树叶", leaves: "树叶", metal: "金属", iron: "铁", gold: "金", diamond: "钻石", crystal: "水晶", fire: "火", mud: "泥", soil: "土壤", chest: "箱子", fence: "栅栏", roof: "屋顶", floor: "地板", tile: "瓷砖" };
+let BLOCK_OPTIONS = [];
+const prettyBlock = (name) => String(name).split("_").map((part) => BLOCK_ZH[part] || part).join("");
+const blockName = (value) => {
+  const q = String(value || "").trim();
+  return BLOCK_OPTIONS.find((b) => b.name === q || b.label === q || b.zh === q)?.name || q;
+};
+function initBlockOptions(atlas) {
+  BLOCK_OPTIONS = (atlas && typeof atlas.list === "function" ? atlas.list() : []).map((b) => {
+    const name = String(b.name || b.id), zh = prettyBlock(name);
+    return { name, zh, label: `${zh} ${name}` };
+  });
+  const keywords = "方块 block voxel " + BLOCK_OPTIONS.map((b) => b.name + " " + b.zh).join(" ");
+  TYPES.set_voxel.keywords = keywords;
+  TYPES.if_voxel.keywords = keywords;
 }
 export function blockCatalogSize() { return Object.keys(TYPES).length; }
 
@@ -228,6 +233,13 @@ export function wireBlocks(E) {
   const screen = document.getElementById("blockScreen");
   if (!screen || screen.dataset.on) return;
   screen.dataset.on = "1";
+  initBlockOptions(E.atlas);
+  let blockList = screen.querySelector("#bkBlockOptions");
+  if (!blockList) {
+    blockList = document.createElement("datalist"); blockList.id = "bkBlockOptions";
+    for (const b of BLOCK_OPTIONS) { const option = document.createElement("option"); option.value = b.name; option.label = b.label; blockList.appendChild(option); }
+    screen.appendChild(blockList);
+  }
   const toolBody = screen.querySelector("#bsTool");
   const filter = screen.querySelector("#bsFilter");
   const canvas = screen.querySelector("#bsCanvas");
@@ -341,6 +353,9 @@ export function wireBlocks(E) {
     const cls = "bk-f" + (fd.t === "expr" ? " expr" : "");
     if (fd.t === "sel") {
       return `<select class="${cls}" data-k="${k}">${fd.opts.map((o) => `<option${o === v ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+    }
+    if (fd.t === "block") {
+      return `<input class="${cls}" data-k="${k}" type="text" list="bkBlockOptions" value="${esc(v)}" placeholder="${esc(fd.d)}" spellcheck="false">`;
     }
     const type = fd.t === "num" ? "number" : "text";
     return `<input class="${cls}" data-k="${k}" type="${type}"${fd.t === "num" ? ' step="any"' : ""} value="${esc(v)}" placeholder="${esc(fd.d)}" spellcheck="false">`;
@@ -619,13 +634,21 @@ export function wireBlocks(E) {
     try { const w = +localStorage.getItem("ly_bsw"); if (w > 200) setW(w); } catch {}
   }
 
-  expandVoxelBlocks(E.atlas);
   renderTool();
   render();
   paintCode();
   screen.__open = () => {
     const m = (E.state.meta || {}).blocks;
-    if (Array.isArray(m) && m.length && !tree.length) tree = JSON.parse(JSON.stringify(m));
+    if (Array.isArray(m) && m.length && !tree.length) {
+      tree = JSON.parse(JSON.stringify(m));
+      for (const b of flat(tree)) {
+        const old = /^vox_(set|if)_(\d+)$/.exec(b.type || "");
+        if (!old) continue;
+        const block = E.atlas.byId(Number(old[2]));
+        b.type = old[1] === "set" ? "set_voxel" : "if_voxel";
+        b.f = Object.assign({}, b.f, { name: block?.name || "grass" });
+      }
+    }
     render(); paintCode();
   };
 }

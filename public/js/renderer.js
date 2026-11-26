@@ -241,6 +241,7 @@ export class VoxelRenderer {
     this.controls.target.set(24, 10, 24);
     this.controls.maxPolarAngle = Math.PI * 0.495;
     this._streamReady = false;
+    this._largeWorld = false;
     this._viewKey = "";
     this._viewTimer = 0;
     this.controls.addEventListener("change", () => this.queueVisibleChunks());
@@ -597,6 +598,7 @@ vec2 fxTileRect(float t){
     const [X, Y, Z] = world.shape;
     const size = Math.max(X, Z);
     const large = size > 256;
+    this._largeWorld = large;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, large ? 1.25 : 2));
     this.baseplate.geometry.dispose();
     this.baseplate.geometry = new THREE.PlaneGeometry(size + 8, size + 8);
@@ -610,12 +612,12 @@ vec2 fxTileRect(float t){
     Object.assign(this.sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, far: size * 4 });
     this.sun.shadow.camera.updateProjectionMatrix();
     if (large) {
-      this._quality = "fast";
+      this._quality = "large";
       this.applyQuality();
       const p = spawn && Number.isFinite(+spawn.x) ? [+spawn.x, +spawn.y || 0, +spawn.z] : [X / 2, Math.min(40, Y / 2), Z / 2];
       this.controls.target.set(p[0], p[1] + 1.5, p[2]);
       this.camera.position.set(p[0] + 34, p[1] + 24, p[2] + 42);
-      this.camera.near = .1; this.camera.far = 720; this.camera.updateProjectionMatrix();
+      this.camera.near = .1; this.camera.far = 2200; this.camera.updateProjectionMatrix();
       this.scene.fog.near = 55; this.scene.fog.far = 140;
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
       this.sun.shadow.mapSize.set(1024, 1024);
@@ -630,9 +632,9 @@ vec2 fxTileRect(float t){
     this.rebuildAll();
     if (large) setTimeout(() => {
       if (this.world !== world) return;
-      this.scene.fog.far = 250;
+      this.scene.fog.near = 55; this.scene.fog.far = 250;
       this.queueVisibleChunks(true, 1);
-    }, 900);
+    }, 250);
   }
   frameCamera() {
     const [X, , Z] = this.world.shape;
@@ -660,6 +662,7 @@ vec2 fxTileRect(float t){
     eco:    { label: "省电", ratio: 0.7,  shadow: false, map: 1024, fog: 0.45, edge: false },
     fast:   { label: "流畅", ratio: 1,    shadow: false, map: 1024, fog: 0.7,  edge: false },
     balanced: { label: "标准", ratio: 1.5, shadow: true,  map: 1024, fog: 1,    edge: false },
+    large:     { label: "大地图", ratio: 1.5, shadow: false, map: 1024, fog: 1,    edge: false },
     high:   { label: "精细", ratio: 2,    shadow: true,  map: 2048, fog: 1,    edge: false },
     ultra:  { label: "极致", ratio: 3,    shadow: true,  map: 4096, fog: 1,    edge: true  },
   };
@@ -674,7 +677,8 @@ vec2 fxTileRect(float t){
   get quality() { return this._quality || "balanced"; }
   applyQuality() {
     const q = VoxelRenderer.QUALITY[this.quality] || VoxelRenderer.QUALITY.balanced;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.ratio));
+    const ratio = this.quality === "large" ? Math.max(1.25, Math.min(window.devicePixelRatio || 1, q.ratio)) : Math.min(window.devicePixelRatio || 1, q.ratio);
+    this.renderer.setPixelRatio(ratio);
     this.renderer.shadowMap.enabled = q.shadow;
     this.sun.castShadow = q.shadow;
     if (this.sun.shadow.mapSize.x !== q.map) {
@@ -762,11 +766,12 @@ vec2 fxTileRect(float t){
     const dist = this.camera.position.distanceTo(this.controls.target);
     const large = Math.max(X, Z) > 256;
     const radius = large ? clamp(Math.ceil(dist / CHUNK) - 3 + extra, 1, 4) : clamp(Math.ceil(dist / CHUNK) + 3, 4, 8);
-    const key = `${cx},${cy},${cz},${radius}`;
+    const radiusY = large && extra === 0 ? 0 : radius;
+    const key = `${cx},${cy},${cz},${radius},${radiusY}`;
     if (!force && key === this._viewKey) return;
     this._viewKey = key;
     const candidates = [];
-    for (let dz = -radius; dz <= radius; dz++) for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+    for (let dz = -radius; dz <= radius; dz++) for (let dy = -radiusY; dy <= radiusY; dy++) for (let dx = -radius; dx <= radius; dx++) {
       const x = cx + dx, y = cy + dy, z = cz + dz;
       if (x < 0 || y < 0 || z < 0 || x >= maxX || y >= maxY || z >= maxZ) continue;
       const k = x + "," + y + "," + z;
@@ -783,18 +788,18 @@ vec2 fxTileRect(float t){
     for (const [key, [cx, cy, cz]] of this._build) {
       this.buildChunk(cx, cy, cz, key);
       this._build.delete(key);
-      if (performance.now() - started > 7) break;
+      if (performance.now() - started > 12) break;
     }
     if (this._build.size) this._scheduleFlush();
   }
   waitForVisibleChunks(onProgress) {
-    const total = this._build.size;
+    const pending = new Set(this._build.keys()), total = pending.size;
     if (!total) { onProgress?.(1); return Promise.resolve(); }
     return new Promise((resolve) => {
       const tick = () => {
-        const progress = Math.min(1, (total - this._build.size) / total);
-        onProgress?.(progress);
-        if (!this._build.size) resolve();
+        for (const key of pending) if (!this._build.has(key)) pending.delete(key);
+        onProgress?.((total - pending.size) / total);
+        if (!pending.size) resolve();
         else requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -1193,6 +1198,7 @@ vec2 fxTileRect(float t){
       this.scene.fog.near = Math.max(0.5, Math.min(near, far - 1));
       this.scene.fog.far = far;
     }
+    if (this._largeWorld) { this.scene.fog.near = 55; this.scene.fog.far = 250; }
     // 六面天光：上下喂半球光，左右前后平均后作为补光颜色与强度，globalLight 作为环境光基准
     if (t.skyTop != null) this.hemi.color.set(t.skyTop);
     // 半球光的地面反弹色要用地面自己的颜色，不是天空色。
@@ -1272,7 +1278,9 @@ vec2 fxTileRect(float t){
         this.viewLight.target.updateMatrixWorld(); }
       // rendering3d=false 时不再提交新帧，画布保留最后一帧（官方语义）
       if (this._render3d === false) return;
-      this.renderer.render(this.scene, this.activeCam || this.camera);
+      const camera = this.activeCam || this.camera;
+      this.sky.position.copy(camera.position);
+      this.renderer.render(this.scene, camera);
     };
     loop();
   }
