@@ -46,7 +46,7 @@ export function defaultMusicDoc() {
   for (let t = 4; t < 64; t += 8) drums.push({ t, pitch: 38, dur: 1, vel: .62 });
   for (let t = 0; t < 64; t += 2) drums.push({ t, pitch: 42, dur: 1, vel: .24 });
   return { v: 2, name: "未命名作品", bpm: 96, beatsPerBar: 4, key: "C", scale: "major", bars: 4,
-    loop: { enabled: true, start: 0, end: 64 }, metronome: false,
+    loop: { enabled: true, start: 0, end: 64 }, metronome: false, markers: [{ t: 0, name: "开始" }, { t: 32, name: "B 段" }],
     master: { volume: .85, reverb: .12, delay: .08 },
     tracks: [newTrack("主旋律", "pluck", COLORS[0], lead), newTrack("低音", "bass", COLORS[1], bass), newTrack("鼓组", "drum", COLORS[2], drums)] };
 }
@@ -66,6 +66,7 @@ function normalize(d) {
     end: clamp(Math.round(+out.loop?.end || total), 1, total) };
   if (out.loop.end <= out.loop.start) out.loop.end = Math.min(total, out.loop.start + 1);
   out.master = { volume: clamp(+out.master?.volume ?? .85, 0, 1), reverb: clamp(+out.master?.reverb ?? .12, 0, .7), delay: clamp(+out.master?.delay ?? .08, 0, .65) };
+  out.markers = (Array.isArray(out.markers) ? out.markers : base.markers).map((m) => ({ t: clamp(Math.round(+m.t || 0), 0, total - 1), name: String(m.name || "标记").slice(0, 24) })).sort((a, b) => a.t - b.t);
   out.tracks = (Array.isArray(out.tracks) && out.tracks.length ? out.tracks : base.tracks).map((t, i) => {
     const clips = Array.isArray(t.clips) && t.clips.length ? t.clips : [{ id: uid(), name: t.name || "轨道 " + (i + 1), start: 0, length: total, notes: t.notes || [] }];
     return { id: t.id || uid(), name: String(t.name || "轨道 " + (i + 1)).slice(0, 24), instrument: INSTRUMENT_NAMES.some(([k]) => k === t.instrument) ? t.instrument : "piano",
@@ -267,6 +268,7 @@ export function openMusicStudio(E) {
     const ruler = $(".da-ruler"), lanes = $(".da-lanes");
     const beats = doc.bars * doc.beatsPerBar;
     ruler.innerHTML = Array.from({length:beats},(_,i)=>`<span style="left:${i/beats*100}%">${i%doc.beatsPerBar===0?`<b>${i/doc.beatsPerBar+1}</b>`:"·"}</span>`).join("");
+    for (const marker of doc.markers) { const el=document.createElement("button");el.className="da-marker";el.style.left=`${marker.t/total()*100}%`;el.textContent=marker.name;el.title=`${marker.name} · 第 ${Math.floor(marker.t/16)+1} 小节`;el.onclick=()=>paintPlayhead(marker.t);ruler.appendChild(el); }
     lanes.innerHTML = "";
     doc.tracks.forEach((t,i)=>{
       const lane = document.createElement("div"); lane.className = "da-lane"+(i===trackAt?" on":"");

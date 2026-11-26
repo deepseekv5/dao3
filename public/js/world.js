@@ -8,6 +8,14 @@ class DenseVoxelMap {
     this.rotations = new Map();
     this.count = 0;
   }
+  static adopt(ids, rotIndices, rotValues, count) {
+    const map = new DenseVoxelMap(0);
+    map.ids = ids;
+    map.rotations = new Map();
+    for (let i = 0; i < rotIndices.length; i++) map.rotations.set(rotIndices[i], rotValues[i]);
+    map.count = count;
+    return map;
+  }
   get size() { return this.count; }
   get(index) {
     const id = this.ids[index];
@@ -49,10 +57,15 @@ class DenseVoxelMap {
 }
 
 export class VoxelWorld {
-  constructor(shape = [64, 64, 64]) {
+  constructor(shape = [64, 64, 64], map = null) {
     this.shape = shape.slice();
     this.cells = shape[0] * shape[1] * shape[2];
-    this.map = this.cells >= 16 * 1024 * 1024 && this.cells <= 160 * 1024 * 1024 ? new DenseVoxelMap(this.cells) : new Map();
+    this.map = map || (this.cells >= 16 * 1024 * 1024 && this.cells <= 160 * 1024 * 1024 ? new DenseVoxelMap(this.cells) : new Map());
+  }
+  static fromDenseBuffers(shape, ids, rotIndices, rotValues, count, meta = {}) {
+    const world = new VoxelWorld(shape, DenseVoxelMap.adopt(new Uint16Array(ids), new Uint32Array(rotIndices), new Uint8Array(rotValues), count));
+    world.meta = meta;
+    return world;
   }
   inBounds(x, y, z) {
     return x >= 0 && y >= 0 && z >= 0 && x < this.shape[0] && y < this.shape[1] && z < this.shape[2];

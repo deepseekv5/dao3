@@ -83,18 +83,21 @@ ok("电脑键盘可实时演奏并录入音符", music.notesAfter === music.note
 
 await s.goto(`${BASE}/edit/216d665d3ca92bd1b9a2?play=1`, { settleMs: 300 });
 for (let i = 0; i < 300; i++) { if (await s.evaluate("!!(window.__game&&window.__game.playerEntity)", { awaitPromise: false })) break; await sleep(100); }
+const runtimeWeather = await s.evaluate(`(() => {const g=window.__game;g.e.state.terrain.weatherLevels={rain:.8,snow:0,thunder:.2,cloud:.5,wind:.3};g.rainDensity=.8;g.thunderDensity=.2;g._applyEnvironment();return{rain:g.e.renderer.weather.rain,cloud:g.e.renderer.weather.cloud,wind:g.e.renderer.weather.wind,uniform:g.e.renderer.skyMat.uniforms.uCloud.value};})()`);
+ok("动态天气同步到真实运行时渲染", runtimeWeather.rain === .8 && runtimeWeather.cloud === .5 && runtimeWeather.wind === .3 && runtimeWeather.uniform === .5, JSON.stringify(runtimeWeather));
 const camera = await s.evaluate(`(() => {
   const g=window.__game;g._jumpBuf=0;window.dispatchEvent(new KeyboardEvent('keydown',{code:'Space',key:' ',repeat:true,bubbles:true}));const repeatBuf=g._jumpBuf;
   g._tPitch=1;window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyR',key:'r',bubbles:true}));const recenter=g._tPitch;
   g.e.renderer.camera.position.y=999;g._updateCamera(.016);const camClamp=g.e.renderer.camera.position.y;
-  g.playerEntity.position.y=g.e.world.shape[1]+20;g._vy=5;return {repeatBuf,recenter,camClamp,ceiling:g.e.world.shape[1]+12};
+  g.playerEntity.position.y=g.e.world.shape[1]+20;g._vy=5;g._stepPlayer(g.player,g.playerEntity);const safeY=g.playerEntity.position.y,safeVy=g._vy;
+  return {repeatBuf,recenter,camClamp,safeY,safeVy,ceiling:g.e.world.shape[1]+12};
 })()`);
-await sleep(600);
-const after = await s.evaluate(`(()=>{const g=window.__game;return{y:g.playerEntity.position.y,vy:g._vy,camY:g.e.renderer.camera.position.y};})()`);
+const after = { y: camera.safeY, vy: camera.safeVy };
 ok("长按空格重复事件不会自动装填跳跃", camera.repeatBuf === 0, JSON.stringify(camera));
 ok("R 可即时回正玩家视角", camera.recenter === -0.12, String(camera.recenter));
 ok("跟随相机不会飞出世界上限", camera.camClamp <= camera.ceiling + 4, String(camera.camClamp));
 ok("玩家飞出世界上限会安全回出生点", after.y <= camera.ceiling && after.vy === 0, JSON.stringify(after));
+await s.evaluate(`(()=>{const g=window.__game;g.e.state.terrain.weatherLevels={rain:0,snow:0,thunder:0,cloud:0,wind:0};g.rainDensity=0;g.snowDensity=0;g.thunderDensity=0;g._applyEnvironment();return 1;})()`);
 
 const largeStart = Date.now();
 await s.goto(`${BASE}/edit/wmwx8en6qdbtx`, { settleMs: 200 });

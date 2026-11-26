@@ -333,6 +333,10 @@ export function exportMidi(doc) {
     { tick: 0, order: 0, data: [0xff, 0x51, 3, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255] },
     { tick: 0, order: 1, data: [0xff, 0x58, 4, sig, 2, 24, 8] },
   ];
+  for (const marker of doc.markers || []) {
+    const name = ascii(marker.name || "标记");
+    conductor.push({ tick: Math.round((marker.t || 0) * stepTicks), order: 2, data: [0xff, 0x06, ...vlq(name.length), ...name] });
+  }
   const tracks = [midiTrack(conductor, "Conductor")];
   (doc.tracks || []).forEach((track, i) => {
     const events = [];

@@ -508,8 +508,8 @@ vec2 fxTileRect(float t){
       this.scene.add(pts);
       return { pts, pos, geo, n, max: n };
     };
-    this._rain = mk(1800, 0.07, 0xbfc9cc, 0.8);
-    this._snow = mk(1400, 0.16, 0xffffff, 0.95);
+    this._rain = mk(2600, 0.07, 0xbfc9cc, 0.8);
+    this._snow = mk(2100, 0.16, 0xffffff, 0.95);
     this._rainPts = this._rain.pts; this._snowPts = this._snow.pts;
   }
   updateWeather(dt) {

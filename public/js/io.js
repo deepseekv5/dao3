@@ -10,8 +10,29 @@ export async function apiLoadWorld(id) {
   if (!r.ok) return null;
   return r.json();
 }
+function decodeWorldWorker(buffer, onProgress) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./voxel-worker.js", import.meta.url), { type: "module" });
+    worker.onmessage = ({ data }) => {
+      if (data.type === "progress") { onProgress?.(data.value); return; }
+      worker.terminate();
+      if (data.type === "error") { reject(new Error(data.message)); return; }
+      onProgress?.(1);
+      if (data.format === "dense") {
+        resolve(VoxelWorld.fromDenseBuffers(data.shape, data.ids, data.rotIndices, data.rotValues, data.count, data.meta));
+      } else {
+        const world = new VoxelWorld(data.shape), indices = new Uint32Array(data.indices), ids = new Uint16Array(data.data), rot = new Uint8Array(data.rot);
+        for (let i = 0; i < indices.length; i++) if (ids[i]) world.map.set(indices[i], ids[i] | (rot[i] << 16));
+        world.meta = data.meta;
+        resolve(world);
+      }
+    };
+    worker.onerror = (err) => { worker.terminate(); reject(new Error(err.message || "体素解码线程失败")); };
+    worker.postMessage({ buffer }, [buffer]);
+  });
+}
 export async function apiLoadWorldFast(id, onProgress) {
-  const r = await fetch(`/api/world/${id}?format=binary`);
+  const r = await fetch(`/api/world/${id}?format=binary&_=${Date.now()}`);
   if (!r.ok || r.headers.get("x-world-format") !== "binary-v1") {
     const payload = await apiLoadWorld(id);
     if (!payload) return null;
@@ -19,8 +40,8 @@ export async function apiLoadWorldFast(id, onProgress) {
     world.meta = payload.meta || {};
     return world;
   }
-  const bytes = new Uint8Array(await r.arrayBuffer());
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let bytes = new Uint8Array(await r.arrayBuffer());
+  let view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const metaLen = view.getUint32(0, true);
   let p = 4 + metaLen;
   if (p + 16 > bytes.byteLength) throw new Error("世界二进制头不完整");
@@ -29,6 +50,16 @@ export async function apiLoadWorldFast(id, onProgress) {
   const count = view.getUint32(p + 12, true);
   p += 16;
   if (p + count * 7 > bytes.byteLength) throw new Error("世界二进制数据不完整");
+  const cells = shape[0] * shape[1] * shape[2];
+  if (cells >= 16 * 1024 * 1024 && typeof Worker !== "undefined") {
+    try { return await decodeWorldWorker(bytes.buffer, onProgress); }
+    catch {
+      const retry = await fetch(`/api/world/${id}?format=binary&_=${Date.now()}`);
+      bytes = new Uint8Array(await retry.arrayBuffer());
+      view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      p = 4 + metaLen;
+    }
+  }
   const world = new VoxelWorld(shape);
   for (let i = 0; i < count; i++) {
     const idx = view.getUint32(p, true);
