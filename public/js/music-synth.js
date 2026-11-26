@@ -13,6 +13,14 @@ const INSTRUMENTS = {
   brass: { label: "黄铜管乐", family: "管乐", wave: "sawtooth", env: { attack: .07, decay: .22, sustain: .58, release: .25 }, gain: .12, detune: 3, lp: 2800 },
   flute: { label: "长笛", family: "管乐", wave: "sine", env: { attack: .06, decay: .18, sustain: .72, release: .22 }, gain: .22, detune: 2, lp: 8000 },
   synth: { label: "模拟合成器", family: "合成器", wave: "square", env: { attack: .02, decay: .24, sustain: .42, release: .3 }, gain: .11, detune: 6, lp: 1800 },
+  organ: { label: "教堂风琴", family: "键盘", wave: "sine", env: { attack: .03, decay: .08, sustain: .82, release: .22 }, gain: .22, detune: 0, lp: 7000 },
+  harp: { label: "竖琴", family: "弦乐", wave: "triangle", env: { attack: .002, decay: .48, sustain: .05, release: .6 }, gain: .24, detune: 3, lp: 8500 },
+  marimba: { label: "马林巴", family: "打击", wave: "sine", env: { attack: .002, decay: .22, sustain: .03, release: .28 }, gain: .28, detune: 0, lp: 5200 },
+  accordion: { label: "手风琴", family: "管乐", wave: "sawtooth", env: { attack: .06, decay: .12, sustain: .72, release: .18 }, gain: .11, detune: 11, lp: 3600 },
+  choir: { label: "空灵合唱", family: "人声", wave: "triangle", env: { attack: .18, decay: .3, sustain: .76, release: .7 }, gain: .1, detune: 18, lp: 4200 },
+  synthlead: { label: "模拟主音", family: "合成器", wave: "sawtooth", env: { attack: .01, decay: .18, sustain: .55, release: .24 }, gain: .12, detune: 5, lp: 5200 },
+  subbass: { label: "超低音", family: "低音", wave: "sine", env: { attack: .006, decay: .16, sustain: .68, release: .2 }, gain: .24, detune: 0, octave: -24, lp: 480 },
+  pizz: { label: "拨奏弦乐", family: "弦乐", wave: "square", env: { attack: .002, decay: .09, sustain: .04, release: .12 }, gain: .1, detune: 2, lp: 2800 },
   drum: { label: "电子鼓组", family: "鼓组", gain: .5 },
 };
 export const INSTRUMENT_NAMES = Object.entries(INSTRUMENTS).map(([id, s]) => [id, s.label, s.family]);
@@ -145,6 +153,11 @@ function projectEvents(doc, startStep, endStep) {
         if (step >= startStep && step < endStep) events.push({ step: step - startStep, track, note });
       }
     }
+    for (const param of ["volume", "pan"]) {
+      for (const point of track.automation?.[param] || []) {
+        if (point.t >= startStep && point.t < endStep) events.push({ step: point.t - startStep, track, automation: param, value: point.v });
+      }
+    }
   }
   if (doc.metronome) {
     for (let s = 0; s < endStep - startStep; s += 4) {
@@ -195,7 +208,12 @@ export function createMusicPlayer(doc, { onTick, onEnd, onMeter } = {}) {
         if (e.metronome) click(ctx, master, at, e.accent);
         else {
           const ch = channels.get(e.track.id);
-          if (ch) scheduleNote(ctx, ch, e.track, e.note, at, stepSec, active);
+          if (!ch) continue;
+          if (e.automation) {
+            const param = e.automation === "pan" ? ch.panner.pan : ch.input.gain;
+            const value = e.automation === "pan" ? clamp(+e.value || 0, -1, 1) : clamp(+e.value || 0, 0, 1);
+            param.linearRampToValueAtTime(value, at);
+          } else scheduleNote(ctx, ch, e.track, e.note, at, stepSec, active);
         }
       }
       if (ctx.currentTime >= loopAt + loopSec - .12) {
@@ -261,22 +279,31 @@ function wavFromBuffer(buffer) {
 }
 
 /** 离线渲染：和实时播放共用同一套音符/通道/效果调度，不另写一份“试听很好、导出没声”的逻辑。 */
-export async function renderMusicToWav(doc) {
-  const loopEnabled = doc.loop?.enabled ?? (typeof doc.loop === "boolean" ? doc.loop : true);
+export async function renderMusicToWav(doc, { trackId } = {}) {
+  const renderDoc = trackId ? { ...doc, metronome: false, tracks: (doc.tracks || []).filter((t) => t.id === trackId) } : doc;
+  const loopEnabled = renderDoc.loop?.enabled ?? (typeof renderDoc.loop === "boolean" ? renderDoc.loop : true);
   const r = loopEnabled
-    ? { start: clamp(+doc.loop.start || 0, 0, (+doc.bars || 4) * (+doc.beatsPerBar || 4) * 4 - 1), end: clamp(+doc.loop.end || (+doc.bars || 4) * (+doc.beatsPerBar || 4) * 4, 1, (+doc.bars || 4) * (+doc.beatsPerBar || 4) * 4) }
-    : { start: 0, end: (+doc.bars || 4) * (+doc.beatsPerBar || 4) * 4 };
-  const stepSec = 60 / clamp(+doc.bpm || 96, 40, 240) / STEPS_PER_BEAT;
+    ? { start: clamp(+renderDoc.loop.start || 0, 0, (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4 - 1), end: clamp(+renderDoc.loop.end || (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4, 1, (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4) }
+    : { start: 0, end: (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4 };
+  const stepSec = 60 / clamp(+renderDoc.bpm || 96, 40, 240) / STEPS_PER_BEAT;
   const duration = Math.max(.2, (r.end - r.start) * stepSec + 1.2);
   const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!Offline) throw new Error("这个浏览器不支持离线音频渲染");
   const ctx = new Offline(2, Math.ceil(duration * 44100), 44100);
-  const master = buildMaster(ctx, doc);
-  const channels = buildChannels(ctx, master, doc);
-  for (const e of projectEvents(doc, r.start, r.end)) {
+  const master = buildMaster(ctx, renderDoc);
+  const channels = buildChannels(ctx, master, renderDoc);
+  for (const e of projectEvents(renderDoc, r.start, r.end)) {
     const at = .04 + e.step * stepSec;
     if (e.metronome) click(ctx, master, at, e.accent);
-    else { const ch = channels.get(e.track.id); if (ch) scheduleNote(ctx, ch, e.track, e.note, at, stepSec, null); }
+    else {
+      const ch = channels.get(e.track.id);
+      if (!ch) continue;
+      if (e.automation) {
+        const param = e.automation === "pan" ? ch.panner.pan : ch.input.gain;
+        const value = e.automation === "pan" ? clamp(+e.value || 0, -1, 1) : clamp(+e.value || 0, 0, 1);
+        param.linearRampToValueAtTime(value, at);
+      } else scheduleNote(ctx, ch, e.track, e.note, at, stepSec, null);
+    }
   }
   const rendered = await ctx.startRendering();
   return wavFromBuffer(rendered);

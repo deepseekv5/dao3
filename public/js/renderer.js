@@ -310,12 +310,12 @@ export class VoxelRenderer {
         // 一整片高饱和蓝，编辑器里它占 80% 面积，看久了比任何 UI 色都累眼。
         top: { value: new THREE.Color(0x43688f) }, bot: { value: new THREE.Color(0xe4ddd0) },
         sunDir: { value: new THREE.Vector3(0.4, 0.6, 0.3) }, sunCol: { value: new THREE.Color(0xfff2cc) },
-        night: { value: 0.0 }, uTime: { value: 0 },
+        night: { value: 0.0 }, uTime: { value: 0 }, uCloud: { value: 0 },
       },
       vertexShader: "varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
       fragmentShader: `
         uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; uniform vec3 sunCol;
-        uniform float night; uniform float uTime;
+        uniform float night; uniform float uTime; uniform float uCloud;
         varying vec3 vP;
         float h31(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
         void main(){
@@ -357,6 +357,9 @@ export class VoxelRenderer {
           nsky += vec3(0.92, 0.94, 1.0) * smoothstep(0.99965, 0.99990, mdd) * 2.2 * mup;  // 月盘
           nsky += vec3(0.55, 0.62, 0.80) * pow(max(mdd, 0.0), 220.0) * 0.16 * mup;        // 月晕
           sky = mix(sky, nsky, night);
+          vec3 cloudCell = floor(d * 18.0 + vec3(uTime * 0.02, 0.0, 0.0));
+          float cloudMask = smoothstep(0.58, 0.82, h31(cloudCell)) * smoothstep(0.02, 0.42, d.y);
+          sky = mix(sky, vec3(0.34, 0.37, 0.40), uCloud * cloudMask * 0.78);
           gl_FragColor = vec4(sky, 1.0);
         }`,
     });
@@ -441,7 +444,7 @@ vec2 fxTileRect(float t){
     this.showGrid = true;
 
     // 天气：雨 / 雪粒子 + 雷暴闪电
-    this.weather = { rain: 0, snow: 0, thunder: 0 };
+    this.weather = { rain: 0, snow: 0, thunder: 0, cloud: 0, wind: 0 };
     this._weatherInit = false;
     this._flashT = 0; this._thunderT = 0;
 
@@ -458,6 +461,9 @@ vec2 fxTileRect(float t){
     this.weather.rain = w.rain ?? this.weather.rain;
     this.weather.snow = w.snow ?? this.weather.snow;
     this.weather.thunder = w.thunder ?? this.weather.thunder;
+    this.weather.cloud = clamp01(w.cloud ?? this.weather.cloud);
+    this.weather.wind = w.wind === undefined ? this.weather.wind : clamp(Number(w.wind) || 0, -1, 1);
+    this.skyMat.uniforms.uCloud.value = this.weather.cloud;
     if (!this._weatherInit && (this.weather.rain > 0 || this.weather.snow > 0)) this._initWeather();
     if (!this._weatherInit) return;
     this._rainPts.visible = this.weather.rain > 0;
@@ -515,7 +521,7 @@ vec2 fxTileRect(float t){
       const dir = Array.isArray(X.rainDirection) ? X.rainDirection : [0, -1, 0];
       const sp = (X.rainSpeed || 24) * (0.6 + this.weather.rain * 0.9);
       const fall = sp * dt * (dir[1] < 0 ? 1 : -1);
-      const side = sp * dt * Math.abs(dir[0] || 0) * 0.6;
+      const side = sp * dt * Math.abs(dir[0] || 0) * 0.6 + this.weather.wind * 9 * dt;
       const interference = X.rainInterference == null ? 0.04 : X.rainInterference;
       for (let i = 0; i < n; i++) {
         p[i * 3 + 1] -= fall;
@@ -533,7 +539,7 @@ vec2 fxTileRect(float t){
       const fall = (X.snowFallSpeed || 2) * (0.6 + this.weather.snow * 0.8);
       const spin = X.snowSpinSpeed == null ? 1 : X.snowSpinSpeed;
       for (let i = 0; i < n; i++) {
-        p[i * 3] += Math.sin(performance.now() / 600 + i) * dt * 1.4 * spin;
+        p[i * 3] += Math.sin(performance.now() / 600 + i) * dt * 1.4 * spin + this.weather.wind * 5 * dt;
         p[i * 3 + 1] -= fall * dt;
         if (p[i * 3 + 1] < c.y - 16) {
           p[i * 3 + 1] = c.y + 30;
@@ -610,7 +616,7 @@ vec2 fxTileRect(float t){
       this.controls.target.set(p[0], p[1] + 1.5, p[2]);
       this.camera.position.set(p[0] + 34, p[1] + 24, p[2] + 42);
       this.camera.near = .1; this.camera.far = 720; this.camera.updateProjectionMatrix();
-      this.scene.fog.near = 55; this.scene.fog.far = 250;
+      this.scene.fog.near = 55; this.scene.fog.far = 140;
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
       this.sun.shadow.mapSize.set(1024, 1024);
       this.sun.shadow.camera.left = -90; this.sun.shadow.camera.right = 90;
@@ -622,6 +628,11 @@ vec2 fxTileRect(float t){
       this.scene.fog.near = 120; this.scene.fog.far = 520;
     }
     this.rebuildAll();
+    if (large) setTimeout(() => {
+      if (this.world !== world) return;
+      this.scene.fog.far = 250;
+      this.queueVisibleChunks(true, 1);
+    }, 900);
   }
   frameCamera() {
     const [X, , Z] = this.world.shape;
@@ -740,7 +751,7 @@ vec2 fxTileRect(float t){
   }
   /** 大地图不再一次生成 32768 个区块：只把镜头附近按距离排队，每帧只花几毫秒。
    *  镜头移动/缩放时继续补周围区块；编辑操作仍用 markDirty 精确重建。 */
-  queueVisibleChunks(force = false) {
+  queueVisibleChunks(force = false, extra = 0) {
     if (!this.world || !this._streamReady) return;
     if (this._viewTimer) { if (!force) return; clearTimeout(this._viewTimer); this._viewTimer = 0; }
     if (!force) { this._viewTimer = setTimeout(() => { this._viewTimer = 0; this.queueVisibleChunks(true); }, 120); return; }
@@ -750,7 +761,7 @@ vec2 fxTileRect(float t){
     const cx = clamp(Math.floor(tx / CHUNK), 0, maxX - 1), cy = clamp(Math.floor(ty / CHUNK), 0, maxY - 1), cz = clamp(Math.floor(tz / CHUNK), 0, maxZ - 1);
     const dist = this.camera.position.distanceTo(this.controls.target);
     const large = Math.max(X, Z) > 256;
-    const radius = large ? clamp(Math.ceil(dist / CHUNK) - 2, 1, 3) : clamp(Math.ceil(dist / CHUNK) + 3, 4, 8);
+    const radius = large ? clamp(Math.ceil(dist / CHUNK) - 3 + extra, 1, 4) : clamp(Math.ceil(dist / CHUNK) + 3, 4, 8);
     const key = `${cx},${cy},${cz},${radius}`;
     if (!force && key === this._viewKey) return;
     this._viewKey = key;
@@ -1232,6 +1243,9 @@ vec2 fxTileRect(float t){
       this.controls.target.set(this.camera.position.x, 0, this.camera.position.z);
       this.controls.update();
     }
+  }
+  prepareFirstFrame() {
+    return this.renderer.compileAsync(this.scene, this.activeCam || this.camera);
   }
   start() {
     let prev = performance.now();

@@ -134,6 +134,6 @@ export function toggle(_rt) { menuOpen ? close() : open(_rt); }
 /** 顶部那条一次性提示：措辞要和"Esc 回编辑器"的旧行为彻底告别。 */
 export function hintText() {
   return isCommunity()
-    ? "WASD 移动 · V 视角 · 回车聊天 · Esc 菜单"
-    : "WASD 移动 · V 视角 · Esc 菜单";
+    ? "WASD 移动 · V 视角 · R 回正 · 回车聊天 · Esc 菜单"
+    : "WASD 移动 · V 视角 · R 回正 · Esc 菜单";
 }

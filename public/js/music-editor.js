@@ -1,4 +1,5 @@
 import { createMusicPlayer, auditionNote, renderMusicToWav, exportMidi, INSTRUMENT_NAMES, DRUM_NAMES } from "./music-synth.js";
+import { writeZip } from "./zip.js";
 
 const clone = (v) => JSON.parse(JSON.stringify(v || {}));
 const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -7,6 +8,7 @@ const COLORS = ["#e3a63c", "#5aa8e8", "#6fbf8b", "#d94f5f", "#a06bff", "#12b5c9"
 const LOW = 36, HIGH = 96, ROWS = HIGH - LOW + 1, ROW_H = 11, KEY_W = 58;
 const KEYS = [["C", 0], ["C#", 1], ["D", 2], ["D#", 3], ["E", 4], ["F", 5], ["F#", 6], ["G", 7], ["G#", 8], ["A", 9], ["A#", 10], ["B", 11]];
 const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] };
+const KEYMAP = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12, o: 13, l: 14, p: 15, ";": 16 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const noteName = (p) => `${KEYS[((p % 12) + 12) % 12][0]}${Math.floor(p / 12) - 1}`;
 const instName = (id) => (INSTRUMENT_NAMES.find(([k]) => k === id) || [, id])[1];
@@ -32,6 +34,7 @@ const icon = (name) => {
 function newTrack(name, instrument, color, notes = []) {
   return { id: uid(), name, instrument, color, volume: .8, pan: 0, mute: false, solo: false,
     synth: { attack: .01, decay: .2, sustain: .5, release: .25, cutoff: 4200 },
+    automation: { volume: [{ t: 0, v: .8 }], pan: [{ t: 0, v: 0 }] },
     clips: [{ id: uid(), name: name + " 1", start: 0, length: 64, notes }] };
 }
 
@@ -68,6 +71,8 @@ function normalize(d) {
     return { id: t.id || uid(), name: String(t.name || "轨道 " + (i + 1)).slice(0, 24), instrument: INSTRUMENT_NAMES.some(([k]) => k === t.instrument) ? t.instrument : "piano",
       color: COLORS[i % COLORS.length], volume: clamp(+t.volume ?? .8, 0, 1), pan: clamp(+t.pan ?? 0, -1, 1), mute: !!t.mute, solo: !!t.solo,
       synth: { attack: clamp(+t.synth?.attack ?? .01, .002, 2), decay: clamp(+t.synth?.decay ?? .2, .01, 2), sustain: clamp(+t.synth?.sustain ?? .5, .01, 1), release: clamp(+t.synth?.release ?? .25, .03, 3), cutoff: clamp(+t.synth?.cutoff || 4200, 120, 18000) },
+      automation: { volume: (t.automation?.volume || [{ t: 0, v: clamp(+t.volume ?? .8, 0, 1) }]).map((p) => ({ t: clamp(Math.round(+p.t || 0), 0, total - 1), v: clamp(+p.v || 0, 0, 1) })),
+        pan: (t.automation?.pan || [{ t: 0, v: clamp(+t.pan ?? 0, -1, 1) }]).map((p) => ({ t: clamp(Math.round(+p.t || 0), 0, total - 1), v: clamp(+p.v || 0, -1, 1) })) },
       clips: clips.map((c) => ({ id: c.id || uid(), name: String(c.name || "片段").slice(0, 24), start: clamp(Math.round(+c.start || 0), 0, total - 1),
         length: clamp(Math.round(+c.length || 16), 1, total), notes: (c.notes || []).filter((n) => n && Number.isFinite(n.t) && Number.isFinite(n.pitch)).map((n) => ({ t: Math.max(0, Math.round(n.t)), pitch: clamp(Math.round(n.pitch), 24, 108), dur: clamp(Math.round(n.dur || 1), 1, 64), vel: clamp(+n.vel || .8, .05, 1) })) })) };
   });
@@ -106,8 +111,8 @@ export function openMusicStudio(E) {
   const old = document.getElementById("musicStudio");
   if (old) { try { old.__api?.close(); } catch { } old.remove(); }
   let doc = normalize(E.state.meta.music || defaultMusicDoc());
-  let view = "arrange", trackAt = 0, clipAt = 0, selectedNote = null, currentStep = 0, zoom = 1, closed = false;
-  let history = [JSON.stringify(doc)], historyAt = 0, drag = null;
+  let view = "arrange", trackAt = 0, clipAt = 0, selectedNote = null, currentStep = 0, zoom = 1, closed = false, autoParam = "volume", octave = 0;
+  let history = [JSON.stringify(doc)], historyAt = 0, drag = null, autoDrag = null;
   const host = document.createElement("div"); host.id = "musicStudio"; host.className = "music-studio da";
   document.body.appendChild(host);
 
@@ -125,6 +130,7 @@ export function openMusicStudio(E) {
         <button class="da-icon" data-act="redo" title="重做 Ctrl+Shift+Z">${icon("redo")}</button>
         <button class="da-btn" data-act="save">${icon("save")}保存</button>
         <button class="da-btn" data-act="wav">${icon("download")}导出 WAV</button>
+        <button class="da-btn" data-act="stems">${icon("download")}分轨</button>
         <button class="da-btn" data-act="midi">MIDI</button>
         <button class="da-btn" data-act="export">项目</button>
         <button class="da-icon" data-act="close" title="关闭">${icon("close")}</button>
@@ -154,7 +160,7 @@ export function openMusicStudio(E) {
       </aside>
       <main class="da-main">
         <div class="da-modebar">
-          <div class="da-modes"><button data-view="arrange" class="on">编排</button><button data-view="piano">钢琴卷帘</button><button data-view="drum">鼓机</button><button data-view="mixer">调音台</button></div>
+          <div class="da-modes"><button data-view="arrange" class="on">编排</button><button data-view="piano">钢琴卷帘</button><button data-view="drum">鼓机</button><button data-view="automation">自动化</button><button data-view="mixer">调音台</button></div>
           <span class="da-grow"></span><button class="da-small" data-act="addClip">＋ 新片段</button><button class="da-small" data-act="dupClip">复制片段</button><button class="da-small" data-act="delClip">删除片段</button>
         </div>
         <section class="da-pane da-arrange">
@@ -165,6 +171,7 @@ export function openMusicStudio(E) {
           <div class="da-pianoscroll"><canvas class="da-pianoroll"></canvas><canvas class="da-velocity"></canvas></div>
         </section>
         <section class="da-pane da-drum"><div class="da-drumleft"><h4>鼓垫</h4><div class="da-pads"></div></div><div class="da-seqwrap"><div class="da-seqhead"><b>16 步音序器</b><span class="da-grow"></span><button class="da-small" data-act="clearDrums">清空鼓点</button></div><div class="da-sequencer"></div></div></section>
+        <section class="da-pane da-auto"><div class="da-editorbar"><b>轨道自动化</b><span>点击添加控制点 · Alt 点击删除最近点</span><span class="da-grow"></span><label>参数<select data-auto-param><option value="volume">音量</option><option value="pan">声像</option></select></label><button class="da-small" data-act="clearAuto">清空</button></div><canvas class="da-autocanvas"></canvas></section>
         <section class="da-pane da-mixer"><div class="da-mixerchannels"></div></section>
       </main>
       <aside class="da-inspector">
@@ -194,7 +201,7 @@ export function openMusicStudio(E) {
         </section>
       </aside>
     </div>
-    <div class="da-status"><span data-status>就绪</span><span class="da-grow"></span><span>空格 播放 · Ctrl+Z 撤销 · Delete 删除 · Ctrl+S 保存</span></div>
+    <div class="da-status"><span data-status>就绪</span><span class="da-grow"></span><span>空格 播放 · A W S E D F… 演奏 · Z/X 八度 · Ctrl+Z 撤销 · Ctrl+S 保存</span></div>
     <input type="file" accept="application/json,.json" hidden data-file/>`;
 
   const $ = (s) => host.querySelector(s), $$ = (s) => [...host.querySelectorAll(s)];
@@ -241,7 +248,7 @@ export function openMusicStudio(E) {
   function renderMode() {
     $$("[data-view]").forEach((b)=>b.classList.toggle("on", b.dataset.view===view));
     $(".da-arrange").classList.toggle("on", view==="arrange"); $(".da-piano").classList.toggle("on", view==="piano");
-    $(".da-drum").classList.toggle("on", view==="drum"); $(".da-mixer").classList.toggle("on", view==="mixer");
+    $(".da-drum").classList.toggle("on", view==="drum"); $(".da-auto").classList.toggle("on", view==="automation"); $(".da-mixer").classList.toggle("on", view==="mixer");
     $("[data-clipname]").textContent = clip()?.name || "没有片段";
     $("[data-clipmeta]").textContent = clip() ? `第 ${clip().start/16+1} 小节 · ${clip().length/16} 小节 · ${clip().notes.length} 个音符` : "先添加一个片段";
   }
@@ -335,13 +342,14 @@ export function openMusicStudio(E) {
     $(".da-playhead").style.left=pos+"%";$(".da-playhead").style.opacity=step<0?"0":"1";
     const bar=Math.floor(step/16)+1,beat=Math.floor(step%16/4)+1,tick=step%4;
     $("[data-time]").textContent=step<0?"001 : 01 : 000":`${String(bar).padStart(3,"0")} : ${String(beat).padStart(2,"0")} : ${String(tick).padStart(3,"0")}`;
-    drawPiano();drawVelocity();
+    drawPiano();drawVelocity();drawAutomation();
   }
 
   function resizeCanvases() {
     const roll=$(".da-pianoroll"),vel=$(".da-velocity");
     if(roll){const r=roll.parentElement.getBoundingClientRect();const dpr=Math.min(2,window.devicePixelRatio||1);roll.width=Math.max(480,Math.round(r.width*dpr));roll.height=Math.round((PAD_TOP+ROWS*ROW_H)*dpr);roll.style.height=(PAD_TOP+ROWS*ROW_H)+"px";roll._dpr=dpr;drawPiano();}
     if(vel){const r=vel.parentElement.getBoundingClientRect();const dpr=Math.min(2,window.devicePixelRatio||1);vel.width=Math.max(480,Math.round(r.width*dpr));vel.height=Math.round(64*dpr);vel.style.height="64px";vel._dpr=dpr;drawVelocity();}
+    const auto=$(".da-autocanvas");if(auto){const r=auto.parentElement.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);auto.width=Math.max(480,Math.round(r.width*dpr));auto.height=Math.round(260*dpr);auto.style.height="260px";auto._dpr=dpr;drawAutomation();}
   }
   const PAD_TOP=14;
   function drawPiano() {
@@ -360,6 +368,16 @@ export function openMusicStudio(E) {
     const c=$(".da-velocity"),cp=clip();if(!c||!cp)return;const g=c.getContext("2d"),dpr=c._dpr||1,w=c.width/dpr,h=c.height/dpr,nw=(w-KEY_W)/cp.length;
     g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);g.fillStyle="#161614";g.fillRect(0,0,w,h);g.fillStyle="#0e0e0d";g.fillRect(0,0,KEY_W,h);
     for(const n of cp.notes){const x=KEY_W+n.t*nw,bh=n.vel*(h-12);g.fillStyle=n===selectedNote?"#fff":track().color;g.fillRect(x+1,h-bh-4,Math.max(2,nw-2),bh);}
+  }
+  function drawAutomation() {
+    const c=$(".da-autocanvas"),t=track();if(!c||!t)return;const g=c.getContext("2d"),dpr=c._dpr||1,w=c.width/dpr,h=c.height/dpr;
+    g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);g.fillStyle="#111314";g.fillRect(0,0,w,h);
+    for(let i=0;i<=8;i++){const x=i/8*w;g.strokeStyle=i%2?"rgba(255,255,255,.05)":"rgba(227,166,60,.18)";g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke();}
+    for(let i=0;i<=4;i++){const y=i/4*h;g.strokeStyle="rgba(255,255,255,.07)";g.beginPath();g.moveTo(0,y);g.lineTo(w,y);g.stroke();}
+    const points=(t.automation?.[autoParam]||[]).slice().sort((a,b)=>a.t-b.t),yOf=(v)=>autoParam==="pan"?h*(1-(v+1)/2):h*(1-v);
+    if(points.length){g.strokeStyle=t.color;g.lineWidth=2;g.beginPath();points.forEach((p,i)=>{const x=p.t/total()*w,y=yOf(p.v);if(!i)g.moveTo(x,y);else g.lineTo(x,y);});g.stroke();}
+    for(const p of points){const x=p.t/total()*w,y=yOf(p.v);g.fillStyle=t.color;g.beginPath();g.arc(x,y,5,0,Math.PI*2);g.fill();g.strokeStyle="#fff";g.lineWidth=1;g.stroke();}
+    if(currentStep>=0){const x=currentStep/total()*w;g.strokeStyle="rgba(255,255,255,.55)";g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke();}
   }
   function pianoPoint(ev) {
     const c=$(".da-pianoroll"),r=c.getBoundingClientRect(),dpr=c._dpr||1,w=c.width/dpr,cp=clip();const x=(ev.clientX-r.left)*dpr,y=(ev.clientY-r.top)*dpr;
@@ -401,10 +419,12 @@ export function openMusicStudio(E) {
     else if(act==="mute"){track().mute=!track().mute;commit();}else if(act==="solo"){track().solo=!track().solo;commit();}
     else if(act==="delTrack"){if(doc.tracks.length<=1)return;doc.tracks.splice(trackAt,1);trackAt=Math.max(0,trackAt-1);clipAt=0;selectedNote=null;checkpoint();renderAll();}
     else if(act==="clearDrums"){const cp=clip();if(cp){cp.notes=[];checkpoint();renderAll();}}
+    else if(act==="clearAuto"){const t=track();t.automation=t.automation||{volume:[],pan:[]};t.automation[autoParam]=[{t:0,v:autoParam==="pan"?0:t.volume}];checkpoint();renderAll();}
     else if(act==="export"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(doc,null,2)],{type:"application/json"}));a.download=(doc.name||"music")+".music.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);}
     else if(act==="midi"){const a=document.createElement("a");a.href=URL.createObjectURL(exportMidi(doc));a.download=(doc.name||"music")+".mid";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);toast("MIDI 已导出");}
     else if(act==="close")close();
     else if(act==="wav"){const btn=b;btn.disabled=true;btn.textContent="渲染中…";renderMusicToWav(doc).then((blob)=>{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(doc.name||"music")+".wav";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);toast("WAV 已导出");}).catch((e)=>toast("WAV 导出失败："+e.message,true)).finally(()=>{btn.disabled=false;btn.innerHTML=icon("download")+"导出 WAV";});}
+    else if(act==="stems"){const btn=b;btn.disabled=true;setStatus("正在逐轨离线渲染…");(async()=>{const files=[];for(let i=0;i<doc.tracks.length;i++){const t=doc.tracks[i];setStatus(`正在渲染 ${i+1}/${doc.tracks.length}：${t.name}`);const blob=await renderMusicToWav(doc,{trackId:t.id});files.push({name:`${String(i+1).padStart(2,"0")}-${t.name.replace(/[\\/:*?"<>|]/g,"_")}.wav`,data:new Uint8Array(await blob.arrayBuffer())});}const zip=await writeZip(files),a=document.createElement("a");a.href=URL.createObjectURL(new Blob([zip],{type:"application/zip"}));a.download=(doc.name||"music")+"-stems.zip";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),8000);toast(`已导出 ${files.length} 条 WAV 分轨`);})().catch((e)=>toast("分轨导出失败："+e.message,true)).finally(()=>{btn.disabled=false;setStatus("分轨导出完成");});}
   });
 
   $("[data-project]").onchange=(e)=>{doc.name=e.target.value.trim()||"未命名作品";checkpoint();};
@@ -415,18 +435,19 @@ export function openMusicStudio(E) {
   $("[data-loop-start]").onchange=(e)=>{doc.loop.start=clamp((+e.target.value-1)*16,0,doc.loop.end-1);checkpoint();renderAll();};
   $("[data-loop-end]").onchange=(e)=>{doc.loop.end=clamp(+e.target.value*16,doc.loop.start+1,total());checkpoint();renderAll();};
   $("[data-snap]").onchange=(e)=>{snap=+e.target.value;};
+  $("[data-auto-param]").onchange=(e)=>{autoParam=e.target.value;drawAutomation();};
   $("[data-bgm]").onchange=(e)=>{doc.bgm=e.target.checked;checkpoint();};
   $("[data-tname]").oninput=(e)=>{track().name=e.target.value;renderTrackHeads();renderMixer();};
   $("[data-tname]").onchange=checkpoint;
   $("[data-inst]").onchange=(e)=>{track().instrument=e.target.value;checkpoint();renderAll();auditionNote(track().instrument,60,.7,track().synth);};
   $$("[data-color]").forEach((b)=>b.onclick=()=>{track().color=b.dataset.color;checkpoint();renderAll();});
-  $("[data-vol]").oninput=(e)=>{track().volume=+e.target.value/100;$("[data-volv]").textContent=e.target.value;};$("[data-vol]").onchange=commit;
-  $("[data-pan]").oninput=(e)=>{track().pan=+e.target.value/100;$("[data-panv]").textContent=e.target.value;};$("[data-pan]").onchange=commit;
+  $("[data-vol]").oninput=(e)=>{track().volume=+e.target.value/100;const p=track().automation?.volume?.find(x=>x.t===0);if(p)p.v=track().volume;$("[data-volv]").textContent=e.target.value;drawAutomation();};$("[data-vol]").onchange=commit;
+  $("[data-pan]").oninput=(e)=>{track().pan=+e.target.value/100;const p=track().automation?.pan?.find(x=>x.t===0);if(p)p.v=track().pan;$("[data-panv]").textContent=e.target.value;drawAutomation();};$("[data-pan]").onchange=commit;
   for(const k of ["attack","decay","sustain","release","cutoff"]){const inp=$(`[data-synth="${k}"]`);inp.oninput=()=>{const v=+inp.value;track().synth[k]=k==="attack"||k==="decay"||k==="release"?v/1000:k==="cutoff"?v:v/100;$(`[data-synthv="${k}"]`).textContent=k==="cutoff"?v+" Hz":k==="attack"||k==="decay"||k==="release"?v+" ms":v;};inp.onchange=checkpoint;}
   $("[data-vel]").oninput=(e)=>{if(!selectedNote)return;selectedNote.vel=+e.target.value/100;$("[data-velv]").textContent=e.target.value;drawPiano();drawVelocity();};$("[data-vel]").onchange=checkpoint;
   $("[data-dur-note]").oninput=(e)=>{if(!selectedNote)return;selectedNote.dur=+e.target.value;drawPiano();};$("[data-dur-note]").onchange=commit;
   for(const k of ["volume","reverb","delay"]){const inp=$(`[data-master="${k}"]`);inp.oninput=()=>{doc.master[k]=+inp.value/100;$(`[data-masterv="${k}"]`).textContent=inp.value;};inp.onchange=checkpoint;}
-  host.addEventListener("input",(ev)=>{const i=ev.target.dataset.mixvol,p=ev.target.dataset.mixpan;if(i!=null){doc.tracks[+i].volume=+ev.target.value/100;}if(p!=null){doc.tracks[+p].pan=+ev.target.value/100;}});
+  host.addEventListener("input",(ev)=>{const i=ev.target.dataset.mixvol,p=ev.target.dataset.mixpan;if(i!=null){const t=doc.tracks[+i];t.volume=+ev.target.value/100;const q=t.automation?.volume?.find(x=>x.t===0);if(q)q.v=t.volume;}if(p!=null){const t=doc.tracks[+p];t.pan=+ev.target.value/100;const q=t.automation?.pan?.find(x=>x.t===0);if(q)q.v=t.pan;}});
   host.addEventListener("change",(ev)=>{if(ev.target.dataset.mixvol!=null||ev.target.dataset.mixpan!=null)commit();});
 
   $(".da-pianoroll").addEventListener("contextmenu",(e)=>e.preventDefault());
@@ -443,6 +464,10 @@ export function openMusicStudio(E) {
     if(pianoDrag.resize)n.dur=clamp(p.step-n.t+1,1,cp.length-n.t);else{n.t=clamp(Math.round((p.step-pianoDrag.dx)/snap)*snap,0,cp.length-1);n.pitch=p.pitch;}drawPiano();drawVelocity();renderInspector();});
   const endPiano=()=>{if(!pianoDrag)return;pianoDrag=null;checkpoint();renderAll();};$(".da-pianoroll").addEventListener("pointerup",endPiano);$(".da-pianoroll").addEventListener("pointercancel",endPiano);
   $(".da-velocity").addEventListener("pointerdown",(ev)=>{const cp=clip();if(!cp)return;const c=$(".da-velocity"),r=c.getBoundingClientRect(),x=ev.clientX-r.left,step=clamp(Math.floor((x-KEY_W)/((r.width-KEY_W)/cp.length)),0,cp.length-1);const n=cp.notes.find((x)=>step>=x.t&&step<x.t+x.dur);if(n){selectedNote=n;n.vel=clamp(1-(ev.clientY-r.top)/r.height,.05,1);checkpoint();renderAll();}});
+  const autoPoint=(ev)=>{const c=$(".da-autocanvas"),r=c.getBoundingClientRect();return{t:clamp(Math.round((ev.clientX-r.left)/r.width*total()/snap)*snap,0,total()-1),v:autoParam==="pan"?clamp((1-(ev.clientY-r.top)/r.height)*2-1,-1,1):clamp(1-(ev.clientY-r.top)/r.height,0,1),x:ev.clientX-r.left,y:ev.clientY-r.top};};
+  $(".da-autocanvas").addEventListener("pointerdown",(ev)=>{if(ev.button>0)return;const t=track();t.automation=t.automation||{volume:[],pan:[]};const arr=t.automation[autoParam]||(t.automation[autoParam]=[]),p=autoPoint(ev);let hit=null,best=12;for(const q of arr){const x=q.t/total()*ev.currentTarget.getBoundingClientRect().width,y=(autoParam==="pan"?(1-(q.v+1)/2):1-q.v)*ev.currentTarget.getBoundingClientRect().height,d=Math.hypot(x-p.x,y-p.y);if(d<best){best=d;hit=q;}}if(ev.altKey&&hit){arr.splice(arr.indexOf(hit),1);checkpoint();renderAll();return;}if(!hit){hit={t:p.t,v:p.v};arr.push(hit);}autoDrag=hit;try{ev.currentTarget.setPointerCapture(ev.pointerId);}catch{}drawAutomation();});
+  $(".da-autocanvas").addEventListener("pointermove",(ev)=>{if(!autoDrag)return;const p=autoPoint(ev);autoDrag.t=p.t;autoDrag.v=p.v;drawAutomation();});
+  const endAuto=()=>{if(!autoDrag)return;autoDrag=null;checkpoint();renderAll();};$(".da-autocanvas").addEventListener("pointerup",endAuto);$(".da-autocanvas").addEventListener("pointercancel",endAuto);
 
   $(".da-looprange").addEventListener("pointerdown",(ev)=>{ev.stopPropagation();const el=ev.currentTarget,r=el.getBoundingClientRect();loopDrag={x:ev.clientX,start:doc.loop.start,end:doc.loop.end,mode:ev.clientX<r.left+8?"left":ev.clientX>r.right-8?"right":"move"};try{el.setPointerCapture(ev.pointerId);}catch{}});
   host.addEventListener("pointermove",(ev)=>{if(!drag&&!loopDrag)return;const stepsPerPx=total()/$(".da-arrangement").getBoundingClientRect().width;
@@ -453,7 +478,7 @@ export function openMusicStudio(E) {
 
   file.onchange=async()=>{const f=file.files?.[0];file.value="";if(!f)return;try{stop();doc=normalize(JSON.parse(await f.text()));trackAt=0;clipAt=0;selectedNote=null;resetPlayer();checkpoint();renderAll();toast("项目已导入");}catch{toast("这份项目 JSON 读不出来",true);}};
   const close=()=>{if(closed)return;closed=true;stop();player?.dispose();window.removeEventListener("keydown",onKey);window.removeEventListener("resize",resizeCanvases);host.remove();E.closeMusic&&E.closeMusic();};
-  function onKey(ev){const mod=ev.ctrlKey||ev.metaKey;if(mod&&ev.key.toLowerCase()==="z"){ev.preventDefault();restoreHistory(ev.shiftKey?1:-1);}else if(mod&&ev.key.toLowerCase()==="s"){ev.preventDefault();$("[data-act=save]").click();}else if(ev.code==="Space"&&!/INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)){ev.preventDefault();play();}else if((ev.key==="Delete"||ev.key==="Backspace")&&selectedNote){ev.preventDefault();const cp=clip();cp.notes.splice(cp.notes.indexOf(selectedNote),1);selectedNote=null;checkpoint();renderAll();}else if(ev.key==="Escape")close();}
+  function onKey(ev){const mod=ev.ctrlKey||ev.metaKey,editing=/INPUT|SELECT|TEXTAREA/.test(ev.target.tagName);if(mod&&ev.key.toLowerCase()==="z"){ev.preventDefault();restoreHistory(ev.shiftKey?1:-1);}else if(mod&&ev.key.toLowerCase()==="s"){ev.preventDefault();$("[data-act=save]").click();}else if(ev.code==="Space"&&!editing){ev.preventDefault();play();}else if((ev.key==="Delete"||ev.key==="Backspace")&&selectedNote&&!editing){ev.preventDefault();const cp=clip();cp.notes.splice(cp.notes.indexOf(selectedNote),1);selectedNote=null;checkpoint();renderAll();}else if(ev.key==="Escape")close();else if(!editing&&!mod&&!ev.repeat){const k=ev.key.toLowerCase();if(k==="z"||k==="x"){octave=clamp(octave+(k==="z"?-12:12),-24,24);toast(`键盘八度 ${octave>=0?"+":""}${octave}`);return;}const semitone=KEYMAP[k];if(semitone==null)return;const t=track(),pitch=clamp(60+octave+semitone,24,108);auditionNote(t.instrument,pitch,.8,t.synth);const cp=clip();if(player?.playing&&cp){const n={t:currentStep<0?0:currentStep%cp.length,pitch,dur:+$("[data-dur]").value,vel:.8};cp.notes.push(n);selectedNote=n;drawPiano();drawVelocity();renderInspector();checkpoint();}}}
   window.addEventListener("keydown",onKey);window.addEventListener("resize",resizeCanvases);
   E.markMusicOpen?.(true);resetPlayer();renderAll();checkpoint();
   const api={close,doc:()=>doc,setDoc:(d)=>{doc=normalize(d);checkpoint();renderAll();}};host.__api=api;window.__musicStudio=api;return api;

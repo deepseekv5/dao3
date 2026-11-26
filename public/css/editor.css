@@ -1725,6 +1725,7 @@ body:has(.script-screen.show) #hud button.sb-btn:hover { background-color: rgba(
 .c-flow { --bk-c: var(--blk-flow); --bk-c2: var(--blk-flow-2); }
 .c-var { --bk-c: var(--blk-var); --bk-c2: var(--blk-var-2); }
 .c-world { --bk-c: var(--blk-world); --bk-c2: var(--blk-world-2); }
+.c-voxel { --bk-c: var(--blk-world); --bk-c2: var(--blk-world-2); }
 .bk { --bk-c2: var(--blk-edge); }
 
 /* 积木箱 */
@@ -1750,6 +1751,8 @@ body:has(.script-screen.show) #hud button.sb-btn:hover { background-color: rgba(
   transition: transform var(--dur-1) var(--ease-spring), filter var(--dur-1) var(--ease); }
 .bs-chip:hover { filter: brightness(1.1); transform: translateX(2px); }
 .bs-chip:active { cursor: grabbing; transform: scale(.98); }
+.bs-more { width: 100%; margin: 4px 0 10px; padding: 7px 10px; border: 1px dashed var(--ed-hair-2); border-radius: 7px; background: transparent; color: var(--fg2); cursor: pointer; font: inherit; font-size: 12px; }
+.bs-more:hover { color: var(--fg); border-color: var(--primary); background: var(--primary-light); }
 .bs-ci { flex: none; width: 16px; height: 16px; opacity: .9; display: flex; }
 .bs-ci svg { width: 16px; height: 16px; }
 .bs-cl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

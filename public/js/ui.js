@@ -468,41 +468,56 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     row.querySelector("input").oninput = (e) => on(parseInt(e.target.value.slice(1), 16));
     terr.appendChild(row);
   };
-  color("天空顶", hex(state.terrain.skyTop), (v) => { state.terrain.skyTop = v; applyTerrain(); });
-  color("天空底", hex(state.terrain.skyBottom), (v) => { state.terrain.skyBottom = v; applyTerrain(); });
-  slider("日照", 0, 4, 0.05, state.terrain.sunIntensity, (v) => { state.terrain.sunIntensity = v; applyTerrain(); });
-  slider("环境光", 0, 1, 0.01, state.terrain.ambient, (v) => { state.terrain.ambient = v; applyTerrain(); });
-  slider("半球光", 0, 2, 0.05, state.terrain.hemi, (v) => { state.terrain.hemi = v; applyTerrain(); });
-  slider("昼夜", 0, 1, 0.01, state.terrain.dayNight, (v) => { state.terrain.dayNight = v; applyTerrain(); });
-  slider("曝光", 0.4, 2, 0.02, state.terrain.exposure ?? 1.12, (v) => { state.terrain.exposure = v; applyTerrain(); });
-  slider("雾", 0, 0.02, 0.0002, state.terrain.fogDensity, (v) => { state.terrain.fogDensity = v; applyTerrain(); });
-  slider("发光", 0, 1.5, 0.05, state.terrain.glow, (v) => { state.terrain.glow = v; applyTerrain(); });
+  color("天空顶", hex(state.terrain.skyTop), (v) => { state.terrain.skyTop = v; applyTerrain(); markDirty(); });
+  color("天空底", hex(state.terrain.skyBottom), (v) => { state.terrain.skyBottom = v; applyTerrain(); markDirty(); });
+  slider("日照", 0, 4, 0.05, state.terrain.sunIntensity, (v) => { state.terrain.sunIntensity = v; applyTerrain(); markDirty(); });
+  slider("环境光", 0, 1, 0.01, state.terrain.ambient, (v) => { state.terrain.ambient = v; applyTerrain(); markDirty(); });
+  slider("半球光", 0, 2, 0.05, state.terrain.hemi, (v) => { state.terrain.hemi = v; applyTerrain(); markDirty(); });
+  slider("昼夜", 0, 1, 0.01, state.terrain.dayNight, (v) => { state.terrain.dayNight = v; applyTerrain(); markDirty(); });
+  slider("曝光", 0.4, 2, 0.02, state.terrain.exposure ?? 1.12, (v) => { state.terrain.exposure = v; applyTerrain(); markDirty(); });
+  slider("雾", 0, 0.02, 0.0002, state.terrain.fogDensity, (v) => { state.terrain.fogDensity = v; applyTerrain(); markDirty(); });
+  slider("发光", 0, 1.5, 0.05, state.terrain.glow, (v) => { state.terrain.glow = v; applyTerrain(); markDirty(); });
   const shadowRow = document.createElement("label"); shadowRow.className = "trow";
   shadowRow.innerHTML = `<span>阴影</span><input type="checkbox" ${state.terrain.shadows ? "checked" : ""}><em></em>`;
-  shadowRow.querySelector("input").onchange = (e) => { state.terrain.shadows = e.target.checked; applyTerrain(); };
+  shadowRow.querySelector("input").onchange = (e) => { state.terrain.shadows = e.target.checked; applyTerrain(); markDirty(); };
   terr.appendChild(shadowRow);
 
-  // ---------- 天气预设（晴 / 雨 / 雪 / 雷暴；运行模式下由 world.rainDensity 联动）----------
+  // ---------- 天气：预设 + 独立强度，编辑预览与运行时共用同一份状态 ----------
   const wrow = document.createElement("div"); wrow.className = "weather-row";
   wrow.innerHTML = `<span class="wlabel">天气</span>`;
   const wpresets = [["晴", "clear"], ["雨", "rain"], ["雪", "snow"], ["雷暴", "thunder"]];
+  const levels = () => state.terrain.weatherLevels || (state.terrain.weatherLevels = { rain: 0, snow: 0, thunder: 0, cloud: 0, wind: 0 });
   for (const [label, key] of wpresets) {
     const b = document.createElement("button");
     b.textContent = label;
+    b.classList.toggle("active", state.terrain.weather === key);
     b.onclick = () => {
       wrow.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
       b.classList.add("active");
-      const w = { rain: 0, snow: 0, thunder: 0 };
+      const w = { rain: 0, snow: 0, thunder: 0, cloud: key === "clear" ? 0 : .35, wind: 0 };
       if (key === "rain") w.rain = 0.75;
       else if (key === "snow") w.snow = 0.7;
       else if (key === "thunder") { w.rain = 0.9; w.thunder = 0.6; }
       state.terrain.weather = key;
-      renderer.setWeather(w);
-      toast("天气：" + label + "（游戏脚本可用 world.rainDensity / clearWeather 控制）");
+      state.terrain.weatherLevels = w;
+      applyTerrain(); markDirty();
+      toast("天气：" + label + " · 已同步到运行模式");
     };
     wrow.appendChild(b);
   }
   terr.appendChild(wrow);
+  for (const [key, label] of [["rain", "雨量"], ["snow", "雪量"], ["thunder", "雷电"], ["cloud", "云量"], ["wind", "风力"]]) {
+    slider(label, key === "wind" ? -1 : 0, 1, 0.01, levels()[key] || 0, (v) => {
+      levels()[key] = v;
+      if (key === "rain" || key === "snow" || key === "thunder") state.terrain.weather = v > 0 ? (key === "thunder" ? "thunder" : key) : "clear";
+      applyTerrain(); markDirty();
+    });
+  }
+  const cycleRow = document.createElement("label"); cycleRow.className = "trow";
+  cycleRow.innerHTML = `<span>天气轮转</span><input type="checkbox" ${state.meta.gameRules?.doWeatherCycle !== false ? "checked" : ""}><em></em>`;
+  cycleRow.querySelector("input").onchange = (e) => { state.meta.gameRules = Object.assign({}, state.meta.gameRules, { doWeatherCycle: e.target.checked }); markDirty(); toast("天气轮转：" + (e.target.checked ? "开" : "关")); };
+  terr.appendChild(cycleRow);
+  slider("天气周期", 10, 300, 5, state.terrain.weatherCycleSeconds || 60, (v) => { state.terrain.weatherCycleSeconds = v; markDirty(); });
 
   // ---------- 世界设置（world tab）----------
   const worldTab = $("worldTab"); if (worldTab) {

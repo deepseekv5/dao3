@@ -1105,7 +1105,7 @@ export class GameRuntime {
       if (c === "space" || c.startsWith("arrow")) ev.preventDefault();
       if (c === "keye") rt._tryInteract();
       if (c === "keyt" || c === "enter") { ev.preventDefault(); rt.openChat(); return; }
-      if (c === "space") {
+      if (c === "space" && !ev.repeat) {
         rt._jumpBuf = 0.14;
         if (!rt._grounded && rt.player.enableDoubleJump) rt._doubleJumpButton = true;
       }
@@ -1116,6 +1116,10 @@ export class GameRuntime {
       if (c === "keyv") {
         rt.player.cameraMode = rt.player.cameraMode === GameCameraMode.FPS ? GameCameraMode.FOLLOW : GameCameraMode.FPS;
         rt.toast(rt.player.cameraMode === GameCameraMode.FPS ? "第一人称 (fps)" : "第三人称 (follow)");
+      }
+      if (c === "keyr" && !ev.repeat) {
+        rt._tYaw = rt.playerEntity._faceYaw || 0; rt._tPitch = -0.12; rt._camDist = null;
+        rt.toast("视角已回正");
       }
       if (c === "backquote") rt._toggleConsole();
       if (c === "keyh") { const s = document.getElementById("gameHudSettings"); s && s.classList.toggle("show"); }
@@ -1321,7 +1325,7 @@ export class GameRuntime {
       el.addEventListener("click", cl, true);
       rt._touchBtns.push([el, dn, uf, cl]);
     };
-    hold("tJump", () => { rt._touchJump = true; rt._jumpBuf = 0.14; rt._firePress(GameButtonType.JUMP, true); },
+    hold("tJump", () => { rt._touchJump = true; rt._jumpBuf = 0.14; if (!rt._grounded && rt.player.enableDoubleJump) rt._doubleJumpButton = true; rt._firePress(GameButtonType.JUMP, true); },
       () => { rt._touchJump = false; rt._firePress(GameButtonType.JUMP, false); });
     hold("tCrouch", () => { rt._keys.ctrl = true; }, () => { rt._keys.ctrl = false; });
     hold("tRun", () => { rt._keys.shift = true; }, () => { rt._keys.shift = false; });
@@ -1938,6 +1942,7 @@ const ZERO = new GameVector3();
     }
     // 掉出世界（y<0，世界底就是 0）立刻回到出生点，与 movementBounds 是两回事
     if (ent.position.y < 0) this._respawn();
+    if (ent.position.y > this.e.world.shape[1] + 12) this._respawn("飞出世界上限");
   }
   _stepBody(e2) {
     if (e2.gravity) e2.velocity.y += this.gravity;
@@ -2255,6 +2260,7 @@ const ZERO = new GameVector3();
       r.camera.lookAt(ct.x, ct.y, ct.z);
     }
     if (mode !== GameCameraMode.FIXED) {
+      r.camera.position.y = clamp(r.camera.position.y, 0.35, this.e.world.shape[1] + 8);
       // cameraFovY 官方默认 0.25（垂直视场角），按半圈比例换算为度：0.25 → 45°
       const deg = clamp((p.cameraFovY || PLAYER_DEFAULTS.cameraFovY) * 180, 20, 150);
       if (Math.abs(r.camera.fov - deg) > 0.02) { r.camera.fov = deg; r.camera.updateProjectionMatrix(); }
@@ -2765,7 +2771,7 @@ const ZERO = new GameVector3();
   _stepWeather() {
     const WX = { clear: [0, 0, 0], rain: [0.8, 0, 0], snow: [0, 0.7, 0], thunder: [0.9, 0, 0.6] };
     if (!this._wx) {
-      this._wx = { kind: this.rainDensity > 0.4 ? (this.thunderDensity > 0.2 ? "thunder" : "rain") : this.snowDensity > 0.4 ? "snow" : "clear", next: this.currentTick + 3600 };
+      this._wx = { kind: this.rainDensity > 0.4 ? (this.thunderDensity > 0.2 ? "thunder" : "rain") : this.snowDensity > 0.4 ? "snow" : "clear", next: this.currentTick + (this.weatherCycleTicks || 3600) };
     }
     const want = WX[this._wx.kind] || WX.clear;
     this.rainDensity += (want[0] - this.rainDensity) * 0.004;
@@ -2776,7 +2782,7 @@ const ZERO = new GameVector3();
     let k = this._wx.kind;
     while (k === this._wx.kind) k = pool[(Math.random() * pool.length) | 0];
     this._wx.kind = k;
-    this._wx.next = this.currentTick + 3600;
+    this._wx.next = this.currentTick + (this.weatherCycleTicks || 3600);
     this.say({ clear: "天气放晴", rain: "开始下雨了", snow: "开始下雪了", thunder: "雷阵雨来了" }[k]);
   }
   _applyEnvironment() {
@@ -2814,6 +2820,8 @@ const ZERO = new GameVector3();
       rain: env.rainEnabled ? env.rainDensity : this.rainDensity,
       snow: env.snowEnabled ? env.snowDensity : this.snowDensity,
       thunder: this.thunderDensity,
+      cloud: Math.max(this.e.state.terrain?.weatherLevels?.cloud || 0, Math.max(this.rainDensity, this.snowDensity) * .6),
+      wind: this.e.state.terrain?.weatherLevels?.wind ?? 0,
       // 官方雨雪的尺寸/颜色/速度/方向都得进画面，不能只剩密度一个旋钮
       rainColor: env.rainEnabled ? env.rainColor : this.rainColor,
       rainSizeLo: this.rainSizeLo, rainSizeHi: this.rainSizeHi,

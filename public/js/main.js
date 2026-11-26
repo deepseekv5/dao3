@@ -10,7 +10,6 @@ import { mirror, rotate90, flip } from "./ops.js";
 import * as io from "./io.js";
 import { buildUI } from "./ui.js";
 import { initFeatures, moveSelectedModel, importProject, migratePlayerMeta, placeHeldModel, moveHeldModelTo, rotateHeldModel, dropHeldModel, ensureHeldFromSelection, refreshModelList, refreshScriptFiles, createWorld } from "./features.js";
-import { GameRuntime, logGameError } from "./game.js";
 import * as bootUi from "./boot-ui.js";
 import * as auth from "./auth.js";
 
@@ -26,7 +25,7 @@ const state = {
   currentBlock: 127, // grass
   selection: null,
   clipboard: null,
-  terrain: { skyTop: 0x43688f, skyBottom: 0xe4ddd0, fogDensity: 0.006, sunIntensity: 2.4, ambient: 0.22, hemi: 0.65, shadows: true, grid: true, glow: 0.9, dayNight: 0.35, exposure: 1.12 },
+  terrain: { skyTop: 0x43688f, skyBottom: 0xe4ddd0, fogDensity: 0.006, sunIntensity: 2.4, ambient: 0.22, hemi: 0.65, shadows: true, grid: true, glow: 0.9, dayNight: 0.35, exposure: 1.12, weather: "clear", weatherLevels: { rain: 0, snow: 0, thunder: 0, cloud: 0, wind: 0 }, weatherCycleSeconds: 60 },
   dirty: false,
   meta: { name: "新建世界" },
   scripts: [],
@@ -35,6 +34,7 @@ const state = {
   models: [],
 };
 let game = null; // GameRuntime 实例
+let gameRuntimeClass = null, gameLogError = null, startingPlay = false;
 
 const history = new History(world, (touched) => {
   for (const k of touched) { const [x, y, z] = k.split(",").map(Number); renderer.markDirty(x, y, z); }
@@ -92,7 +92,15 @@ const ctx = {
 };
 
 /* ==================== 运行模式（玩家出生在地图中心，脚本全量运行） ==================== */
-function enterPlay() {
+async function enterPlay() {
+  if (startingPlay || game?.running) return;
+  startingPlay = true;
+  try {
+  if (!gameRuntimeClass) {
+    const runtime = await import("./game.js");
+    gameRuntimeClass = runtime.GameRuntime;
+    gameLogError = runtime.logGameError;
+  }
   if (renderer.fpMode) setFirstPerson(false);
   // 全屏子界面（脚本 / UI / 商城）会盖住运行画面，先收起
   let closedFs = false;
@@ -109,7 +117,7 @@ function enterPlay() {
     document.querySelectorAll(".mtab").forEach((x) => x.classList.remove("active"));
     document.querySelector('.mtab[data-menu="build"]')?.classList.add("active");
   }
-  if (!game) game = new GameRuntime(window.__editor);
+  if (!game) game = new gameRuntimeClass(window.__editor);
   window.__game = game;
   // 运行要用当前内存里的编辑结果：先把场景模型同步回 meta.entities
   state.meta.entities = collectEntities();
@@ -120,6 +128,15 @@ function enterPlay() {
     lutNames: state.assets.lutNames || [], partNames: state.assets.partNames || [],
   };
   game.spawnPoint = state.meta.spawnPoint || game.spawnPoint;
+  if (state.terrain.weatherLevels) {
+    state.meta.worldSettings = Object.assign({}, state.meta.worldSettings, {
+      rainDensity: state.terrain.weatherLevels.rain || 0,
+      snowDensity: state.terrain.weatherLevels.snow || 0,
+      initialWeather: state.terrain.weather || "clear",
+    });
+    game.thunderDensity = state.terrain.weatherLevels.thunder || 0;
+    game.weatherCycleTicks = (state.terrain.weatherCycleSeconds || 60) * 60;
+  }
   game.gameRules = Object.assign({}, game.gameRules, state.meta.gameRules || {});
   game.start({ scripts: state.scripts || [], assets, player: migratePlayerMeta(state.meta.player) });
   try { window.__musicPlayback?.dispose(); } catch { }
@@ -136,8 +153,14 @@ function enterPlay() {
   }
   // 全局错误 → 游戏控制台（异步报错同样要"报错"）
   if (!game._errFlush) game._errFlush = setInterval(() => {
-    while (game.running && window.__errs && window.__errs.length) logGameError(window.__errs.shift());
+    while (game.running && window.__errs && window.__errs.length) gameLogError(window.__errs.shift());
   }, 400);
+  } catch (err) {
+    console.error("进入运行模式失败", err);
+    toast("进入运行模式失败：" + (err && err.message || err), true);
+  } finally {
+    startingPlay = false;
+  }
 }
 function stopPlay() {
   try { window.__musicPlayback?.dispose(); } catch { }
@@ -302,6 +325,7 @@ async function applySceneModels(meta) {
   const ents = (meta && meta.entities) || [];
   const legacy = (meta && meta.models) || [];
   const withMesh = ents.filter((d) => d.mesh);
+  const streaming = Math.max(world.shape[0], world.shape[2]) > 256;
   const { addPlacedModel, addEntityMarker, suspendModelList, refreshModelList } = await import("./features.js");
   if (renderer._modelStreamCleanup) renderer._modelStreamCleanup();
   suspendModelList(true);
@@ -309,6 +333,7 @@ async function applySceneModels(meta) {
   state.models = [];
   state.selectedModel = null;
   const unplaced = new Set(ents), marked = new Set(), missing = new Set();
+  let streamActive = true;
   const byMesh = new Map();
   for (const d of withMesh) {
     if (!byMesh.has(d.mesh)) byMesh.set(d.mesh, []);
@@ -326,6 +351,7 @@ async function applySceneModels(meta) {
       bounds: d.bounds || [1.5, 1.5, 1.5], collides: d.collides ?? d.collision, phys: d.phys, mesh: d.mesh });
   };
   const place = (base, asset, target, radius) => {
+    if (!streamActive) return 0;
     let changed = 0;
     for (const d of byMesh.get(base)) {
       if (!unplaced.has(d) || dist2(d, target) > radius * radius) continue;
@@ -353,6 +379,7 @@ async function applySceneModels(meta) {
     if (missing.has(base)) { for (const d of byMesh.get(base)) if (dist2(d, target) <= radius * radius) addMarker(d); return 0; }
     let asset = state.assets.meshes[base];
     if (!asset || !asset.object) asset = await ensureMeshAsset(base).catch(() => null);
+    if (!streamActive) return 0;
     if (!asset || !asset.object) {
       missing.add(base); noAsset += byMesh.get(base).length;
       for (const d of byMesh.get(base)) addMarker(d);
@@ -360,11 +387,14 @@ async function applySceneModels(meta) {
     }
     return place(base, asset, target, radius);
   };
-  const nearest = (target, radius) => [...byMesh.keys()]
-    .filter((base) => byMesh.get(base).some((d) => unplaced.has(d) && dist2(d, target) <= radius * radius))
-    .sort((a, b) => Math.min(...byMesh.get(a).map((d) => dist2(d, target))) - Math.min(...byMesh.get(b).map((d) => dist2(d, target))));
-  for (const base of nearest(spawn, 64)) {
-    await loadBase(base, spawn, 64);
+  const nearest = (target, radius) => {
+    if (!streaming) return [...byMesh.keys()].filter((base) => byMesh.get(base).some((d) => unplaced.has(d)));
+    return [...byMesh.keys()]
+      .filter((base) => byMesh.get(base).some((d) => unplaced.has(d) && dist2(d, target) <= radius * radius))
+      .sort((a, b) => Math.min(...byMesh.get(a).map((d) => dist2(d, target))) - Math.min(...byMesh.get(b).map((d) => dist2(d, target))));
+  };
+  for (const base of nearest(spawn, streaming ? 64 : Infinity)) {
+    await loadBase(base, spawn, streaming ? 64 : Infinity);
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   for (const d of legacy) {
@@ -377,22 +407,24 @@ async function applySceneModels(meta) {
   notifyMissing();
   let timer = 0, pumping = false;
   const pump = async () => {
-    if (pumping) return;
+    if (pumping || !streamActive) return;
     pumping = true;
     let changed = 0;
     const target = renderer.controls.target;
     for (const base of nearest(target, 128).slice(0, 4)) {
+      if (!streamActive) break;
       changed += await loadBase(base, target, 128);
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     state.entities = [...unplaced];
+    if (!streamActive) { pumping = false; return; }
     if (changed) refreshModelList();
     notifyMissing();
     pumping = false;
   };
   const onChange = () => { clearTimeout(timer); timer = setTimeout(pump, 600); };
   renderer.controls.addEventListener("change", onChange);
-  renderer._modelStreamCleanup = () => { clearTimeout(timer); renderer.controls.removeEventListener("change", onChange); };
+  renderer._modelStreamCleanup = () => { streamActive = false; clearTimeout(timer); renderer.controls.removeEventListener("change", onChange); };
   suspendModelList(false);
   refreshModelList();
   ui && ui.refreshTree && ui.refreshTree();
@@ -510,6 +542,12 @@ function applyTerrain() {
     shadows: t.shadows, grid: t.grid, glow: t.glow, exposure: t.exposure,
     sunDir: sunDirFromPhase(t.dayNight),
   });
+  const preset = t.weather === "rain" ? { rain: .75, snow: 0, thunder: 0 }
+    : t.weather === "snow" ? { rain: 0, snow: .7, thunder: 0 }
+    : t.weather === "thunder" ? { rain: .9, snow: 0, thunder: .6 }
+    : { rain: 0, snow: 0, thunder: 0, cloud: 0, wind: 0 };
+  const levels = t.weatherLevels || preset;
+  renderer.setWeather({ rain: levels.rain || 0, snow: levels.snow || 0, thunder: levels.thunder || 0, cloud: levels.cloud || 0, wind: levels.wind || 0 });
 }
 
 let toastTimer;
@@ -537,12 +575,11 @@ async function boot() {
   renderer.setWorld(world, state.meta.player && state.meta.player.initialPosition);
   applyTerrain();
   bootUi.title(state.meta.name || worldId);
-  renderer.start();
   if (world.size() > 2000 && Math.max(world.shape[0], world.shape[2]) > 256) {
     await renderer.waitForVisibleChunks((progress) => {
       bootUi.stage(46 + progress * 16, `正在生成可见区块 ${Math.round(progress * 100)}%`);
     });
-  }
+  } else bootUi.stage(50, "正在搭建工作区…");
   // 工具指针调度（非 FP + FP 模式统一通过指针事件驱动 TOOLS；模型模式下拖放/放置模型）
   const viewport = document.getElementById("viewport");
   if (viewport) {
@@ -684,6 +721,7 @@ async function boot() {
     viewport.addEventListener("contextmenu", (e) => e.preventDefault());
   }
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
+  bootUi.stage(74, "正在接线编辑器…");
   // selOps 单独一组：命令面板要能调到剪贴板这几个动作。它们原本只有键盘快捷键，
   // 而快捷键藏在按钮之外的动作，正是面板最容易漏掉的一类（漏了就等于"面板不全"）。
   window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, refreshModelList, ensureMeshAsset, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel } };
@@ -697,8 +735,7 @@ async function boot() {
   // 没有这个钩子，"取回"就只改了磁盘上的字节，画面上什么都不会变。
   window.__editor.replaceSceneModels = () => applySceneModels(state.meta);
   initFeatures(window.__editor);
-  bootUi.stage(62, "正在取回模型与音效…");
-  restoreSceneModels(state.meta); // boot 也一样：场景模型与实体标记都由它负责
+  bootUi.stage(82, "正在准备模型队列…");
   // 第一人称中心拾取预览（幽灵方块跟随屏幕中心）
   ui.setFPRenderer && ui.setFPRenderer(null);
   const uiRender = renderer.onRender;
@@ -712,6 +749,7 @@ async function boot() {
       else { renderer.setGhost(null); }
     }
   };
+  // 首帧会编译 WebGL 着色器；先让遮罩退出，再异步启动，避免把 UI 一起冻住。
   // 启动参数：工作台用 /edit/<新id>?new=1&mode=&X=&Y=&Z=&T=&name= 建图，?play=1 直接进运行模式
   const q = new URLSearchParams(location.search);
   // 从社区详情页进来时带上 pub/title/author，游玩外壳与菜单要知道自己在玩谁的哪张图
@@ -722,13 +760,21 @@ async function boot() {
     updateStatus();
     save();
   } else if (seed && seed.map.size > 2000) {
-    updateStatus(); bootUi.done();
+    updateStatus();
   } else {
     if (window.__openSizeModal) window.__openSizeModal(); // 进入即选择大小并生成
     updateStatus();
   }
   bootUi.stage(88, "正在准备界面…");
-  requestAnimationFrame(() => bootUi.done());
+  requestAnimationFrame(() => {
+    bootUi.done();
+    if (Math.max(world.shape[0], world.shape[2]) > 256) setTimeout(() => restoreSceneModels(state.meta), 800);
+    else restoreSceneModels(state.meta);
+  });
+  let renderStarted = false;
+  const startRenderer = () => { if (renderStarted) return; renderStarted = true; renderer.start(); };
+  renderer.prepareFirstFrame().then(startRenderer).catch(startRenderer);
+  setTimeout(startRenderer, 1500);
   if (q.get("export") === "1") {
     io.exportProjectZip({ world, state, name: state.meta.name || worldId, download: true })
       .then(() => toast("已导出项目包"))

@@ -20,7 +20,7 @@ const num = (v, d = 0) => (Number.isFinite(+v) ? String(+v) : String(d));
 const indent = (lines, d) => lines.map((s) => (s ? "  ".repeat(d) + s : s));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-const CATS = [["event", "事件"], ["action", "动作"], ["flow", "控制"], ["var", "变量"], ["world", "玩法"]];
+const CATS = [["event", "事件"], ["action", "动作"], ["flow", "控制"], ["var", "变量"], ["world", "玩法"], ["voxel", "方块"]];
 // 每类一个线框图标：分类靠形状就能分开，颜色只是加强（不用 emoji）
 const ICONS = {
   event: '<path d="M5 20V5l6 2.5L17 5v9l-6 2.5L5 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
@@ -28,6 +28,7 @@ const ICONS = {
   flow: '<path d="M4 6h9M4 12h13M4 18h7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="17" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="14" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/>',
   var: '<rect x="4" y="6" width="16" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 10.5h4M8 14h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   world: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 12h16M12 4c2.6 2.4 2.6 13.2 0 16M12 4c-2.6 2.4-2.6 13.2 0 16" fill="none" stroke="currentColor" stroke-width="1.3"/>',
+  voxel: '<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.4"/>',
 };
 
 /** 变量名允许中文，而中文在 ECMAScript 里本来就是合法标识符（\p{L} 覆盖 CJK），
@@ -59,7 +60,7 @@ const TYPES = {
     emit: (b, inner) => ["world.onPress(({ entity, button, pressed }) => {", "  if (!pressed) return;", ...inner, "});"] },
   on_tick: { cat: "event", hat: true, body: true, label: "每隔", unit: "tick 执行一次",
     fields: { every: { t: "num", d: 20 } },
-    emit: (b, inner) => ["world.onTick(({ tick }) => {", `  if (tick % ${num(b.f.every, 20)} !== 0) return;`, ...inner, "});"] },
+    emit: (b, inner) => ["world.onTick(({ tick }) => {", `  if (tick % ${Math.max(1, Math.round(+b.f.every || 20))} !== 0) return;`, ...inner, "});"] },
 
   say: { cat: "action", needs: true, label: "让 TA 头顶飘出", fields: { msg: { t: "text", d: "你好！" } },
     emit: (b) => [`entity.say(${lit(b.f.msg)});`] },
@@ -78,7 +79,7 @@ const TYPES = {
 
   repeat: { cat: "flow", body: true, label: "重复", unit: "次", fields: { n: { t: "num", d: 3 } },
     emit: (b, inner) => [`for (let i = 0; i < ${num(b.f.n, 0)}; i++) {`, ...inner, "}"] },
-  if_expr: { cat: "flow", body: true, label: "如果（JS 条件）", fields: { cond: { t: "expr", d: "tick % 100 === 0" } },
+  if_expr: { cat: "flow", body: true, label: "如果（JS 条件）", fields: { cond: { t: "expr", d: "true" } },
     emit: (b, inner) => [`if (${b.f.cond || "true"}) {`, ...inner, "}"] },
   var_if: { cat: "flow", body: true, label: "如果变量", fields: {
     name: { t: "name", d: "得分" }, op: { t: "sel", opts: [">", ">=", "<", "<=", "==", "!="], d: ">" }, value: { t: "expr", d: "0" } },
@@ -95,14 +96,64 @@ const TYPES = {
   set_voxel: { cat: "world", label: "在 XYZ", unit: "放一个方块", fields: {
     x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 }, name: { t: "text", d: "stone" } },
     emit: (b) => [`world.setVoxel(${num(b.f.x)}, ${num(b.f.y)}, ${num(b.f.z)}, ${lit(b.f.name)});`] },
-  weather: { cat: "world", label: "天气 雨", fields: { rain: { t: "num", d: 0 }, snow: { t: "num", d: 0 }, thunder: { t: "num", d: 0 } },
-    emit: (b) => [`world.setWeather({ rain: ${num(b.f.rain)}, snow: ${num(b.f.snow)}, thunder: ${num(b.f.thunder)} });`] },
+  weather: { cat: "world", label: "设置天气", fields: { rain: { t: "num", d: 0 }, snow: { t: "num", d: 0 }, thunder: { t: "num", d: 0 } },
+    emit: (b) => [`world.rainDensity = ${clamp(+b.f.rain || 0, 0, 1)};`, `world.snowDensity = ${clamp(+b.f.snow || 0, 0, 1)};`, `world.thunderDensity = ${clamp(+b.f.thunder || 0, 0, 1)};`] },
   spawn: { cat: "world", label: "把出生点设到 XYZ", fields: {
     x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 } },
     emit: (b) => [`world.setWorldSpawn({ x: ${num(b.f.x)}, y: ${num(b.f.y)}, z: ${num(b.f.z)} });`] },
   log: { cat: "world", label: "打印到控制台", fields: { msg: { t: "expr", d: '"跑了一次"' } },
     emit: (b) => [`console.log(${b.f.msg || '""'});`] },
+
+  hurt: { cat: "action", needs: true, label: "让 TA 受到", unit: "点伤害", fields: { amount: { t: "num", d: 10 } },
+    emit: (b) => [`entity.hurt(${num(b.f.amount, 0)});`] },
+  heal: { cat: "action", needs: true, label: "给 TA 治疗", unit: "点生命", fields: { amount: { t: "num", d: 10 } },
+    emit: (b) => [`entity.heal(${num(b.f.amount, 0)});`] },
+  destroy_entity: { cat: "action", needs: true, label: "摧毁 TA", emit: () => ["entity.destroy();"] },
+  entity_velocity: { cat: "action", needs: true, label: "把 TA 速度设为", fields: {
+    x: { t: "num", d: 0 }, y: { t: "num", d: 0 }, z: { t: "num", d: 0 } },
+    emit: (b) => [`entity.velocity.set(${num(b.f.x)}, ${num(b.f.y)}, ${num(b.f.z)});`] },
+  entity_tag: { cat: "action", needs: true, label: "给 TA 添加标签", fields: { tag: { t: "text", d: "敌人" } },
+    emit: (b) => [`entity.addTag(${lit(b.f.tag)});`] },
+  player_prop: { cat: "action", needs: true, label: "设置玩家属性", fields: {
+    key: { t: "sel", opts: ["walkSpeed", "runSpeed", "jumpPower", "cameraDistance", "canFly", "invisible"], d: "walkSpeed" },
+    value: { t: "expr", d: "0.4" } },
+    emit: (b) => { const key = ["walkSpeed", "runSpeed", "jumpPower", "cameraDistance", "canFly", "invisible"].includes(b.f.key) ? b.f.key : "walkSpeed"; return [`entity.player.${key} = ${b.f.value || "0"};`]; } },
+
+  while_cond: { cat: "flow", body: true, label: "当 JS 条件成立时重复", fields: { cond: { t: "expr", d: "false" } },
+    emit: (b, inner) => [`while (${b.f.cond || "false"}) {`, ...inner, "}"] },
+  each_entity: { cat: "flow", body: true, gives: true, label: "遍历 XYZ 周围", unit: "格内的实体", fields: {
+    x: { t: "num", d: 0 }, y: { t: "num", d: 0 }, z: { t: "num", d: 0 }, radius: { t: "num", d: 8 } },
+    emit: (b, inner) => [`for (const target of world.entitiesInRadius({ x: ${num(b.f.x)}, y: ${num(b.f.y)}, z: ${num(b.f.z)} }, ${num(b.f.radius, 1)})) {`, "  const entity = target;", ...inner, "}"] },
+  interval: { cat: "flow", body: true, label: "每隔", unit: "毫秒重复执行", fields: { ms: { t: "num", d: 1000 } },
+    emit: (b, inner) => ["world.setInterval(() => {", ...inner, `}, ${Math.max(50, Math.round(+b.f.ms || 1000))});`] },
+  clear_timer: { cat: "flow", label: "清除定时器", fields: { id: { t: "expr", d: "0" } },
+    emit: (b) => [`world.clearTimeout(${b.f.id || "0"}); world.clearInterval(${b.f.id || "0"});`] },
+
+  world_gravity: { cat: "world", label: "设置世界重力", fields: { value: { t: "num", d: -0.1 } },
+    emit: (b) => [`world.gravity = ${num(b.f.value, -0.1)};`] },
+  world_time: { cat: "world", label: "设置昼夜相位", fields: { value: { t: "num", d: 0.25 } },
+    emit: (b) => [`world.sunPhase = ${clamp(+b.f.value || 0, 0, 1)};`] },
+  world_fog: { cat: "world", label: "设置雾密度", fields: { value: { t: "num", d: 0.004 } },
+    emit: (b) => [`world.fogUniformDensity = ${clamp(+b.f.value || 0, 0, 0.1)};`] },
+  game_rule: { cat: "world", label: "设置游戏规则", fields: { name: { t: "text", d: "doImmediateRespawn" }, value: { t: "expr", d: "true" } },
+    emit: (b) => [`world.setGameRule(${lit(b.f.name)}, ${b.f.value || "null"});`] },
 };
+
+function expandVoxelBlocks(atlas) {
+  const zh = { grass: "草", stone: "石头", rock: "岩石", sand: "沙子", wood: "木头", log: "原木", plank: "木板", brick: "砖块", glass: "玻璃", water: "水", lava: "岩浆", snow: "雪", ice: "冰", cloud: "云", light: "灯", glow: "发光", red: "红", orange: "橙", yellow: "黄", green: "绿", blue: "蓝", purple: "紫", pink: "粉", black: "黑", white: "白", grey: "灰", gray: "灰", dark: "深色", pale: "浅色", all: "全", road: "道路", wall: "墙", door: "门", window: "窗", flower: "花", leaf: "树叶", leaves: "树叶", metal: "金属", iron: "铁", gold: "金", diamond: "钻石", crystal: "水晶", fire: "火", mud: "泥", soil: "土壤", chest: "箱子", fence: "栅栏", roof: "屋顶", floor: "地板", tile: "瓷砖" };
+  const pretty = (name) => name.split("_").map((part) => zh[part] || part).join("");
+  const blocks = atlas && typeof atlas.list === "function" ? atlas.list() : [];
+  for (const b of blocks) {
+    const name = String(b.name || b.id), label = pretty(name);
+    TYPES[`vox_set_${b.id}`] = { cat: "voxel", label: `放置 ${label}`, keywords: `${name} ${label}`, fields: {
+      x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 } },
+      emit: (v) => [`world.setVoxel(${num(v.f.x)}, ${num(v.f.y)}, ${num(v.f.z)}, ${lit(name)});`] };
+    TYPES[`vox_if_${b.id}`] = { cat: "voxel", body: true, label: `如果 XYZ 是 ${label}`, keywords: `${name} ${label}`, fields: {
+      x: { t: "num", d: 0 }, y: { t: "num", d: 1 }, z: { t: "num", d: 0 } },
+      emit: (v, inner) => [`if (world.getVoxelName(${num(v.f.x)}, ${num(v.f.y)}, ${num(v.f.z)}) === ${lit(name)}) {`, ...inner, "}"] };
+  }
+}
+export function blockCatalogSize() { return Object.keys(TYPES).length; }
 
 let uid = 1;
 const nid = () => "b" + uid++;
@@ -147,7 +198,7 @@ export function compileBlocks(tree) {
     for (const b of list || []) {
       const d = TYPES[b.type];
       if (!d) { sink.push(...indent([`/* 未知积木：${b.type} */`], depth)); continue; }
-      if (d.hat && hasEntity === false && depth > 0) {
+      if (d.hat && depth > 0) {
         sink.push(...indent([`/* 事件块「${d.label}」只能放在顶层，已跳过 */`], depth));
         continue;
       }
@@ -189,14 +240,15 @@ export function wireBlocks(E) {
   const auto = screen.querySelector("#bsAuto");
   const FILE = "blocks.js";
   const ZOOMS = [0.7, 0.8, 0.9, 1, 1.15, 1.3];
-  let tree = [], sel = null, zoom = 1, undoStack = [];
+  let tree = [], sel = null, zoom = 1, undoStack = [], toolLimit = 80;
 
-  const flat = (list = tree, out = []) => { for (const b of list) { out.push(b); if (b.children) flat(b.children, out); } return out; };
+  const flat = (list = tree, out = []) => { for (const b of Array.isArray(list) ? list : []) { if (!b) continue; out.push(b); if (b.children) flat(b.children, out); } return out; };
   // 叶子块的 children 是 null（不是 []）：直接递归进去会在 null.length 上抛，
   // 症状是"拖拽松手没反应"——异常吞在事件回调里，只在控制台上冒一行。
   const find = (id, from = tree) => {
     if (!Array.isArray(from)) return null;
     for (let i = 0; i < from.length; i++) {
+      if (!from[i]) continue;
       if (from[i].id === id) return { list: from, i, b: from[i] };
       const hit = find(id, from[i].children);
       if (hit) return hit;
@@ -248,15 +300,17 @@ export function wireBlocks(E) {
   /* ---------- 积木箱 ---------- */
   function renderTool(q = "") {
     toolBody.innerHTML = "";
+    toolBody.dataset.total = String(Object.keys(TYPES).length);
     for (const [cat, zh] of CATS) {
-      const items = Object.entries(TYPES).filter(([t, d]) => d.cat === cat &&
-        (!q || (d.label + (d.unit || "") + t).toLowerCase().includes(q)));
-      if (!items.length) continue;
+      const all = Object.entries(TYPES).filter(([t, d]) => d.cat === cat &&
+        (!q || (d.label + (d.unit || "") + (d.keywords || "") + t).toLowerCase().includes(q)));
+      if (!all.length) continue;
+      const items = cat === "voxel" && !q ? all.slice(0, toolLimit) : all;
       const sec = document.createElement("div");
       sec.className = "bs-cat";
       const h = document.createElement("div");
       h.className = "bs-cat-h";
-      h.innerHTML = `<i class="bs-dot c-${cat}"></i><span>${esc(zh)}</span><b>${items.length}</b>`;
+      h.innerHTML = `<i class="bs-dot c-${cat}"></i><span>${esc(zh)}</span><b>${all.length}</b>`;
       sec.appendChild(h);
       for (const [type, d] of items) {
         const chip = document.createElement("button");
@@ -268,6 +322,13 @@ export function wireBlocks(E) {
         chip.onclick = () => (d.hat ? addTop(type) : addNear(type, sel));
         chip.addEventListener("pointerdown", (ev) => startDrag(ev, { fresh: type }));
         sec.appendChild(chip);
+      }
+      if (items.length < all.length) {
+        const more = document.createElement("button");
+        more.className = "bs-more";
+        more.textContent = `再显示 ${Math.min(80, all.length - items.length)} 个方块积木`;
+        more.onclick = () => { toolLimit += 80; renderTool(q); };
+        sec.appendChild(more);
       }
       toolBody.appendChild(sec);
     }
@@ -491,6 +552,8 @@ export function wireBlocks(E) {
   screen.addEventListener("keydown", (ev) => {
     const mod = ev.ctrlKey || ev.metaKey;
     if (mod && ev.key.toLowerCase() === "s") { ev.preventDefault(); return writeScript(true); }
+    if (ev.key === "/" && !ev.target.matches("input,select")) { ev.preventDefault(); filter.focus(); return; }
+    if (ev.key === "Escape" && ev.target === filter) { filter.value = ""; renderTool(); filter.blur(); return; }
     if (mod && ev.key.toLowerCase() === "z") { ev.preventDefault(); return undo(); }
     if (ev.target.matches("input,select")) return;
     if (mod && ev.key.toLowerCase() === "d" && sel) { ev.preventDefault(); return dupe(sel); }
@@ -556,6 +619,7 @@ export function wireBlocks(E) {
     try { const w = +localStorage.getItem("ly_bsw"); if (w > 200) setW(w); } catch {}
   }
 
+  expandVoxelBlocks(E.atlas);
   renderTool();
   render();
   paintCode();
