@@ -1,43 +1,60 @@
 // zip.js — 纯浏览器 ZIP 读取器（store + deflate），依赖 DecompressionStream('deflate-raw')。
 // 用于导入 Box3/dao3 项目包（code/、project/、build/ 等）。
 
-export async function readZipEntries(u8) {
-  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+export async function readZipEntries(input) {
+  const isBlob = input && typeof input !== "string" && typeof input.size === "number" && typeof input.slice === "function";
+  const size = isBlob ? input.size : input.length;
+  const tailLen = Math.min(size, 66000);
+  const tail = new Uint8Array(await (isBlob ? input.slice(size - tailLen).arrayBuffer() : input.slice(size - tailLen)));
+  const tailBase = size - tailLen;
+  const dv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   // 从尾部找 EOCD (0x06054b50)
   let eocd = -1;
-  const scanFrom = Math.max(0, u8.length - 66000);
-  for (let i = u8.length - 22; i >= scanFrom; i--) {
+  for (let i = tail.length - 22; i >= 0; i--) {
     if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
   }
   if (eocd < 0) throw new Error("不是有效的 ZIP 文件");
   const count = dv.getUint16(eocd + 10, true);
-  let off = dv.getUint32(eocd + 16, true);
+  const cdSize = dv.getUint32(eocd + 12, true);
+  const cdOff = dv.getUint32(eocd + 16, true);
+  if (count === 0xffff || cdOff === 0xffffffff) throw new Error("暂不支持 ZIP64 项目包");
+  const cd = new Uint8Array(await (isBlob ? input.slice(cdOff, cdOff + cdSize).arrayBuffer() : input.slice(cdOff, cdOff + cdSize)));
+  const cdv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength);
+  let off = 0;
   const entries = [];
   const td = new TextDecoder();
   for (let n = 0; n < count; n++) {
-    if (dv.getUint32(off, true) !== 0x02014b50) break;
-    const method = dv.getUint16(off + 10, true);
-    const compSize = dv.getUint32(off + 20, true);
-    const nameLen = dv.getUint16(off + 28, true);
-    const extraLen = dv.getUint16(off + 30, true);
-    const commentLen = dv.getUint16(off + 32, true);
-    const localOff = dv.getUint32(off + 42, true);
-    const name = td.decode(u8.subarray(off + 46, off + 46 + nameLen));
+    if (cdv.getUint32(off, true) !== 0x02014b50) break;
+    const method = cdv.getUint16(off + 10, true);
+    const compSize = cdv.getUint32(off + 20, true);
+    const nameLen = cdv.getUint16(off + 28, true);
+    const extraLen = cdv.getUint16(off + 30, true);
+    const commentLen = cdv.getUint16(off + 32, true);
+    const localOff = cdv.getUint32(off + 42, true);
+    const name = td.decode(cd.subarray(off + 46, off + 46 + nameLen));
     off += 46 + nameLen + extraLen + commentLen;
-    // 读本地头取得数据起点（本地头 extra 长度可能与中央目录不同）
-    if (dv.getUint32(localOff, true) !== 0x04034b50) continue;
-    const lNameLen = dv.getUint16(localOff + 26, true);
-    const lExtraLen = dv.getUint16(localOff + 28, true);
-    const dataStart = localOff + 30 + lNameLen + lExtraLen;
-    const raw = u8.subarray(dataStart, dataStart + compSize);
-    if (name.endsWith("/")) { continue; }
-    entries.push({ name, method, raw });
+    if (name.endsWith("/")) continue;
+    entries.push({ name, method, compSize, localOff, _dataStart: -1 });
   }
+  const readRange = async (start, len) => {
+    if (!isBlob) return input.slice(start, start + len);
+    return new Uint8Array(await input.slice(start, start + len).arrayBuffer());
+  };
+  const dataStart = async (entry) => {
+    if (entry._dataStart >= 0) return entry._dataStart;
+    const lh = await readRange(entry.localOff, 30);
+    const lv = new DataView(lh.buffer, lh.byteOffset, lh.byteLength);
+    if (lv.getUint32(0, true) !== 0x04034b50) throw new Error("ZIP 本地头损坏：" + entry.name);
+    entry._dataStart = entry.localOff + 30 + lv.getUint16(26, true) + lv.getUint16(28, true);
+    return entry._dataStart;
+  };
   return { entries, async extract(entry) {
-    if (entry.method === 0) return entry.raw;
+    const start = await dataStart(entry);
+    const raw = await readRange(start, entry.compSize);
+    if (entry.method === 0) return raw;
     if (entry.method === 8) {
       const ds = new DecompressionStream("deflate-raw");
-      const stream = new Blob([entry.raw]).stream().pipeThrough(ds);
+      const stream = new Blob([raw]).stream().pipeThrough(ds);
       return new Uint8Array(await new Response(stream).arrayBuffer());
     }
     throw new Error("不支持的压缩方法 " + entry.method);

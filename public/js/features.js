@@ -1383,6 +1383,8 @@ export async function importProject(file) {
   }
   if (cfg.zones) meta.zones = cfg.zones;
   if (Array.isArray(cfg.ui)) meta.ui = cfg.ui; // 界面部件走 compat，官方 uiTree 是 nodes 形态
+  if (cfg.uiTree) meta.uiTree = cfg.uiTree;
+  if (Array.isArray(cfg.uiWidgets) && cfg.uiWidgets.length) meta.ui = cfg.uiWidgets;
   if (Array.isArray(cfg.products)) meta.products = cfg.products;
   if (cfg.gameRules) meta.gameRules = Object.assign({}, prev.gameRules, cfg.gameRules);
   if (cfg.displayName) { meta.displayName = cfg.displayName; meta.name = cfg.displayName; }
@@ -1439,6 +1441,26 @@ export async function importProject(file) {
     delete meta.assetRoot;
     res.warnings.push(`${meta.meshNames.length} 个网格只有名字、包里没有网格文件（官方部分导出不含网格本体）；这些实体以标记框显示`);
   }
+  let picsStored = 0;
+  if (wid) {
+    for (const f of res.pictureFiles || []) {
+      try {
+        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(f.rel)}`, { method: "POST", body: f.bytes });
+        if (r.ok) picsStored++;
+      } catch { }
+    }
+  }
+  if (picsStored) meta.pictureRoot = `/assets/worlds/${wid}/`;
+  let audStored = 0;
+  if (wid) {
+    for (const f of res.audioFiles || []) {
+      try {
+        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(f.rel)}`, { method: "POST", body: f.bytes });
+        if (r.ok) audStored++;
+      } catch { }
+    }
+  }
+  if (audStored) meta.audioRoot = `/assets/worlds/${wid}/`;
   e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames };
   // 官方资源表（路径 → {hash,type,size}）与它的 CID：代码包面板要靠这两样
   // 才能把"名字下面那个内容地址"显示出来，并按地址把包里没带的文件取回来。
@@ -1779,7 +1801,7 @@ function wireUiEditor() {
     const s = String(src == null ? "" : src).trim();
     if (!s) return "";
     if (/^(https?:|data:|blob:|\/)/i.test(s)) return s;
-    const root = (e.state.meta && e.state.meta.assetRoot) || "";
+    const root = (e.state.meta && (e.state.meta.pictureRoot || e.state.meta.assetRoot)) || "";
     const rel = s.replace(/^\.\//, "");
     const pics = (e.state.meta && e.state.meta.pictureNames) || [];
     if (pics.includes(rel)) return root + rel;

@@ -291,11 +291,17 @@ function importFile(file) {
     if (res.pictureNames && res.pictureNames.length) meta.pictureNames = res.pictureNames;
     if (res.projectCfg && res.projectCfg.player) meta.player = Object.assign({}, res.projectCfg.player, { _units: "official" });
     if (res.projectCfg && res.projectCfg.physics) meta.worldSettings = Object.assign({}, res.projectCfg.physics, { airFriction: res.projectCfg.physics.velocityDamping ?? 0.01 });
-    let assetRoot = "";
-    if (ext === "zip" && res.meshes && Object.keys(res.meshes).length) {
-      assetRoot = await saveZipAssets(id, file);
-      if (assetRoot) meta.assetRoot = assetRoot;
+    if (ext === "zip") {
+      const roots = await saveZipAssets(id, res);
+      if (roots.assetRoot) meta.assetRoot = roots.assetRoot;
+      if (roots.pictureRoot) meta.pictureRoot = roots.pictureRoot;
+      if (roots.audioRoot) meta.audioRoot = roots.audioRoot;
     }
+    if (res.projectCfg && res.projectCfg.uiWidgets) meta.ui = res.projectCfg.uiWidgets;
+    if (res.projectCfg && res.projectCfg.uiTree) meta.uiTree = res.projectCfg.uiTree;
+    if (res.projectCfg && res.projectCfg.zones) meta.zones = res.projectCfg.zones;
+    if (res.projectCfg && res.projectCfg.ambientSound) meta.ambientSound = res.projectCfg.ambientSound;
+    if (res.projectCfg && res.projectCfg.displayName) { meta.displayName = res.projectCfg.displayName; meta.name = res.projectCfg.displayName; }
     const payload = res.world.toPayload(meta);
     const r = await fetch("/api/world/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const j = await r.json();
@@ -305,22 +311,23 @@ function importFile(file) {
   })().catch((e) => tip("导入失败：" + (e && e.message || e), 4200));
 }
 
-// zip 内的模型资产落到 /assets/worlds/<id>/ 下，编辑器按 assetRoot 懒加载
-async function saveZipAssets(id, file) {
-  try {
-    const { readZipEntries } = await import("/js/zip.js");
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const z = await readZipEntries(buf);
-    const ents = z.entries.filter((e) => /(^|\/)(models?|mesh|picture|image|ui)\/.*\.(glb|gltf|png|jpg|jpeg|webp)$/i.test(e.name));
-    if (!ents.length) return "";
-    for (const e of ents) {
-      const data = await z.extract(e);
-      // 模型按文件名取用（编辑器用 assetRoot + name）；图片保留 picture/ 目录，才能和 resources.ls 给的路径对上
-      const rel = /\.(glb|gltf)$/i.test(e.name) ? e.name.split("/").pop() : e.name.replace(/^.*?(?=picture\/|image\/|ui\/)/, "");
-      await fetch("/api/world/" + id + "/asset?path=" + encodeURIComponent(rel), { method: "POST", body: data });
-    }
-    return "/assets/worlds/" + id + "/";
-  } catch { return ""; }
+// 导入器已经把需要的模型与 UI 图片取出来；这里只负责落到这张图的资产目录。
+async function saveZipAssets(id, res) {
+  const files = [
+    ...(res.meshFiles || []).map((f) => ({ rel: "models/" + f.name + f.ext, bytes: f.bytes })),
+    ...(res.voxMeshes || []).filter((v) => v.bytes).map((v) => ({ rel: "models/" + v.name + ".vox", bytes: v.bytes })),
+    ...(res.vbMeshes || []).filter((v) => v.bytes).map((v) => ({ rel: "models/" + v.name + ".vb", bytes: v.bytes })),
+    ...(res.pictureFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
+    ...(res.audioFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
+  ];
+  let mesh = 0, pics = 0, auds = 0;
+  for (const f of files) {
+    try {
+      const r = await fetch("/api/world/" + id + "/asset?path=" + encodeURIComponent(f.rel), { method: "POST", body: f.bytes });
+      if (r.ok) { if (f.rel.startsWith("models/")) mesh++; else if (f.rel.startsWith("audio/")) auds++; else pics++; }
+    } catch { }
+  }
+  return { assetRoot: mesh ? `/assets/worlds/${id}/models/` : "", pictureRoot: pics ? `/assets/worlds/${id}/` : "", audioRoot: auds ? `/assets/worlds/${id}/` : "" };
 }
 
 /* ---------------- 新建弹窗 ---------------- */

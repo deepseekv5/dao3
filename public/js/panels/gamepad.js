@@ -249,7 +249,7 @@ function pictureUrl(E, src) {
   const s = String(src == null ? "" : src).trim();
   if (!s || /^(https?:|data:|blob:|\/)/i.test(s)) return s;
   const meta = E.state.meta || {};
-  const root = meta.assetRoot || "";
+  const root = meta.pictureRoot || meta.assetRoot || "";
   const rel = s.replace(/^\.\//, "");
   const pics = meta.pictureNames || [];
   if (pics.includes(rel)) return root + rel;

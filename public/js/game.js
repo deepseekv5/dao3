@@ -3261,7 +3261,7 @@ void main() {
       const au = this._audioUrl(rel);
       if (au) return au;
     }
-    const root = (this.e.state.meta && this.e.state.meta.assetRoot) || "";
+    const root = (this.e.state.meta && (this.e.state.meta.pictureRoot || this.e.state.meta.assetRoot)) || "";
     if (pics.includes(rel)) return root + rel;
     if (pics.includes("picture/" + rel)) return root + "picture/" + rel;
     // 名单里没有时：带目录的按原样用，光板文件名按官方惯例落在 picture/ 下

@@ -329,6 +329,7 @@ export async function completeMissingFromBlock(res, { ask = true, onProgress } =
     entitiesTree: res.entities && res.entities.length, environment: !!res.projectCfg.environment,
     physics: !!res.projectCfg.physics, player: !!res.projectCfg.player,
     zones: !!res.projectCfg.zones, info: !!res.projectCfg.displayName, assets: !!res.assets,
+    uiTree: !!res.projectCfg.uiTree, gamepad: !!res.projectCfg.gamepad, ambientSound: !!res.projectCfg.ambientSound,
   };
   const miss = missingFromBlock(res.block, have);
   if (!miss.length) return res;
@@ -345,7 +346,68 @@ export async function completeMissingFromBlock(res, { ask = true, onProgress } =
   return res;
 }
 
-/** block.json 里点名了、但本次导入没从包里读到的键。 */
+/** 官方 uiTree（nodes 形态）→ 本地平面控件。
+ *  官方一个文件里有多块 screen，且坐标是 1920×1080 设计稿的像素 + 锚点；
+ *  本地运行时只认平面百分比。这里选“启用且控件最多”的那一屏展开，其余原样留在 meta.uiTree。 */
+export function convertUiTree(tree, { width = 1920, height = 1080 } = {}) {
+  if (!tree || typeof tree !== "object") return { widgets: [], screens: [], screen: "" };
+  const count = (id, seen = new Set()) => {
+    if (!id || seen.has(id)) return { total: 0, visible: 0 };
+    seen.add(id);
+    const n = tree[id]; if (!n) return { total: 0, visible: 0 };
+    const d = (((n.value && n.value.data) || {}).data) || {};
+    if (n.value && n.value.type === "element" && d.visible === false) return { total: 0, visible: 0 };
+    const out = { total: n.value && n.value.type === "element" ? 1 : 0, visible: n.value && n.value.type === "element" ? 1 : 0 };
+    for (const c of n.childrenIds || []) { const r = count(c, seen); out.total += r.total; out.visible += r.visible; }
+    return out;
+  };
+  const screens = Object.values(tree).filter((n) => n && n.value && n.value.type === "screen");
+  const enabled = screens.filter((n) => !n.value.data || n.value.data.enable !== false);
+  const pick = (enabled.length ? enabled : screens).map((n) => ({ n, ...count(n.id) })).sort((a, b) => b.visible - a.visible || b.total - a.total)[0];
+  if (!pick) return { widgets: [], screens: screens.map((n) => n.name), screen: "" };
+  const hex = (c) => Array.isArray(c) ? "#" + c.slice(0, 3).map((v) => Math.max(0, Math.min(255, Math.round((+v || 0) * 255))).toString(16).padStart(2, "0")).join("") : "";
+  const out = [];
+  const walk = (id, box, depth) => {
+    if (!id || depth > 40) return;
+    const n = tree[id]; if (!n) return;
+    const v = n.value || {};
+    let next = box;
+    if (v.type === "element") {
+      const d = (v.data && v.data.data) || {};
+      const t = v.data && v.data.type;
+      if (d.visible === false) return;
+      const size = d.size || {}, pos = d.position || {}, anchor = d.anchor || [0, 0];
+      const w = Math.max(0, box.w * (+(size.ratio && size.ratio[0]) || 0) + (+(size.offset && size.offset[0]) || 0));
+      const h = Math.max(0, box.h * (+(size.ratio && size.ratio[1]) || 0) + (+(size.offset && size.offset[1]) || 0));
+      const x = box.x + box.w * (+(pos.ratio && pos.ratio[0]) || 0) + (+(pos.offset && pos.offset[0]) || 0) - w * (+anchor[0] || 0);
+      const y = box.y + box.h * (+(pos.ratio && pos.ratio[1]) || 0) + (+(pos.offset && pos.offset[1]) || 0) - h * (+anchor[1] || 0);
+      next = { x, y, w, h };
+      if (d.visible !== false && w > 0.5 && h > 0.5) {
+        const x0 = Math.max(0, Math.min(width, x)), y0 = Math.max(0, Math.min(height, y));
+        const x1 = Math.max(0, Math.min(width, x + w)), y1 = Math.max(0, Math.min(height, y + h));
+        if (x1 - x0 > 0.5 && y1 - y0 > 0.5) {
+          const kind = t === "scrollBox" ? "scroll" : (t === "text" || t === "image" ? t : "box");
+          const text = kind === "text" ? String(d.textContent || "") : "";
+          const bg = (d.backgroundOpacity > 0 ? hex(d.backgroundColor) : "");
+          out.push({
+            id: String(n.id), name: String(n.name || n.id).slice(0, 40), type: kind,
+            x: +(x0 / width * 100).toFixed(2), y: +(y0 / height * 100).toFixed(2),
+            w: +((x1 - x0) / width * 100).toFixed(2), h: +((y1 - y0) / height * 100).toFixed(2),
+            size: Math.max(8, Math.min(72, Math.round(+d.textFontSize || 14))),
+            color: hex(d.textColor) || "#ffffff",
+            bg, text: text || (kind === "box" ? "" : ""), image: kind === "image" ? String(d.image || "") : "",
+            placeholder: kind === "input" ? String(d.placeholder || "") : undefined,
+            screen: pick.n.name, z: +d.zIndex || 1,
+          });
+        }
+      }
+    }
+    for (const c of n.childrenIds || []) walk(c, next, depth + 1);
+  };
+  for (const c of pick.n.childrenIds || []) walk(c, { x: 0, y: 0, w: width, h: height }, 0);
+  out.sort((a, b) => a.z - b.z);
+  return { widgets: out, screens: screens.map((n) => n.name), screen: pick.n.name };
+}
 export function missingFromBlock(block, have = {}) {
   if (!block || typeof block !== "object") return [];
   return BLOCK_KEYS.filter((k) => typeof block[k] === "string" && /^Qm/.test(block[k]) && !have[k]);
@@ -394,7 +456,16 @@ export function applyCompletion(res, got = {}) {
     }
     applied.push("资源表 " + Object.keys(got.assets).length + " 条");
   }
-  for (const k of ["uiTree", "gamepad", "ambientSound"]) {
+  if (got.uiTree) {
+    res.projectCfg.uiTree = got.uiTree;
+    const conv = convertUiTree(got.uiTree);
+    if (conv.widgets.length) {
+      res.projectCfg.uiWidgets = conv.widgets;
+      applied.push(`界面 ${conv.widgets.length} 个控件（屏幕「${conv.screen}」）`);
+    }
+    if (conv.screens.length > 1) res.warnings.push(`官方界面有 ${conv.screens.length} 块屏幕，已展开「${conv.screen}」；其余屏幕原样保存在 meta.uiTree`);
+  }
+  for (const k of ["gamepad", "ambientSound"]) {
     if (got[k]) { (res.remoteCfg = res.remoteCfg || {})[k] = got[k]; deferred.push(k); }
   }
   return { applied, deferred };
@@ -528,8 +599,7 @@ export async function exportProjectZip({ world, state, name, download = true }) 
 // 只认前一套的后果不是"少读一个文件"，而是 projectCfg 整个为空：玩家属性、物理、
 // 环境、区域一个都没进来，界面自然什么都没变。所以下面统一走 findCfg() 两套都认。
 export async function importProjectZip(file) {
-  const u8 = new Uint8Array(await file.arrayBuffer());
-  const { entries, extract } = await readZipEntries(u8);
+  const { entries, extract } = await readZipEntries(file);
   const warnings = [];
   let rawMeshes = 0;   // 只登记了名字、没转成可渲染模型的 .vb/.vox 个数。
                       // 声明放最前面：它曾在第 4 步就被读一次，let 的 TDZ 让整次导入抛错。
@@ -540,8 +610,8 @@ export async function importProjectZip(file) {
   // 也可能是 json/player/ 目录下的分片。两种都要认，否则整块配置直接消失。
   const consumed = new Set();
   const findCfg = (key) => {
-    const hit = entries.find((e) => new RegExp(`(^|/)(project|json)/${key}\\.json$`, "i").test(e.name))
-      || entries.find((e) => new RegExp(`(^|/)json/${key}/[^/]+\\.json$`, "i").test(e.name));
+    const hit = entries.find((e) => new RegExp(`(^|/)(project|json|config)/${key}\\.json$`, "i").test(e.name))
+      || entries.find((e) => new RegExp(`(^|/)(json|config)/${key}/[^/]+\\.json$`, "i").test(e.name));
     if (hit) consumed.add(hit.name);
     return hit;
   };
@@ -593,6 +663,15 @@ export async function importProjectZip(file) {
       const j = await jsonOf(mapJson);
       if (j.name) name = j.name;
     } catch {}
+  } else {
+    const nameFile = entries.find((e) => /(^|\/)(config\/mapName|meta\/displayName)\.txt$/i.test(e.name));
+    if (nameFile) {
+      try {
+        const t = new TextDecoder().decode(await extract(nameFile)).trim();
+        if (t) name = t;
+        consumed.add(nameFile.name);
+      } catch {}
+    }
   }
 
   // 3) 实体：优先扁平 entities/models.json，其次官方 nodes 形态 entitiesTree
@@ -634,7 +713,7 @@ export async function importProjectZip(file) {
   }
   // 3b) 项目配置块（官方 blob：player / physics / environment / ambientSound / zones / uiTree）
   const projectCfg = {};
-  await Promise.all(["player", "physics", "environment", "ambientSound", "zones", "uiTree"].map(async (k) => {
+  await Promise.all(["player", "physics", "environment", "ambientSound", "zones", "uiTree", "gamepad"].map(async (k) => {
     const en = findCfg(k);
     if (!en) return;
     try { projectCfg[k] = await jsonOf(en); } catch (err) { warnings.push(k + ".json 解析失败: " + err.message); }
@@ -652,9 +731,15 @@ export async function importProjectZip(file) {
   if (infoEnt) {
     try {
       const info = JSON.parse(new TextDecoder().decode(await extract(infoEnt)));
-      if (info.displayName) projectCfg.displayName = info.displayName;
+      if (info.displayName && !/^Project$/i.test(info.displayName)) projectCfg.displayName = info.displayName;
       if (info.description != null) projectCfg.description = info.description;
     } catch {}
+  }
+  if (projectCfg.uiTree) {
+    const conv = convertUiTree(projectCfg.uiTree);
+    if (conv.widgets.length) projectCfg.uiWidgets = conv.widgets;
+    if (conv.screens.length > 1) warnings.push(`官方界面有 ${conv.screens.length} 块屏幕，已展开「${conv.screen}」（${conv.widgets.length} 个控件）；其余屏幕原样保存在 meta.uiTree`);
+    else if (conv.widgets.length) warnings.push(`已导入官方界面「${conv.screen}」（${conv.widgets.length} 个控件）`);
   }
 
   // 4) 脚本：code/*.js（index.js / clientIndex.js / 任意文件）
@@ -675,47 +760,81 @@ export async function importProjectZip(file) {
   }
   if (!scripts.length) warnings.push("包内没有 /code/*.js 脚本");
 
-  // 5) 音效 audio/ + 网格资产名 mesh/（.vb 现在能解，见 vb.js）
+  // 5) 音效 / 网格名 / 图片。大包（几千个文件、几百 MB）不能把所有条目同时解压：
+  //    先只按文件名分类，音频与 UI 引用的图片再按需取字节，模型只解析实体真正引用的那几个。
   const audio = {}, meshNames = [], pictureNames = [];
+  const audioEntries = [], modelEntries = [], pictureEntries = [];
+  for (const e of entries) {
+    if (/(^|\/)(audios?|sounds?)\/.*\.(mp3|wav|ogg|m4a|aac)$/i.test(e.name)) audioEntries.push(e);
+    else if (/(^|\/)(meshes?|models?)\/.*\.(vb|vox|glb|gltf)$/i.test(e.name)) {
+      modelEntries.push(e);
+      const fn = e.name.split("/").pop();
+      meshNames.push(fn.replace(/\.(vb|vox|glb|gltf)$/i, ""));
+    } else if (/(^|\/)(pictures?|images?|ui)\/.*\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(e.name)) {
+      pictureEntries.push(e);
+    }
+  }
+  const picRel = (name) => {
+    const m = String(name).match(/(?:^|\/)(?:pictures?|images?|ui)\/(.+)$/i);
+    return m ? "picture/" + m[1].split("/").pop() : "picture/" + String(name).split("/").pop();
+  };
+  for (const e of pictureEntries) pictureNames.push(picRel(e.name));
+  const uiPics = new Set();
+  const treeForPics = projectCfg.uiTree;
+  if (treeForPics && typeof treeForPics === "object") {
+    for (const n of Object.values(treeForPics)) {
+      const d = (((n && n.value && n.value.data) || {}).data) || {};
+      if (typeof d.image === "string") uiPics.add(picRel(d.image));
+    }
+  }
+  // 大包按“实体引用 + UI 引用”取；小包保持原来的全量网格解析。
+  const heavy = entries.length > 900 || entries.reduce((s, e) => s + (e.compSize || 0), 0) > 120 * 1024 * 1024;
+  const refMesh = new Set();
+  for (const en of entities) {
+    const m = en && (en.mesh || en.meshName || en.model);
+    if (m) refMesh.add(String(m).split("/").pop().replace(/\.(vb|vox|glb|gltf)$/i, ""));
+  }
+  const modelToRead = heavy ? modelEntries.filter((e) => refMesh.has(e.name.split("/").pop().replace(/\.(vb|vox|glb|gltf)$/i, ""))) : modelEntries;
+  const pictureToRead = heavy ? pictureEntries.filter((e) => uiPics.has(picRel(e.name))) : pictureEntries;
+  const pictureFiles = [], audioFiles = [];
+  for (const e of audioEntries) {
+    try {
+      const bytes = await extract(e);
+      const base = e.name.split("/").pop();
+      audio[base] = bytes;
+      audioFiles.push({ rel: "audio/" + base, bytes });
+    } catch {}
+  }
+  for (const e of pictureToRead) {
+    try { pictureFiles.push({ rel: picRel(e.name), bytes: await extract(e) }); } catch {}
+  }
   const voxMeshes = [];  // .vox 解码结果（{name, voxels, bytes}）
   const vbMeshes = [];   // .vb 原始 JSON（{name, json}），建网格留给 features.js（要 atlas）
   const pointerMeshes = []; // 只有 dataHash 的官方指针 .vox：本体不在包里
-  await Promise.all(entries.map(async (e) => {
-    if (/(^|\/)(audio|sound)\/.*\.(mp3|wav|ogg|m4a|aac)$/i.test(e.name)) {
-      try { audio[e.name.split("/").pop()] = await extract(e); } catch {}
-    } else if (/(^|\/)(meshes?|models?)\/.*\.(vb|vox|glb|gltf)$/i.test(e.name)) {
-      const fn = e.name.split("/").pop();
-      const base = fn.replace(/\.(vb|vox|glb|gltf)$/i, "");
-      meshNames.push(base);
-      // .vox（MagicaVoxel 那套带调色板的开放格式）在这里就解成体素：
-      // 只登记名字的话，官方包里那 20 座雕像在场景里就是 20 团空气。
-      // 解码要 atlas，所以只交原始体素列表，建网格留给 features.js 那侧做。
+  for (const e of modelToRead) {
+    const fn = e.name.split("/").pop();
+    const base = fn.replace(/\.(vb|vox|glb|gltf)$/i, "");
+    try {
       if (/\.vox$/i.test(fn)) {
-        try {
-          const bytes = await extract(e);
-          const stub = pointerMesh(bytes);
-          if (stub) { pointerMeshes.push({ name: base, ...stub }); }
-          else {
-            const vs = decodeVox(bytes);
-            // bytes 也要带上：只解不存的话，这次会话里看得到，一存盘重开就又只剩名字了
-            if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs, bytes });
-            else rawMeshes++;
-          }
-        } catch { rawMeshes++; }
-      } else if (/\.vb$/i.test(fn)) {
-        // .vb 是 JSON，不是二进制；体素流是「0 基游程 + 色号」的 LEB128 对。
-        // 这里只负责把 JSON 交出去，解不出（返回 null）才计入 rawMeshes。
-        try {
-          const bytes = await extract(e);
-          const json = JSON.parse(new TextDecoder().decode(bytes));
-          if (decodeVb(json)) vbMeshes.push({ name: base, json, bytes });
+        const bytes = await extract(e);
+        const stub = pointerMesh(bytes);
+        if (stub) pointerMeshes.push({ name: base, ...stub });
+        else {
+          const vs = decodeVox(bytes);
+          if (vs && vs.length) voxMeshes.push({ name: base, voxels: vs, bytes });
           else rawMeshes++;
-        } catch { rawMeshes++; }
+        }
+      } else if (/\.vb$/i.test(fn)) {
+        const bytes = await extract(e);
+        const json = JSON.parse(new TextDecoder().decode(bytes));
+        if (decodeVb(json)) vbMeshes.push({ name: base, json, bytes });
+        else rawMeshes++;
       }
-    } else if (/(^|\/)(pictures?|images?|ui)\/.*\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(e.name)) {
-      pictureNames.push(e.name.replace(/^.*?(?=picture\/|pictures\/|image\/|images\/|ui\/)/, ""));
-    }
-  }));
+    } catch { rawMeshes++; }
+  }
+  if (heavy && modelEntries.length > modelToRead.length) {
+    warnings.push(`大包里有 ${modelEntries.length} 个模型文件（${Math.round(modelEntries.reduce((s, e) => s + (e.compSize || 0), 0) / 1048576)} MB），只取了实体引用的 ${modelToRead.length} 个；其余名字仍可在模型列表里看到`);
+  }
   // 报出来而不是默默变成占位盒：这条决定"导入后画面是空的"到底该怪包还是怪我们。
   // 必须排在上面这次扫描之后——它曾排在前面，于是永远读到 0，警告一次都没出现过。
   // 两类"没有体素"要分开说：指针包是官方导出的形状（本体压根不在 zip 里），
@@ -735,14 +854,14 @@ export async function importProjectZip(file) {
 
   // 5b) 官方资源表 project/assets.json：路径 → {animated,bounds,contentId,hash,ownerId,previewImage,size,type}
   let assets = null;
-  const assetsEnt = entries.find((e) => /project\/assets\.json$/i.test(e.name));
-  if (assetsEnt) consumed.add(assetsEnt.name);
-  if (assetsEnt) {
+  const assetEnts = entries.filter((e) => /(^|\/)(project\/assets|config\/(picture|audio)Assets)\.json$/i.test(e.name));
+  for (const e of assetEnts) consumed.add(e.name);
+  for (const e of assetEnts) {
     try {
-      const j = JSON.parse(new TextDecoder().decode(await extract(assetsEnt)));
-      if (j && typeof j === "object" && !Array.isArray(j)) {
-        assets = j;
-        if (!Object.keys(j).some((k) => j[k] && typeof j[k] === "object" && "type" in j[k])) assets = null; // 旧的非官方形状不作为资源表
+      const j = JSON.parse(new TextDecoder().decode(await extract(e)));
+      if (j && typeof j === "object" && !Array.isArray(j)
+        && Object.keys(j).some((k) => j[k] && typeof j[k] === "object" && "type" in j[k])) {
+        assets = Object.assign(assets || {}, j);
       }
     } catch {}
   }
@@ -758,7 +877,7 @@ export async function importProjectZip(file) {
 
   // 6) 模型 models/*.gltf|glb —— 解析为可播放 mesh 资产（赛车模板的汽车模型即在其中）
   const meshes = {}, meshFiles = [];
-  await Promise.all(entries.map(async (e) => {
+  await Promise.all(modelToRead.map(async (e) => {
     if (!/(^|\/)(models?|meshes?|mesh)\/.*\.(glb|gltf)$/i.test(e.name)) return;
     try {
       const buf = await extract(e);
@@ -773,13 +892,17 @@ export async function importProjectZip(file) {
     } catch {}
   }));
 
+  for (const e of entries) {
+    if (/(^|\/)(config\/(deleteAssets|scriptAssets)|public\/versionControl)\.json$/i.test(e.name)) consumed.add(e.name);
+  }
   // 必须排在所有 findCfg 之后：早一步算就会把 player.json / environment.json
   // 当成"未识别"报出来——判据是"有没有真的被消费掉"，而消费发生在下面这些行里。
   if (gzEnt) consumed.add(gzEnt.name);
-  const oddJson = entries.filter((e) => /\.json$/i.test(e.name) && !consumed.has(e.name));
+  const oddJson = entries.filter((e) => /\.json$/i.test(e.name) && !consumed.has(e.name)
+    && !/(^|\/)(models?|meshes?)\//i.test(e.name));
   if (oddJson.length) warnings.push(`未识别 ${oddJson.length} 个配置文件（${oddJson.slice(0, 3).map((x) => x.name.split("/").slice(-2).join("/")).join("、")}${oddJson.length > 3 ? " 等" : ""}），已跳过`);
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, meshNames, pictureNames, meshes, meshFiles, assets, assetNames, block, voxMeshes, vbMeshes, pointerMeshes, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, audioFiles, meshNames, pictureNames, pictureFiles, meshes, meshFiles, assets, assetNames, block, voxMeshes, vbMeshes, pointerMeshes, warnings };
 }
 
 // 官方"清单式导出"里的 .vox 不是模型本体，而是 120~300 字节的指针：

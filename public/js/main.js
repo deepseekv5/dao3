@@ -114,7 +114,7 @@ function enterPlay() {
   // 运行要用当前内存里的编辑结果：先把场景模型同步回 meta.entities
   state.meta.entities = collectEntities();
   const assets = {
-    audio: state.assets.audio || {}, audioBase: "/data/assets/audio/",
+    audio: state.assets.audio || {}, audioBase: state.meta.audioRoot || "/data/assets/audio/",
     audioNames: state.assets.audioNames || [], meshes: { ...(state.assets.meshes || {}) },
     pictureNames: state.assets.pictureNames || state.meta.pictureNames || [],
     lutNames: state.assets.lutNames || [], partNames: state.assets.partNames || [],
