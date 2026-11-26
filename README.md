@@ -13,7 +13,7 @@
 | | |
 |---|---|
 | 在线文档 / 介绍站 | <https://deepseekv5.github.io/dao3/> · 文档中心 <https://deepseekv5.github.io/dao3/documentation.html> |
-| 最近更新全览 | [3.9.13 → 3.9.21：液态玻璃、VS Code 工作区、皮肤与音乐编辑器、大包导入](UPDATES-3.9.md) |
+| 最近更新全览 | [3.9.13 → 3.9.22：液态玻璃、VS Code 工作区、皮肤与 DAW、大包导入](UPDATES-3.9.md) |
 | **网页体验版** | <https://deepseekv5.github.io/dao3play/> — 不装 Node、不下载包，浏览器里直接跑官方赛车模板（手机可玩） |
 | 运行时要求 | Node.js ≥ 18，**零第三方依赖**（只用 Node 内置模块） |
 | 授权 | Apache-2.0（代码）· 素材来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |

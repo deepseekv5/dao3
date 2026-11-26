@@ -61,26 +61,39 @@ await S.evaluate(`document.querySelector('#skinStudio [data-act="undo"]').click(
 const undone = await S.evaluate(`document.querySelector('#skinStudio .ss-atlas').toDataURL()`);
 ok("撤销把画笔那一笔收回去", undone === before);
 await S.evaluate(`document.querySelector('#skinStudio [data-act="save"]').click()`);
-await sleep(1600);
-const savedSkin = await S.evaluate(`(async()=>{const j=await (await fetch('/api/community/me')).json();return j.user&&j.user.skin&&j.user.skin.texture||"";})()`);
+let savedSkin = "";
+for (let i = 0; i < 20 && !savedSkin; i++) {
+  await sleep(250);
+  savedSkin = await S.evaluate(`(async()=>{const j=await (await fetch('/api/community/me')).json();return j.user&&j.user.skin&&j.user.skin.texture||"";})()`);
+}
 ok("皮肤保存后上传为站内贴图并写进账号", /^\/api\/community\/uploads\//.test(savedSkin), savedSkin);
 
 await S.goto(BASE + "/community", { settleMs: 1200 });
-await S.evaluate(`(async()=>{const m=await import('/js/music-editor.js');window.__fakeE={state:{meta:{}},markDirty(){window.__dirty=(window.__dirty||0)+1},toast(){}};window.__musicStudio=m.openMusicStudio(window.__fakeE);return 1;})()`);
+await S.evaluate(`(async()=>{const l=document.createElement('link');l.rel='stylesheet';l.href='/css/music-editor.css';document.head.appendChild(l);const m=await import('/js/music-editor.js');window.__fakeE={state:{meta:{}},markDirty(){window.__dirty=(window.__dirty||0)+1},toast(){}};window.__musicStudio=m.openMusicStudio(window.__fakeE);return 1;})()`);
 await sleep(500);
-const music = await S.evaluate(`({open:!!document.querySelector('#musicStudio'),canvas:!!document.querySelector('.me-roll'),tracks:document.querySelectorAll('.me-track').length,notes:window.__musicStudio.doc.tracks.reduce((n,t)=>n+t.notes.length,0)})`);
-ok("音乐工作台打开：钢琴卷帘 + 三条真实音符轨", music.open && music.canvas && music.tracks === 3 && music.notes > 20, JSON.stringify(music));
-const n0 = await S.evaluate(`window.__musicStudio.doc.tracks[0].notes.length`);
-await S.evaluate(`(() => {const c=document.querySelector('.me-roll'),r=c.getBoundingClientRect();const p=(t,x,y)=>new PointerEvent(t,{bubbles:true,clientX:x,clientY:y,pointerId:8,button:0});c.dispatchEvent(p('pointerdown',r.left+r.width*.75,r.top+180));c.dispatchEvent(p('pointerup',r.left+r.width*.75,r.top+180));return 1;})()`);
-const n1 = await S.evaluate(`window.__musicStudio.doc.tracks[0].notes.length`);
+const music = await S.evaluate(`({open:!!document.querySelector('#musicStudio'),canvas:!!document.querySelector('.da-pianoroll'),tracks:document.querySelectorAll('.da-trackhead').length,clips:document.querySelectorAll('.da-clip').length,instruments:document.querySelectorAll('.da-instruments button').length,pads:document.querySelectorAll('.da-pads button').length,notes:window.__musicStudio.doc().tracks.reduce((n,t)=>n+t.clips.reduce((m,c)=>m+c.notes.length,0),0)})`);
+ok("DAW 工作台打开：编排、钢琴卷帘、鼓机、乐器库与调音台齐备", music.open && music.canvas && music.tracks === 3 && music.clips === 3 && music.instruments >= 10 && music.pads >= 9 && music.notes > 20, JSON.stringify(music));
+await S.evaluate(`document.querySelector('[data-section="chords"]').click()`);
+const arranged = await S.evaluate(`({tracks:window.__musicStudio.doc().tracks.length,clips:document.querySelectorAll('.da-clip').length})`);
+ok("一键和弦片段会新建独立轨道，不覆盖主旋律", arranged.tracks === 4 && arranged.clips === 4, JSON.stringify(arranged));
+await S.evaluate(`document.querySelector('[data-view="piano"]').click()`);
+await sleep(200);
+const n0 = await S.evaluate(`window.__musicStudio.doc().tracks[3].clips[0].notes.length`);
+await S.evaluate(`(() => {const c=document.querySelector('.da-pianoroll'),r=c.getBoundingClientRect();const p=(t,x,y)=>new PointerEvent(t,{bubbles:true,cancelable:true,clientX:x,clientY:y,pointerId:8,button:0});c.dispatchEvent(p('pointerdown',r.left+140,r.top+40));c.dispatchEvent(p('pointerup',r.left+140,r.top+40));return 1;})()`);
+const n1 = await S.evaluate(`window.__musicStudio.doc().tracks[3].clips[0].notes.length`);
 ok("在钢琴卷帘上点击会真的增加音符", n1 === n0 + 1, `${n0}→${n1}`);
 await S.evaluate(`document.querySelector('#musicStudio [data-act="play"]').click()`);
 await sleep(650);
-const playing = await S.evaluate(`document.querySelector('[data-read]').textContent`);
-ok("Web Audio 播放时播放头与拍号真的前进", /第/.test(playing) && playing !== "第 1 拍", playing);
-await S.evaluate(`document.querySelector('#musicStudio [data-act="stop"]').click();document.querySelector('#musicStudio [data-bgm]').click();document.querySelector('#musicStudio [data-act="save"]').click()`);
-const stored = await S.evaluate(`({dirty:window.__dirty,tracks:window.__fakeE.state.meta.music.tracks.length,bgm:window.__fakeE.state.meta.music.bgm})`);
-ok("音乐保存进世界 meta，背景音乐开关与脏标记一起落", stored.dirty === 1 && stored.tracks === 3 && stored.bgm, JSON.stringify(stored));
+const playing = await S.evaluate(`document.querySelector('#musicStudio [data-act="play"]').classList.contains('playing')`);
+ok("Web Audio 播放器进入真实播放态", playing, String(playing));
+await S.evaluate(`document.querySelector('#musicStudio [data-act="stop"]').click()`);
+const wav = await S.evaluate(`(async()=>{const m=await import('/js/music-synth.js');const b=await m.renderMusicToWav(window.__musicStudio.doc());return{size:b.size,type:b.type};})()`);
+ok("离线渲染能导出真实 WAV 音频", wav.size > 10000 && wav.type === "audio/wav", JSON.stringify(wav));
+const midi = await S.evaluate(`(async()=>{const m=await import('/js/music-synth.js');const b=m.exportMidi(window.__musicStudio.doc());const a=new Uint8Array(await b.arrayBuffer());return{size:b.size,head:String.fromCharCode(...a.slice(0,4)),type:b.type};})()`);
+ok("能导出标准 MIDI 文件（MThd，可进 Logic/GarageBand）", midi.size > 100 && midi.head === "MThd" && midi.type === "audio/midi", JSON.stringify(midi));
+await S.evaluate(`document.querySelector('#musicStudio [data-bgm]').click();document.querySelector('#musicStudio [data-act="save"]').click()`);
+const stored = await S.evaluate(`({dirty:window.__dirty,v:window.__fakeE.state.meta.music.v,tracks:window.__fakeE.state.meta.music.tracks.length,bgm:window.__fakeE.state.meta.music.bgm})`);
+ok("DAW 项目保存进世界 meta，背景音乐开关与脏标记一起落", stored.dirty === 1 && stored.v === 2 && stored.tracks === 4 && stored.bgm, JSON.stringify(stored));
 await S.evaluate(`document.querySelector('#musicStudio [data-act="close"]').click()`);
 ok("关闭音乐工作台会释放播放器", await S.evaluate(`!document.querySelector('#musicStudio')`));
 
