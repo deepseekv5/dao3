@@ -109,17 +109,17 @@ function buildMaster(ctx, doc) {
   compressor.threshold.value = -14; compressor.knee.value = 18; compressor.ratio.value = 5;
   compressor.attack.value = .006; compressor.release.value = .18;
   const dry = ctx.createGain(); dry.gain.value = 1;
-  const wet = ctx.createGain(); wet.gain.value = clamp(+doc.master?.reverb ?? .1, 0, .7);
+  const reverbBus = ctx.createGain(); reverbBus.gain.value = clamp(+doc.master?.reverb ?? .1, 0, .7);
   const convolver = ctx.createConvolver(); convolver.buffer = impulseBuffer(ctx);
   const delay = ctx.createDelay(1); delay.delayTime.value = .28;
   const feedback = ctx.createGain(); feedback.gain.value = clamp(+doc.master?.delay ?? .08, 0, .65) * .55;
-  const delayWet = ctx.createGain(); delayWet.gain.value = clamp(+doc.master?.delay ?? .08, 0, .65);
+  const delayBus = ctx.createGain(); delayBus.gain.value = clamp(+doc.master?.delay ?? .08, 0, .65);
   input.connect(compressor); compressor.connect(dry); dry.connect(ctx.destination);
-  compressor.connect(convolver); convolver.connect(wet); wet.connect(ctx.destination);
+  compressor.connect(convolver); convolver.connect(reverbBus); reverbBus.connect(ctx.destination);
   compressor.connect(delay); delay.connect(feedback); feedback.connect(delay);
-  delay.connect(delayWet); delayWet.connect(ctx.destination);
+  delay.connect(delayBus); delayBus.connect(ctx.destination);
   input.gain.value = clamp(+doc.master?.volume ?? .85, 0, 1);
-  return input;
+  return { input, reverbBus, delayBus };
 }
 
 function buildChannels(ctx, master, doc) {
@@ -131,7 +131,9 @@ function buildChannels(ctx, master, doc) {
     const analyser = ctx.createAnalyser(); analyser.fftSize = 256;
     input.gain.value = track.muted || (solo && !track.solo) ? 0 : clamp(+track.volume ?? .8, 0, 1);
     panner.pan.value = clamp(+track.pan ?? 0, -1, 1);
-    input.connect(panner); panner.connect(analyser); analyser.connect(master);
+    input.connect(panner); panner.connect(analyser); analyser.connect(master.input);
+    const reverbSend = ctx.createGain(); reverbSend.gain.value = clamp(+track.sends?.reverb ?? 0, 0, 1); panner.connect(reverbSend); reverbSend.connect(master.reverbBus);
+    const delaySend = ctx.createGain(); delaySend.gain.value = clamp(+track.sends?.delay ?? 0, 0, 1); panner.connect(delaySend); delaySend.connect(master.delayBus);
     channels.set(track.id, { input, panner, analyser });
   }
   return channels;
@@ -205,7 +207,7 @@ export function createMusicPlayer(doc, { onTick, onEnd, onMeter } = {}) {
       while (eventAt < events.length && loopAt + events[eventAt].step * stepSec <= horizon) {
         const e = events[eventAt++];
         const at = Math.max(ctx.currentTime + .005, loopAt + e.step * stepSec);
-        if (e.metronome) click(ctx, master, at, e.accent);
+        if (e.metronome) click(ctx, master.input, at, e.accent);
         else {
           const ch = channels.get(e.track.id);
           if (!ch) continue;
@@ -294,7 +296,7 @@ export async function renderMusicToWav(doc, { trackId } = {}) {
   const channels = buildChannels(ctx, master, renderDoc);
   for (const e of projectEvents(renderDoc, r.start, r.end)) {
     const at = .04 + e.step * stepSec;
-    if (e.metronome) click(ctx, master, at, e.accent);
+    if (e.metronome) click(ctx, master.input, at, e.accent);
     else {
       const ch = channels.get(e.track.id);
       if (!ch) continue;

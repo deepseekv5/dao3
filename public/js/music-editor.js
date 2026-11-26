@@ -33,7 +33,7 @@ const icon = (name) => {
 
 function newTrack(name, instrument, color, notes = []) {
   return { id: uid(), name, instrument, color, volume: .8, pan: 0, mute: false, solo: false,
-    synth: { attack: .01, decay: .2, sustain: .5, release: .25, cutoff: 4200 },
+    synth: { attack: .01, decay: .2, sustain: .5, release: .25, cutoff: 4200 }, sends: { reverb: instrument === "drum" ? 0 : .18, delay: instrument === "drum" || instrument === "bass" ? 0 : .06 },
     automation: { volume: [{ t: 0, v: .8 }], pan: [{ t: 0, v: 0 }] },
     clips: [{ id: uid(), name: name + " 1", start: 0, length: 64, notes }] };
 }
@@ -72,6 +72,7 @@ function normalize(d) {
     return { id: t.id || uid(), name: String(t.name || "轨道 " + (i + 1)).slice(0, 24), instrument: INSTRUMENT_NAMES.some(([k]) => k === t.instrument) ? t.instrument : "piano",
       color: COLORS[i % COLORS.length], volume: clamp(+t.volume ?? .8, 0, 1), pan: clamp(+t.pan ?? 0, -1, 1), mute: !!t.mute, solo: !!t.solo,
       synth: { attack: clamp(+t.synth?.attack ?? .01, .002, 2), decay: clamp(+t.synth?.decay ?? .2, .01, 2), sustain: clamp(+t.synth?.sustain ?? .5, .01, 1), release: clamp(+t.synth?.release ?? .25, .03, 3), cutoff: clamp(+t.synth?.cutoff || 4200, 120, 18000) },
+      sends: { reverb: clamp(Number.isFinite(+t.sends?.reverb) ? +t.sends.reverb : (t.instrument === "drum" ? 0 : .18), 0, 1), delay: clamp(Number.isFinite(+t.sends?.delay) ? +t.sends.delay : (t.instrument === "drum" || t.instrument === "bass" ? 0 : .06), 0, 1) },
       automation: { volume: (t.automation?.volume || [{ t: 0, v: clamp(+t.volume ?? .8, 0, 1) }]).map((p) => ({ t: clamp(Math.round(+p.t || 0), 0, total - 1), v: clamp(+p.v || 0, 0, 1) })),
         pan: (t.automation?.pan || [{ t: 0, v: clamp(+t.pan ?? 0, -1, 1) }]).map((p) => ({ t: clamp(Math.round(+p.t || 0), 0, total - 1), v: clamp(+p.v || 0, -1, 1) })) },
       clips: clips.map((c) => ({ id: c.id || uid(), name: String(c.name || "片段").slice(0, 24), start: clamp(Math.round(+c.start || 0), 0, total - 1),
@@ -328,7 +329,7 @@ export function openMusicStudio(E) {
     doc.tracks.forEach((t,i)=>{
       const strip=document.createElement("div");strip.className="da-strip"+(i===trackAt?" on":"");
       strip.innerHTML=`<div class="da-striptitle"><i style="background:${t.color}"></i><b>${esc(t.name)}</b><small>${esc(instName(t.instrument))}</small></div>
-        <div class="da-stripknobs"><label>PAN<input type="range" min="-100" max="100" value="${Math.round(t.pan*100)}" data-mixpan="${i}"/></label><label>VOL<input type="range" min="0" max="100" value="${Math.round(t.volume*100)}" data-mixvol="${i}"/></label></div>
+        <div class="da-stripknobs"><label>PAN<input type="range" min="-100" max="100" value="${Math.round(t.pan*100)}" data-mixpan="${i}"/></label><label>VOL<input type="range" min="0" max="100" value="${Math.round(t.volume*100)}" data-mixvol="${i}"/></label><label>REV<input type="range" min="0" max="100" value="${Math.round(t.sends.reverb*100)}" data-mixsend="reverb:${i}"/></label><label>DLY<input type="range" min="0" max="100" value="${Math.round(t.sends.delay*100)}" data-mixsend="delay:${i}"/></label></div>
         <div class="da-meter"><i data-meter="${t.id}"></i></div><div class="da-buttonrow"><button data-mixmute="${i}" class="${t.mute?"on":""}">M</button><button data-mixsolo="${i}" class="${t.solo?"on":""}">S</button></div>`;
       host2.appendChild(strip);
     });
@@ -449,8 +450,8 @@ export function openMusicStudio(E) {
   $("[data-vel]").oninput=(e)=>{if(!selectedNote)return;selectedNote.vel=+e.target.value/100;$("[data-velv]").textContent=e.target.value;drawPiano();drawVelocity();};$("[data-vel]").onchange=checkpoint;
   $("[data-dur-note]").oninput=(e)=>{if(!selectedNote)return;selectedNote.dur=+e.target.value;drawPiano();};$("[data-dur-note]").onchange=commit;
   for(const k of ["volume","reverb","delay"]){const inp=$(`[data-master="${k}"]`);inp.oninput=()=>{doc.master[k]=+inp.value/100;$(`[data-masterv="${k}"]`).textContent=inp.value;};inp.onchange=checkpoint;}
-  host.addEventListener("input",(ev)=>{const i=ev.target.dataset.mixvol,p=ev.target.dataset.mixpan;if(i!=null){const t=doc.tracks[+i];t.volume=+ev.target.value/100;const q=t.automation?.volume?.find(x=>x.t===0);if(q)q.v=t.volume;}if(p!=null){const t=doc.tracks[+p];t.pan=+ev.target.value/100;const q=t.automation?.pan?.find(x=>x.t===0);if(q)q.v=t.pan;}});
-  host.addEventListener("change",(ev)=>{if(ev.target.dataset.mixvol!=null||ev.target.dataset.mixpan!=null)commit();});
+  host.addEventListener("input",(ev)=>{const i=ev.target.dataset.mixvol,p=ev.target.dataset.mixpan,send=ev.target.dataset.mixsend;if(i!=null){const t=doc.tracks[+i];t.volume=+ev.target.value/100;const q=t.automation?.volume?.find(x=>x.t===0);if(q)q.v=t.volume;}if(p!=null){const t=doc.tracks[+p];t.pan=+ev.target.value/100;const q=t.automation?.pan?.find(x=>x.t===0);if(q)q.v=t.pan;}if(send){const [key,index]=send.split(":");doc.tracks[+index].sends[key]=+ev.target.value/100;}});
+  host.addEventListener("change",(ev)=>{if(ev.target.dataset.mixvol!=null||ev.target.dataset.mixpan!=null||ev.target.dataset.mixsend!=null)commit();});
 
   $(".da-pianoroll").addEventListener("contextmenu",(e)=>e.preventDefault());
   $(".da-pianoroll").addEventListener("pointerdown",(ev)=>{

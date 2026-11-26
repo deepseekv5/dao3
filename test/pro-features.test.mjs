@@ -71,13 +71,16 @@ const music = await s.evaluate(`(async()=>{
   const points=t.automation.volume.length,stems=!!document.querySelector('#musicStudio [data-act="stems"]');
   const synth=await import('/js/music-synth.js'),blob=await synth.renderMusicToWav(api.doc(),{trackId:t.id});
   const zipmod=await import('/js/zip.js'),zip=await zipmod.writeZip([{name:'stem.wav',data:new Uint8Array(await blob.arrayBuffer())}]);
+  const send=document.querySelector('#musicStudio [data-mixsend^="reverb"]');send.value='40';send.dispatchEvent(new Event('input',{bubbles:true}));send.dispatchEvent(new Event('change',{bubbles:true}));const sendValue=api.doc().tracks[0].sends.reverb,markers=api.doc().markers.length;
   document.querySelector('#musicStudio [data-act="play"]').click();await new Promise(r=>setTimeout(r,120));
   const notesBefore=api.doc().tracks[0].clips[0].notes.length;window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyA',key:'a',bubbles:true}));window.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyA',key:'a',bubbles:true}));
   const notesAfter=api.doc().tracks[0].clips[0].notes.length;document.querySelector('#musicStudio [data-act="stop"]').click();
-  return {points,stems,wav:blob.size,zipHead:String.fromCharCode(...zip.slice(0,2)),notesBefore,notesAfter,instruments:document.querySelectorAll('#musicStudio .da-instruments button').length};
+  return {points,stems,wav:blob.size,zipHead:String.fromCharCode(...zip.slice(0,2)),notesBefore,notesAfter,instruments:document.querySelectorAll('#musicStudio .da-instruments button').length,sendValue,markers};
 })()`);
 ok("音乐自动化控制点可编辑", music.points >= 2, JSON.stringify(music));
 ok("专业乐器库至少 19 种", music.instruments >= 19, String(music.instruments));
+ok("每条轨道有独立混响/延迟发送", music.sendValue === .4, String(music.sendValue));
+ok("DAW 段落标记随项目保存", music.markers >= 2, String(music.markers));
 ok("音乐工作台提供 WAV 分轨导出", music.stems && music.wav > 10000 && music.zipHead === "PK", JSON.stringify(music));
 ok("电脑键盘可实时演奏并录入音符", music.notesAfter === music.notesBefore + 1, `${music.notesBefore}→${music.notesAfter}`);
 
