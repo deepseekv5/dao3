@@ -453,6 +453,10 @@ vec2 fxTileRect(float t){
     this.onRender = null;
   }
 
+  setClearEditor() {
+    this.setWeather({ rain: 0, snow: 0, thunder: 0, cloud: 0, wind: 0 });
+    this.scene.fog.near = 1000000; this.scene.fog.far = 1000001;
+  }
   setWeather(w) {
     const X = this.wx || (this.wx = { rainSpeed: 24, rainDirection: [0, -1, 0], rainInterference: 0.04, snowFallSpeed: 2, snowSpinSpeed: 1 });
     for (const k of ["rainColor", "rainSizeLo", "rainSizeHi", "rainSpeed", "rainDirection", "rainInterference",
@@ -617,7 +621,7 @@ vec2 fxTileRect(float t){
       const p = spawn && Number.isFinite(+spawn.x) ? [+spawn.x, +spawn.y || 0, +spawn.z] : [X / 2, Math.min(40, Y / 2), Z / 2];
       this.controls.target.set(p[0], p[1] + 1.5, p[2]);
       this.camera.position.set(p[0] + 34, p[1] + 24, p[2] + 42);
-      this.camera.near = .1; this.camera.far = 2200; this.camera.updateProjectionMatrix();
+      this.camera.near = .1; this.camera.far = 6000; this.camera.updateProjectionMatrix();
       this.scene.fog.near = 55; this.scene.fog.far = 140;
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
       this.sun.shadow.mapSize.set(1024, 1024);
@@ -630,11 +634,6 @@ vec2 fxTileRect(float t){
       this.scene.fog.near = 120; this.scene.fog.far = 520;
     }
     this.rebuildAll();
-    if (large) setTimeout(() => {
-      if (this.world !== world) return;
-      this.scene.fog.near = 55; this.scene.fog.far = 250;
-      this.queueVisibleChunks(true, 1);
-    }, 250);
   }
   frameCamera() {
     const [X, , Z] = this.world.shape;
@@ -752,9 +751,23 @@ vec2 fxTileRect(float t){
     if (!this.world) return;
     this._streamReady = true;
     this.queueVisibleChunks(true);
+    const [X, Y, Z] = this.world.shape;
+    if (Math.max(X, Z) > 256) {
+      const maxX = Math.ceil(X / CHUNK), maxY = Math.ceil(Y / CHUNK), maxZ = Math.ceil(Z / CHUNK);
+      const tx = this.controls.target.x, ty = this.controls.target.y, tz = this.controls.target.z;
+      const rest = [];
+      for (let z = 0; z < maxZ; z++) for (let y = 0; y < maxY; y++) for (let x = 0; x < maxX; x++) {
+        const key = x + "," + y + "," + z;
+        if (this.chunkMeshes.has(key) || this._build.has(key)) continue;
+        const dx = x * CHUNK + CHUNK / 2 - tx, dy = y * CHUNK + CHUNK / 2 - ty, dz = z * CHUNK + CHUNK / 2 - tz;
+        rest.push({ key, x, y, z, d: dx * dx + dy * dy + dz * dz });
+      }
+      rest.sort((a, b) => a.d - b.d);
+      for (const c of rest) this._build.set(c.key, [c.x, c.y, c.z]);
+      this._scheduleFlush();
+    }
   }
-  /** 大地图不再一次生成 32768 个区块：只把镜头附近按距离排队，每帧只花几毫秒。
-   *  镜头移动/缩放时继续补周围区块；编辑操作仍用 markDirty 精确重建。 */
+  /** 大地图首屏先排最近区块，随后把全世界区块全部排队；每帧只花几毫秒，编辑操作仍精确重建。 */
   queueVisibleChunks(force = false, extra = 0) {
     if (!this.world || !this._streamReady) return;
     if (this._viewTimer) { if (!force) return; clearTimeout(this._viewTimer); this._viewTimer = 0; }
@@ -793,7 +806,7 @@ vec2 fxTileRect(float t){
     if (this._build.size) this._scheduleFlush();
   }
   waitForVisibleChunks(onProgress) {
-    const pending = new Set(this._build.keys()), total = pending.size;
+    const pending = new Set([...this._build.keys()].slice(0, 9)), total = pending.size;
     if (!total) { onProgress?.(1); return Promise.resolve(); }
     return new Promise((resolve) => {
       const tick = () => {
@@ -1198,7 +1211,6 @@ vec2 fxTileRect(float t){
       this.scene.fog.near = Math.max(0.5, Math.min(near, far - 1));
       this.scene.fog.far = far;
     }
-    if (this._largeWorld) { this.scene.fog.near = 55; this.scene.fog.far = 250; }
     // 六面天光：上下喂半球光，左右前后平均后作为补光颜色与强度，globalLight 作为环境光基准
     if (t.skyTop != null) this.hemi.color.set(t.skyTop);
     // 半球光的地面反弹色要用地面自己的颜色，不是天空色。

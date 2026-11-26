@@ -489,14 +489,9 @@ function applyTerrain() {
     skyTop: t.skyTop, skyBottom: t.skyBottom, fogDensity: t.fogDensity,
     sunIntensity: t.sunIntensity, ambient: t.ambient, hemi: t.hemi,
     shadows: t.shadows, grid: t.grid, glow: t.glow, exposure: t.exposure,
-    sunDir: sunDirFromPhase(t.dayNight),
+    sunDir: sunDirFromPhase(0.25),
   });
-  const preset = t.weather === "rain" ? { rain: .75, snow: 0, thunder: 0 }
-    : t.weather === "snow" ? { rain: 0, snow: .7, thunder: 0 }
-    : t.weather === "thunder" ? { rain: .9, snow: 0, thunder: .6 }
-    : { rain: 0, snow: 0, thunder: 0, cloud: 0, wind: 0 };
-  const levels = t.weatherLevels || preset;
-  renderer.setWeather({ rain: levels.rain || 0, snow: levels.snow || 0, thunder: levels.thunder || 0, cloud: levels.cloud || 0, wind: levels.wind || 0 });
+  renderer.setClearEditor();
 }
 
 let toastTimer;
@@ -520,7 +515,7 @@ async function boot() {
     bootUi.stage(24 + progress * 22, `正在解码体素 ${Math.round(progress * 100)}%`);
   });
   if (seed) { world = seed; ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain); if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts; if (state.meta.entities) state.entities = state.meta.entities; if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); } }
-  bootUi.stage(46, "正在生成可见区块…");
+  bootUi.stage(46, "正在生成首屏区块…");
   renderer.setWorld(world, state.meta.player && state.meta.player.initialPosition);
   applyTerrain();
   bootUi.title(state.meta.name || worldId);

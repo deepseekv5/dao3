@@ -53,12 +53,12 @@ const weather = await s.evaluate(`(() => {
   const e=window.__editor,b=[...document.querySelectorAll('.weather-row button')].find(x=>x.textContent==='雨');if(!b)return null;b.click();
   return {kind:e.state.terrain.weather,rain:e.state.terrain.weatherLevels.rain,dirty:e.state.dirty,renderer:e.renderer.weather.rain};
 })()`);
-ok("天气预设写强度、标记脏并驱动渲染", weather?.kind === "rain" && weather.rain === .75 && weather.dirty && weather.renderer === .75, JSON.stringify(weather));
+ok("天气设置写强度并标记脏，编辑器保持晴天", weather?.kind === "rain" && weather.rain === .75 && weather.dirty && weather.renderer === 0, JSON.stringify(weather));
 const atmosphere = await s.evaluate(`(() => {
   const e=window.__editor,row=[...document.querySelectorAll('#terrain .trow')].find(x=>x.querySelector('span')?.textContent==='云量');if(!row)return null;const input=row.querySelector('input');input.value='.6';input.dispatchEvent(new Event('input',{bubbles:true}));
   return {cloud:e.state.terrain.weatherLevels.cloud,uniform:e.renderer.skyMat.uniforms.uCloud.value,dirty:e.state.dirty};
 })()`);
-ok("云量进入天空着色器并持久化", atmosphere?.cloud === .6 && atmosphere.uniform === .6 && atmosphere.dirty, JSON.stringify(atmosphere));
+ok("云量设置持久化但编辑器不渲染坏天气", atmosphere?.cloud === .6 && atmosphere.uniform === 0 && atmosphere.dirty, JSON.stringify(atmosphere));
 const cycle = await s.evaluate(`(() => {
   const e=window.__editor,row=[...document.querySelectorAll('#terrain .trow')].find(x=>x.querySelector('span')?.textContent==='天气轮转');if(!row)return null;row.querySelector('input').click();
   const period=[...document.querySelectorAll('#terrain .trow')].find(x=>x.querySelector('span')?.textContent==='天气周期');const input=period.querySelector('input');input.value='120';input.dispatchEvent(new Event('input',{bubbles:true}));
