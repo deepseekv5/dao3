@@ -1,4 +1,25 @@
 .music-studio { position: fixed; inset: 0; z-index: 521; display: flex; flex-direction: column; color: var(--fg); background: var(--bg0); }
+.music-studio .ss-head { flex: 0 0 58px; display: flex; align-items: center; gap: 20px; padding: 0 18px; border-bottom: 1px solid var(--line2); background: var(--bg1); }
+.music-studio .ss-title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.music-studio .ss-title b { font-size: 15px; letter-spacing: .02em; }
+.music-studio .ss-title span { font-size: 11px; color: var(--fg3); }
+.music-studio .ss-head-actions { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+.music-studio .ss-btn, .music-studio .ss-icon { height: 32px; border: 1px solid var(--line2); border-radius: 7px; background: var(--bg2); color: var(--fg2); font: 12px var(--font); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.music-studio .ss-btn { padding: 0 11px; }
+.music-studio .ss-btn:hover, .music-studio .ss-icon:hover { color: var(--fg); border-color: var(--primary-line); background: var(--bg3); }
+.music-studio .ss-btn.primary { color: var(--on-accent); background: var(--primary); border-color: var(--primary); font-weight: 700; }
+.music-studio .ss-btn:disabled, .music-studio .ss-icon:disabled { opacity: .4; cursor: default; }
+.music-studio .ss-icon { width: 32px; padding: 0; }
+.music-studio .ss-card { padding: 13px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg2); }
+.music-studio .ss-card h3 { margin: 0 0 10px; color: var(--fg3); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.music-studio .ss-field { display: block; color: var(--fg3); font-size: 11px; }
+.music-studio .ss-field input { width: 100%; height: 31px; margin-top: 5px; padding: 0 9px; border: 1px solid var(--line2); border-radius: 6px; background: var(--bg1); color: var(--fg); font: 12px var(--font); }
+.music-studio .ss-slide { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--fg2); font-size: 11.5px; }
+.music-studio .ss-slide span { width: 30px; }
+.music-studio .ss-slide input { flex: 1; min-width: 0; accent-color: var(--primary); }
+.music-studio .ss-slide i { width: 32px; text-align: right; color: var(--fg3); font: 10.5px var(--mono); }
+.music-studio .ss-switch { display: flex; align-items: center; gap: 7px; margin-top: 9px; color: var(--fg2); font-size: 11.5px; }
+.music-studio .ss-switch input { accent-color: var(--primary); }
 .music-studio .ss-head { flex: 0 0 58px; }
 .me-body { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 208px minmax(0, 1fr) 286px; }
 .me-tracks { min-height: 0; display: flex; flex-direction: column; background: var(--bg1); border-right: 1px solid var(--line); }

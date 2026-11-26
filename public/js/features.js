@@ -1065,10 +1065,12 @@ function renderModelList() {
     for (const a of assetEntries) {
       const it = document.createElement("div"); it.className = "mitem asset" + (e.state.selectedModel && e.state.selectedModel.name === a.name ? " active" : ""); it.dataset.assetName = a.name;
       it.innerHTML = `<span class="mico"></span><span class="mname">${escHtml(a.name)}</span><span class="mbadge">资产</span>`;
-      it.onclick = (ev) => {
+      it.onclick = async (ev) => {
         if (ev.target.classList.contains("del")) return;
-        // 方块式：点资产 = 拿起，之后鼠标在地形上预览、左键摆放（可连续摆）
-        holdModel(a.name, a.asset.object || a.asset, a.asset.scale || 1, { meshName: a.name, assetRoot: (E.state.meta && E.state.meta.assetRoot) || "/assets/racing/models/" });
+        let asset = a.asset;
+        if (asset.lazy && E.ensureMeshAsset) asset = await E.ensureMeshAsset(a.name);
+        if (!asset || !asset.object) { E.toast(`模型「${a.name}」读取失败`, true); return; }
+        holdModel(a.name, asset.object, asset.scale || 1, { meshName: a.name, assetRoot: (E.state.meta && E.state.meta.assetRoot) || "/assets/racing/models/" });
         renderModelList();
       };
       list.appendChild(it);
@@ -1432,6 +1434,13 @@ export async function importProject(file) {
         if (r.ok) stored++;
       } catch { /* 单个存不上不该让整次导入失败，下面统一报数 */ }
     }
+    for (const f of res.meshAssetEntries || []) {
+      try {
+        const bytes = await res.extractEntry(f.entry);
+        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent("models/" + f.name + f.ext)}`, { method: "POST", body: bytes });
+        if (r.ok) stored++;
+      } catch { }
+    }
   }
   if (stored) meta.assetRoot = `/assets/worlds/${wid}/models/`;
   else if ((meta.meshNames || []).length) {
@@ -1461,6 +1470,7 @@ export async function importProject(file) {
     }
   }
   if (audStored) meta.audioRoot = `/assets/worlds/${wid}/`;
+  for (const name of meta.meshNames || []) if (!res.meshes[name]) res.meshes[name] = { lazy: true, scale: 1 };
   e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames };
   // 官方资源表（路径 → {hash,type,size}）与它的 CID：代码包面板要靠这两样
   // 才能把"名字下面那个内容地址"显示出来，并按地址把包里没带的文件取回来。

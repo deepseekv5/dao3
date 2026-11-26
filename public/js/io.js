@@ -802,6 +802,12 @@ export async function importProjectZip(file) {
     if (m) refMesh.add(String(m).split("/").pop().replace(/\.(vb|vox|glb|gltf)$/i, ""));
   }
   const modelToRead = heavy ? modelEntries.filter((e) => refMesh.has(e.name.split("/").pop().replace(/\.(vb|vox|glb|gltf)$/i, ""))) : modelEntries;
+  // 大包不在这里把 1048 个模型全部读进内存：把条目与读取器交回去，上层逐个取、逐个写盘。
+  const meshAssetEntries = heavy ? modelEntries.filter((e) => /\.(glb|gltf)$/i.test(e.name)).map((e) => ({
+    name: e.name.split("/").pop().replace(/\.(glb|gltf)$/i, ""),
+    ext: /\.glb$/i.test(e.name) ? ".glb" : ".gltf",
+    entry: e,
+  })) : [];
   const pictureToRead = heavy ? pictureEntries.filter((e) => uiPics.has(picRel(e.name))) : pictureEntries;
   const pictureFiles = [], audioFiles = [];
   for (const e of audioEntries) {
@@ -840,7 +846,7 @@ export async function importProjectZip(file) {
     } catch { rawMeshes++; }
   }
   if (heavy && modelEntries.length > modelToRead.length) {
-    warnings.push(`大包里有 ${modelEntries.length} 个模型文件（${Math.round(modelEntries.reduce((s, e) => s + (e.compSize || 0), 0) / 1048576)} MB），只取了实体引用的 ${modelToRead.length} 个；其余名字仍可在模型列表里看到`);
+    warnings.push(`大包里有 ${modelEntries.length} 个模型文件（${Math.round(modelEntries.reduce((s, e) => s + (e.compSize || 0), 0) / 1048576)} MB）：全部写入资产库，导入时只预解析实体引用的 ${modelToRead.length} 个，其余点开时按需加载`);
   }
   // 报出来而不是默默变成占位盒：这条决定"导入后画面是空的"到底该怪包还是怪我们。
   // 必须排在上面这次扫描之后——它曾排在前面，于是永远读到 0，警告一次都没出现过。
@@ -909,7 +915,7 @@ export async function importProjectZip(file) {
     && !/(^|\/)(models?|meshes?)\//i.test(e.name));
   if (oddJson.length) warnings.push(`未识别 ${oddJson.length} 个配置文件（${oddJson.slice(0, 3).map((x) => x.name.split("/").slice(-2).join("/")).join("、")}${oddJson.length > 3 ? " 等" : ""}），已跳过`);
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, audioFiles, meshNames, pictureNames, pictureFiles, meshes, meshFiles, assets, assetNames, block, voxMeshes, vbMeshes, pointerMeshes, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, audioFiles, meshNames, pictureNames, pictureFiles, meshes, meshFiles, meshAssetEntries, extractEntry: (e) => extract(e), assets, assetNames, block, voxMeshes, vbMeshes, pointerMeshes, warnings };
 }
 
 // 官方"清单式导出"里的 .vox 不是模型本体，而是 120~300 字节的指针：

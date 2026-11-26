@@ -326,6 +326,13 @@ async function saveZipAssets(id, res) {
       if (r.ok) { if (f.rel.startsWith("models/")) mesh++; else if (f.rel.startsWith("audio/")) auds++; else pics++; }
     } catch { }
   }
+  for (const f of res.meshAssetEntries || []) {
+    try {
+      const bytes = await res.extractEntry(f.entry);
+      const r = await fetch("/api/world/" + id + "/asset?path=" + encodeURIComponent("models/" + f.name + f.ext), { method: "POST", body: bytes });
+      if (r.ok) mesh++;
+    } catch { }
+  }
   return { assetRoot: mesh ? `/assets/worlds/${id}/models/` : "", pictureRoot: pics ? `/assets/worlds/${id}/` : "", audioRoot: auds ? `/assets/worlds/${id}/` : "" };
 }
 

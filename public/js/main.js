@@ -310,19 +310,13 @@ async function applySceneModels(meta) {
   state.selectedModel = null;
   const missed = new Set();   // 取不到就记住：不然 17 个实体各发一次请求，全 404
   const ensure = async (base) => {
-    let a = state.assets.meshes[base];
+    if (!base) return null;
+    const a = state.assets.meshes[base];
     if (a && a.object) return a;
     if (missed.has(base)) return null;
-    const root = state.meta && state.meta.assetRoot;
-    if (!root) { missed.add(base); return null; }
-    try {
-      const { GLTFLoader: L } = await import("../vendor/three/GLTFLoader.js");
-      const buf = await (await fetch(root + encodeURIComponent(base) + ".gltf")).arrayBuffer();
-      a = await new Promise((res) => new L().parse(buf, "", (g) => res({ object: g.scene, scale: 1 }), () => res(null)));
-      if (a) state.assets.meshes[base] = a;
-    } catch { a = null; }
-    if (!a) missed.add(base);
-    return a;
+    const got = await ensureMeshAsset(base).catch(() => null);
+    if (!got || !got.object) missed.add(base);
+    return got;
   };
   const placedSrc = new Set();
   for (const d of withMesh) {
@@ -372,81 +366,15 @@ let _seedAssetsLoaded = false;
 async function loadSeedAssets(meta) {
   const names = meta && meta.meshNames;
   if (!names || !names.length) return;
-  const { GLTFLoader } = await import("../vendor/three/GLTFLoader.js");
   state.assets = state.assets || { audio: {}, meshes: {}, meshNames: [] };
   state.assets.meshNames = names;
-  // 没有 assetRoot 就**不去猜**。之前兜底到 /assets/racing/models/，于是导入的
-  // 武器试验场每次打开都拿"一把剑.gltf"去赛车目录里找，实测刷出 161 个 404，
-  // 一个也加载不出来，还把控制台埋了。猜错目录不如明说"不知道在哪"。
   const root = meta && meta.assetRoot;
   if (!root) {
     console.warn("[assets] 这张图声明了 " + names.length + " 个网格，但没记录资产目录（包里没有网格文件），跳过拉取");
     return;
   }
-  let loaded = 0;
-  const failed = [];
-  const loadOne = async (base, ext) => {
-    const r = await fetch(root + encodeURIComponent(base) + ext);
-    if (!r.ok) throw new Error("missing " + ext);
-    const buf = await r.arrayBuffer();
-    const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
-    const scene = gltf.scene;
-    // 官方 .vb 转 gltf 后各文件的内部枢轴不一致（横向最多偏 13 格、纵向有负的），
-    // 统一归一到「XZ 居中、底面为原点」。补偿放在内层 wrapper 上，因为实例化时会覆写根节点 position。
-    // 但 VOXA 自己导出的文件带了 voxaPivot 标记：作者在设计器里挪过模型中心点，
-    // -pivot 已经烘在根节点上，再按包围盒归一回会把这颗中心点冲掉、摆回"自动居中"。
-    const pivot = (gltf.userData || {}).voxaPivot;
-    const hasPivot = Array.isArray(pivot) && pivot.some((v) => Math.abs(+v) > 1e-6);
-    if (!hasPivot) {
-      const box = new THREE.Box3().setFromObject(scene);
-      if (isFinite(box.min.x) && isFinite(box.max.x)) {
-        const c = box.getCenter(new THREE.Vector3());
-        const wrap = new THREE.Group();
-        wrap.position.set(-c.x, -box.min.y, -c.z);
-        while (scene.children.length) wrap.add(scene.children[0]);
-        scene.add(wrap);
-        scene.updateMatrixWorld(true);
-      }
-    }
-    return scene;
-  };
-  const { voxListToModel } = await import("./features.js");
-  await Promise.all(names.map(async (base) => {
-    for (const ext of [".gltf", ".glb"]) {
-      try {
-        const scene = await loadOne(base, ext);
-        state.assets.meshes[base] = { object: scene, scale: 1 };
-        loaded++;
-        return;
-      } catch {}
-    }
-    // .vox / .vb 是导入的官方包里最常见的网格格式：解体素再本地烘成网格，
-    // 用图集当材质，所以不必把整张图集烘进 glTF 一起存。
-    // .vb 是 JSON（体素流是 0 基游程的 LEB128），解法见 vb.js。
-    try {
-      const r = await fetch(root + encodeURIComponent(base) + ".vox");
-      if (r.ok) {
-        const { decodeVox } = await import("./world.js");
-        const mesh = voxListToModel(decodeVox(new Uint8Array(await r.arrayBuffer())), atlas);
-        state.assets.meshes[base] = { object: mesh, scale: 1 };
-        loaded++;
-        return;
-      }
-    } catch (err) { failed.push(base + " (" + ((err && err.message) || err) + ")"); return; }
-    try {
-      const r = await fetch(root + encodeURIComponent(base) + ".vb");
-      if (!r.ok) { failed.push(base + " (无文件)"); return; }
-      const { vbToVoxList } = await import("./vb.js");
-      const list = vbToVoxList(JSON.parse(new TextDecoder().decode(await r.arrayBuffer())), atlas.list());
-      if (!list || !list.voxels.length) { failed.push(base + " (.vb 解出空体素)"); return; }
-      state.assets.meshes[base] = { object: voxListToModel(list.voxels, atlas), scale: 1 };
-      loaded++;
-    } catch (err) { failed.push(base + " (" + ((err && err.message) || err) + ")"); }
-  }));
-  // 部分失败必须说出来。这条链上曾经有三个各自静默的 catch {}，
-  // 表现就是"导入的图重开之后模型全没了，但控制台一句都没有"。
-  if (failed.length) console.warn("[assets] " + loaded + "/" + names.length + " 个网格加载成功，缺：" + failed.slice(0, 6).join("、"));
-  else if (loaded > 0) console.log("[assets] 已加载 " + loaded + " 个模型");
+  // 大包的模型只登记名字，点开时再解析。一次并发解析上千个 glTF 会把主线程和内存压垮。
+  for (const name of names) if (!state.assets.meshes[name] || !state.assets.meshes[name].object) state.assets.meshes[name] = { lazy: true, scale: 1 };
   if (!state.assets.audioNames) {
     try {
       const r = await fetch("/data/assets/audio/index.json");
@@ -454,6 +382,56 @@ async function loadSeedAssets(meta) {
     } catch {}
   }
 }
+
+/** 按需加载单个模型（.gltf/.glb/.vox/.vb），并归一到「XZ 居中、底面为原点」。 */
+async function ensureMeshAsset(base) {
+  const hit = state.assets && state.assets.meshes && state.assets.meshes[base];
+  if (hit && hit.object) return hit;
+  const root = state.meta && state.meta.assetRoot;
+  if (!root) return null;
+  const set = (object) => { state.assets.meshes[base] = { object, scale: 1 }; return state.assets.meshes[base]; };
+  const { GLTFLoader } = await import("../vendor/three/GLTFLoader.js");
+  for (const ext of [".gltf", ".glb"]) {
+    try {
+      const r = await fetch(root + encodeURIComponent(base) + ext);
+      if (!r.ok) continue;
+      const buf = await r.arrayBuffer();
+      const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
+      const scene = gltf.scene;
+      const pivot = (gltf.userData || {}).voxaPivot;
+      const hasPivot = Array.isArray(pivot) && pivot.some((v) => Math.abs(+v) > 1e-6);
+      if (!hasPivot) {
+        const box = new THREE.Box3().setFromObject(scene);
+        if (isFinite(box.min.x) && isFinite(box.max.x)) {
+          const c = box.getCenter(new THREE.Vector3());
+          const wrap = new THREE.Group();
+          wrap.position.set(-c.x, -box.min.y, -c.z);
+          while (scene.children.length) wrap.add(scene.children[0]);
+          scene.add(wrap);
+          scene.updateMatrixWorld(true);
+        }
+      }
+      return set(scene);
+    } catch { }
+  }
+  const { voxListToModel } = await import("./features.js");
+  try {
+    const r = await fetch(root + encodeURIComponent(base) + ".vox");
+    if (r.ok) {
+      const { decodeVox } = await import("./world.js");
+      return set(voxListToModel(decodeVox(new Uint8Array(await r.arrayBuffer())), atlas));
+    }
+  } catch { }
+  try {
+    const r = await fetch(root + encodeURIComponent(base) + ".vb");
+    if (!r.ok) return null;
+    const { vbToVoxList } = await import("./vb.js");
+    const list = vbToVoxList(JSON.parse(new TextDecoder().decode(await r.arrayBuffer())), atlas.list());
+    if (!list || !list.voxels.length) return null;
+    return set(voxListToModel(list.voxels, atlas));
+  } catch { return null; }
+}
+
 async function loadWorld(id) {
   const p = await io.apiLoadWorld(id);
   if (!p) { toast("世界不存在，使用空世界"); return; }
@@ -665,7 +643,7 @@ async function boot() {
   ui = buildUI({ state, atlas, world, renderer, history, ctx, save, loadWorld, toast, applyTerrain, clearSel, copySel, paste, deleteSel, markDirty, updateStatus, enterPlay, stopPlay, setFirstPerson, importProject });
   // selOps 单独一组：命令面板要能调到剪贴板这几个动作。它们原本只有键盘快捷键，
   // 而快捷键藏在按钮之外的动作，正是面板最容易漏掉的一类（漏了就等于"面板不全"）。
-  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, refreshModelList, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel } };
+  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, refreshModelList, ensureMeshAsset, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel } };
   // 协作要改 history.commit、读 state.scripts，所以必须等 __editor 赋完再挂：
   // 挂早一行就是 mountCollab(undefined)，异常被 catch 咽掉，按钮点了没反应。
   import("./collab.js").then(({ mountCollab }) => {
