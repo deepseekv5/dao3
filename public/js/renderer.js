@@ -281,7 +281,11 @@ export class VoxelRenderer {
     // 单面材质从下往上看是背面 → 直接透明，潜到水下抬头等于没有水面。
     // 水面也吃顶点色：湖底与岸壁的接缝没有 AO 会像贴了一张塑料膜
     this.waterMat = new THREE.MeshStandardMaterial({ color: 0x9cc9cf, transparent: true, opacity: 0.78, roughness: 0.12, metalness: 0.05, depthWrite: false, side: THREE.DoubleSide, vertexColors: true });
-    this.glowMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.glowMat = new THREE.MeshBasicMaterial({
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true,
+      vertexColors: true, toneMapped: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    });
     // 空气墙材质：编辑器半透明绿罩（运行时整层隐藏，见 setBarriersVisible）
     this.barrierMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.28, color: 0x6fdc7f, depthWrite: false });
     this._barriersVisible = true;
@@ -951,7 +955,7 @@ vec2 fxTileRect(float t){
     const pos = [], nor = [], uv = [], idx = [], av = [], col = [];
     const tpos = [], tnor = [], tuv = [], tidx = [], tav = [], tcol = [];
     const wpos = [], wnor = [], wuv = [], widx = [], wav = [], wcol = [];
-    const gpos = [], gnor = [], guv = [], gidx = [], gav = [];
+    const gpos = [], gnor = [], guv = [], gidx = [], gav = [], gcol = [];
     const bpos = [], bnor = [], buv = [], bidx = [], bav = [];
     const ox = cx * CHUNK, oy = cy * CHUNK, oz = cz * CHUNK;
     let vc = 0, tvc = 0, wvc = 0, gvc = 0, bvc = 0;
@@ -1038,13 +1042,17 @@ vec2 fxTileRect(float t){
         base += 4;
         if (useW) wvc += 4; else if (useT) tvc += 4; else if (isBarrier) bvc += 4; else vc += 4;
         if (isGlow) {
+          const peak = Math.max(em[0], em[1], em[2], 1e-6), k = Math.min(1, peak / 8);
+          const gc = [em[0] / peak * k, em[1] / peak * k, em[2] / peak * k];
+          const d = f.dir, lift = 0.004;
           for (let c = 0; c < 4; c++) {
             const co = f.corners[c];
-            gpos.push(wx + co[0], wy + co[1], wz + co[2]);
+            gpos.push(wx + co[0] + d[0] * lift, wy + co[1] + d[1] * lift, wz + co[2] + d[2] * lift);
             gnor.push(f.dir[0], f.dir[1], f.dir[2]);
             const [su, sv] = f.uv[c];
             guv.push(u0 + su * (u1 - u0), v0 + sv * (v1 - v0));
             gav.push(a4[0], a4[1], a4[2], a4[3]);
+            gcol.push(gc[0], gc[1], gc[2]);
           }
           gidx.push(gvc, gvc + 1, gvc + 2, gvc, gvc + 2, gvc + 3); gvc += 4;
         }
@@ -1073,7 +1081,7 @@ vec2 fxTileRect(float t){
     rec.opaque = build(pos, nor, uv, idx, this.opaqueMat, true, av, col);
     rec.trans = build(tpos, tnor, tuv, tidx, this.transparentMat, false, tav, tcol);
     rec.water = build(wpos, wnor, wuv, widx, this.waterMat, false, wav, wcol);
-    rec.glow = build(gpos, gnor, guv, gidx, this.glowMat, false, gav);
+    rec.glow = build(gpos, gnor, guv, gidx, this.glowMat, false, gav, gcol);
     // 空气墙：半透明网格（编辑器里看得到、可拾取），运行时整体隐藏；不投影避免暴露位置
     if (!bpos.length && !bvc) rec.barrier = null;
     else {
