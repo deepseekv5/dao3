@@ -416,38 +416,16 @@ async function ensureMeshAsset(base) {
       if (!r.ok) continue;
       const buf = await r.arrayBuffer();
       const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
-      const scene = gltf.scene;
-      const pivot = (gltf.userData || {}).voxaPivot;
-      const hasPivot = Array.isArray(pivot) && pivot.some((v) => Math.abs(+v) > 1e-6);
-      if (!hasPivot) {
-        const box = new THREE.Box3().setFromObject(scene);
-        if (isFinite(box.min.x) && isFinite(box.max.x)) {
-          const c = box.getCenter(new THREE.Vector3());
-          const wrap = new THREE.Group();
-          wrap.position.set(-c.x, -box.min.y, -c.z);
-          while (scene.children.length) wrap.add(scene.children[0]);
-          scene.add(wrap);
-          scene.updateMatrixWorld(true);
-        }
-      }
-      return set(scene);
+      // 官方导出已经把锚点和节点偏移烘进场景：包围盒不是原点时再居中一次，
+      // 会把每个模型整体推偏半个尺寸。VOXA 的 pivot 也已经写在节点变换里。
+      return set(gltf.scene);
     } catch { }
   }
   try {
     const r = await fetch(root + encodeURIComponent(base) + ".bin");
     if (r.ok) {
       const { buildBoxModel } = await import("./box-model.js");
-      const model = buildBoxModel(new Uint8Array(await r.arrayBuffer()));
-      const box = new THREE.Box3().setFromObject(model);
-      if (isFinite(box.min.x) && isFinite(box.max.x)) {
-        const c = box.getCenter(new THREE.Vector3());
-        const wrap = new THREE.Group();
-        wrap.position.set(-c.x, -box.min.y, -c.z);
-        wrap.add(model);
-        wrap.updateMatrixWorld(true);
-        return set(wrap);
-      }
-      return set(model);
+      return set(buildBoxModel(new Uint8Array(await r.arrayBuffer())));
     }
   } catch { }
   const { voxListToModel } = await import("./features.js");
