@@ -293,6 +293,7 @@ input{font-family:inherit}
 button.sb-btn{font-size:11px;line-height:1;color:var(--font-white-minor);padding:4px 8px;
   border-radius:var(--radius-sm);border:1px solid transparent;white-space:nowrap}
 button.sb-btn:hover{color:#fff;border-color:var(--primary);background:var(--primary-dim)}
+button.sb-btn.active{color:#fff;border-color:var(--primary);background:var(--primary-dim)}
 #sbDiag.err{color:var(--bad)}
 #sbDiag.warn{color:var(--warn)}
 #sbSave.dirty{color:var(--accent2)}

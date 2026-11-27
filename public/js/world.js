@@ -7,6 +7,8 @@ class DenseVoxelMap {
     this.ids = new Uint16Array(cells);
     this.rotations = new Map();
     this.count = 0;
+    this._histogram = null;
+    this._version = 0;
   }
   static adopt(ids, rotIndices, rotValues, count) {
     const map = new DenseVoxelMap(0);
@@ -16,10 +18,12 @@ class DenseVoxelMap {
     map.count = count;
     return map;
   }
+  get version() { return this._version; }
   get size() { return this.count; }
   get(index) {
     const id = this.ids[index];
-    return id ? id | ((this.rotations.get(index) || 0) << 16) : undefined;
+    if (!id) return undefined;
+    return this.rotations.size ? id | ((this.rotations.get(index) || 0) << 16) : id;
   }
   has(index) { return this.ids[index] !== 0; }
   set(index, value) {
@@ -30,24 +34,37 @@ class DenseVoxelMap {
     const rot = (value >>> 16) & 0xffff;
     if (rot) this.rotations.set(index, rot);
     else if (this.rotations.size) this.rotations.delete(index);
+    this._histogram = null; this._version++;
     return this;
   }
   delete(index) {
     if (!this.ids[index]) return false;
     this.ids[index] = 0; this.rotations.delete(index); this.count--;
+    this._histogram = null; this._version++;
     return true;
   }
-  clear() { this.ids.fill(0); this.rotations.clear(); this.count = 0; }
+  clear() { this.ids.fill(0); this.rotations.clear(); this.count = 0; this._histogram = null; this._version++; }
+  histogram() {
+    if (this._histogram) return this._histogram;
+    const counts = new Uint32Array(65536);
+    for (let i = 0; i < this.ids.length; i++) { const id = this.ids[i]; if (id) counts[id]++; }
+    const out = [];
+    for (let id = 1; id < counts.length; id++) if (counts[id]) out.push([id, counts[id]]);
+    this._histogram = out;
+    return out;
+  }
   *keys() {
     const ids = this.ids;
     for (let i = 0; i < ids.length; i++) if (ids[i]) yield i;
   }
   *values() {
     const ids = this.ids, rotations = this.rotations;
+    if (!rotations.size) { for (let i = 0; i < ids.length; i++) if (ids[i]) yield ids[i]; return; }
     for (let i = 0; i < ids.length; i++) if (ids[i]) yield ids[i] | ((rotations.get(i) || 0) << 16);
   }
   *entries() {
     const ids = this.ids, rotations = this.rotations;
+    if (!rotations.size) { for (let i = 0; i < ids.length; i++) if (ids[i]) yield [i, ids[i]]; return; }
     for (let i = 0; i < ids.length; i++) if (ids[i]) yield [i, ids[i] | ((rotations.get(i) || 0) << 16)];
   }
   forEach(cb, thisArg) {
@@ -86,7 +103,15 @@ export class VoxelWorld {
   }
   has(x, y, z) { return this.map.has(this.pack(x, y, z)); }
   size() { return this.map.size; }
+  blockHistogram() {
+    if (typeof this.map.histogram === "function") return this.map.histogram();
+    const counts = new Map();
+    for (const [, v] of this.map) { const id = v & 0xffff; if (id) counts.set(id, (counts.get(id) || 0) + 1); }
+    return [...counts.entries()];
+  }
   bounds() {
+    const version = this.map.version;
+    if (version !== undefined && version === this._boundsVersion && this._boundsCache) return this._boundsCache;
     if (this.map.size === 0) return null;
     let minx = 1e9, miny = 1e9, minz = 1e9, maxx = -1e9, maxy = -1e9, maxz = -1e9;
     for (const i of this.map.keys()) {
@@ -95,7 +120,9 @@ export class VoxelWorld {
       if (y < miny) miny = y; if (y > maxy) maxy = y;
       if (z < minz) minz = z; if (z > maxz) maxz = z;
     }
-    return { min: [minx, miny, minz], max: [maxx, maxy, maxz] };
+    const out = { min: [minx, miny, minz], max: [maxx, maxy, maxz] };
+    if (version !== undefined) { this._boundsVersion = version; this._boundsCache = out; }
+    return out;
   }
 
   toPayload(meta = {}) {

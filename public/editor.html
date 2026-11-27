@@ -220,6 +220,8 @@ window.addEventListener("unhandledrejection",e=>window.__noteErr("reject: "+(e.r
   <span class="sb-spacer"></span>
   <button id="sbDiag" class="sb-btn" title="脚本诊断：点一下跳到下一个问题">无问题</button>
   <span id="sbSave" class="sb-seg"></span>
+  <button id="sbPerf" class="sb-btn" title="切换性能读数：FPS / draw calls / 三角形 / 区块 / 模型">性能</button>
+  <span id="perfStat" class="sb-seg" hidden></span>
   <button id="sbPalette" class="sb-btn" title="命令面板：所有动作都能敲两个字出来 (F1)">F1 命令</button>
 </div>
 <div id="ctxmenu"><button data-c="rename">重命名</button><button data-c="copy">复制</button><button data-c="delete">删除</button></div>

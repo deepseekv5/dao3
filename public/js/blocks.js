@@ -35,7 +35,7 @@ const ICONS = {
     所以上一版只认 ASCII 的写法是多余的：积木里写「得分」，出码却变成 v_ivrg7a，
     等于把用户在两块面板之间看得懂的那根线剪断。这一版只在**真的**不合法时
     （含空格、标点、是保留字）才退化成稳定短名，原名留在注释里。 */
-const RESERVED = new Set("if else for while do switch case default break continue var let const class function return new this typeof instanceof in of delete void null true false super static extends import export async await yield try catch finally throw with debugger".split(" "));
+const RESERVED = new Set("if else for while do switch case default break continue var let const class function return new this typeof instanceof in of delete void null true false super static extends import export async await yield try catch finally throw with debugger entity tick world message button pressed".split(" "));
 const ID_RE = /^[\p{L}\p{Nl}$_][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}\u200c\u200d$_]*$/u;
 function safeName(n) {
   const s = String(n || "").trim();
@@ -284,15 +284,16 @@ export function wireBlocks(E) {
   function writeScript(toast) {
     const src = js();
     const bad = checkJs(src);
-    if (bad) return E.toast("先别写：生成的代码有语法问题 —— " + bad, true);
+    if (bad) { E.toast("先别运行：生成的代码有语法问题 —— " + bad, true); return false; }
     const arr = E.state.scripts || (E.state.scripts = []);
     let f = arr.find((x) => x.name === FILE);
     if (!f) { f = { name: FILE, code: "" }; arr.push(f); }
-    if (f.code === src) { if (toast) E.toast(FILE + " 已经是最新的", true); return; }
+    if (f.code === src) { if (toast) E.toast(FILE + " 已经是最新的", true); return true; }
     f.code = src;
     if (E.refreshScriptFiles) E.refreshScriptFiles();
     if (E.markDirty) E.markDirty();
     if (toast) E.toast(`已写入 ${FILE}（脚本页里可以接着手改）`);
+    return true;
   }
   function saveTree() {
     E.state.meta = E.state.meta || {};
@@ -306,7 +307,7 @@ export function wireBlocks(E) {
     if (!last) return E.toast("没有可撤销的这一步", true);
     tree = JSON.parse(last);
     render();
-    paintCode(); saveTree();          // 不再 snap()：撤销本身不该变成下一步历史
+    afterChange();                 // 撤销也要把脚本写回，否则 Ctrl+Z 后画布与代码各说各话
   }
 
   /* ---------- 积木箱 ---------- */
@@ -602,13 +603,13 @@ export function wireBlocks(E) {
   };
   screen.querySelector("#bsUndo").onclick = undo;
   screen.querySelector("#bsWrite").onclick = () => writeScript(true);
-  screen.querySelector("#bsRun").onclick = () => { writeScript(false); document.getElementById("scriptPlay")?.click(); };
+  screen.querySelector("#bsRun").onclick = () => { if (!writeScript(false)) return; document.getElementById("scriptPlay")?.click(); };
   screen.querySelector("#bsCopy").onclick = async () => {
     try { await navigator.clipboard.writeText(js()); E.toast("代码已复制"); }
     catch { E.toast("浏览器不给网页写剪贴板（这是安全边界）：到脚本页 Ctrl+A 再复制", true); }
   };
   screen.querySelector("#bsOpen").onclick = () => {
-    writeScript(false);
+    if (!writeScript(false)) return;
     document.querySelector('.mtab[data-menu="script"]')?.click();
     const i = (E.state.scripts || []).findIndex((f) => f.name === FILE);
     if (i >= 0 && E.__openScriptTab) E.__openScriptTab(i);

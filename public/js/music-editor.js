@@ -131,7 +131,7 @@ export function openMusicStudio(E) {
         <button class="da-icon" data-act="undo" title="撤销 Ctrl+Z">${icon("undo")}</button>
         <button class="da-icon" data-act="redo" title="重做 Ctrl+Shift+Z">${icon("redo")}</button>
         <button class="da-btn" data-act="save">${icon("save")}保存</button>
-        <button class="da-btn" data-act="wav">${icon("download")}导出 WAV</button>
+        <button class="da-btn" data-act="wav">${icon("download")}导出 WAV（全曲）</button>
         <button class="da-btn" data-act="stems">${icon("download")}分轨</button>
         <button class="da-btn" data-act="midi">MIDI</button>
         <button class="da-btn" data-act="export">项目</button>
@@ -225,7 +225,7 @@ export function openMusicStudio(E) {
     trackAt = clamp(trackAt, 0, doc.tracks.length - 1); clipAt = clamp(clipAt, 0, track().clips.length - 1); selectedNote = null;
     resetPlayer(); renderAll(); checkpoint();
   }
-  function commit() { checkpoint(); renderAll(); }
+  function commit() { checkpoint(); renderAll(); player?.applyMixerState(); }
   function toast(text, bad = false) { host.dispatchEvent(new CustomEvent("music-toast", { detail: text, bubbles: true })); if (bad) host.dataset.error = "1"; }
   function setStatus(text) { $("[data-status]").textContent = text; }
 
@@ -426,7 +426,7 @@ export function openMusicStudio(E) {
     else if(act==="export"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(doc,null,2)],{type:"application/json"}));a.download=(doc.name||"music")+".music.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);}
     else if(act==="midi"){const a=document.createElement("a");a.href=URL.createObjectURL(exportMidi(doc));a.download=(doc.name||"music")+".mid";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);toast("MIDI 已导出");}
     else if(act==="close")close();
-    else if(act==="wav"){const btn=b;btn.disabled=true;btn.textContent="渲染中…";renderMusicToWav(doc).then((blob)=>{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(doc.name||"music")+".wav";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);toast("WAV 已导出");}).catch((e)=>toast("WAV 导出失败："+e.message,true)).finally(()=>{btn.disabled=false;btn.innerHTML=icon("download")+"导出 WAV";});}
+    else if(act==="wav"){const btn=b;btn.disabled=true;btn.textContent="渲染中…";renderMusicToWav(doc).then((blob)=>{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(doc.name||"music")+".wav";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);toast("WAV 已导出");}).catch((e)=>toast("WAV 导出失败："+e.message,true)).finally(()=>{btn.disabled=false;btn.innerHTML=icon("download")+"导出 WAV（全曲）";});}
     else if(act==="stems"){const btn=b;btn.disabled=true;setStatus("正在逐轨离线渲染…");(async()=>{const files=[];for(let i=0;i<doc.tracks.length;i++){const t=doc.tracks[i];setStatus(`正在渲染 ${i+1}/${doc.tracks.length}：${t.name}`);const blob=await renderMusicToWav(doc,{trackId:t.id});files.push({name:`${String(i+1).padStart(2,"0")}-${t.name.replace(/[\\/:*?"<>|]/g,"_")}.wav`,data:new Uint8Array(await blob.arrayBuffer())});}const zip=await writeZip(files),a=document.createElement("a");a.href=URL.createObjectURL(new Blob([zip],{type:"application/zip"}));a.download=(doc.name||"music")+"-stems.zip";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),8000);toast(`已导出 ${files.length} 条 WAV 分轨`);})().catch((e)=>toast("分轨导出失败："+e.message,true)).finally(()=>{btn.disabled=false;setStatus("分轨导出完成");});}
   });
 
@@ -444,13 +444,13 @@ export function openMusicStudio(E) {
   $("[data-tname]").onchange=checkpoint;
   $("[data-inst]").onchange=(e)=>{track().instrument=e.target.value;checkpoint();renderAll();auditionNote(track().instrument,60,.7,track().synth);};
   $$("[data-color]").forEach((b)=>b.onclick=()=>{track().color=b.dataset.color;checkpoint();renderAll();});
-  $("[data-vol]").oninput=(e)=>{track().volume=+e.target.value/100;const p=track().automation?.volume?.find(x=>x.t===0);if(p)p.v=track().volume;$("[data-volv]").textContent=e.target.value;drawAutomation();};$("[data-vol]").onchange=commit;
-  $("[data-pan]").oninput=(e)=>{track().pan=+e.target.value/100;const p=track().automation?.pan?.find(x=>x.t===0);if(p)p.v=track().pan;$("[data-panv]").textContent=e.target.value;drawAutomation();};$("[data-pan]").onchange=commit;
+  $("[data-vol]").oninput=(e)=>{track().volume=+e.target.value/100;const p=track().automation?.volume?.find(x=>x.t===0);if(p)p.v=track().volume;$("[data-volv]").textContent=e.target.value;player?.setTrack(track().id,{volume:track().volume});drawAutomation();};$("[data-vol]").onchange=commit;
+  $("[data-pan]").oninput=(e)=>{track().pan=+e.target.value/100;const p=track().automation?.pan?.find(x=>x.t===0);if(p)p.v=track().pan;$("[data-panv]").textContent=e.target.value;player?.setTrack(track().id,{pan:track().pan});drawAutomation();};$("[data-pan]").onchange=commit;
   for(const k of ["attack","decay","sustain","release","cutoff"]){const inp=$(`[data-synth="${k}"]`);inp.oninput=()=>{const v=+inp.value;track().synth[k]=k==="attack"||k==="decay"||k==="release"?v/1000:k==="cutoff"?v:v/100;$(`[data-synthv="${k}"]`).textContent=k==="cutoff"?v+" Hz":k==="attack"||k==="decay"||k==="release"?v+" ms":v;};inp.onchange=checkpoint;}
   $("[data-vel]").oninput=(e)=>{if(!selectedNote)return;selectedNote.vel=+e.target.value/100;$("[data-velv]").textContent=e.target.value;drawPiano();drawVelocity();};$("[data-vel]").onchange=checkpoint;
   $("[data-dur-note]").oninput=(e)=>{if(!selectedNote)return;selectedNote.dur=+e.target.value;drawPiano();};$("[data-dur-note]").onchange=commit;
-  for(const k of ["volume","reverb","delay"]){const inp=$(`[data-master="${k}"]`);inp.oninput=()=>{doc.master[k]=+inp.value/100;$(`[data-masterv="${k}"]`).textContent=inp.value;};inp.onchange=checkpoint;}
-  host.addEventListener("input",(ev)=>{const i=ev.target.dataset.mixvol,p=ev.target.dataset.mixpan,send=ev.target.dataset.mixsend;if(i!=null){const t=doc.tracks[+i];t.volume=+ev.target.value/100;const q=t.automation?.volume?.find(x=>x.t===0);if(q)q.v=t.volume;}if(p!=null){const t=doc.tracks[+p];t.pan=+ev.target.value/100;const q=t.automation?.pan?.find(x=>x.t===0);if(q)q.v=t.pan;}if(send){const [key,index]=send.split(":");doc.tracks[+index].sends[key]=+ev.target.value/100;}});
+  for(const k of ["volume","reverb","delay"]){const inp=$(`[data-master="${k}"]`);inp.oninput=()=>{doc.master[k]=+inp.value/100;$(`[data-masterv="${k}"]`).textContent=inp.value;player?.setMaster(k,doc.master[k]);};inp.onchange=checkpoint;}
+  host.addEventListener("input",(ev)=>{const i=ev.target.dataset.mixvol,p=ev.target.dataset.mixpan,send=ev.target.dataset.mixsend;if(i!=null){const t=doc.tracks[+i];t.volume=+ev.target.value/100;const q=t.automation?.volume?.find(x=>x.t===0);if(q)q.v=t.volume;player?.setTrack(t.id,{volume:t.volume});}if(p!=null){const t=doc.tracks[+p];t.pan=+ev.target.value/100;const q=t.automation?.pan?.find(x=>x.t===0);if(q)q.v=t.pan;player?.setTrack(t.id,{pan:t.pan});}if(send){const [key,index]=send.split(":");const t=doc.tracks[+index];t.sends[key]=+ev.target.value/100;player?.setTrack(t.id,{sends:{[key]:t.sends[key]}});}});
   host.addEventListener("change",(ev)=>{if(ev.target.dataset.mixvol!=null||ev.target.dataset.mixpan!=null||ev.target.dataset.mixsend!=null)commit();});
 
   $(".da-pianoroll").addEventListener("contextmenu",(e)=>e.preventDefault());

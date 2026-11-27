@@ -230,8 +230,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   function renderTree() {
     tree.innerHTML = "";
     renderEntityTree();
-    const present = new Map();
-    for (const [, c] of liveWorld().map) present.set(c.id, (present.get(c.id) || 0) + 1);
+    const present = new Map(liveWorld().blockHistogram());
     if (!present.size) {
       const empty = document.createElement("div");
       empty.className = "muted";

@@ -2001,12 +2001,8 @@ class VoxaApp {
         ok.onclick = async () => {
           try {
             const doc = await this.decodeShare(ta.value);
-            this.snapshot("导入 V口令");
-            this.doc = doc;
-            this.activePart = this.doc.parts[0] || null;
-            this.view.setDoc(this.doc);
-            $("vxName").value = this.doc.name;
-            this.renderAll(); this.saveLocal(); this.view.focus();
+            this.loadDoc(doc, "导入 V口令");
+            this.saveLocal();
             document.getElementById("vxCodeModal")?.remove();
             this.toast("已导入口令：" + (this.doc.name || "未命名模型"));
           } catch (e) { this.toast("口令无效：" + (e.message || e)); }

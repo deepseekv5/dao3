@@ -553,14 +553,59 @@ export function animDuration(doc) {
 }
 
 /* ------------------------------ 物理盒 ------------------------------ */
+const _matIdentity = () => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+const _matMul = (a, b) => {
+  const o = new Array(16);
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+    o[r * 4 + c] = a[r * 4] * b[c] + a[r * 4 + 1] * b[4 + c] + a[r * 4 + 2] * b[8 + c] + a[r * 4 + 3] * b[12 + c];
+  }
+  return o;
+};
+const _matTRS = (p, r, s) => {
+  const q = eulerToQuatXYZ(r[0] || 0, r[1] || 0, r[2] || 0);
+  const [x, y, z, w] = q;
+  const m = [
+    1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w), p[0] || 0,
+    2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w), p[1] || 0,
+    2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y), p[2] || 0,
+    0, 0, 0, 1,
+  ];
+  m[0] *= s[0] || 1; m[1] *= s[1] || 1; m[2] *= s[2] || 1;
+  m[4] *= s[0] || 1; m[5] *= s[1] || 1; m[6] *= s[2] || 1;
+  m[8] *= s[0] || 1; m[9] *= s[1] || 1; m[10] *= s[2] || 1;
+  return m;
+};
+const _matPoint = (m, x, y, z) => [
+  m[0] * x + m[1] * y + m[2] * z + m[3],
+  m[4] * x + m[5] * y + m[6] * z + m[7],
+  m[8] * x + m[9] * y + m[10] * z + m[11],
+];
 export function modelBounds(doc) {
+  const bones = new Map((doc.bones || []).map((b) => [b.id, b]));
+  const world = new Map(), visiting = new Set();
+  const boneWorld = (id) => {
+    if (!id || !bones.has(id)) return _matIdentity();
+    if (world.has(id)) return world.get(id);
+    if (visiting.has(id)) return _matIdentity();
+    visiting.add(id);
+    const b = bones.get(id);
+    const local = _matTRS(b.position, b.rotation, b.scale || [1, 1, 1]);
+    const m = _matMul(boneWorld(b.parent), local);
+    visiting.delete(id); world.set(id, m); return m;
+  };
   let lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9], any = false;
   for (const p of doc.parts) {
     if (!p.voxels.length) continue;
+    let lmin = [1e9, 1e9, 1e9], lmax = [-1e9, -1e9, -1e9];
+    for (const v of p.voxels) for (let a = 0; a < 3; a++) {
+      const vv = a === 0 ? v.x : a === 1 ? v.y : v.z;
+      lmin[a] = Math.min(lmin[a], vv); lmax[a] = Math.max(lmax[a], vv + 1);
+    }
+    const partWorld = _matMul(boneWorld(p.bone), _matTRS(p.pos, p.rot, p.scale || [1, 1, 1]));
     any = true;
-    for (let a = 0; a < 3; a++) {
-      lo[a] = Math.min(lo[a], p.pos[a]);
-      hi[a] = Math.max(hi[a], p.pos[a] + p.size[a] * p.scale[a]);
+    for (let i = 0; i < 8; i++) {
+      const q = _matPoint(partWorld, i & 1 ? lmax[0] : lmin[0], i & 2 ? lmax[1] : lmin[1], i & 4 ? lmax[2] : lmin[2]);
+      for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], q[a]); hi[a] = Math.max(hi[a], q[a]); }
     }
   }
   if (!any) return { center: [0, 0, 0], size: [1, 1, 1] };
@@ -791,8 +836,10 @@ export function toGLB(doc) {
     const prims = [];
     const solid = { pos: [], nrm: [], col: [], idx: [] };
     const glows = new Map();   // 颜色 id → 一套顶点（每种发光色一个 primitive，发光才不会被平均掉）
+    const occupied = new Set(p.voxels.map((v) => vkey(v.x, v.y, v.z)));
     const quad = (rec, v, rgb, bright) => {
       for (const f of GLB_FACES) {
+        if (occupied.has(vkey(v.x + f.n[0], v.y + f.n[1], v.z + f.n[2]))) continue;
         const base = rec.pos.length / 3;
         for (const corner of f.c) {
           rec.pos.push(v.x + corner[0], v.y + corner[1], v.z + corner[2]);

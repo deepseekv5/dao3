@@ -134,7 +134,7 @@ function buildChannels(ctx, master, doc) {
     input.connect(panner); panner.connect(analyser); analyser.connect(master.input);
     const reverbSend = ctx.createGain(); reverbSend.gain.value = clamp(+track.sends?.reverb ?? 0, 0, 1); panner.connect(reverbSend); reverbSend.connect(master.reverbBus);
     const delaySend = ctx.createGain(); delaySend.gain.value = clamp(+track.sends?.delay ?? 0, 0, 1); panner.connect(delaySend); delaySend.connect(master.delayBus);
-    channels.set(track.id, { input, panner, analyser });
+    channels.set(track.id, { input, panner, analyser, reverbSend, delaySend });
   }
   return channels;
 }
@@ -149,10 +149,17 @@ function projectEvents(doc, startStep, endStep) {
   const events = [];
   for (const track of doc.tracks || []) {
     if (track.muted || (doc.tracks.some((t) => t.solo) && !track.solo)) continue;
-    for (const clip of track.clips || [{ start: 0, notes: track.notes || [] }]) {
+    for (const clip of track.clips || [{ start: 0, length: Infinity, notes: track.notes || [] }]) {
+      const clipLength = Number.isFinite(+clip.length) ? +clip.length : Infinity;
       for (const note of clip.notes || []) {
-        const step = clip.start + note.t;
-        if (step >= startStep && step < endStep) events.push({ step: step - startStep, track, note });
+        const rel = +note.t || 0;
+        if (rel < 0 || rel >= clipLength) continue;
+        const step = clip.start + rel;
+        if (step >= startStep && step < endStep) {
+          const available = clipLength - rel;
+          const clipped = +note.dur > available ? { ...note, dur: available } : note;
+          events.push({ step: step - startStep, track, note: clipped });
+        }
       }
     }
     for (const param of ["volume", "pan"]) {
@@ -247,7 +254,30 @@ export function createMusicPlayer(doc, { onTick, onEnd, onMeter } = {}) {
     active.clear(); onTick?.(-1);
   }
   function dispose() { stop(); if (ctx) { try { ctx.close(); } catch { } ctx = null; } channels = null; master = null; }
-  return { play, stop, dispose, get playing() { return playing; }, stepSec, totalSec: () => loopSec };
+  function setMaster(param, value) {
+    if (!master) return;
+    if (param === "volume") master.input.gain.setTargetAtTime(clamp(+value || 0, 0, 1), ctx.currentTime, .02);
+    if (param === "reverb") master.reverbBus.gain.setTargetAtTime(clamp(+value || 0, 0, .7), ctx.currentTime, .02);
+    if (param === "delay") master.delayBus.gain.setTargetAtTime(clamp(+value || 0, 0, .65), ctx.currentTime, .02);
+  }
+  function setTrack(id, patch) {
+    const ch = channels && channels.get(id);
+    if (!ch) return;
+    if (patch.volume != null) ch.input.gain.setTargetAtTime(clamp(+patch.volume, 0, 1), ctx.currentTime, .02);
+    if (patch.pan != null) ch.panner.pan.setTargetAtTime(clamp(+patch.pan, -1, 1), ctx.currentTime, .02);
+    if (patch.sends?.reverb != null) ch.reverbSend.gain.setTargetAtTime(clamp(+patch.sends.reverb, 0, 1), ctx.currentTime, .02);
+    if (patch.sends?.delay != null) ch.delaySend.gain.setTargetAtTime(clamp(+patch.sends.delay, 0, 1), ctx.currentTime, .02);
+  }
+  function applyMixerState() {
+    if (!channels) return;
+    const solo = (doc.tracks || []).some((t) => t.solo);
+    for (const t of doc.tracks || []) setTrack(t.id, {
+      volume: t.muted || (solo && !t.solo) ? 0 : (+t.volume ?? .8),
+      pan: +t.pan || 0,
+      sends: { reverb: +t.sends?.reverb || 0, delay: +t.sends?.delay || 0 },
+    });
+  }
+  return { play, stop, dispose, setMaster, setTrack, applyMixerState, get playing() { return playing; }, stepSec, totalSec: () => loopSec };
 }
 function analyserByteLength(channels) {
   const first = channels.values().next().value;
@@ -283,10 +313,9 @@ function wavFromBuffer(buffer) {
 /** 离线渲染：和实时播放共用同一套音符/通道/效果调度，不另写一份“试听很好、导出没声”的逻辑。 */
 export async function renderMusicToWav(doc, { trackId } = {}) {
   const renderDoc = trackId ? { ...doc, metronome: false, tracks: (doc.tracks || []).filter((t) => t.id === trackId) } : doc;
-  const loopEnabled = renderDoc.loop?.enabled ?? (typeof renderDoc.loop === "boolean" ? renderDoc.loop : true);
-  const r = loopEnabled
-    ? { start: clamp(+renderDoc.loop.start || 0, 0, (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4 - 1), end: clamp(+renderDoc.loop.end || (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4, 1, (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4) }
-    : { start: 0, end: (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4 };
+  // WAV/MIDI/分轨都以“整首作品”为准；循环区间只控制实时试听，避免三种导出时长互相打架。
+  const total = Math.max(16, (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4);
+  const r = { start: 0, end: total };
   const stepSec = 60 / clamp(+renderDoc.bpm || 96, 40, 240) / STEPS_PER_BEAT;
   const duration = Math.max(.2, (r.end - r.start) * stepSec + 1.2);
   const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;

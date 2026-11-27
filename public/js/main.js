@@ -699,8 +699,26 @@ async function boot() {
   // 第一人称中心拾取预览（幽灵方块跟随屏幕中心）
   ui.setFPRenderer && ui.setFPRenderer(null);
   const uiRender = renderer.onRender;
+  let perfOn = false, perfFrames = 0, perfLast = performance.now();
+  const perfBtn = document.getElementById("sbPerf"), perfStat = document.getElementById("perfStat");
+  if (perfBtn && perfStat) {
+    perfBtn.onclick = () => {
+      perfOn = !perfOn; perfBtn.classList.toggle("active", perfOn); perfStat.hidden = !perfOn;
+      if (!perfOn) perfStat.textContent = "";
+    };
+  }
   renderer.onRender = (d) => {
     if (uiRender) uiRender(d);
+    if (perfOn && perfStat) {
+      perfFrames++;
+      const now = performance.now();
+      if (now - perfLast >= 500) {
+        const fps = Math.round(perfFrames * 1000 / (now - perfLast));
+        const info = renderer.renderer.info.render;
+        perfStat.textContent = `${fps} FPS · ${info.calls} calls · ${(info.triangles / 1000).toFixed(0)}k △ · ${renderer.chunkMeshes.size} 区块 · ${state.models.length} 模型`;
+        perfFrames = 0; perfLast = now;
+      }
+    }
     if (renderer.fpMode && !(game && game.running)) {
       ctx.pick = renderer.pick(0, 0);
       updateCoords(ctx.pick);

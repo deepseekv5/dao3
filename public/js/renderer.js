@@ -443,7 +443,13 @@ vec2 fxTileRect(float t){
       mat.onBeforeCompile = (shader) => {
         Object.assign(shader.uniforms, { uEdge: this._edgeU }, this._anim);
         shader.vertexShader = HEAD_V + shader.vertexShader.replace("void main() {", "void main() {\n  vAnim = aAnim;");
-        shader.fragmentShader = HEAD_F + shader.fragmentShader.replace("#include <map_fragment>", BODY_F);
+        shader.fragmentShader = HEAD_F + shader.fragmentShader
+          .replace("#include <map_fragment>", BODY_F)
+          // 正午垂直面只吃得到很低的环境光，再叠 AO + ACES 会被压成近黑；
+          // 拉远后每面只剩 1–2 px，暗侧面就连成黑纹。中远景补一层柔和间接光，
+          // 近景不动，保住台阶与墙角的层次。
+          .replace("#include <lights_fragment_end>", `#include <lights_fragment_end>
+            reflectedLight.indirectDiffuse += diffuseColor.rgb * 0.22 * smoothstep(40.0, 120.0, length(vViewPosition));`);
       };
       mat.customProgramCacheKey = () => "dao3-anim";
       mat.needsUpdate = true;

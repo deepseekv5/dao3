@@ -13,6 +13,7 @@ import {
   newDoc, newPart, addPart, serialize, deserialize, transformVoxels, ensureRoom,
   faceCells, fillRange, ensureColor, setVoxel, getVoxel, MAX_BOX,
   addBone, bindPart, toGLB, eulerToQuatXYZ, stats, exposedFaces, contourEdges,
+  modelBounds, refreshPhysics,
   applySkinTemplate, defaultSkinDoc, SKIN_BONES,
 } from "../public/js/voxa/model.js";
 
@@ -196,6 +197,31 @@ const glb = async (doc) => {
   ok("单个体素才是 6 面，说明剔除只砍掉被邻居挡住的那些", exposedFaces(single) === 6);
   ok("统计里的部件/体素/颜色数与文档一致",
     stats(doc).parts === 2 && stats(doc).voxels === 9 && stats(doc).colors === 1, JSON.stringify(stats(doc)));
+}
+
+/* ---------------- 导出与物理盒：内部面要剔，变换要算 ---------------- */
+{
+  const doc = newDoc("实心立方", "free");
+  const p = newPart("Solid", [4, 4, 4]);
+  doc.parts.push(p);
+  fillRange(p, [0, 0, 0], [3, 3, 3], ensureColor(doc, "#44aaff", 0));
+  const { g } = await glb(doc);
+  const indices = g.meshes[0].primitives.reduce((n, prim) => n + g.accessors[prim.indices].count, 0);
+  ok("GLB 导出会剔内部面：4³ 实心体只有 96 个外露面", indices === 96 * 6, `indices=${indices}`);
+}
+{
+  const doc = newDoc("旋转盒", "free");
+  const p = newPart("Bar", [4, 1, 1]);
+  p.rot = [0, 45, 0];
+  doc.parts.push(p);
+  fillRange(p, [0, 0, 0], [3, 0, 0], ensureColor(doc, "#ff8800", 0));
+  const b = modelBounds(doc);
+  ok("默认物理盒把部件旋转算进 AABB", Math.abs(b.size[0] - 3.535) < .02 && Math.abs(b.size[2] - 3.535) < .02 && Math.abs(b.size[1] - 1) < .01, JSON.stringify(b));
+  const bone = addBone(doc, "Root", null);
+  bone.position = [10, 0, 0];
+  bindPart(doc, p, bone.id);
+  const moved = modelBounds(doc);
+  ok("默认物理盒把骨骼父级位移算进去", moved.center[0] > 11.5 && moved.center[0] < 12.5, JSON.stringify(moved));
 }
 
 /* ---------------- 模型中心点(pivot)：存得住，也导得出去 ---------------- */

@@ -23,6 +23,7 @@ import zlib from "node:zlib";
 import crypto from "node:crypto";
 import https from "node:https";
 import { spawn } from "node:child_process";
+import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 import { createCommunity } from "./server/community.mjs";
 import { createModeration } from "./server/moderate.mjs";
@@ -322,6 +323,33 @@ function writeWorld(id, payload) {
   return gz.length;
 }
 function worldBinaryPath(id) { return worldPath(id).replace(/\.json\.gz$/, ".bin.gz"); }
+function worldBinaryWorkerMain() {
+  const { parentPort, workerData } = require("node:worker_threads");
+  const fs = require("node:fs"), zlib = require("node:zlib");
+  try {
+    const payload = JSON.parse(zlib.gunzipSync(fs.readFileSync(workerData.jsonPath)).toString("utf8"));
+    const meta = Buffer.from(JSON.stringify(payload.meta || {}), "utf8");
+    const shape = payload.shape || [64, 64, 64];
+    const count = (payload.data || []).length;
+    const out = Buffer.allocUnsafe(4 + meta.length + 16 + count * 7);
+    let p = 0;
+    out.writeUInt32LE(meta.length, p); p += 4;
+    meta.copy(out, p); p += meta.length;
+    for (let i = 0; i < 3; i++) { out.writeUInt32LE(shape[i] | 0, p); p += 4; }
+    out.writeUInt32LE(count, p); p += 4;
+    const indices = payload.indices || [], data = payload.data || [], rot = payload.rot || [];
+    for (let i = 0; i < count; i++) {
+      out.writeUInt32LE(indices[i] | 0, p); p += 4;
+      out.writeUInt16LE(data[i] | 0, p); p += 2;
+      out.writeUInt8(rot[i] || 0, p); p += 1;
+    }
+    fs.writeFileSync(workerData.binPath, zlib.gzipSync(out, { level: 6 }));
+    parentPort.postMessage({ ok: true });
+  } catch (err) {
+    parentPort.postMessage({ ok: false, error: err && err.message || String(err) });
+  } finally { parentPort.close(); }
+}
+const _worldBinaryJobs = new Map();
 function readWorldBinary(id) {
   const cached = worldBinaryPath(id);
   if (fs.existsSync(cached)) return fs.readFileSync(cached);
@@ -330,8 +358,7 @@ function readWorldBinary(id) {
   const meta = Buffer.from(JSON.stringify(payload.meta || {}), "utf8");
   const shape = payload.shape || [64, 64, 64];
   const count = (payload.data || []).length;
-  const header = 4 + meta.length + 12 + 4;
-  const out = Buffer.allocUnsafe(header + count * 7);
+  const out = Buffer.allocUnsafe(4 + meta.length + 16 + count * 7);
   let p = 0;
   out.writeUInt32LE(meta.length, p); p += 4;
   meta.copy(out, p); p += meta.length;
@@ -346,6 +373,21 @@ function readWorldBinary(id) {
   const gz = zlib.gzipSync(out, { level: 6 });
   fs.writeFileSync(cached, gz);
   return gz;
+}
+function readWorldBinaryAsync(id) {
+  const cached = worldBinaryPath(id);
+  if (fs.existsSync(cached)) return fs.promises.readFile(cached);
+  if (_worldBinaryJobs.has(id)) return _worldBinaryJobs.get(id);
+  const job = new Promise((resolve, reject) => {
+    const worker = new Worker(`(${worldBinaryWorkerMain.toString()})()`, {
+      eval: true, workerData: { jsonPath: worldPath(id), binPath: cached },
+    });
+    worker.once("message", (m) => m.ok ? resolve() : reject(new Error(m.error || "二进制缓存生成失败")));
+    worker.once("error", reject);
+    worker.once("exit", (code) => { if (code) reject(new Error("二进制缓存线程退出 " + code)); });
+  }).then(() => fs.promises.readFile(cached)).finally(() => _worldBinaryJobs.delete(id));
+  _worldBinaryJobs.set(id, job);
+  return job;
 }
 const worldMetaCache = new Map(); // id -> { mtimeMs, name, blockCount }
 function worldMeta(id, st) {
@@ -852,19 +894,27 @@ const server = http.createServer((req, res) => {
         const p = worldPath(id);
         const ae = String(req.headers["accept-encoding"] || "");
         if (url.searchParams.get("format") === "binary" && fs.existsSync(p)) {
-          try {
-            const bin = readWorldBinary(id);
-            res.writeHead(200, {
-              "Content-Type": "application/octet-stream",
-              "Content-Encoding": "gzip",
-              "Content-Length": bin.length,
-              "X-World-Format": "binary-v1",
-              "Cache-Control": "no-store"
+          readWorldBinaryAsync(id)
+            .then((bin) => {
+              res.writeHead(200, {
+                "Content-Type": "application/octet-stream",
+                "Content-Encoding": "gzip",
+                "Content-Length": bin.length,
+                "X-World-Format": "binary-v1",
+                "Cache-Control": "no-store"
+              });
+              res.end(bin);
+            })
+            .catch((err) => {
+              console.error("world binary cache failed", id, err);
+              if (fs.existsSync(p) && /gzip/i.test(ae)) {
+                res.writeHead(200, { "Content-Type": MIME[".json"], "Content-Encoding": "gzip", "Cache-Control": "no-store" });
+                return fs.createReadStream(p).pipe(res);
+              }
+              const w = readWorld(id);
+              return w ? json(res, 200, w) : json(res, 404, { error: "not found" });
             });
-            return res.end(bin);
-          } catch (err) {
-            console.error("world binary cache failed", id, err);
-          }
+          return;
         }
         if (fs.existsSync(p) && /gzip/i.test(ae)) {
           // 存的就是 gzip(JSON)，原样送出，浏览器自动解压
