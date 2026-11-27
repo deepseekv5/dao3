@@ -15,7 +15,7 @@ function colorOf(c, fallbackHex) {
   return out;
 }
 
-const CHUNK = 16;
+const CHUNK = 32;
 // 面表：dir 法线, corners 4 顶点(单位立方体偏移), uv 每角 (su,sv)。槽位见 atlas.faceOrder
 // FirstPersonControls — 第一人称视角控制（WASD 移动 + 鼠标视角）
 class FirstPersonControls {
