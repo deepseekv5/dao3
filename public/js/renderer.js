@@ -291,6 +291,8 @@ export class VoxelRenderer {
     this.models = new THREE.Group(); this.scene.add(this.models);
     this.edgeGroup = new THREE.Group(); this.scene.add(this.edgeGroup);
     this.chunkMeshes = new Map(); // key -> {opaque,trans,glow}
+    this._batches = [];
+    this._batchesFinalized = false;
 
     // 接地底板 + 网格（尺寸随世界调整）
     this.baseplate = new THREE.Mesh(
@@ -746,6 +748,8 @@ vec2 fxTileRect(float t){
       if (m.geometry) m.geometry.dispose();
     }
     this.chunkMeshes.clear();
+    for (const b of this._batches) { this.group.remove(b); b.dispose?.(); }
+    this._batches = []; this._batchesFinalized = false;
     this._build.clear(); this._buildQueued = false;
     this._viewKey = "";
     if (!this.world) return;
@@ -804,6 +808,37 @@ vec2 fxTileRect(float t){
       if (performance.now() - started > 12) break;
     }
     if (this._build.size) this._scheduleFlush();
+    else if (!this._batchesFinalized) this.finalizeBatches();
+  }
+  finalizeBatches() {
+    this._batchesFinalized = true;
+    const regions = new Map();
+    for (const [key, rec] of this.chunkMeshes) {
+      if (!rec || !rec.opaque) continue;
+      const [cx, cy, cz] = key.split(",").map(Number);
+      const region = `${Math.floor(cx / 4)},${Math.floor(cy / 4)},${Math.floor(cz / 4)}`;
+      if (!regions.has(region)) regions.set(region, []);
+      regions.get(region).push(rec);
+    }
+    for (const recs of regions.values()) {
+      const geoms = recs.map((r) => r.opaque.geometry);
+      const vertexCount = geoms.reduce((n, g) => n + g.attributes.position.count, 0);
+      const indexCount = geoms.reduce((n, g) => n + (g.index ? g.index.count : 0), 0);
+      if (!vertexCount || !indexCount) continue;
+      let batch;
+      try { batch = new THREE.BatchedMesh(recs.length, vertexCount, indexCount, this.opaqueMat); }
+      catch { continue; }
+      const matrix = new THREE.Matrix4();
+      for (let i = 0; i < recs.length; i++) {
+        const id = batch.addGeometry(geoms[i]);
+        batch.setMatrixAt(id, matrix);
+        recs[i].batchId = id; recs[i].batch = batch;
+      }
+      for (const r of recs) { this.group.remove(r.opaque); r.opaque.geometry.dispose(); r.opaque = null; }
+      batch.castShadow = true; batch.receiveShadow = true;
+      batch.computeBoundingSphere();
+      this.group.add(batch); this._batches.push(batch);
+    }
   }
   waitForVisibleChunks(onProgress) {
     const pending = new Set([...this._build.keys()].slice(0, 9)), total = pending.size;
@@ -899,7 +934,7 @@ vec2 fxTileRect(float t){
 
   buildChunk(cx, cy, cz, key) {
     const old = this.chunkMeshes.get(key);
-    if (old) { if (old.opaque) this.disposeMesh(old.opaque); if (old.trans) this.disposeMesh(old.trans); if (old.water) this.disposeMesh(old.water); if (old.glow) this.disposeMesh(old.glow); if (old.barrier) this.disposeMesh(old.barrier); }
+    if (old) { if (old.batchId != null) old.batch.setVisibleAt(old.batchId, false); if (old.opaque) this.disposeMesh(old.opaque); if (old.trans) this.disposeMesh(old.trans); if (old.water) this.disposeMesh(old.water); if (old.glow) this.disposeMesh(old.glow); if (old.barrier) this.disposeMesh(old.barrier); }
     const w = this.world; if (!w) { this.chunkMeshes.delete(key); return; }
     const A = this.atlas;
     const pos = [], nor = [], uv = [], idx = [], av = [], col = [];
