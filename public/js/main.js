@@ -466,6 +466,21 @@ async function ensureMeshAsset(base) {
   } catch { return null; }
 }
 
+async function recoverOfficialEntities(meta) {
+  if (!meta || (meta.entities && meta.entities.length) || !meta.officialVersionControl) return false;
+  try {
+    const got = await io.fetchOfficialEntities({ versionControl: meta.officialVersionControl, entitiesTree: meta.officialEntitiesTree }, meta.branchKey || "");
+    if (!got || !got.entities.length) return false;
+    meta.entities = got.entities;
+    meta.groups = got.groups || [];
+    state.entities = got.entities;
+    markDirty();
+    return true;
+  } catch (err) {
+    console.warn("[entities] 自动补回官方实体失败", err);
+    return false;
+  }
+}
 async function loadWorld(id) {
   const w = await io.apiLoadWorldFast(id);
   if (!w) { toast("世界不存在，使用空世界"); return; }
@@ -473,6 +488,7 @@ async function loadWorld(id) {
   if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain);
   if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts;
   if (state.meta.entities) state.entities = state.meta.entities;
+  await recoverOfficialEntities(state.meta);
   if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); }
   replaceWorld(w);
   ui.setWorldName(state.meta.name);
@@ -531,7 +547,7 @@ async function boot() {
   const seed = await io.apiLoadWorldFast(worldId, (progress) => {
     bootUi.stage(24 + progress * 22, `正在解码体素 ${Math.round(progress * 100)}%`);
   });
-  if (seed) { world = seed; ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain); if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts; if (state.meta.entities) state.entities = state.meta.entities; if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); } }
+  if (seed) { world = seed; ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain); if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts; if (state.meta.entities) state.entities = state.meta.entities; await recoverOfficialEntities(state.meta); if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); } }
   bootUi.stage(46, "正在生成首屏区块…");
   renderer.setWorld(world, state.meta.player && state.meta.player.initialPosition);
   applyTerrain();

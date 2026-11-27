@@ -1335,7 +1335,7 @@ export function moveSelectedModel(x, y, z) {
 /* ------------------------------ zip 项目包导入 ------------------------------ */
 export async function importProject(file) {
   const e = E;
-  const res = await io.importProjectZip(file);
+  const res = /\.boxproject$/i.test(file.name || "") ? await io.importBoxProject(file) : await io.importProjectZip(file);
   if (!res.world) { e.toast("导入失败：" + res.warnings.join("；")); return false; }
   // block.json 点名了、但包里没带的配置：问一句再联网取。逻辑在 io.completeMissingFromBlock，
   // 工作台那条导入路径共用同一段——以前两边各写一份，工作台那份干脆没问，
@@ -1348,6 +1348,9 @@ export async function importProject(file) {
     scripts: res.scripts.length ? res.scripts : (prev.scripts || []),
     entities: res.entities || [], groups: res.groups || [], models: [],
     meshNames: (res.meshNames && res.meshNames.length) ? res.meshNames : (prev.meshNames || []),
+    mapId: res.mapId || prev.mapId || "",
+    branchKey: res.branchKey || prev.branchKey || "",
+    officialVersionControl: res.officialVersionControl || prev.officialVersionControl || "",
   });
   if (cfg.player) {
     // 认**形状**而不是认数值大小：官方 blob 一定带 allowJump / noClip / cameraType 这类
@@ -1433,7 +1436,8 @@ export async function importProject(file) {
   if (wid) {
     for (const f of meshFiles) {
       try {
-        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(f.rel)}`, { method: "POST", body: f.bytes });
+        const rel = f.rel || ("models/" + f.name + f.ext);
+        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(rel)}`, { method: "POST", body: f.bytes });
         if (r.ok) stored++;
       } catch { /* 单个存不上不该让整次导入失败，下面统一报数 */ }
     }

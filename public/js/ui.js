@@ -843,7 +843,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   fileMenu.className = "worldlist"; fileMenu.style.right = "auto"; fileMenu.style.left = "0"; fileMenu.style.top = "44px";
   [["返回主界面", () => $("btnHome").click()],
    ["新建世界", () => window.__openSizeModal && window.__openSizeModal()], ["保存 (Ctrl+S)", save],
-   ["导入项目包 (.zip)", () => pickFile(".zip", async (f) => { await importProject(f); })],
+   ["导入项目包 (.zip / .boxproject)", () => pickFile(".zip,.boxproject", async (f) => { await importProject(f); })],
    ["导出项目包 (.zip) 全部内容", () => io.exportProjectZip({ world: liveWorld(), state }).then((r) => toast(`已导出 ${r.entries} 个文件 · ${(r.bytes / 1048576).toFixed(1)} MB`))],
    ["生成地形…（只换方块）", () => window.__openTerrainModal && window.__openTerrainModal()],
    ["导入 .gz 地图", () => pickFile(".gz,.json", async (f) => replace(await io.importGz(f, atlas)))],

@@ -391,6 +391,27 @@ export async function fetchBlockCid(hash) {
   return await r.json();
 }
 
+/** 包里有 permission 根清单但没有实体树时，顺着 versionControl → branch → project 取回官方实体。 */
+export async function fetchOfficialEntities(block, branchKey = "") {
+  if (!block || typeof block !== "object") return null;
+  let cid = typeof block.versionControl === "string" ? block.versionControl : "";
+  let project = null;
+  if (cid) {
+    let node = await fetchBlockCid(cid);
+    if (node && node.branches) {
+      const branch = branchKey || node.currentBranch || Object.keys(node.branches)[0];
+      const head = node.branches[branch] && node.branches[branch].headHash;
+      if (head) project = await fetchBlockCid(head);
+    } else if (node && node.type === "project") project = node;
+  } else if (block.entitiesTree) project = block;
+  if (!project) return null;
+  const tree = typeof project.entitiesTree === "string" ? await fetchBlockCid(project.entitiesTree) : project.entitiesTree;
+  if (!tree || typeof tree !== "object") return null;
+  const entities = flattenTree(tree);
+  const groups = Object.values(tree).filter((n) => n && n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds || [] }));
+  return { entities, groups, project };
+}
+
 /** 包里缺、block.json 又点名的那几块：问一句再联网补齐，补齐结果直接写回 res。
  *
  *  编辑器与工作台两条导入路径都必须走这里。工作台以前直接调 importProjectZip，
@@ -673,6 +694,8 @@ export async function exportProjectZip({ world, state, name, download = true }) 
 // 环境、区域一个都没进来，界面自然什么都没变。所以下面统一走 findCfg() 两套都认。
 export async function importProjectZip(file) {
   const { entries, extract } = await readZipEntries(file);
+  const boxEnt = entries.find((e) => /\.boxproject$/i.test(e.name));
+  if (boxEnt) return importBoxProject(await extract(boxEnt));
   const warnings = [];
   let rawMeshes = 0;   // 只登记了名字、没转成可渲染模型的 .vb/.vox 个数。
                       // 声明放最前面：它曾在第 4 步就被读一次，let 的 TDZ 让整次导入抛错。
@@ -727,6 +750,11 @@ export async function importProjectZip(file) {
   const blockEnt = entries.find((e) => /(^|\/)block\.json$/i.test(e.name));
   if (blockEnt) consumed.add(blockEnt.name);
   try { block = await jsonOf(blockEnt); } catch { block = null; }
+  let mapId = "", branchKey = "";
+  const mapIdEnt = entries.find((e) => /(^|\/)meta\/mapId\.txt$/i.test(e.name));
+  if (mapIdEnt) { try { mapId = new TextDecoder().decode(await extract(mapIdEnt)).trim(); consumed.add(mapIdEnt.name); } catch {} }
+  const branchEnt = entries.find((e) => /(^|\/)meta\/branchKey\.txt$/i.test(e.name));
+  if (branchEnt) { try { branchKey = new TextDecoder().decode(await extract(branchEnt)).trim(); consumed.add(branchEnt.name); } catch {} }
 
   // 2) 项目名（project/map.json 优先）
   const mapJson = entries.find((e) => /project\/map\.json$/i.test(e.name));
@@ -753,7 +781,7 @@ export async function importProjectZip(file) {
   const treeEnt = entries.find((e) => /entitiesTree.*\.json$/i.test(e.name));
   if (flatEnt) consumed.add(flatEnt.name);
   if (treeEnt) consumed.add(treeEnt.name);
-  const groups = treeEnt ? Object.values(await jsonOf(treeEnt)).filter((n) => n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds })) : [];
+  let groups = treeEnt ? Object.values(await jsonOf(treeEnt)).filter((n) => n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds })) : [];
   if (flatEnt && !entities.length) {
     try { entities = normalizeEntities(await jsonOf(flatEnt)); } catch (err) { warnings.push("entities.json 解析失败: " + err.message); }
   }
@@ -784,7 +812,18 @@ export async function importProjectZip(file) {
       } catch {}
     }
   }
-  // 3b) 项目配置块（官方 blob：player / physics / environment / ambientSound / zones / uiTree）
+  if (!entities.length && block && block.versionControl) {
+    try {
+      const official = await fetchOfficialEntities(block, branchKey);
+      if (official && official.entities.length) {
+        entities = official.entities;
+        groups = official.groups;
+        warnings.push(`包里没有实体摆放，已从官方工程补回 ${entities.length} 个实体`);
+      }
+    } catch (err) {
+      warnings.push("包里没有实体摆放，自动取回官方实体失败：" + ((err && err.message) || err));
+    }
+  }
   const projectCfg = {};
   await Promise.all(["player", "physics", "environment", "ambientSound", "zones", "uiTree", "gamepad"].map(async (k) => {
     const en = findCfg(k);
@@ -993,7 +1032,7 @@ export async function importProjectZip(file) {
     && !/(^|\/)(models?|meshes?)\//i.test(e.name));
   if (oddJson.length) warnings.push(`未识别 ${oddJson.length} 个配置文件（${oddJson.slice(0, 3).map((x) => x.name.split("/").slice(-2).join("/")).join("、")}${oddJson.length > 3 ? " 等" : ""}），已跳过`);
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, audioFiles, meshNames, pictureNames, pictureFiles, meshes, meshFiles, meshAssetEntries, extractEntry: (e) => extract(e), assets, assetNames, block, voxMeshes, vbMeshes, pointerMeshes, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, audioFiles, meshNames, pictureNames, pictureFiles, meshes, meshFiles, meshAssetEntries, extractEntry: (e) => extract(e), assets, assetNames, block, mapId, branchKey, officialVersionControl: block && block.versionControl || "", voxMeshes, vbMeshes, pointerMeshes, warnings };
 }
 
 // 官方"清单式导出"里的 .vox 不是模型本体，而是 120~300 字节的指针：
@@ -1045,4 +1084,146 @@ function downloadBlob(blob, name) {
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+function tarFiles(bytes) {
+  const out = new Map();
+  const dec = new TextDecoder();
+  let p = 0;
+  const str = (a, n) => dec.decode(bytes.subarray(a, a + n)).replace(/\0.*$/, "").trim();
+  while (p + 512 <= bytes.length) {
+    const name = str(p, 100);
+    if (!name) break;
+    const prefix = str(p + 345, 155);
+    const full = (prefix ? prefix + "/" : "") + name;
+    const size = parseInt(str(p + 124, 12) || "0", 8) || 0;
+    const type = bytes[p + 156];
+    const start = p + 512;
+    if ((type === 0 || type === 48) && start + size <= bytes.length) out.set(full, bytes.subarray(start, start + size));
+    p = start + Math.ceil(size / 512) * 512;
+  }
+  return out;
+}
+
+function officialChunkBoxes(bytes) {
+  let p = 0;
+  const rv = () => {
+    let v = 0, mul = 1;
+    while (p < bytes.length) { const b = bytes[p++]; v += (b & 0x7f) * mul; if (!(b & 0x80)) return v; mul *= 128; }
+    return 0;
+  };
+  const ids = Array.from({ length: rv() }, rv);
+  const count = rv(), boxes = [];
+  let px = 0, py = 0, pz = 0;
+  const de = (v) => {
+    v &= 1227133513; v = (v | (v >>> 2)) & 3272356035; v = (v | (v >>> 4)) & 251719695;
+    v = (v | (v >>> 8)) & 4278190335; v = (v | (v >>> 16)) & 0x3ff; return (v << 22) >> 22;
+  };
+  const sign = (v) => (v & 1 ? -(v >> 1) - 1 : v >> 1);
+  for (let i = 0; i < count; i++) {
+    const min = rv(), max = rv(), idc = rv();
+    const x0 = de(min), y0 = de(min >>> 1), z0 = de(min >>> 2);
+    const x1 = de(max), y1 = de(max >>> 1), z1 = de(max >>> 2);
+    const minX = (sign(x0) + px) & 31, minY = (sign(y0) + py) & 31, minZ = (sign(z0) + pz) & 31;
+    boxes.push({ x: minX, y: minY, z: minZ, w: x1, h: y1, d: z1, id: ids[idc] || 0 });
+    px = minX; py = minY; pz = minZ;
+  }
+  return boxes;
+}
+
+export async function importBoxProject(input) {
+  let bytes = input instanceof Uint8Array ? input : new Uint8Array(await input.arrayBuffer());
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) bytes = await gunzip(bytes);
+  const files = tarFiles(bytes);
+  const warnings = [];
+  const dirs = [...new Set([...files.keys()].filter((n) => /\/project\.json$/.test(n)).map((n) => n.replace(/\/project\.json$/, "")))];
+  if (!dirs.length) throw new Error("boxproject 里没有工程项目");
+  const dir = dirs.find((d) => { try { return JSON.parse(new TextDecoder().decode(files.get(d + "/project.json"))).mapRole === "main"; } catch { return false; } }) || dirs[0];
+  const info = JSON.parse(new TextDecoder().decode(files.get(dir + "/project.json")));
+  const blobs = new Map();
+  for (const [n, b] of files) if (n.startsWith(dir + "/source/blobs/")) blobs.set(n.split("/").pop(), b);
+  const jb = (hash) => { const b = blobs.get(hash); return b ? JSON.parse(new TextDecoder().decode(b)) : null; };
+  const state = JSON.parse(new TextDecoder().decode(files.get(dir + "/source/project-state.json")));
+  const perm = jb(state.permissionHash);
+  if (!perm) throw new Error("boxproject 权限块缺失");
+  const vc = jb(perm.versionControl);
+  const branch = vc?.currentBranch || "master";
+  const head = vc?.branches?.[branch]?.headHash;
+  const project = head ? jb(head) : null;
+  if (!project) throw new Error("boxproject 工程头缺失");
+  const voxInfo = jb(project.voxels);
+  if (!voxInfo || !voxInfo.chunks) throw new Error("boxproject 体素索引缺失");
+  const shape = voxInfo.shape
+    ? [voxInfo.shape.x, voxInfo.shape.y, voxInfo.shape.z]
+    : [Math.max(...voxInfo.chunks.length, 1), 1, 1];
+  const world = new VoxelWorld(shape);
+  const X = shape[0], Y = shape[1], Z = shape[2], XY = X * Y;
+  let ptr = 0, filled = 0;
+  for (let z = 0; z < Z; z += 32) for (let y = 0; y < Y; y += 32) for (let x = 0; x < X; x += 32) {
+    const hash = voxInfo.chunks[ptr++];
+    const data = blobs.get(hash);
+    if (!data || data.length <= 2) continue;
+    for (const b of officialChunkBoxes(data)) {
+      const id = b.id & 0xffff; if (!id) continue;
+      const x1 = Math.min(32, b.x + b.w), y1 = Math.min(32, b.y + b.h), z1 = Math.min(32, b.z + b.d);
+      for (let dz = b.z; dz < z1; dz++) for (let dy = b.y; dy < y1; dy++) for (let dx = b.x; dx < x1; dx++) {
+        world.map.set((x + dx) + (y + dy) * X + (z + dz) * XY, id); filled++;
+      }
+    }
+  }
+  const tree = jb(project.entitiesTree) || {};
+  const entities = flattenTree(tree);
+  const groups = Object.values(tree).filter((n) => n && n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds || [] }));
+  const assets = jb(project.assets) || {};
+  const meshFiles = [], meshNames = [], meshes = {};
+  for (const [key, meta] of Object.entries(assets)) {
+    if (meta?.type === 9 && key.startsWith("gltf/") && meta.hash) {
+      const buf = blobs.get(meta.hash);
+      if (!buf) continue;
+      const name = key.slice(5);
+      meshNames.push(name);
+      meshFiles.push({ name, ext: ".gltf", bytes: buf });
+    } else if (meta?.type === 2 && key.startsWith("mesh/") && meta.hash) {
+      const ptr = jb(meta.hash);
+      const data = ptr?.dataHash ? blobs.get(ptr.dataHash) : null;
+      if (!data) continue;
+      const name = key.slice(5).replace(/\.vb$/i, "");
+      meshNames.push(name);
+      meshFiles.push({ name, ext: ".bin", bytes: data });
+      meshFiles.push({ name, ext: ".json", bytes: blobs.get(meta.hash) });
+    }
+  }
+  const uniqueMeshNames = [...new Set(meshNames)];
+  meshNames.length = 0; meshNames.push(...uniqueMeshNames);
+  const audio = {}, audioFiles = [];
+  for (const [key, meta] of Object.entries(assets)) {
+    if (meta?.type !== 6 || !meta.hash) continue;
+    const buf = blobs.get(meta.hash); if (!buf) continue;
+    const name = key.split("/").pop();
+    audio[name] = buf; audioFiles.push({ rel: "audio/" + name, bytes: buf });
+  }
+  const scripts = [];
+  const scriptIndex = typeof project.scriptAssets === "string" ? jb(project.scriptAssets) : project.scriptAssets;
+  for (const [key, meta] of Object.entries(scriptIndex || {})) {
+    const hash = typeof meta === "string" ? meta : meta?.hash;
+    if (!hash) continue;
+    const buf = blobs.get(hash); if (!buf) continue;
+    const name = key.split("/").pop();
+    if (/\.js$/i.test(name)) scripts.push({ name, code: new TextDecoder().decode(buf) });
+  }
+  const cfg = {};
+  for (const k of ["player", "physics", "environment", "zones", "uiTree", "ambientSound", "gamepad"]) {
+    const v = typeof project[k] === "string" ? jb(project[k]) : project[k];
+    if (v) cfg[k] = v;
+  }
+  return {
+    world, name: info.name || "未命名地图", scripts, entities, groups,
+    projectCfg: cfg, audio, audioFiles, meshNames, pictureNames: [], pictureFiles: [],
+    meshes, meshFiles, meshAssetEntries: [], extractEntry: null,
+    assets, assetNames: { audio: Object.keys(audio), lut: [], part: [] },
+    mapId: info.permanentMapId || "", branchKey: branch,
+    officialVersionControl: perm.versionControl || "",
+    voxMeshes: [], vbMeshes: [], pointerMeshes: [], warnings,
+    boxFilled: filled,
+  };
 }

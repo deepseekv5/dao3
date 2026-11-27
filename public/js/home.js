@@ -61,7 +61,7 @@ const STARTS = [
   { key: "flat", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 5 21 10.5 12 16 3 10.5z\"/></svg>", name: "超平坦", meta: "100 \u00d7 32 \u00d7 100", action: () => goNew("超平坦世界", "flat") },
   { key: "demo", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 18.5l5.5-8 4 5.5 2.5-3 6 5.5z\"/><circle cx=\"8\" cy=\"6.5\" r=\"1.7\"/></svg>", name: "起伏地形", meta: "48 \u00d7 32 \u00d7 48 \u00b7 含示例小屋", action: () => goNew("起伏地形岛", "demo") },
   { key: "empty", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2.5\"/></svg>", name: "空白世界", meta: "尺寸自定", action: () => goNew("空白世界", "empty") },
-  { key: "import", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 4v10M8 10.5l4 4 4-4M4.5 19.5h15\"/></svg>", name: "导入地图", meta: ".zip \u00b7 .gz \u00b7 .vox", action: () => $("htFile").click() },
+  { key: "import", ico: "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 4v10M8 10.5l4 4 4-4M4.5 19.5h15\"/></svg>", name: "导入地图", meta: ".zip \u00b7 .boxproject \u00b7 .gz \u00b7 .vox", action: () => $("htFile").click() },
 ];
 
 /** 把随包官方模板的真实情况写进那张卡：名字、尺寸、方块数全部来自 /api/consent。 */
@@ -278,6 +278,7 @@ function importFile(file) {
     await atlas.load("/data");
     let res;
     if (ext === "zip") res = await io.completeMissingFromBlock(await io.importProjectZip(file));
+    else if (ext === "boxproject") res = await io.importBoxProject(file);
     else if (ext === "vox") res = { world: await io.importVox(file, atlas), name: file.name.replace(/\.vox$/i, ""), scripts: [], entities: [], meshNames: [], meshes: {}, warnings: [] };
     else res = { world: await io.importGz(file, atlas), name: file.name.replace(/\.(gz|json)$/i, ""), scripts: [], entities: [], meshNames: [], meshes: {}, warnings: [] };
     if (!res || !res.world) throw new Error("未能解析文件");
@@ -291,7 +292,7 @@ function importFile(file) {
     if (res.pictureNames && res.pictureNames.length) meta.pictureNames = res.pictureNames;
     if (res.projectCfg && res.projectCfg.player) meta.player = Object.assign({}, res.projectCfg.player, { _units: "official" });
     if (res.projectCfg && res.projectCfg.physics) meta.worldSettings = Object.assign({}, res.projectCfg.physics, { airFriction: res.projectCfg.physics.velocityDamping ?? 0.01 });
-    if (ext === "zip") {
+    if (ext === "zip" || ext === "boxproject") {
       const roots = await saveZipAssets(id, res);
       if (roots.assetRoot) meta.assetRoot = roots.assetRoot;
       if (roots.pictureRoot) meta.pictureRoot = roots.pictureRoot;
@@ -302,6 +303,9 @@ function importFile(file) {
     if (res.projectCfg && res.projectCfg.zones) meta.zones = res.projectCfg.zones;
     if (res.projectCfg && res.projectCfg.ambientSound) meta.ambientSound = res.projectCfg.ambientSound;
     if (res.projectCfg && res.projectCfg.displayName) { meta.displayName = res.projectCfg.displayName; meta.name = res.projectCfg.displayName; }
+    if (res.mapId) meta.mapId = res.mapId;
+    if (res.branchKey) meta.branchKey = res.branchKey;
+    if (res.officialVersionControl) meta.officialVersionControl = res.officialVersionControl;
     const payload = res.world.toPayload(meta);
     const j = await io.apiSaveWorld(id, payload);
     if (!j.ok) throw new Error(j.error || "保存失败");
