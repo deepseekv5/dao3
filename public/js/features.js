@@ -109,6 +109,7 @@ function wireTopMenu() {
   tabs.forEach((t) => {
     t.onclick = () => {
       tabs.forEach((x) => x.classList.remove("active")); t.classList.add("active");
+      E.packClosePreview?.();
       const m = t.dataset.menu;
       const libCard = document.getElementById("libCard");
       const modelPanel = document.getElementById("modelPanel");
@@ -1993,7 +1994,7 @@ export function wireStore() {
   }
   $("storeAdd").onclick = () => { items().push(PRODUCT_DEFAULT()); sel = items().length - 1; persist(); e.toast("已新建商品"); };
   const pb = $("packBack");
-  if (pb) pb.onclick = () => { document.getElementById("packScreen").classList.remove("show"); document.getElementById("libCard").style.display = "block"; document.querySelector('.mtab[data-menu="build"]')?.classList.add("active"); };
+  if (pb) pb.onclick = () => { E.packClosePreview?.(); document.getElementById("packScreen").classList.remove("show"); document.getElementById("libCard").style.display = "block"; document.querySelector('.mtab[data-menu="build"]')?.classList.add("active"); };
   $("storeBack").onclick = () => { screen.classList.remove("show"); document.getElementById("libCard").style.display = "block"; E.ctx.mode = "build"; document.querySelector('.mtab[data-menu="build"]')?.classList.add("active"); };
   e.renderStore = render;
   render();

@@ -35,8 +35,22 @@ let cat = "model";
 let query = "";
 let files = [];
 let menu = null;
+let preview = null;
 
 function closeMenu() { menu?.remove(); menu = null; }
+function closePreview() {
+  if (!preview) return;
+  const p = preview;
+  preview = null;
+  try { p.cleanup?.(); } catch {}
+  p.el.remove();
+}
+
+const extOf = (p) => (base(p).split(".").pop() || "").toLowerCase();
+const isImage = (p) => ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(extOf(p));
+const isAudio = (p) => ["mp3", "wav", "ogg", "m4a", "aac", "flac"].includes(extOf(p));
+const isModel = (p) => ["glb", "gltf", "vox", "vb"].includes(extOf(p));
+const canPreview = (p) => isImage(p) || isAudio(p) || isModel(p);
 
 function idxOf(path) {
   const t = E.state.meta.assetIndex;
@@ -49,6 +63,7 @@ function idxOf(path) {
 }
 
 async function refresh() {
+  closePreview();
   const id = E.worldId;
   try {
     const r = await fetch(`/api/world/${encodeURIComponent(id)}/asset`);
@@ -98,12 +113,132 @@ function remoteRows() {
 function thumb(f) {
   const name = base(f.path);
   const ext = name.split(".").pop().toLowerCase();
-  if (["png", "jpg", "jpeg", "webp", "gif", "bmp"].includes(ext)) {
+  if (isImage(f.path)) {
     return `<img src="${esc(assetUrl(f.path))}" alt="" loading="lazy"/>`;
   }
-  if (ext === "mp3" || ext === "wav" || ext === "ogg") return `<span class="pk-audio">♪</span>`;
+  if (isAudio(f.path)) return `<span class="pk-audio">♪</span>`;
   if (["js", "json"].includes(ext)) return `<span class="pk-code">${ext.toUpperCase()}</span>`;
+  if (isModel(f.path)) return `<span class="pk-vb">3D</span>`;
   return `<span class="pk-vb">${name.slice(0, 2)}</span>`;
+}
+
+function previewShell(path) {
+  closePreview();
+  const el = document.createElement("div");
+  el.className = "pk-preview";
+  el.innerHTML = `<div class="pk-preview-card" role="dialog" aria-modal="true">
+    <header><span class="pk-preview-name">${esc(base(path))}</span><span class="pk-preview-path">${esc(path)}</span><button class="pk-preview-close" title="关闭">×</button></header>
+    <div class="pk-preview-body"></div>
+  </div>`;
+  document.body.appendChild(el);
+  const cleanupFns = [];
+  const escKey = (ev) => { if (ev.key === "Escape") closePreview(); };
+  window.addEventListener("keydown", escKey);
+  cleanupFns.push(() => window.removeEventListener("keydown", escKey));
+  el.onclick = (ev) => { if (ev.target === el) closePreview(); };
+  el.querySelector(".pk-preview-close").onclick = closePreview;
+  preview = { el, cleanup: () => cleanupFns.forEach((fn) => fn()) };
+  return { body: el.querySelector(".pk-preview-body"), cleanupFns };
+}
+
+async function openPreview(path) {
+  if (!canPreview(path)) return E.toast("这种文件没有预览", true);
+  const { body, cleanupFns } = previewShell(path);
+  const session = preview;
+  if (isImage(path)) {
+    const img = document.createElement("img");
+    img.className = "pk-preview-image"; img.src = assetUrl(path); img.alt = base(path);
+    img.onerror = () => { body.innerHTML = '<p class="pk-preview-error">图片读取失败</p>'; };
+    body.appendChild(img);
+    return;
+  }
+  if (isAudio(path)) {
+    const audio = document.createElement("audio");
+    audio.controls = true; audio.autoplay = true; audio.src = assetUrl(path);
+    const wave = document.createElement("canvas");
+    wave.className = "pk-preview-wave"; wave.width = 960; wave.height = 200;
+    body.append(audio, wave);
+    cleanupFns.push(() => { audio.pause(); audio.removeAttribute("src"); audio.load(); });
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const data = await ctx.decodeAudioData(await (await fetch(assetUrl(path))).arrayBuffer());
+      if (preview !== session) { ctx.close(); return; }
+      const g = wave.getContext("2d"), ch = data.getChannelData(0), step = Math.max(1, Math.floor(ch.length / wave.width));
+      g.fillStyle = "#1b1b19"; g.fillRect(0, 0, wave.width, wave.height);
+      g.strokeStyle = "#e3a63c"; g.lineWidth = 1; g.beginPath();
+      for (let x = 0; x < wave.width; x++) {
+        let peak = 0;
+        for (let i = x * step; i < Math.min(ch.length, (x + 1) * step); i += 16) peak = Math.max(peak, Math.abs(ch[i]));
+        const y = peak * (wave.height * .46);
+        g.moveTo(x + .5, wave.height / 2 - y); g.lineTo(x + .5, wave.height / 2 + y);
+      }
+      g.stroke();
+      ctx.close();
+    } catch { /* 解码失败时仍保留原生播放器 */ }
+    return;
+  }
+  body.innerHTML = '<p class="pk-preview-loading">正在解析模型…</p>';
+  try {
+    const THREE = await import("../vendor/three/three.module.js");
+    const { OrbitControls } = await import("../vendor/three/OrbitControls.js");
+    if (preview !== session) return;
+    const canvas = document.createElement("canvas");
+    canvas.className = "pk-preview-canvas";
+    body.innerHTML = ""; body.appendChild(canvas);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x4a4038, 2.2));
+    const sun = new THREE.DirectionalLight(0xfff2dd, 2.4);
+    sun.position.set(4, 8, 6); scene.add(sun);
+    const camera = new THREE.PerspectiveCamera(45, 1, .01, 500);
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 1.4;
+    let object;
+    const ext = extOf(path);
+    if (ext === "glb" || ext === "gltf") {
+      const { GLTFLoader } = await import("../vendor/three/GLTFLoader.js");
+      const buf = await (await fetch(assetUrl(path))).arrayBuffer();
+      const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
+      object = gltf.scene;
+    } else if (ext === "vox") {
+      const { decodeVox } = await import("./world.js");
+      const { voxListToModel } = await import("./features.js");
+      object = voxListToModel(decodeVox(new Uint8Array(await (await fetch(assetUrl(path))).arrayBuffer())), E.atlas);
+    } else {
+      const { vbToVoxList } = await import("./vb.js");
+      const { voxListToModel } = await import("./features.js");
+      const list = vbToVoxList(JSON.parse(await (await fetch(assetUrl(path))).text()), E.atlas.list());
+      object = voxListToModel(list.voxels, E.atlas);
+    }
+    const box = new THREE.Box3().setFromObject(object);
+    if (preview !== session) { renderer.dispose(); return; }
+    const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+    object.position.set(-center.x, -box.min.y, -center.z);
+    const wrap = new THREE.Group(); wrap.add(object); scene.add(wrap);
+    const radius = Math.max(1, size.length() * .5);
+    camera.position.set(radius * 2.2, radius * 1.6, radius * 2.4);
+    controls.target.set(0, size.y * .45, 0); controls.update();
+    const grid = new THREE.GridHelper(radius * 3, 12, 0x70624b, 0x3c3831);
+    grid.position.y = 0; scene.add(grid);
+    const fit = () => {
+      const r = body.getBoundingClientRect();
+      const w = Math.max(240, Math.round(r.width)), h = Math.max(240, Math.round(r.height));
+      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    };
+    fit();
+    const ro = new ResizeObserver(fit); ro.observe(body);
+    let raf = 0;
+    const loop = () => { raf = requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); };
+    loop();
+    cleanupFns.push(() => {
+      cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); renderer.dispose();
+      object.traverse?.((n) => { if (n.isMesh) { n.geometry?.dispose?.(); if (n.material) (Array.isArray(n.material) ? n.material : [n.material]).forEach((m) => m.dispose?.()); } });
+    });
+  } catch (err) {
+    body.innerHTML = `<p class="pk-preview-error">模型预览失败：${esc(err.message || err)}</p>`;
+  }
 }
 
 function render() {
@@ -157,6 +292,11 @@ function render() {
   host.querySelectorAll(".pk-missing").forEach((r) => {
     r.onclick = () => { if (r.dataset.hash) fetchByCid(r.dataset.p, r.dataset.hash); };
   });
+  host.querySelectorAll(".pk-row:not(.pk-missing)").forEach((r) => {
+    if (!canPreview(r.dataset.p)) return;
+    r.classList.add("pk-previewable");
+    r.onclick = (ev) => { if (!ev.target.closest(".pk-more")) openPreview(r.dataset.p); };
+  });
   host.querySelector("#packAdd").onclick = upload;
 }
 
@@ -167,10 +307,10 @@ function openMenu(path, rect, remoteHash) {
   const hash = remoteHash || (ent && ent.hash) || "";
   // 缺的文件只给"取回"：它本地根本没有字节，"下载"和"删除"都是假的
   const items = inTrash
-    ? [["还原", () => restore(path)], ["彻底删除", () => destroy(path)]]
+    ? [...(canPreview(path) ? [["预览", () => openPreview(path)]] : []), ["还原", () => restore(path)], ["彻底删除", () => destroy(path)]]
     : remoteHash
       ? (hash ? [["按 CID 取回内容", () => fetchByCid(path, hash)]] : [])
-      : [["下载", () => download(path)],
+      : [...(canPreview(path) ? [["预览", () => openPreview(path)]] : []), ["下载", () => download(path)],
         ...(hash ? [["按 CID 取回内容", () => fetchByCid(path, hash)]] : []),
         ["删除", () => toTrash(path)]];
   menu = document.createElement("div");
@@ -303,4 +443,5 @@ export function initPack(editor) {
   document.addEventListener("click", closeMenu);
   E.renderPack = async () => { await refresh(); };
   E.packLoadIndex = loadIndex;
+  E.packClosePreview = closePreview;
 }

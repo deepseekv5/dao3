@@ -827,6 +827,8 @@ body.playing.float-edit #peRotate{display:none}
 .pk-rows{flex:1;overflow:auto}
 .pk-row{border-bottom:1px solid var(--line);min-height:52px}
 .pk-row:hover{background:var(--bg2)}
+.pk-previewable{cursor:pointer}
+.pk-previewable:hover .pk-name b{color:var(--primary)}
 /* 资源表里有、本地没有的行：整行可点去取回，所以要做成"可点"的样子，
    并且和已存在的文件区分开——否则用户分不清哪一行是已有的、哪一行是缺的 */
 .pk-missing{cursor:pointer;opacity:.72}
@@ -853,6 +855,21 @@ body.playing.float-edit #peRotate{display:none}
 .pk-menu button{background:none;border:0;color:var(--font-black-major);font-size:12.5px;text-align:left;
   padding:7px 10px;border-radius:5px;cursor:pointer}
 .pk-menu button:hover{background:var(--bg3)}
+.pk-preview{position:fixed;inset:0;z-index:9700;display:grid;place-items:center;background:rgba(8,8,7,.72);backdrop-filter:blur(8px)}
+.pk-preview-card{width:min(900px,92vw);height:min(72vh,660px);display:flex;flex-direction:column;overflow:hidden;
+  background:var(--panel);border:1px solid var(--grey2);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.6)}
+.pk-preview-card header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.pk-preview-name{font-size:13px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pk-preview-path{font-size:10.5px;color:var(--fg3);font-family:ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-preview-close{margin-left:auto;background:none;border:0;color:var(--fg2);font-size:22px;line-height:1;cursor:pointer;padding:0 4px}
+.pk-preview-close:hover{color:#fff}
+.pk-preview-body{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;gap:12px;overflow:auto}
+.pk-preview-image{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;background:#111}
+.pk-preview-canvas{width:100%;height:100%;min-height:320px;display:block;border-radius:8px;background:radial-gradient(circle at 50% 35%,#2a2721,#141311 70%)}
+.pk-preview-wave{width:min(760px,100%);height:120px;border-radius:8px;background:#1b1b19;border:1px solid var(--line)}
+.pk-preview-body audio{width:min(760px,100%)}
+.pk-preview-loading,.pk-preview-error{padding:28px;color:var(--fg2);font-size:13px}
+.pk-preview-error{color:var(--danger,var(--bad))}
 
 /* ---------- 界面 tab：视口上方那条浮动节点条（仿官方） ---------- */
 .ui-stage-wrap{position:relative}
