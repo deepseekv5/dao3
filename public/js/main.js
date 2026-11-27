@@ -357,7 +357,7 @@ async function applySceneModels(meta) {
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(Math.max(4, Math.min(8, navigator.hardwareConcurrency || 4)), queue.length) }, worker));
   for (const d of legacy) {
     const a = await ensureMeshAsset(d.meshName).catch(() => null);
     if (!a || !a.object) { noAsset++; continue; }
