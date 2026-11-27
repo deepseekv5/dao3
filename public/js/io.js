@@ -384,28 +384,28 @@ export const flattenTree = (j) => Object.values(j || {}).filter((n) => n && n.ty
 // 这个函数把缺的那几块按地址取回来。**只在用户明确同意后才调用**：本项目默认不联网。
 const BLOCK_KEYS = ["entitiesTree", "environment", "physics", "player", "zones", "info", "assets", "uiTree", "gamepad", "ambientSound"];
 
-export async function fetchBlockCid(hash) {
-  const r = await fetch(`/api/official-block/${encodeURIComponent(hash)}`);
+export async function fetchBlockCid(hash, { signal } = {}) {
+  const r = await fetch(`/api/official-block/${encodeURIComponent(hash)}`, { signal });
   if (!r.ok) throw new Error("HTTP " + r.status);
   return await r.json();
 }
 
 /** 包里有 permission 根清单但没有实体树时，顺着 versionControl → branch → project 取回官方实体。 */
-export async function fetchOfficialEntities(block, branchKey = "") {
+export async function fetchOfficialEntities(block, branchKey = "", { signal } = {}) {
   if (!block || typeof block !== "object") return null;
   let cid = typeof block.versionControl === "string" ? block.versionControl : "";
   let project = null;
   if (cid) {
-    let node = await fetchBlockCid(cid);
+    let node = await fetchBlockCid(cid, { signal });
     if (node && node.branches) {
       const keys = Object.keys(node.branches);
       const branch = node.branches[branchKey] ? branchKey : (node.branches[node.currentBranch] ? node.currentBranch : keys[keys.length - 1]);
       const head = node.branches[branch] && node.branches[branch].headHash;
-      if (head) project = await fetchBlockCid(head);
+      if (head) project = await fetchBlockCid(head, { signal });
     } else if (node && node.type === "project") project = node;
   } else if (block.entitiesTree) project = block;
   if (!project) return null;
-  const tree = typeof project.entitiesTree === "string" ? await fetchBlockCid(project.entitiesTree) : project.entitiesTree;
+  const tree = typeof project.entitiesTree === "string" ? await fetchBlockCid(project.entitiesTree, { signal }) : project.entitiesTree;
   if (!tree || typeof tree !== "object") return null;
   const entities = flattenTree(tree);
   const groups = Object.values(tree).filter((n) => n && n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds || [] }));

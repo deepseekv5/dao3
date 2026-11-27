@@ -234,7 +234,7 @@ function verifyCid(cid, body) {
 }
 function httpsBuffer(url, redirects = 3) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { rejectUnauthorized: false, headers: { "User-Agent": "laoyou-metaverse-official" }, timeout: 30000 }, (r) => {
+    const req = https.get(url, { rejectUnauthorized: false, headers: { "User-Agent": "laoyou-metaverse-official" }, timeout: 10000 }, (r) => {
       if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && redirects > 0) {
         r.resume();
         resolve(httpsBuffer(new URL(r.headers.location, url).href, redirects - 1));
@@ -246,8 +246,12 @@ function httpsBuffer(url, redirects = 3) {
       r.on("end", () => resolve(Buffer.concat(chunks)));
       r.on("error", reject);
     });
+    // 关掉 TLS 校验只是网关证书兼容；这里必须有硬超时，否则网关不响应时
+    // 启动流程的实体补齐会一直挂起（实测卡在"解码体素 100%"）。
+    const hard = setTimeout(() => req.destroy(new Error("网关超时")), 12000);
+    req.on("close", () => clearTimeout(hard));
     req.on("timeout", () => req.destroy(new Error("网关超时")));
-    req.on("error", reject);
+    req.on("error", (err) => { clearTimeout(hard); reject(err); });
   });
 }
 async function officialBlock(cid) {

@@ -449,7 +449,9 @@ async function ensureMeshAsset(base) {
 async function recoverOfficialEntities(meta) {
   if (!meta || (meta.entities && meta.entities.length) || !meta.officialVersionControl) return false;
   try {
-    const got = await io.fetchOfficialEntities({ versionControl: meta.officialVersionControl, entitiesTree: meta.officialEntitiesTree }, meta.branchKey || "");
+    // 可选增强，不能拖住启动：官方网关不可达时最多等 6 秒
+    const signal = typeof AbortSignal !== "undefined" && AbortSignal.timeout ? AbortSignal.timeout(6000) : undefined;
+    const got = await io.fetchOfficialEntities({ versionControl: meta.officialVersionControl, entitiesTree: meta.officialEntitiesTree }, meta.branchKey || "", { signal });
     if (!got || !got.entities.length) return false;
     meta.entities = got.entities;
     meta.groups = got.groups || [];
@@ -527,7 +529,7 @@ async function boot() {
   const seed = await io.apiLoadWorldFast(worldId, (progress) => {
     bootUi.stage(24 + progress * 22, `正在解码体素 ${Math.round(progress * 100)}%`);
   });
-  if (seed) { world = seed; ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain); if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts; if (state.meta.entities) state.entities = state.meta.entities; await recoverOfficialEntities(state.meta); if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); } }
+  if (seed) { world = seed; ctx.world = world; history.world = world; state.meta = seed.meta || state.meta; if (state.meta.terrain) Object.assign(state.terrain, state.meta.terrain); if (state.meta.scripts && state.meta.scripts.length) state.scripts = state.meta.scripts; if (state.meta.entities) state.entities = state.meta.entities; if (!_seedAssetsLoaded) { _seedAssetsLoaded = true; await loadSeedAssets(state.meta); } }
   bootUi.stage(46, "正在生成首屏区块…");
   renderer.setWorld(world, state.meta.player && state.meta.player.initialPosition);
   applyTerrain();
@@ -729,6 +731,17 @@ async function boot() {
   requestAnimationFrame(() => {
     bootUi.done();
     restoreSceneModels(state.meta);
+    // 实体补齐是可选增强，放到首屏之后再跑：boxproject 源工程本来就没有静态实体时
+    // 以前会在这里 await 官方网关，网关一慢，启动就永远停在"解码体素 100%"。
+    if (!(state.meta.entities && state.meta.entities.length) && state.meta.officialVersionControl) {
+      recoverOfficialEntities(state.meta).then((got) => {
+        if (!got) return;
+        restoreSceneModels(state.meta);
+        ui && ui.refreshTree && ui.refreshTree();
+        updateStatus();
+        toast(`已从官方补齐 ${state.meta.entities.length} 个实体`);
+      }).catch(() => {});
+    }
     setTimeout(() => renderer.prepareFirstFrame().then(startRenderer).catch(startRenderer), 0);
     setTimeout(startRenderer, 1500);
   });

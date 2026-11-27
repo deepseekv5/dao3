@@ -379,10 +379,12 @@ export class VoxelRenderer {
     this.raycaster = new THREE.Raycaster();
     this._build = new Map(); // 脏块去抖
     this.world = null;
-    this.showEdges = true;
+    // 接缝线默认关闭：拉远时屏幕导数变大，深色描边会盖满整个方块面，
+    // 整张地图看起来像蒙了一层黑网格。需要时仍可在工具栏手动打开。
+    this.showEdges = false;
     // 方块接缝线 + 序列帧动画（官方 15 个动画方块：传送带/岩浆/灯牌/彩虹方块…）
     // 两者都由 uniform 驱动，切换或播放不触发重编译。
-    this._edgeU = { value: 1 };
+    this._edgeU = { value: 0 };
     this._anim = { uTime: { value: 0 }, uCells: { value: 32 }, uCell: { value: 18 }, uPad: { value: 1 }, uTile: { value: 16 }, uAtlasW: { value: 576 } };
     this.setAtlasParams = (a) => {
       if (!a) return;
@@ -432,7 +434,9 @@ vec2 fxTileRect(float t){
     vec2 fxF = fract(fxEc);
     vec2 fxW = fwidth(fxEc) * 1.7;
     float fxE = step(fxF.x, fxW.x) + step(1.0 - fxW.x, fxF.x) + step(fxF.y, fxW.y) + step(1.0 - fxW.y, fxF.y);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.045, 0.05, 0.06), clamp(fxE, 0.0, 1.0) * uEdge * 0.8);
+    // 缩到方块面不足十几像素时线宽会超过整个面，必须淡出，否则远景就是一格黑线
+    float fxFar = 1.0 - smoothstep(0.08, 0.18, max(fxW.x, fxW.y));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.045, 0.05, 0.06), clamp(fxE, 0.0, 1.0) * uEdge * 0.8 * fxFar);
   }
 `;
     const patch = (mat) => {
