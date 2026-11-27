@@ -20,7 +20,7 @@ const CATS = [
   { key: "trash", name: "回收站", icon: "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13", match: (p) => /^trash\//i.test(p) },
 ];
 const QUOTA = 100 * 1024 * 1024;   // 官方面板显示 100.00MB，照抄这个上限
-const GATEWAY = "https://static.dao3.fun/block/";
+const apiBlock = (hash) => `/api/official-block/${encodeURIComponent(hash)}`;
 
 // 这一屏的表格是拼 innerHTML 的，而里面**每一段文字都不可信**：文件名来自用户
 // 上传、CID 与资源表键名来自官方网关的远端 JSON。少转义一处就是一个存储型 XSS，
@@ -390,7 +390,7 @@ async function upload() {
 async function fetchByCid(path, hash) {
   E.toast("正在按 CID 取回…");
   try {
-    const r = await fetch(GATEWAY + encodeURIComponent(hash));
+    const r = await fetch(apiBlock(hash));
     if (!r.ok) throw new Error("网关返回 " + r.status);
     const buf = await r.arrayBuffer();
     if (!buf.byteLength) throw new Error("取回的内容是空的");
@@ -431,7 +431,7 @@ async function loadIndex() {
   if (!cid) return;
   E.toast("正在读取官方资源表…");
   try {
-    const r = await fetch(GATEWAY + encodeURIComponent(cid));
+    const r = await fetch(apiBlock(cid));
     if (!r.ok) throw new Error("网关返回 " + r.status);
     const j = await r.json();
     E.state.meta.assetIndex = j;

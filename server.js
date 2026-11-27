@@ -21,6 +21,7 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
+import https from "node:https";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createCommunity } from "./server/community.mjs";
@@ -212,6 +213,62 @@ fs.mkdirSync(MODELS, { recursive: true });
 // 但读取时两处都要找（老包里的 public/assets/worlds 可能已有内容）。
 const ASSETS = path.join(DATA_ROOT, "assets");
 const ASSETS_IN_TREE = path.join(PUBLIC, "assets", "worlds");
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function b58decode(s) {
+  const out = [0];
+  for (const ch of s) {
+    const val = B58.indexOf(ch);
+    if (val < 0) throw new Error("bad base58");
+    let carry = val;
+    for (let i = 0; i < out.length; i++) { const n = out[i] * 58 + carry; out[i] = n & 0xff; carry = n >> 8; }
+    while (carry) { out.push(carry & 0xff); carry >>= 8; }
+  }
+  return Buffer.from(out.reverse());
+}
+function verifyCid(cid, body) {
+  try {
+    const raw = b58decode(cid);
+    if (raw.length !== 34 || raw[0] !== 0x12 || raw[1] !== 0x20) return false;
+    return crypto.createHash("sha256").update(body).digest().equals(raw.subarray(2));
+  } catch { return false; }
+}
+function httpsBuffer(url, redirects = 3) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { rejectUnauthorized: false, headers: { "User-Agent": "laoyou-metaverse-official" }, timeout: 30000 }, (r) => {
+      if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && redirects > 0) {
+        r.resume();
+        resolve(httpsBuffer(new URL(r.headers.location, url).href, redirects - 1));
+        return;
+      }
+      if (r.statusCode !== 200) { r.resume(); reject(new Error("HTTP " + r.statusCode)); return; }
+      const chunks = [];
+      r.on("data", (c) => chunks.push(c));
+      r.on("end", () => resolve(Buffer.concat(chunks)));
+      r.on("error", reject);
+    });
+    req.on("timeout", () => req.destroy(new Error("网关超时")));
+    req.on("error", reject);
+  });
+}
+async function officialBlock(cid) {
+  if (!/^Qm[1-9A-HJ-NP-Za-km-z]{30,50}$/.test(cid)) throw new Error("不是合法的 Qm CID");
+  const cache = path.join(DATA_ROOT, "official-cache", "blocks", cid);
+  if (fs.existsSync(cache)) {
+    const body = fs.readFileSync(cache);
+    if (verifyCid(cid, body)) return body;
+  }
+  let last = null;
+  for (const base of ["https://static.box3.codemao.cn/block/", "https://static.dao3.fun/block/"]) {
+    try {
+      const body = await httpsBuffer(base + encodeURIComponent(cid));
+      if (!verifyCid(cid, body)) throw new Error("CID 校验失败");
+      fs.mkdirSync(path.dirname(cache), { recursive: true });
+      fs.writeFileSync(cache, body);
+      return body;
+    } catch (err) { last = err; }
+  }
+  throw last || new Error("取不到官方内容");
+}
 fs.mkdirSync(ASSETS, { recursive: true });
 const worldAssetDir = (id) => (fs.existsSync(path.join(ASSETS, id)) || !fs.existsSync(path.join(ASSETS_IN_TREE, id)))
   ? path.join(ASSETS, id) : path.join(ASSETS_IN_TREE, id);
@@ -643,6 +700,13 @@ const server = http.createServer((req, res) => {
 
   // ---- API ----
   if (pathname.startsWith("/api/")) {
+    if (pathname.startsWith("/api/official-block/") && req.method === "GET") {
+      const cid = decodeURIComponent(pathname.slice("/api/official-block/".length));
+      officialBlock(cid)
+        .then((body) => send(res, 200, body, { "Content-Type": "application/octet-stream", "Cache-Control": "public, max-age=86400" }))
+        .catch((err) => json(res, 502, { error: String(err && err.message || err) }));
+      return;
+    }
     if (pathname === "/api/version" && req.method === "GET") return json(res, 200, { version: PKG_VERSION, app: OUR_APP });
     if (pathname === "/api/update/check" && req.method === "GET") {
       if (UPDATE_DISABLED) return json(res, 200, { enabled: false, currentVersion: PKG_VERSION });

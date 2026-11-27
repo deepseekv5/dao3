@@ -382,11 +382,10 @@ export const flattenTree = (j) => Object.values(j || {}).filter((n) => n && n.ty
 // physics / player / zones 五个 json，实体表、界面树、资源表、手柄布局全部只留一个
 // CID。于是"导入成功但 0 个实体"——不是我们解析不出来，是包里没有。
 // 这个函数把缺的那几块按地址取回来。**只在用户明确同意后才调用**：本项目默认不联网。
-const GATEWAY = "https://static.dao3.fun/block/";
 const BLOCK_KEYS = ["entitiesTree", "environment", "physics", "player", "zones", "info", "assets", "uiTree", "gamepad", "ambientSound"];
 
 export async function fetchBlockCid(hash) {
-  const r = await fetch(GATEWAY + encodeURIComponent(hash));
+  const r = await fetch(`/api/official-block/${encodeURIComponent(hash)}`);
   if (!r.ok) throw new Error("HTTP " + r.status);
   return await r.json();
 }
@@ -399,7 +398,8 @@ export async function fetchOfficialEntities(block, branchKey = "") {
   if (cid) {
     let node = await fetchBlockCid(cid);
     if (node && node.branches) {
-      const branch = branchKey || node.currentBranch || Object.keys(node.branches)[0];
+      const keys = Object.keys(node.branches);
+      const branch = node.branches[branchKey] ? branchKey : (node.branches[node.currentBranch] ? node.currentBranch : keys[keys.length - 1]);
       const head = node.branches[branch] && node.branches[branch].headHash;
       if (head) project = await fetchBlockCid(head);
     } else if (node && node.type === "project") project = node;

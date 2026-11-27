@@ -372,6 +372,8 @@ async function applySceneModels(meta) {
     const why = state.meta && state.meta.assetRoot ? "对应的 .gltf 不在这个目录里" : "这张图没有记录素材目录（导入时没带模型字节）";
     toast(`${noAsset} 个实体引用的模型加载不出来（${why}）`, true, 6000);
     console.warn(`[models] ${noAsset} 个实体的模型没加载：${why}`);
+  } else if (!ents.length && (state.assets.meshNames || []).length) {
+    toast(`${state.assets.meshNames.length} 个模型资产已加载；源工程没有静态实体摆放，模型由脚本在运行时生成`, true, 8000);
   }
   renderer._modelStreamCleanup = null;
   suspendModelList(false);
