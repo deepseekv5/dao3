@@ -28,6 +28,17 @@ Apache-2.0 的上游仓库，可再分发；音频与赛道模型不随仓库分
     各文件头部保留了原始 license 注释。
 
 
+2b. box3-local-engine 模型解码器（MIT）
+---------------------------------------
+    路径：public/vendor/box-model-decoder.js、public/js/box-model.js
+    授权：MIT  © box3lab / 神岛实验室
+      https://github.com/box3lab/box3-local-engine
+
+    该 bundle 由官方开源工程中的 voxa-project 模型 schema 解码器与 mesher
+    解包函数构建而来，仅用于读取用户已导出的官方 `.json+.bin` 模型；
+    本项目自己的 Three.js 网格装配代码见 public/js/box-model.js。
+
+
 3. 上游 Apache-2.0 素材（有授权，随仓库分发被明确允许）
 ------------------------------------------------------
     Box3Blocks-unityPackage   © 2026 神岛实验室   Apache-2.0

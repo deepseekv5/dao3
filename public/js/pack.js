@@ -49,7 +49,7 @@ function closePreview() {
 const extOf = (p) => (base(p).split(".").pop() || "").toLowerCase();
 const isImage = (p) => ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(extOf(p));
 const isAudio = (p) => ["mp3", "wav", "ogg", "m4a", "aac", "flac"].includes(extOf(p));
-const isModel = (p) => ["glb", "gltf", "vox", "vb"].includes(extOf(p));
+const isModel = (p) => ["glb", "gltf", "vox", "vb", "bin"].includes(extOf(p));
 const canPreview = (p) => isImage(p) || isAudio(p) || isModel(p);
 
 function idxOf(path) {
@@ -202,6 +202,9 @@ async function openPreview(path) {
       const buf = await (await fetch(assetUrl(path))).arrayBuffer();
       const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
       object = gltf.scene;
+    } else if (ext === "bin") {
+      const { buildBoxModel } = await import("./box-model.js");
+      object = buildBoxModel(new Uint8Array(await (await fetch(assetUrl(path))).arrayBuffer()));
     } else if (ext === "vox") {
       const { decodeVox } = await import("./world.js");
       const { voxListToModel } = await import("./features.js");

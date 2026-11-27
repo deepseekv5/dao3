@@ -836,17 +836,25 @@ export async function importProjectZip(file) {
   // 5) 音效 / 网格名 / 图片。大包（几千个文件、几百 MB）不能把所有条目同时解压：
   //    先只按文件名分类，音频与 UI 引用的图片再按需取字节，模型只解析实体真正引用的那几个。
   const audio = {}, meshNames = [], pictureNames = [];
-  const audioEntries = [], modelEntries = [], pictureEntries = [];
+  const audioEntries = [], modelEntries = [], pictureEntries = [], modelJson = new Map(), modelBin = new Map();
   for (const e of entries) {
     if (/(^|\/)(audios?|sounds?)\/.*\.(mp3|wav|ogg|m4a|aac)$/i.test(e.name)) audioEntries.push(e);
     else if (/(^|\/)(meshes?|models?)\/.*\.(vb|vox|glb|gltf)$/i.test(e.name)) {
       modelEntries.push(e);
       const fn = e.name.split("/").pop();
       meshNames.push(fn.replace(/\.(vb|vox|glb|gltf)$/i, ""));
+    } else if (/(^|\/)(meshes?|models?)\/.*\.json$/i.test(e.name)) {
+      modelJson.set(e.name.split("/").pop().replace(/\.json$/i, ""), e);
+    } else if (/(^|\/)(meshes?|models?)\/.*\.bin$/i.test(e.name)) {
+      modelBin.set(e.name.split("/").pop().replace(/\.bin$/i, ""), e);
     } else if (/(^|\/)(pictures?|images?|ui)\/.*\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(e.name)) {
       pictureEntries.push(e);
     }
   }
+  const packedModels = [...modelJson.keys()].filter((name) => modelBin.has(name));
+  meshNames.push(...packedModels);
+  const uniqueMeshNames = [...new Set(meshNames)];
+  meshNames.length = 0; meshNames.push(...uniqueMeshNames);
   const picRel = (name) => {
     const m = String(name).match(/(?:^|\/)(?:pictures?|images?|ui)\/(.+)$/i);
     return m ? "picture/" + m[1].split("/").pop() : "picture/" + String(name).split("/").pop();
@@ -874,6 +882,10 @@ export async function importProjectZip(file) {
     ext: /\.glb$/i.test(e.name) ? ".glb" : ".gltf",
     entry: e,
   })) : [];
+  for (const name of packedModels) {
+    meshAssetEntries.push({ name, ext: ".json", entry: modelJson.get(name) });
+    meshAssetEntries.push({ name, ext: ".bin", entry: modelBin.get(name) });
+  }
   const pictureToRead = heavy ? pictureEntries.filter((e) => uiPics.has(picRel(e.name))) : pictureEntries;
   const pictureFiles = [], audioFiles = [];
   for (const e of audioEntries) {

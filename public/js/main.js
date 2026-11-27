@@ -431,6 +431,23 @@ async function ensureMeshAsset(base) {
       return set(scene);
     } catch { }
   }
+  try {
+    const r = await fetch(root + encodeURIComponent(base) + ".bin");
+    if (r.ok) {
+      const { buildBoxModel } = await import("./box-model.js");
+      const model = buildBoxModel(new Uint8Array(await r.arrayBuffer()));
+      const box = new THREE.Box3().setFromObject(model);
+      if (isFinite(box.min.x) && isFinite(box.max.x)) {
+        const c = box.getCenter(new THREE.Vector3());
+        const wrap = new THREE.Group();
+        wrap.position.set(-c.x, -box.min.y, -c.z);
+        wrap.add(model);
+        wrap.updateMatrixWorld(true);
+        return set(wrap);
+      }
+      return set(model);
+    }
+  } catch { }
   const { voxListToModel } = await import("./features.js");
   try {
     const r = await fetch(root + encodeURIComponent(base) + ".vox");
