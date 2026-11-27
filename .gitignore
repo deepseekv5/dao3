@@ -11,6 +11,7 @@ public/assets/
 # official-project/ 里除了 racing-template/（660KB 的官方 .raw 原始响应，只是导入用的
 # 中间产物，随时能按 CID 重新取回）之外都入库：cids.json、地图数据、以及素材包。
 official-project/racing-template/
+.update/
 server/data/
 
 # ── 上游参考仓库（Apache-2.0，但体积 200MB+，不镜像）─────────────────

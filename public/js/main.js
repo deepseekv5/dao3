@@ -679,6 +679,7 @@ async function boot() {
   // 没有这个钩子，"取回"就只改了磁盘上的字节，画面上什么都不会变。
   window.__editor.replaceSceneModels = () => applySceneModels(state.meta);
   initFeatures(window.__editor);
+  import("./update-ui.js").then((m) => m.initUpdateUi()).catch(() => {});
   bootUi.stage(82, "正在准备模型队列…");
   // 第一人称中心拾取预览（幽灵方块跟随屏幕中心）
   ui.setFPRenderer && ui.setFPRenderer(null);

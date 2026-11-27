@@ -24,7 +24,8 @@ if (!VERSION) { console.error("package.json 缺 version"); process.exit(1); }
 
 // 顶层文件：原样复制
 const FILES = [
-  "server.js", "start.mjs", "package.json", ".gitignore",
+  "server.js", "start.mjs", "update-runner.mjs", "package.json", ".gitignore",
+  "server/chat.mjs", "server/community.mjs", "server/covers.mjs", "server/moderate.mjs", "server/realtime.mjs", "server/sql.mjs",
   "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command",
   "LICENSE", "NOTICE", "README.md", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md",
   "public/index.html", "public/editor.html", "public/voxa.html", "public/site.html",

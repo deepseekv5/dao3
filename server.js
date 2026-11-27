@@ -20,6 +20,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
+import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createCommunity } from "./server/community.mjs";
 import { createModeration } from "./server/moderate.mjs";
@@ -35,6 +37,113 @@ const PKG_VERSION = (() => {
 // 启动器靠这个标识判断"端口上跑的是不是我们自己的上一个实例"。
 // 换品牌时一起改了：旧实例带的是老标识，会被当成别人的进程而不去杀——这是 fail-closed，宁可换个端口也不误杀。
 const OUR_APP = "laoyou-metaverse";
+const UPDATE_REPO = process.env.LAOYOU_UPDATE_REPO || "deepseekv5/dao3";
+const UPDATE_DISABLED = process.env.LAOYOU_NO_UPDATE === "1";
+const UPDATE_TOKEN = crypto.randomBytes(18).toString("hex");
+let updateCache = null, updateBusy = false;
+const semver = (v) => String(v || "0").replace(/^v/i, "").split(".").map((n) => Number(n) || 0);
+function newerVersion(a, b) {
+  const x = semver(a), y = semver(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return false;
+}
+async function latestRelease() {
+  if (updateCache && Date.now() - updateCache.at < 10 * 60 * 1000) return updateCache.data;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "laoyou-metaverse-updater" },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) throw new Error(r.status === 403 ? "GitHub 接口限流，请稍后再试" : "GitHub 返回 " + r.status);
+    const data = await r.json();
+    const asset = (data.assets || []).find((a) => /^DAO3-portable-v.*\.zip$/i.test(a.name));
+    const out = {
+      latestVersion: String(data.tag_name || "").replace(/^v/i, ""),
+      notes: String(data.body || ""),
+      publishedAt: data.published_at || "",
+      url: data.html_url || "",
+      asset: asset ? { name: asset.name, size: asset.size, url: asset.browser_download_url } : null,
+    };
+    updateCache = { at: Date.now(), data: out };
+    return out;
+  } catch (apiErr) {
+    // api.github.com 被代理/限流时，用 release 页面重定向兜底；资产名是固定规则。
+    const h = await fetch(`https://github.com/${UPDATE_REPO}/releases/latest`, {
+      method: "HEAD", redirect: "manual", headers: { "User-Agent": "laoyou-metaverse-updater" },
+      signal: AbortSignal.timeout(20000),
+    });
+    const loc = h.headers.get("location") || "";
+    const version = (loc.match(/\/tag\/v?([^/?#]+)/) || [])[1];
+    if (!version) throw apiErr;
+    const out = {
+      latestVersion: version,
+      notes: "本次更新说明请查看 GitHub Release。",
+      publishedAt: "", url: `https://github.com/${UPDATE_REPO}/releases/tag/v${version}`,
+      asset: { name: `DAO3-portable-v${version}.zip`, size: 0, url: `https://github.com/${UPDATE_REPO}/releases/download/v${version}/DAO3-portable-v${version}.zip` },
+    };
+    updateCache = { at: Date.now(), data: out };
+    return out;
+  }
+}
+function updateCheckPayload(rel) {
+  const available = !!(rel.asset && newerVersion(rel.latestVersion, PKG_VERSION));
+  return {
+    enabled: !UPDATE_DISABLED, currentVersion: PKG_VERSION, latestVersion: rel.latestVersion,
+    updateAvailable: available, notes: rel.notes, publishedAt: rel.publishedAt, url: rel.url,
+    asset: available ? rel.asset : null, token: UPDATE_TOKEN,
+  };
+}
+async function applyUpdate(rel, res) {
+  if (UPDATE_DISABLED) return json(res, 403, { error: "自动更新已禁用" });
+  if (updateBusy) return json(res, 409, { error: "已有更新正在进行" });
+  if (!rel.asset || !newerVersion(rel.latestVersion, PKG_VERSION)) return json(res, 400, { error: "已经是最新版本" });
+  updateBusy = true;
+  try {
+    const dl = await fetch(rel.asset.url, { headers: { "User-Agent": "laoyou-metaverse-updater" }, signal: AbortSignal.timeout(180000) });
+    if (!dl.ok) throw new Error("下载失败 " + dl.status);
+    const bytes = Buffer.from(await dl.arrayBuffer());
+    if (bytes.length > 320 * 1024 * 1024) throw new Error("更新包过大");
+    const { readZipEntries } = await import(new URL("./public/js/zip.js", import.meta.url));
+    const zip = await readZipEntries(new Blob([bytes]));
+    const names = zip.entries.map((e) => e.name.replace(/\\/g, "/"));
+    const roots = new Set(names.map((n) => n.split("/")[0]));
+    const prefix = roots.size === 1 && names.every((n) => n.includes("/")) ? [...roots][0] + "/" : "";
+    const stage = path.join(__dirname, ".update", "staged-" + rel.latestVersion);
+    fs.rmSync(stage, { recursive: true, force: true });
+    fs.mkdirSync(stage, { recursive: true });
+    const allowed = new Set(["public", "server", "scripts", "docs", "data", "package.json", "server.js", "start.mjs", "update-runner.mjs", "run.sh", "run-win.ps1", "启动-Windows.bat", "启动-macOS.command", "LICENSE", "NOTICE", "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md", "VERSION"]);
+    let written = 0;
+    for (const entry of zip.entries) {
+      let relPath = entry.name.replace(/\\/g, "/");
+      if (prefix && relPath.startsWith(prefix)) relPath = relPath.slice(prefix.length);
+      if (!relPath || relPath.includes("\0") || relPath.split("/").some((s) => s === ".." || s === "")) continue;
+      const top = relPath.split("/")[0];
+      if (!allowed.has(top)) continue;
+      if (/^server\/data(?:\/|$)/.test(relPath) || /^public\/assets(?:\/|$)/.test(relPath) || /^public\/data\/assets(?:\/|$)/.test(relPath)) continue;
+      const target = path.resolve(stage, relPath);
+      if (!target.startsWith(path.resolve(stage) + path.sep)) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, Buffer.from(await zip.extract(entry)));
+      if (/\.(sh|command)$/.test(target)) { try { fs.chmodSync(target, 0o755); } catch {} }
+      written++;
+    }
+    if (!written) throw new Error("更新包里没有可安装文件");
+    const stagedPkg = JSON.parse(fs.readFileSync(path.join(stage, "package.json"), "utf8"));
+    if (String(stagedPkg.version) !== String(rel.latestVersion)) throw new Error("更新包版本号不一致");
+    if (!fs.existsSync(path.join(stage, "server.js")) || !fs.existsSync(path.join(stage, "public/editor.html"))) throw new Error("更新包缺少核心文件");
+    const runner = path.join(__dirname, "update-runner.mjs");
+    const child = spawn(process.execPath, [runner, __dirname, stage, rel.latestVersion, String(PORT), String(HOST), String(process.pid)], {
+      cwd: __dirname, detached: true, stdio: "ignore", windowsHide: true,
+      env: { ...process.env },
+    });
+    child.unref();
+    json(res, 200, { ok: true, version: rel.latestVersion, files: written, restarting: true });
+    setTimeout(() => process.exit(0), 350);
+  } catch (err) {
+    updateBusy = false;
+    json(res, 500, { error: String(err && err.message || err) });
+  }
+}
 const PORT = Number(process.env.PORT || 5173);
 const HOST = process.env.HOST || "127.0.0.1";
 const PUBLIC = path.join(__dirname, "public");
@@ -534,6 +643,21 @@ const server = http.createServer((req, res) => {
 
   // ---- API ----
   if (pathname.startsWith("/api/")) {
+    if (pathname === "/api/version" && req.method === "GET") return json(res, 200, { version: PKG_VERSION, app: OUR_APP });
+    if (pathname === "/api/update/check" && req.method === "GET") {
+      if (UPDATE_DISABLED) return json(res, 200, { enabled: false, currentVersion: PKG_VERSION });
+      latestRelease()
+        .then((rel) => json(res, 200, updateCheckPayload(rel)))
+        .catch((err) => json(res, 502, { enabled: true, currentVersion: PKG_VERSION, error: String(err && err.message || err) }));
+      return;
+    }
+    if (pathname === "/api/update/apply" && req.method === "POST") {
+      if (req.headers["x-laoyou-update-token"] !== UPDATE_TOKEN) return json(res, 403, { error: "更新令牌无效" });
+      latestRelease()
+        .then((rel) => applyUpdate(rel, res))
+        .catch((err) => { if (!res.writableEnded) json(res, 502, { error: String(err && err.message || err) }); });
+      return;
+    }
     // 社区层自己收尾（它是异步的：读 body 要等），所以先于其它 api 分支拦下来
     if (pathname.startsWith("/api/community/")) {
       community.handle(req, res, url).catch((e) => {
