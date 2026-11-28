@@ -587,7 +587,8 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     const wsTitle = document.createElement("div"); wsTitle.className = "pp-sub"; wsTitle.textContent = "世界运行参数（官方 GameWorld）"; worldTab.appendChild(wsTitle);
     const ws = Object.assign({
       gravity: -0.1, airFriction: 0.001, useOBB: false, lightMode: "natural", sunFrequency: 0.0002,
-      fogUniformDensity: 0.004, rainDensity: 0, snowDensity: 0, initialWeather: "clear",
+      fogUniformDensity: 0.004, fogStartDistance: 80, fogHeightOffset: 0, fogHeightFalloff: 1, maxFog: 1,
+      rainDensity: 0, snowDensity: 0, drawDistance: 1024, initialWeather: "clear",
     }, state.meta.worldSettings || {});
     state.meta.worldSettings = ws;
     const wnum = (label, min, max, step, key, fmt) => {
@@ -600,6 +601,13 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     wnum("重力 gravity", -0.5, 0.2, 0.005, "gravity");
     wnum("空气摩擦 airFriction", 0, 0.02, 0.0005, "airFriction");
     wnum("雾密度 fogUniformDensity", 0, 0.02, 0.0002, "fogUniformDensity");
+    wnum("雾起始距离 fogStartDistance", 0, 512, 1, "fogStartDistance");
+    wnum("最大雾 maxFog", 0, 1, 0.01, "maxFog");
+    wnum("雾高度偏移 fogHeightOffset", -64, 64, 1, "fogHeightOffset");
+    wnum("雾高度衰减 fogHeightFalloff", 0, 4, 0.05, "fogHeightFalloff");
+    wnum("雨密度 rainDensity", 0, 1, 0.01, "rainDensity");
+    wnum("雪密度 snowDensity", 0, 1, 0.01, "snowDensity");
+    wnum("绘制距离 drawDistance", 64, 2048, 16, "drawDistance");
     wnum("太阳频率 sunFrequency", 0, 0.002, 0.00002, "sunFrequency", (v) => v.toFixed(5));
     const obbRow = document.createElement("label"); obbRow.className = "trow";
     obbRow.innerHTML = `<span>useOBB（旋转碰撞盒）</span><input type="checkbox" ${ws.useOBB ? "checked" : ""}><em></em>`;
@@ -633,6 +641,57 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     wsTip.style.cssText = "padding:6px 10px;font-size:11px;line-height:1.7";
     wsTip.textContent = "以上字段与官方 GameWorld 一一对应，运行模式启动时会写入 world.gravity / world.airFriction / world.useOBB / world.lightMode / world.sunFrequency / world.fogUniformDensity，脚本仍可覆盖。";
     worldTab.appendChild(wsTip);
+
+    // ---------- 背景音乐（官方 world.ambientSound） ----------
+    const ambTitle = document.createElement("div"); ambTitle.className = "pp-sub"; ambTitle.textContent = "背景音乐（代码包音频）"; worldTab.appendChild(ambTitle);
+    const amb = state.meta.ambientSound || (state.meta.ambientSound = {});
+    const ambient = amb.ambient || (amb.ambient = { gain: 1, pitch: 1, radius: 32, sample: "" });
+    const audioFiles = [...new Set([
+      ...(state.assets.audioNames || []), ...Object.keys(state.assets.audio || {}),
+      String(ambient.sample || "").replace(/^audio\//, ""),
+    ].map((n) => String(n || "").replace(/^audio\//, "").trim()).filter((n) => n && n !== ".mp3"))];
+    const ambRow = document.createElement("div"); ambRow.className = "frow";
+    const ambLab = document.createElement("label"); ambLab.textContent = "音频";
+    const ambSel = document.createElement("select"); ambSel.className = "finput";
+    const noneOpt = document.createElement("option"); noneOpt.value = ""; noneOpt.textContent = "无背景音乐"; ambSel.appendChild(noneOpt);
+    for (const file of audioFiles) { const o = document.createElement("option"); o.value = file; o.textContent = file; ambSel.appendChild(o); }
+    ambSel.value = String(ambient.sample || "").replace(/^audio\//, "");
+    if (ambSel.value && !audioFiles.includes(ambSel.value)) { const o = document.createElement("option"); o.value = ambSel.value; o.textContent = ambSel.value + "（当前）"; ambSel.appendChild(o); ambSel.value = o.value; }
+    ambSel.onchange = () => { ambient.sample = ambSel.value ? "audio/" + ambSel.value : ""; markDirty(); };
+    ambRow.appendChild(ambLab); ambRow.appendChild(ambSel); worldTab.appendChild(ambRow);
+    const arow = (label, key, min, max, step) => {
+      const r = document.createElement("label"); r.className = "trow";
+      r.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${ambient[key] ?? 1}"><em>${ambient[key] ?? 1}</em>`;
+      const inp = r.querySelector("input"), em = r.querySelector("em");
+      inp.oninput = () => { ambient[key] = parseFloat(inp.value); em.textContent = inp.value; markDirty(); };
+      worldTab.appendChild(r);
+    };
+    arow("音量 gain", "gain", 0, 2, 0.05);
+    arow("音高 pitch", "pitch", 0.5, 2, 0.05);
+    let ambientPreview = null;
+    const stopAmbientPreview = () => { if (ambientPreview) { try { ambientPreview.pause(); } catch {} ambientPreview = null; } };
+    const ambBtns = document.createElement("div"); ambBtns.className = "wrowbtn-row";
+    const previewBtn = wbtn("试听", "ambient-preview", () => {
+      stopAmbientPreview();
+      const file = ambSel.value; if (!file) return toast("先选一段代码包音频", true);
+      const stem = file.replace(/\.[a-z0-9]+$/i, "");
+      const aud = state.assets.audio || {};
+      const bytes = aud[file] || aud[stem] || aud["audio/" + file] || aud["audio/" + stem];
+      let url = "";
+      if (bytes) url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+      else if (state.meta.audioRoot) url = state.meta.audioRoot + encodeURIComponent(file);
+      else url = "/data/assets/audio/" + encodeURIComponent(file);
+      if (!url) return toast("这段音频没有随代码包落盘，先在代码包里导入音频", true);
+      ambientPreview = new Audio(url); ambientPreview.volume = Math.max(0, Math.min(1, +ambient.gain || 1));
+      ambientPreview.play().catch(() => toast("浏览器没有允许播放音频", true));
+    });
+    const stopBtn = wbtn("停止", "ambient-stop", stopAmbientPreview);
+    ambBtns.appendChild(previewBtn); ambBtns.appendChild(stopBtn); worldTab.appendChild(ambBtns);
+    const ambTip = document.createElement("div"); ambTip.className = "muted";
+    ambTip.style.cssText = "padding:6px 10px;font-size:11px;line-height:1.7";
+    ambTip.textContent = "对应官方 world.ambientSound.sample，进入运行模式后自动循环。脚本仍可在运行时覆盖。";
+    worldTab.appendChild(ambTip);
+    api.stopAmbientPreview = stopAmbientPreview;
 
     // ---------- 区域触发器（官方 world.addZone）----------
     const zTitle = document.createElement("div"); zTitle.className = "pp-sub"; zTitle.textContent = "区域触发器"; worldTab.appendChild(zTitle);
@@ -925,7 +984,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   const st = $("btnSettings");
   if (st) st.onclick = () => {
     document.querySelector('.pp-ico[data-tab="world"]')?.click();
-    toast("世界设置：右侧 属性 → 世界（名字/出生点/时间/规则）");
+    toast("世界设定：右侧 属性 → 世界设定（区域/背景音乐/天气/雾/重力）");
   };
   // 左上「＋ 添加」→ 聚焦搜索
   const lcAddBtn = $("lcAdd");
@@ -961,6 +1020,10 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   };
   api.refreshTree = renderTree;
   api.onReload(() => renderTree());
+  api.showWorldSettings = () => {
+    document.querySelector('.pp-ico[data-tab="world"]')?.click();
+    toast("世界设定：区域 / 背景音乐 / 天气 / 雾 / 重力");
+  };
   return api;
 }
 

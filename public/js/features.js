@@ -137,6 +137,7 @@ function wireTopMenu() {
         }).catch((err) => E.toast("音乐工作台打不开：" + err.message, true));
       }
       else if (m === "ui") { document.getElementById("uiScreen").classList.add("show"); E.ctx.mode = "ui"; document.getElementById("uiPalette")?.classList.add("show"); if (E.renderUiEditor) E.renderUiEditor(); }
+      else if (m === "world") { libCard.style.display = "block"; E.ctx.mode = "build"; E.ui?.showWorldSettings?.(); }
       else if (m === "player") {
         // 官方是「一个弹窗 + 左栏三节」，不是一个孤立属性遮罩。
         // 弹窗没接上时（模块加载失败）退回老遮罩，至少玩家改不了属性这种事不会发生。

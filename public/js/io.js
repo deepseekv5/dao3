@@ -520,8 +520,8 @@ export async function completeFromBlock(block, have = {}, onProgress) {
 
 /**
  * 把按 CID 取回来的东西接到导入结果上。哪些算"应用了"要分清楚：
- * 实体表、环境、物理、玩家、区域、info、资源表我们有真实映射；
- * uiTree / gamepad / ambientSound 只是先存下来，映射还没做——
+ * 实体表、环境、物理、玩家、区域、info、资源表、背景音乐我们有真实映射；
+ * uiTree / gamepad 只是先存下来，映射还没做——
  * 与其假装导入完整，不如把没做的报出来。
  */
 export function applyCompletion(res, got = {}) {
@@ -560,7 +560,10 @@ export function applyCompletion(res, got = {}) {
     if (conv.screens.length > 1) res.warnings.push(`官方界面有 ${conv.screens.length} 块屏幕，已展开「${conv.screen}」；其余屏幕原样保存在 meta.uiTree`);
   }
   for (const k of ["gamepad", "ambientSound"]) {
-    if (got[k]) { (res.remoteCfg = res.remoteCfg || {})[k] = got[k]; deferred.push(k); }
+    if (got[k]) {
+      if (k === "ambientSound") { res.projectCfg.ambientSound = got[k]; applied.push("ambientSound"); }
+      else { (res.remoteCfg = res.remoteCfg || {})[k] = got[k]; deferred.push(k); }
+    }
   }
   return { applied, deferred };
 }

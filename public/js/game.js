@@ -266,8 +266,26 @@ export class GameRuntime {
     // 「世界」面板里的官方 GameWorld 参数在脚本执行前生效，脚本仍可覆盖
     const meta = e.state.meta || {};
     const ws = meta.worldSettings || {};
-    for (const k of ["gravity", "airFriction", "useOBB", "lightMode", "sunFrequency", "fogUniformDensity", "rainDensity", "snowDensity"]) {
-      if (ws[k] !== undefined && ws[k] !== null) this[k] = ws[k];
+    const worldKeys = ["gravity", "airFriction", "useOBB", "lightMode", "sunFrequency", "sunPhase",
+      "fogColor", "fogStartDistance", "fogHeightOffset", "fogHeightFalloff", "fogUniformDensity", "maxFog",
+      "rainDensity", "rainDirection", "rainSpeed", "rainInterference", "rainSizeLo", "rainSizeHi", "rainColor",
+      "snowDensity", "snowSizeLo", "snowSizeHi", "snowFallSpeed", "snowSpinSpeed", "snowColor", "snowTexture",
+      "drawDistance", "gamma", "globalLight", "skyType", "sunDirection", "sunLight", "lunarPhase",
+      "skyLeftLight", "skyRightLight", "skyBottomLight", "skyTopLight", "skyFrontLight", "skyBackLight"];
+    const vectorKeys = new Set(["sunDirection", "rainDirection"]);
+    const rgbaKeys = new Set(["rainColor", "snowColor"]);
+    const colorKeys = new Set(["fogColor", "sunLight", "skyLeftLight", "skyRightLight", "skyBottomLight", "skyTopLight", "skyFrontLight", "skyBackLight"]);
+    for (const k of worldKeys) {
+      const v = ws[k];
+      if (v === undefined || v === null) continue;
+      if (vectorKeys.has(k)) {
+        const a = Array.isArray(v) ? v : [v.x, v.y, v.z];
+        this[k] = new GameVector3(+a[0] || 0, +a[1] || 0, +a[2] || 0);
+      } else if (rgbaKeys.has(k)) {
+        this[k] = new GameRGBAColor(+(v.red ?? v.r) || 0, +(v.green ?? v.g) || 0, +(v.blue ?? v.b) || 0, +(v.alpha ?? v.a ?? 1));
+      } else if (colorKeys.has(k)) {
+        this[k] = new GameRGBColor(+(v.red ?? v.r) || 0, +(v.green ?? v.g) || 0, +(v.blue ?? v.b) || 0);
+      } else this[k] = v;
     }
     if (meta.time != null) this.sunPhase = clamp(Number(meta.time) || 0, 0, 24000) / 24000;
     const amb = meta.ambientSound || {};
@@ -279,9 +297,9 @@ export class GameRuntime {
     this.playerLeaveSound = keep(amb.playerLeave, this.playerLeaveSound);
     this.ambientSound = keep(amb.ambient, this.ambientSound);
     const weather = ws.initialWeather || meta.initialWeather;
-    if (weather === "rain") this.rainDensity = Math.max(this.rainDensity, 0.75);
-    else if (weather === "snow") this.snowDensity = Math.max(this.snowDensity, 0.7);
-    else if (weather === "thunder") { this.rainDensity = Math.max(this.rainDensity, 0.9); this.thunderDensity = 0.6; }
+    if (weather === "rain" && !(this.rainDensity > 0)) this.rainDensity = 0.75;
+    else if (weather === "snow" && !(this.snowDensity > 0)) this.snowDensity = 0.7;
+    else if (weather === "thunder") { if (!(this.rainDensity > 0)) this.rainDensity = 0.9; this.thunderDensity = 0.6; }
     this._camSaved = { pos: r.camera.position.clone(), quat: r.camera.quaternion.clone(), target: r.controls.target.clone(), fov: r.camera.fov };
     this.currentTick = 0;
     this._acc = 0;

@@ -292,6 +292,21 @@ function importFile(file) {
     if (res.pictureNames && res.pictureNames.length) meta.pictureNames = res.pictureNames;
     if (res.projectCfg && res.projectCfg.player) meta.player = Object.assign({}, res.projectCfg.player, { _units: "official" });
     if (res.projectCfg && res.projectCfg.physics) meta.worldSettings = Object.assign({}, res.projectCfg.physics, { airFriction: res.projectCfg.physics.velocityDamping ?? 0.01 });
+    if (res.projectCfg && res.projectCfg.environment) {
+      const flat = io.fromOfficialEnvironment(res.projectCfg.environment);
+      meta.worldSettings = Object.assign({}, meta.worldSettings, flat);
+      const tn = meta.terrain || (meta.terrain = {});
+      const hexOf = (c) => "#" + [c.red, c.green, c.blue].map((v) => Math.round(Math.max(0, Math.min(1, +v || 0)) * 255).toString(16).padStart(2, "0")).join("");
+      if (flat.fogUniformDensity != null) tn.fogDensity = flat.fogUniformDensity;
+      if (flat.skyTopLight) tn.skyTop = hexOf(flat.skyTopLight);
+      if (flat.skyBottomLight) tn.skyBottom = hexOf(flat.skyBottomLight);
+      if (flat.sunLight) {
+        const luma = (Number(flat.sunLight.red) + Number(flat.sunLight.green) + Number(flat.sunLight.blue)) / 3;
+        if (luma <= 1.001) tn.sunIntensity = Math.max(0, Math.min(4, luma));
+      }
+      if (flat.globalLight != null) tn.ambient = Math.max(0, Math.min(1, flat.globalLight));
+      if (flat.sunPhase != null) tn.dayNight = flat.sunPhase;
+    }
     if (ext === "zip" || ext === "boxproject") {
       const roots = await saveZipAssets(id, res);
       if (roots.assetRoot) meta.assetRoot = roots.assetRoot;

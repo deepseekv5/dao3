@@ -394,7 +394,7 @@ async function loadSeedAssets(meta) {
   }
   // 大包的模型只登记名字，点开时再解析。一次并发解析上千个 glTF 会把主线程和内存压垮。
   for (const name of names) if (!state.assets.meshes[name] || !state.assets.meshes[name].object) state.assets.meshes[name] = { lazy: true, scale: 1 };
-  if (!state.assets.audioNames) {
+  if (!state.assets.audioNames?.length) {
     try {
       const r = await fetch("/data/assets/audio/index.json");
       if (r.ok) state.assets.audioNames = await r.json();
