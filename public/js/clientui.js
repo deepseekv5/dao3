@@ -111,7 +111,14 @@ export class UiNode {
     if (node && node._layout) node._layout();
     this._layout();
   }
-  findChildByName(name) { return this._children.find((c) => c.name === name); }
+  findChildByName(name) {
+    for (const child of this._children) {
+      if (child.name === name) return child;
+      const found = child.findChildByName(name);
+      if (found) return found;
+    }
+    return undefined;
+  }
   _apply() {}
   _layout() { this._apply(); for (const c of this._children) c._layout(); }
   _copyInto(dst) {
@@ -442,6 +449,64 @@ export function createClientApi({ getCanvas, lockPointer, unlockPointer, render3
   api.rootEl = rootEl;
   api.Vec2 = Vec2; api.Vec3 = Vec3; api.Coord2 = Coord2; api.EventEmitter = EventEmitter;
   api.MediaError = MediaError; api.MediaErrorCode = MediaErrorCode;
+  // 官方 uiTree 原样恢复：脚本启动时就能 findChildByName，而不是先拿到一棵空树。
+  api.loadTree = (tree) => {
+    if (!tree || typeof tree !== "object") return;
+    for (const c of ui._children.slice()) c.parent = null;
+    UiScreen._all = [];
+    const nodes = new Map();
+    const color = (v) => new Vec3(...(Array.isArray(v) ? v : [0, 0, 0]));
+    for (const [id, raw] of Object.entries(tree)) {
+      if (!raw || raw.type === 0) continue;
+      const wrap = raw.value && raw.value.data || {};
+      const d = wrap.data || {};
+      const kind = wrap.type || d.type || "";
+      let node;
+      if (raw.type === 1 || kind === "screen") node = api.UiScreen.create();
+      else if (kind === "text") node = api.UiText.create();
+      else if (kind === "image") node = api.UiImage.create();
+      else if (kind === "input") node = api.UiInput.create();
+      else if (kind === "scrollBox") node = api.UiScrollBox.create();
+      else node = api.UiBox.create();
+      node.name = raw.name || d.name || String(id);
+      if (node.anchor) node.anchor.copy({ x: d.anchor?.[0] || 0, y: d.anchor?.[1] || 0 });
+      if (node.position) {
+        node.position.offset.copy({ x: d.position?.offset?.[0] || 0, y: d.position?.offset?.[1] || 0 });
+        node.position.scale.copy({ x: d.position?.ratio?.[0] || 0, y: d.position?.ratio?.[1] || 0 });
+      }
+      if (node.size) {
+        node.size.offset.copy({ x: d.size?.offset?.[0] || 0, y: d.size?.offset?.[1] || 0 });
+        node.size.scale.copy({ x: d.size?.ratio?.[0] || 0, y: d.size?.ratio?.[1] || 0 });
+      }
+      if (node.backgroundColor) node.backgroundColor = color(d.backgroundColor);
+      if (d.backgroundOpacity != null) node.backgroundOpacity = +d.backgroundOpacity;
+      if (d.rotation != null) node.rotation = +d.rotation;
+      if (d.zIndex != null) node.zIndex = +d.zIndex;
+      if (d.visible != null) node.visible = !!d.visible;
+      if (d.pointerEventBehavior != null) node.pointerEventBehavior = +d.pointerEventBehavior;
+      if (d.clipsDescendants) node.el.style.overflow = "hidden";
+      if ("textContent" in node) node.textContent = d.textContent || "";
+      if ("richText" in node) node.richText = !!d.richText;
+      if ("textFontSize" in node) node.textFontSize = +d.textFontSize || 14;
+      if ("textColor" in node) node.textColor = color(d.textColor);
+      if ("textXAlignment" in node) node.textXAlignment = ["Left", "Center", "Right"][+d.textXAlignment] || "Left";
+      if ("textYAlignment" in node) node.textYAlignment = ["Top", "Center", "Bottom"][+d.textYAlignment] || "Top";
+      if ("textLineHeight" in node) node.textLineHeight = +d.textLineHeight || 1.2;
+      if ("autoWordWrap" in node) node.autoWordWrap = !!d.autoWordWrap;
+      if ("image" in node) node.image = d.image || "";
+      if ("imageOpacity" in node) node.imageOpacity = d.imageOpacity == null ? 1 : +d.imageOpacity;
+      if ("imageDisplayMode" in node) node.imageDisplayMode = +d.imageDisplayMode || 0;
+      if (node.scrollPosition) node.scrollPosition.copy({ x: d.scrollPosition?.[0] || 0, y: d.scrollPosition?.[1] || 0 });
+      nodes.set(String(id), node);
+    }
+    for (const [id, raw] of Object.entries(tree)) {
+      const node = nodes.get(String(id));
+      if (!node) continue;
+      const parent = raw.parentId != null ? nodes.get(String(raw.parentId)) : null;
+      node.parent = parent || ui;
+    }
+    api.refresh();
+  };
   return api;
 }
 

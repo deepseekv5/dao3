@@ -3,6 +3,7 @@
 import * as THREE from "../vendor/three/three.module.js";
 import { VoxelWorld, encodeVox, decodeVox, readVox } from "./world.js";
 import { decodeVb } from "./vb.js";
+import { sanitizeModelGeometry } from "./gapi.js";
 import { readZipEntries, writeZip } from "./zip.js";
 
 export async function apiLoadWorld(id) {
@@ -296,6 +297,22 @@ export async function cidOf(bytes) {
   } catch { return ""; }
 }
 
+function assetCid(hash) {
+  const s = String(hash || "").replace(/\.(?:png|jpe?g|webp|part|lut)$/i, "");
+  if (/^Qm[1-9A-HJ-NP-Za-km-z]{30,50}$/.test(s)) return s;
+  try {
+    const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+    const raw = Uint8Array.from(atob(b64 + "=".repeat((4 - b64.length % 4) % 4)), (c) => c.charCodeAt(0));
+    if (raw.length !== 32) return "";
+    const mh = new Uint8Array(34); mh[0] = 0x12; mh[1] = 0x20; mh.set(raw, 2);
+    let n = 0n;
+    for (const b of mh) n = n * 256n + BigInt(b);
+    let out = "";
+    while (n > 0n) { out = B58[Number(n % 58n)] + out; n /= 58n; }
+    return out;
+  } catch { return ""; }
+}
+
 // 官方 assets.json 是「路径 → 8 字段条目」的映射（type 6=audio、3=lut、4=part），不含 mesh
 export function toOfficialAssetsMap({ audioNames = [], lutNames = [], partNames = [], sizes = {} } = {}) {
   const mk = (type, size) => ({ animated: false, bounds: [0, 0, 0], contentId: 0, hash: "", ownerId: 0, previewImage: "", size: size || 0, type });
@@ -410,13 +427,19 @@ export async function fetchBlockCid(hash, { signal } = {}) {
   return await r.json();
 }
 
-/** 包里有 permission 根清单但没有实体树时，顺着 versionControl → branch → project 取回官方实体。 */
-export async function fetchOfficialEntities(block, branchKey = "", { signal } = {}) {
+export async function fetchBlockBytes(hash, { signal } = {}) {
+  const r = await fetch(`/api/official-block/${encodeURIComponent(hash)}`, { signal });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+/** 包里有 permission 根清单时，顺着 versionControl → branch → project 取回官方工程。 */
+export async function fetchOfficialProject(block, branchKey = "", { signal } = {}) {
   if (!block || typeof block !== "object") return null;
-  let cid = typeof block.versionControl === "string" ? block.versionControl : "";
+  const cid = typeof block.versionControl === "string" ? block.versionControl : "";
   let project = null;
   if (cid) {
-    let node = await fetchBlockCid(cid, { signal });
+    const node = block.versionControlData || await fetchBlockCid(cid, { signal });
     if (node && node.branches) {
       const keys = Object.keys(node.branches);
       const branch = node.branches[branchKey] ? branchKey : (node.branches[node.currentBranch] ? node.currentBranch : keys[keys.length - 1]);
@@ -424,6 +447,11 @@ export async function fetchOfficialEntities(block, branchKey = "", { signal } = 
       if (head) project = await fetchBlockCid(head, { signal });
     } else if (node && node.type === "project") project = node;
   } else if (block.entitiesTree) project = block;
+  return project && project.type === "project" ? project : null;
+}
+
+export async function fetchOfficialEntities(block, branchKey = "", { signal } = {}) {
+  const project = await fetchOfficialProject(block, branchKey, { signal });
   if (!project) return null;
   const tree = typeof project.entitiesTree === "string" ? await fetchBlockCid(project.entitiesTree, { signal }) : project.entitiesTree;
   if (!tree || typeof tree !== "object") return null;
@@ -674,32 +702,52 @@ export async function exportProjectZip({ world, state, name, download = true }) 
   files.push({ name: "project/project.json", data: JSON.stringify(sorted, null, 1) });
   files.push({ name: "project/prevHash.json", data: JSON.stringify(sorted, null, 1) });
   files.push({ name: "project/map.json", data: JSON.stringify({ id: meta.mapId || 0, name: meta.displayName || meta.name || name || "world", branch: "master", projectHash: "" }, null, 1) });
-  const assetIndex = {};  // 官方形状的资源表，等抓到字节后在末尾写出
-
-  // 模型与音频资产：从本地资产目录取原始字节
+  const assetIndex = {};
   const grab = async (url) => { try { const r = await fetch(url); return r.ok ? new Uint8Array(await r.arrayBuffer()) : null; } catch { return null; } };
-  const meshNames = meta.meshNames || Object.keys(state.assets?.meshes || {});
-  const root = meta.assetRoot || "/assets/racing/models/";
-  const audio = await grab("/data/assets/audio/index.json");
-  if (audio) {
-    try {
-      const names = JSON.parse(new TextDecoder().decode(audio));
-      for (const n of names) {
-        const b = await grab("/data/assets/audio/" + encodeURIComponent(n));
-        if (!b) continue;
-        files.push({ name: "audio/" + n, data: b });
-        assetIndex["audio/" + n] = { animated: false, bounds: [0, 0, 0], contentId: 0, hash: await cidOf(b), ownerId: 0, previewImage: "", size: b.length, type: 6 };
+  const wid = typeof window !== "undefined" && (window.__worldId || window.__editor?.worldId
+    || (location.pathname.match(/\/edit\/([a-zA-Z0-9_-]+)/) || [])[1]);
+  if (wid) {
+    let listed = [];
+    try { listed = (await (await fetch(`/api/world/${encodeURIComponent(wid)}/asset`)).json()).files || []; } catch {}
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(8, listed.length) }, async () => {
+      while (cursor < listed.length) {
+        const f = listed[cursor++], rel = String(f.path || ""), base = rel.split("/").pop();
+        if (!base) continue;
+        let out = "", type = 0;
+        if (/^models\//i.test(rel)) out = "mesh/" + base;
+        else if (/^audio\//i.test(rel)) { out = "audio/" + base; type = 6; }
+        else if (/^picture\//i.test(rel)) { out = "images/" + base; type = 8; }
+        else if (/^lut\//i.test(rel)) { out = "lut/" + base; type = 3; }
+        else if (/^part\//i.test(rel)) { out = "part/" + base; type = 4; }
+        else continue;
+        const bytes = await grab(`/assets/worlds/${encodeURIComponent(wid)}/${rel.split("/").map(encodeURIComponent).join("/")}`);
+        if (!bytes) continue;
+        files.push({ name: out, data: bytes });
+        if (type) assetIndex[`${type === 6 ? "audio" : type === 8 ? "picture" : type === 3 ? "lut" : "part"}/${base}`] = {
+          animated: false, bounds: [0, 0, 0], contentId: 0, hash: await cidOf(bytes), ownerId: 0,
+          previewImage: "", size: bytes.length, type,
+        };
       }
-    } catch {}
+    }));
+  } else {
+    const meshNames = meta.meshNames || Object.keys(state.assets?.meshes || {});
+    const root = meta.assetRoot || "/assets/racing/models/";
+    const audioRoot = meta.audioRoot || "/data/assets/audio/";
+    const audioNames = meta.audioNames || state.assets?.audioNames || [];
+    await Promise.all(audioNames.map(async (n) => {
+      const b = await grab(audioRoot + encodeURIComponent(n));
+      if (!b) return;
+      files.push({ name: "audio/" + n, data: b });
+      assetIndex["audio/" + n] = { animated: false, bounds: [0, 0, 0], contentId: 0, hash: await cidOf(b), ownerId: 0, previewImage: "", size: b.length, type: 6 };
+    }));
+    await Promise.all(meshNames.map(async (n) => {
+      for (const ext of [".gltf", ".glb"]) {
+        const b = await grab(root + encodeURIComponent(n) + ext);
+        if (b) { files.push({ name: "mesh/" + n + ext, data: b }); return; }
+      }
+    }));
   }
-  await Promise.all(meshNames.map(async (n) => {
-    for (const ext of [".gltf", ".glb"]) {
-      const b = await grab(root + encodeURIComponent(n) + ext);
-      if (b) { files.push({ name: "mesh/" + n + ext, data: b }); return; }
-    }
-  }));
-  for (const n of meta.lutNames || []) if (!assetIndex["lut/" + n]) assetIndex["lut/" + n] = { animated: false, bounds: [0, 0, 0], contentId: 0, hash: "", ownerId: 0, previewImage: "", size: 0, type: 3 };
-  for (const n of meta.partNames || []) if (!assetIndex["part/" + n]) assetIndex["part/" + n] = { animated: false, bounds: [0, 0, 0], contentId: 0, hash: "", ownerId: 0, previewImage: "", size: 0, type: 4 };
   files.push({ name: "project/assets.json", data: JSON.stringify(assetIndex, null, 1) });
   const zip = await writeZip(files);
   const blob = new Blob([zip], { type: "application/zip" });
@@ -773,11 +821,22 @@ export async function importProjectZip(file) {
   const blockEnt = entries.find((e) => /(^|\/)block\.json$/i.test(e.name));
   if (blockEnt) consumed.add(blockEnt.name);
   try { block = await jsonOf(blockEnt); } catch { block = null; }
+  let localVersionControl = null;
+  const versionControlEnt = entries.find((e) => /(^|\/)versionControl\.json$/i.test(e.name));
+  if (versionControlEnt) {
+    consumed.add(versionControlEnt.name);
+    try { localVersionControl = await jsonOf(versionControlEnt); } catch {}
+  }
   let mapId = "", branchKey = "";
   const mapIdEnt = entries.find((e) => /(^|\/)meta\/mapId\.txt$/i.test(e.name));
   if (mapIdEnt) { try { mapId = new TextDecoder().decode(await extract(mapIdEnt)).trim(); consumed.add(mapIdEnt.name); } catch {} }
   const branchEnt = entries.find((e) => /(^|\/)meta\/branchKey\.txt$/i.test(e.name));
   if (branchEnt) { try { branchKey = new TextDecoder().decode(await extract(branchEnt)).trim(); consumed.add(branchEnt.name); } catch {} }
+  let officialProject = null;
+  if (block && (block.versionControl || block.type === "project" || block.entitiesTree)) {
+    try { officialProject = await fetchOfficialProject(Object.assign({}, block, { versionControlData: localVersionControl }), branchKey); }
+    catch (err) { warnings.push("取回官方工程清单失败：" + ((err && err.message) || err)); }
+  }
 
   // 2) 项目名（project/map.json 优先）
   const mapJson = entries.find((e) => /project\/map\.json$/i.test(e.name));
@@ -835,12 +894,13 @@ export async function importProjectZip(file) {
       } catch {}
     }
   }
-  if (!entities.length && block && block.versionControl) {
+  if (!entities.length && officialProject) {
     try {
-      const official = await fetchOfficialEntities(block, branchKey);
-      if (official && official.entities.length) {
-        entities = official.entities;
-        groups = official.groups;
+      const tree = typeof officialProject.entitiesTree === "string"
+        ? await fetchBlockCid(officialProject.entitiesTree) : officialProject.entitiesTree;
+      if (tree && typeof tree === "object") {
+        entities = flattenTree(tree);
+        groups = Object.values(tree).filter((n) => n && n.type === 2).map((n) => ({ id: n.id, name: n.name, parentId: n.parentId, childrenIds: n.childrenIds || [] }));
         warnings.push(`包里没有实体摆放，已从官方工程补回 ${entities.length} 个实体`);
       }
     } catch (err) {
@@ -853,6 +913,14 @@ export async function importProjectZip(file) {
     if (!en) return;
     try { projectCfg[k] = await jsonOf(en); } catch (err) { warnings.push(k + ".json 解析失败: " + err.message); }
   }));
+  if (officialProject) {
+    await Promise.all(["player", "physics", "environment", "ambientSound", "zones", "uiTree", "gamepad"].map(async (k) => {
+      if (projectCfg[k] || !officialProject[k]) return;
+      try {
+        projectCfg[k] = typeof officialProject[k] === "string" ? await fetchBlockCid(officialProject[k]) : officialProject[k];
+      } catch (err) { warnings.push(`官方 ${k} 配置取回失败：${(err && err.message) || err}`); }
+    }));
+  }
   if (compat) {
     if (compat.gameRules) projectCfg.gameRules = compat.gameRules;
     if (Array.isArray(compat.products)) projectCfg.products = compat.products;
@@ -887,20 +955,47 @@ export async function importProjectZip(file) {
     return 2;
   }
   const scripts = [], usedScriptNames = new Set();
+  const scriptManifestEnt = entries.find((e) => /(^|\/)config\/scriptAssets\.json$/i.test(e.name));
+  let scriptManifest = {};
+  if (scriptManifestEnt) {
+    consumed.add(scriptManifestEnt.name);
+    try { scriptManifest = JSON.parse(new TextDecoder().decode(await extract(scriptManifestEnt))) || {}; } catch {}
+  }
+  if (officialProject && officialProject.scriptAssets) {
+    try {
+      const remote = typeof officialProject.scriptAssets === "string"
+        ? await fetchBlockCid(officialProject.scriptAssets) : officialProject.scriptAssets;
+      scriptManifest = Object.assign({}, remote || {}, scriptManifest);
+    } catch (err) { warnings.push("官方脚本清单取回失败：" + ((err && err.message) || err)); }
+  }
   for (const se of scriptEntries) {
     try {
       const code = new TextDecoder().decode(await extract(se));
       const raw = se.name.split("/").pop(), name = uniqueScriptName(raw, usedScriptNames);
       if (name !== raw) warnings.push("脚本重名已改名: " + se.name + " → " + name);
-      scripts.push({ name, code });
+      const sm = scriptManifest[raw] || scriptManifest[se.name] || {};
+      const type = Number(sm.type) || (/client/i.test(se.name) ? 7 : 1);
+      scripts.push({ name, code, type, client: type === 7, entry: name === "index.js" || name === "clientIndex.js" });
     } catch (err) { warnings.push("脚本读取失败: " + se.name); }
+  }
+  for (const [key, sm] of Object.entries(scriptManifest)) {
+    const raw = key.split("/").pop();
+    if (!/\.js$/i.test(raw) || scripts.some((s) => s.name === raw)) continue;
+    const hash = typeof sm === "string" ? sm : sm?.hash;
+    if (!hash) continue;
+    try {
+      const code = new TextDecoder().decode(await fetchBlockBytes(hash));
+      const type = Number(sm && sm.type) || (/client/i.test(raw) ? 7 : 1);
+      scripts.push({ name: uniqueScriptName(raw, usedScriptNames), code, type, client: type === 7, entry: raw === "index.js" || raw === "clientIndex.js" });
+      warnings.push(`包里缺少脚本 ${raw}，已按官方 CID 补回`);
+    } catch (err) { warnings.push(`脚本 ${raw} 取回失败：${(err && err.message) || err}`); }
   }
   if (!scripts.length) warnings.push("包内没有 /code/*.js 脚本");
 
   // 5) 音效 / 网格名 / 图片。大包（几千个文件、几百 MB）不能把所有条目同时解压：
   //    先只按文件名分类，音频与 UI 引用的图片再按需取字节，模型只解析实体真正引用的那几个。
   const audio = {}, meshNames = [], pictureNames = [];
-  const audioEntries = [], modelEntries = [], pictureEntries = [], modelJson = new Map(), modelBin = new Map();
+  const audioEntries = [], modelEntries = [], pictureEntries = [], lutEntries = [], partEntries = [], modelJson = new Map(), modelBin = new Map();
   for (const e of entries) {
     if (/(^|\/)(audios?|sounds?)\/.*\.(mp3|wav|ogg|m4a|aac)$/i.test(e.name)) audioEntries.push(e);
     else if (/(^|\/)(meshes?|models?)\/.*\.(vb|vox|glb|gltf)$/i.test(e.name)) {
@@ -913,6 +1008,10 @@ export async function importProjectZip(file) {
       modelBin.set(e.name.split("/").pop().replace(/\.bin$/i, ""), e);
     } else if (/(^|\/)(pictures?|images?|ui)\/.*\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(e.name)) {
       pictureEntries.push(e);
+    } else if (/(^|\/)lut\/.*\.lut$/i.test(e.name)) {
+      lutEntries.push(e);
+    } else if (/(^|\/)(snow|part|particles?)\/.*\.part$/i.test(e.name)) {
+      partEntries.push(e);
     }
   }
   const packedModels = [...modelJson.keys()].filter((name) => modelBin.has(name));
@@ -924,14 +1023,6 @@ export async function importProjectZip(file) {
     return m ? "picture/" + m[1].split("/").pop() : "picture/" + String(name).split("/").pop();
   };
   for (const e of pictureEntries) pictureNames.push(picRel(e.name));
-  const uiPics = new Set();
-  const treeForPics = projectCfg.uiTree;
-  if (treeForPics && typeof treeForPics === "object") {
-    for (const n of Object.values(treeForPics)) {
-      const d = (((n && n.value && n.value.data) || {}).data) || {};
-      if (typeof d.image === "string") uiPics.add(picRel(d.image));
-    }
-  }
   // 大包按“实体引用 + UI 引用”取；小包保持原来的全量网格解析。
   const heavy = entries.length > 900 || entries.reduce((s, e) => s + (e.compSize || 0), 0) > 120 * 1024 * 1024;
   const refMesh = new Set();
@@ -941,17 +1032,16 @@ export async function importProjectZip(file) {
   }
   const modelToRead = heavy ? modelEntries.filter((e) => refMesh.has(e.name.split("/").pop().replace(/\.(vb|vox|glb|gltf)$/i, ""))) : modelEntries;
   // 大包不在这里把 1048 个模型全部读进内存：把条目与读取器交回去，上层逐个取、逐个写盘。
-  const meshAssetEntries = heavy ? modelEntries.filter((e) => /\.(glb|gltf)$/i.test(e.name)).map((e) => ({
-    name: e.name.split("/").pop().replace(/\.(glb|gltf)$/i, ""),
-    ext: /\.glb$/i.test(e.name) ? ".glb" : ".gltf",
+  const meshAssetEntries = heavy ? modelEntries.filter((e) => /\.(vb|vox|glb|gltf)$/i.test(e.name)).map((e) => ({
+    name: e.name.split("/").pop().replace(/\.(vb|vox|glb|gltf)$/i, ""),
+    ext: e.name.slice(e.name.lastIndexOf(".")).toLowerCase(),
     entry: e,
   })) : [];
   for (const name of packedModels) {
     meshAssetEntries.push({ name, ext: ".json", entry: modelJson.get(name) });
     meshAssetEntries.push({ name, ext: ".bin", entry: modelBin.get(name) });
   }
-  const pictureToRead = heavy ? pictureEntries.filter((e) => uiPics.has(picRel(e.name))) : pictureEntries;
-  const pictureFiles = [], audioFiles = [];
+  const pictureFiles = [], audioFiles = [], lutFiles = [], partFiles = [];
   for (const e of audioEntries) {
     try {
       const bytes = await extract(e);
@@ -960,8 +1050,14 @@ export async function importProjectZip(file) {
       audioFiles.push({ rel: "audio/" + base, bytes });
     } catch {}
   }
-  for (const e of pictureToRead) {
+  for (const e of pictureEntries) {
     try { pictureFiles.push({ rel: picRel(e.name), bytes: await extract(e) }); } catch {}
+  }
+  for (const e of lutEntries) {
+    try { lutFiles.push({ rel: "lut/" + e.name.split("/").pop(), bytes: await extract(e) }); } catch {}
+  }
+  for (const e of partEntries) {
+    try { partFiles.push({ rel: "part/" + e.name.split("/").pop(), bytes: await extract(e) }); } catch {}
   }
   const voxMeshes = [];  // .vox 解码结果（{name, voxels, bytes}）
   const vbMeshes = [];   // .vb 原始 JSON（{name, json}），建网格留给 features.js（要 atlas）
@@ -1020,14 +1116,61 @@ export async function importProjectZip(file) {
       }
     } catch {}
   }
-  const assetNames = { audio: [], lut: [], part: [] };
+  if (officialProject) {
+    await Promise.all(["assets", "audioAssets", "pictureAssets"].map(async (k) => {
+      if (!officialProject[k]) return;
+      try {
+        const remote = typeof officialProject[k] === "string" ? await fetchBlockCid(officialProject[k]) : officialProject[k];
+        if (remote && typeof remote === "object" && !Array.isArray(remote)) assets = Object.assign(assets || {}, remote);
+      } catch (err) { warnings.push(`官方 ${k} 资源表取回失败：${(err && err.message) || err}`); }
+    }));
+  }
+  const assetNames = { audio: [], lut: [], part: [], picture: [] };
   if (assets) {
     for (const p of Object.keys(assets)) {
       const t = assets[p]?.type;
       if (t === 6) assetNames.audio.push(p.split("/").pop());
       else if (t === 3) assetNames.lut.push(p.split("/").pop());
       else if (t === 4) assetNames.part.push(p.split("/").pop());
+      else if (t === 8) assetNames.picture.push(p);
     }
+    for (const k of Object.keys(assetNames)) assetNames[k] = [...new Set(assetNames[k])];
+    pictureNames.push(...assetNames.picture.map((p) => /^picture\//i.test(p) ? p : picRel(p)));
+  }
+  pictureNames.splice(0, pictureNames.length, ...new Set(pictureNames));
+  for (const f of lutFiles) if (!assetNames.lut.includes(f.rel.split("/").pop())) assetNames.lut.push(f.rel.split("/").pop());
+  for (const f of partFiles) if (!assetNames.part.includes(f.rel.split("/").pop())) assetNames.part.push(f.rel.split("/").pop());
+  if (assets) {
+    const haveAudio = new Set(Object.keys(audio));
+    const havePicture = new Set(pictureFiles.map((f) => f.rel));
+    const haveLut = new Set(lutFiles.map((f) => f.rel));
+    const havePart = new Set(partFiles.map((f) => f.rel));
+    const jobs = [];
+    for (const [key, meta] of Object.entries(assets)) {
+      const type = meta?.type;
+      if (![3, 4, 6, 8].includes(type)) continue;
+      const base = key.split("/").pop(), cid = assetCid(meta?.hash);
+      if (!cid) continue;
+      const rel = type === 6 ? "audio/" + base : type === 8 ? (/^picture\//i.test(key) ? key : "picture/" + base)
+        : type === 3 ? "lut/" + base : "part/" + base;
+      const have = type === 6 ? haveAudio : type === 8 ? havePicture : type === 3 ? haveLut : havePart;
+      if (have.has(rel) || have.has(base)) continue;
+      jobs.push({ type, rel, cid });
+    }
+    let cursor = 0, failed = 0;
+    await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, async () => {
+      while (cursor < jobs.length) {
+        const job = jobs[cursor++];
+        try {
+          const bytes = await fetchBlockBytes(job.cid);
+          if (job.type === 6) { audio[job.rel.split("/").pop()] = bytes; audioFiles.push({ rel: job.rel, bytes }); }
+          else if (job.type === 8) { pictureFiles.push({ rel: job.rel, bytes }); pictureNames.push(job.rel); }
+          else if (job.type === 3) lutFiles.push({ rel: job.rel, bytes });
+          else partFiles.push({ rel: job.rel, bytes });
+        } catch { failed++; }
+      }
+    }));
+    if (jobs.length) warnings.push(`官方清单补回 ${jobs.length - failed} 个缺失资源${failed ? `，${failed} 个取回失败` : ""}`);
   }
 
   // 6) 模型 models/*.gltf|glb —— 解析为可播放 mesh 资产（赛车模板的汽车模型即在其中）
@@ -1041,6 +1184,7 @@ export async function importProjectZip(file) {
       const { GLTFLoader } = await import("../vendor/three/GLTFLoader.js");
       await new Promise((res, rej) => new GLTFLoader().parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), "", (g) => {
         const base = e.name.split("/").pop().replace(/\.(glb|gltf)$/i, "");
+        sanitizeModelGeometry(g.scene);
         meshes[base] = { object: g.scene, scale: 1 };
         res();
       }, rej));
@@ -1057,7 +1201,7 @@ export async function importProjectZip(file) {
     && !/(^|\/)(models?|meshes?)\//i.test(e.name));
   if (oddJson.length) warnings.push(`未识别 ${oddJson.length} 个配置文件（${oddJson.slice(0, 3).map((x) => x.name.split("/").slice(-2).join("/")).join("、")}${oddJson.length > 3 ? " 等" : ""}），已跳过`);
 
-  return { world, name, scripts, entities, groups, projectCfg, audio, audioFiles, meshNames, pictureNames, pictureFiles, meshes, meshFiles, meshAssetEntries, extractEntry: (e) => extract(e), assets, assetNames, block, mapId, branchKey, officialVersionControl: block && block.versionControl || "", voxMeshes, vbMeshes, pointerMeshes, warnings };
+  return { world, name, scripts, entities, groups, projectCfg, audio, audioFiles, lutFiles, partFiles, meshNames, pictureNames, pictureFiles, meshes, meshFiles, meshAssetEntries, extractEntry: (e) => extract(e), assets, assetNames, block, officialProject, mapId, branchKey, officialVersionControl: block && block.versionControl || "", voxMeshes, vbMeshes, pointerMeshes, warnings };
 }
 
 // 官方"清单式导出"里的 .vox 不是模型本体，而是 120~300 字节的指针：
@@ -1220,6 +1364,21 @@ export async function importBoxProject(input) {
   }
   const uniqueMeshNames = [...new Set(meshNames)];
   meshNames.length = 0; meshNames.push(...uniqueMeshNames);
+  const pictureFiles = [], lutFiles = [], partFiles = [], pictureNames = [];
+  for (const [key, meta] of Object.entries(assets)) {
+    const type = meta?.type, hash = typeof meta === "string" ? meta : meta?.hash;
+    if (!hash) continue;
+    const bytes = blobs.get(hash);
+    if (!bytes) continue;
+    if (type === 8 && /^picture\//i.test(key)) {
+      const rel = "picture/" + key.split("/").pop();
+      pictureNames.push(rel); pictureFiles.push({ rel, bytes });
+    } else if (type === 3 && /^lut\//i.test(key)) {
+      lutFiles.push({ rel: "lut/" + key.split("/").pop(), bytes });
+    } else if (type === 4 && /^(part|snow)\//i.test(key)) {
+      partFiles.push({ rel: "part/" + key.split("/").pop(), bytes });
+    }
+  }
   const audio = {}, audioFiles = [];
   for (const [key, meta] of Object.entries(assets)) {
     if (meta?.type !== 6 || !meta.hash) continue;
@@ -1234,7 +1393,10 @@ export async function importBoxProject(input) {
     if (!hash) continue;
     const buf = blobs.get(hash); if (!buf) continue;
     const raw = key.split("/").pop();
-    if (/\.js$/i.test(raw)) scripts.push({ name: uniqueScriptName(raw, usedScriptNames), code: new TextDecoder().decode(buf) });
+    if (/\.js$/i.test(raw)) {
+      const type = Number(typeof meta === "object" && meta?.type) || (/client/i.test(raw) ? 7 : 1);
+      scripts.push({ name: uniqueScriptName(raw, usedScriptNames), code: new TextDecoder().decode(buf), type, client: type === 7, entry: raw === "index.js" || raw === "clientIndex.js" });
+    }
   }
   const cfg = {};
   for (const k of ["player", "physics", "environment", "zones", "uiTree", "ambientSound", "gamepad"]) {
@@ -1243,9 +1405,9 @@ export async function importBoxProject(input) {
   }
   return {
     world, name: info.name || "未命名地图", scripts, entities, groups,
-    projectCfg: cfg, audio, audioFiles, meshNames, pictureNames: [], pictureFiles: [],
+    projectCfg: cfg, audio, audioFiles, lutFiles, partFiles, meshNames, pictureNames, pictureFiles,
     meshes, meshFiles, meshAssetEntries: [], extractEntry: null,
-    assets, assetNames: { audio: Object.keys(audio), lut: [], part: [] },
+    assets, assetNames: { audio: Object.keys(audio), lut: lutFiles.map((f) => f.rel.split("/").pop()), part: partFiles.map((f) => f.rel.split("/").pop()), picture: pictureNames },
     mapId: info.permanentMapId || "", branchKey: branch,
     officialVersionControl: perm.versionControl || "",
     voxMeshes: [], vbMeshes: [], pointerMeshes: [], warnings,

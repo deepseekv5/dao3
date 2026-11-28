@@ -1123,6 +1123,8 @@ vec2 fxTileRect(float t){
         const d = f.dir;
         const ax = d[0] ? 0 : d[1] ? 1 : 2, t1 = (ax + 1) % 3, t2 = (ax + 2) % 3;
         const p0 = [wx + d[0], wy + d[1], wz + d[2]];
+        if (isBarrier && (![wx, wy, wz, ...d].every(Number.isFinite)
+          || !(f.corners || []).every((corner) => (corner || []).every(Number.isFinite)))) continue;
         for (let c = 0; c < 4; c++) {
           const co = f.corners[c];
           P.push(wx + co[0], wy + co[1], wz + co[2]);
@@ -1190,10 +1192,11 @@ vec2 fxTileRect(float t){
     if (!bpos.length && !bvc) rec.barrier = null;
     else {
       const bg = new THREE.BufferGeometry();
+      for (let i = 0; i < bpos.length; i++) if (!Number.isFinite(bpos[i])) bpos[i] = 0;
       bg.setAttribute("position", new THREE.Float32BufferAttribute(bpos, 3));
       bg.setAttribute("normal", new THREE.Float32BufferAttribute(bnor, 3));
       bg.setAttribute("uv", new THREE.Float32BufferAttribute(buv, 2));
-      bg.setIndex(bidx); bg.computeBoundingSphere();
+      bg.setIndex(new THREE.BufferAttribute(bidx.array(), 1)); bg.computeBoundingSphere();
       rec.barrier = new THREE.Mesh(bg, this.barrierMat);
       rec.barrier.userData.chunk = true;
       rec.barrier.visible = this._barriersVisible !== false;

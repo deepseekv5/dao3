@@ -11,7 +11,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { resolveChromium } from "./browser.mjs";
+import { resolveChromium, chromeArgs } from "./browser.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -53,10 +53,7 @@ export async function launchChrome({ port = 9333 } = {}) {
   const child = spawn(exe, [
     "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
     "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", "--window-size=1440,900",
-    // 无 GPU 的 headless 里 WebGL 默认起不来，编辑器/运行时直接卡在启动屏。
-    // 软件光栅化（swiftshader）让它真能建上下文，运行时这一层才谈得上被验证过。
-    "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader",
-    "--autoplay-policy=no-user-gesture-required", "--mute-audio", "about:blank",
+    ...chromeArgs(), "about:blank",
   ], { stdio: "ignore" });
   for (let i = 0; i < 80; i++) {
     try { await httpJson(port, "/json/version"); return { reused: false, port, child, profile }; }

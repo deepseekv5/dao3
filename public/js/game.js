@@ -11,13 +11,21 @@ import {
   sleep, randomPick, getEntityBounds, clamp, clamp01, toVec3, packId, baseId, rotOf, rotateVecByTurn,
   luma, rgbHex, pickEnv, sampleRamp, sampleRampNum, newParticle, matchSelector, keyCodeOf, rayHitsBox, rgbaOf, colorTriple,
   attachChannels, makeChannel, consoleDiv, esc, fmt, Sound, GameAnimation, makeMotionController,
-  makeDatabase,
+  sanitizeModelGeometry, makeDatabase,
   noteError,
 } from "./gapi.js";
 import { createClientApi, createAudioClass } from "./clientui.js";
 import { sunDirFromPhase, nightFromElev } from "./sun.js";
 import { makeAvatar, blobShadowMesh } from "./avatar.js";
 import * as backend from "./backend.js";
+
+export class GameEntity {
+  async dlgMsg(title, content, hasArrow) { return this.player?.dialog({ type: GameDialogType.TEXT, title, content, hasArrow }); }
+  async dlgInput(title, content) { return this.player?.dialog({ type: GameDialogType.INPUT, title, content }); }
+  async dlgSel(title, content, options) { return (await this.player?.dialog({ type: GameDialogType.SELECT, title, content, options })) || ""; }
+  update(position) { const v = toVec3(position); this.position.copy(v); if (this._obj) this._obj.position.set(v.x, v.y, v.z); }
+  setVelocity(velocity) { this.velocity.copy(toVec3(velocity)); }
+}
 
 /**
  * 地图级持久化数据的键名，只在这里定义一次。
@@ -252,16 +260,18 @@ export class GameRuntime {
   }
 
   /* ---------------- 启动 / 停止 ---------------- */
-  start({ scripts = [], assets = {}, spawnIndex = null, player = null } = {}) {
+  async start({ scripts = [], assets = {}, spawnIndex = null, player = null } = {}) {
     if (this.running) return;
     this.running = true;
+    this.ready = false;
+    const yieldToUi = () => new Promise((resolve) => setTimeout(resolve, 0));
     this.paused = false;      // 上一次运行留下的暂停态不能带进这一次
     const e = this.e, r = e.renderer;
     this.assets = {
       meshes: (assets && assets.meshes) || {}, audio: (assets && assets.audio) || {},
       audioBase: (assets && assets.audioBase) || "", audioNames: (assets && assets.audioNames) || [],
       pictureNames: (assets && assets.pictureNames) || [], lutNames: (assets && assets.lutNames) || [],
-      partNames: (assets && assets.partNames) || [],
+      partNames: (assets && assets.partNames) || [], ensureMesh: (assets && assets.ensureMesh) || null,
     };
     // 「世界」面板里的官方 GameWorld 参数在脚本执行前生效，脚本仍可覆盖
     const meta = e.state.meta || {};
@@ -309,7 +319,9 @@ export class GameRuntime {
     r.setBarriersVisible && r.setBarriersVisible(false);
     r.setMarkersVisible && r.setMarkersVisible(false);   // 编辑器的标记盒不进运行模式，见 stop()
     r.pushEnvironmentState && r.pushEnvironmentState();   // 退出时要还回去，见 renderer 里那段注释
-    this._buildRegistry();
+    await this._buildRegistry();
+    sanitizeModelGeometry(r.scene);
+    await yieldToUi();
     this._client().attach();
     // 编辑器里摆好的触发区域：脚本执行前先注册，world.zones() 立刻能查到
     for (const z of (meta.zones || [])) {
@@ -327,10 +339,22 @@ export class GameRuntime {
     this._setupHud();
     this._bindInput();
     document.body.classList.add("playing");
+    this._scriptTable = (scripts || []).map((f) => ({ name: f.name || "index.js", code: f.code || "", entry: f }));
+    this._modules = new Map();
+    this._moduleLoading = new Set();
+    this._remoteApi = null;
     consoleDiv(this.hud.console, "已载入 " + (scripts || []).length + " 个脚本文件", "info");
     // 出生点被纠正过一定要说：静默把人从天上挪到地面，作者会以为自己的坐标没生效
     if (this._spawnNotice) consoleDiv(this.hud.console, this._spawnNotice, "warn");
-    for (const f of scripts || []) this.runScript(f.name || "index.js", f.code || "", f);
+    // 官方包通过 scriptAssets.type 区分服务端/客户端，并且只有 index.js/clientIndex.js 是入口；
+    // 其它文件由 require/import 按需加载。旧存档没有 entry 标记时保持“全部执行”的兼容行为。
+    const entryScripts = (scripts || []).some((f) => f.entry)
+      ? (scripts || []).filter((f) => f.entry)
+      : (scripts || []);
+    for (const f of entryScripts) {
+      this.runScript(f.name || "index.js", f.code || "", f);
+      await yieldToUi();
+    }
     this._channels.PlayerJoin.fire({ tick: 0, entity: this.playerEntity });
     if (this.playerJoinSound) this._playAt(this.playerJoinSound, this.playerEntity.position);
     if (this.ambientSound) this._startAmbient();
@@ -339,6 +363,8 @@ export class GameRuntime {
     this._channels.Tick.fire(this._tickEvent(0, false));
     this._oldOnRender = r.onRender;
     r.onRender = () => this._frame();
+    if (r.prepareFirstFrame) await r.prepareFirstFrame();
+    this.ready = true;
   }
 
   /** 进入运行时就预加载游玩菜单模块。
@@ -539,6 +565,7 @@ export class GameRuntime {
   stop() {
     if (!this.running) return;
     this.running = false;
+    this.ready = false;
     this.paused = false;
     const e = this.e, r = e.renderer;
     this._stopWorldIngress();
@@ -585,7 +612,7 @@ export class GameRuntime {
   }
 
   /* ---------------- 实体注册 ---------------- */
-  _buildRegistry() {
+  async _buildRegistry() {
     const e = this.e;
     for (const ent of this.entities) ent._dispose && ent._dispose();
     this.entities = [];
@@ -605,7 +632,7 @@ export class GameRuntime {
       // 否则树里的 bounds 与网格尺寸不一致，视觉上会「穿过方块」
       if (Array.isArray(d.anchorOffset)) {
         ent.anchorOffset.set(d.anchorOffset[0], d.anchorOffset[1], d.anchorOffset[2]);
-      } else if (obj && obj.isObject3D) {
+      } else if (obj && obj.isObject3D && !(Array.isArray(d.bounds) && d.bounds.some((v) => +v > 0))) {
         try {
           obj.updateWorldMatrix(true, true);
           const box = new THREE.Box3().setFromObject(obj);
@@ -648,13 +675,18 @@ export class GameRuntime {
       ent._defaultMotionId = d.defaultMotionId || "";
       return ent;
     };
-    for (const m of e.state.models || []) {
-      if (!m.meshName && !m.tags?.length && !m.entId) continue;
-      mk({ ...m, position: m.object ? [m.object.position.x, m.object.position.y, m.object.position.z] : m.pos }, m.object || null);
+    const models = (e.state.models || []).filter((m) => m.meshName || m.tags?.length || m.entId);
+    for (let i = 0; i < models.length; i += 8) {
+      for (const m of models.slice(i, i + 8)) {
+        mk({ ...m, position: m.object ? [m.object.position.x, m.object.position.y, m.object.position.z] : m.pos }, m.object || null);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    for (const d of e.state.entities || []) {
-      if ((e.state.models || []).some((m) => (m.name || m.entId) === (d.name || d.id))) continue;
-      mk(d, null);
+    const modelNames = new Set(models.map((m) => m.name || m.entId));
+    const markers = (e.state.entities || []).filter((d) => !modelNames.has(d.name || d.id));
+    for (let i = 0; i < markers.length; i += 16) {
+      for (const d of markers.slice(i, i + 16)) mk(d, null);
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   }
 
@@ -688,6 +720,7 @@ export class GameRuntime {
       _entityContacts: [], _voxelContacts: [], _fluidContacts: [],
       _prevVoxelContacts: [], _prevFluidContacts: [],
     };
+    Object.setPrototypeOf(ent, GameEntity.prototype);
     if (!ent._obj) {
       const g = new THREE.Group();
       g.visible = false;
@@ -907,6 +940,22 @@ export class GameRuntime {
         metalness: s.metalness ?? 0, shininess: s.shininess ?? 0, orientation: o || null,
         scale: s.scale || null, offset: s.offset || null, _obj: holder, _anchor: anchor,
       };
+      w._color = rgbaOf(s.color, new GameRGBAColor(1, 1, 1, 1));
+      Object.defineProperty(w, "color", {
+        get: () => w._color,
+        set: (v) => {
+          w._color = rgbaOf(v, w._color);
+          holder.traverse((m) => { if (m.isMesh && m.material && m.material.color) m.material.color.setRGB(w._color.red, w._color.green, w._color.blue); });
+        },
+        configurable: true, enumerable: true,
+      });
+      w._scale = toVec3(s.scale, new GameVector3(1, 1, 1));
+      Object.defineProperty(w, "scale", {
+        get: () => w._scale,
+        set: (v) => { w._scale = toVec3(v, w._scale); holder.scale.set(w._scale.x || 1, w._scale.y || 1, w._scale.z || 1); },
+        configurable: true, enumerable: true,
+      });
+      w.remove = () => p.removeWearable(w);
       p._wearables.push(w);
       return w;
     };
@@ -3011,8 +3060,8 @@ void main() {
     if (!name) { this._syncEntityVisibility(ent); return; }
     const base = String(name).replace(/.*[\\/]/, "").replace(/\.(vb|vox|glb|gltf|fbx|obj)$/i, "");
     const asset = (this.assets.meshes || {})[base];
-    if (asset && asset.object) {
-      const clone = asset.object.clone(true);
+    const attach = (object) => {
+      const clone = object.clone(true);
       ent._meshHolder.add(clone);
       if (clone.animations && clone.animations.length) {
         ent._clips = clone.animations;
@@ -3020,6 +3069,16 @@ void main() {
       }
       this._applyMeshTransform(ent);
       this._syncEntityVisibility(ent);
+    };
+    if (asset && asset.object) { attach(asset.object); return; }
+    if (this.assets.ensureMesh && !asset?.object) {
+      if (ent._meshLoadingBase !== base) {
+        ent._meshLoadingBase = base;
+        Promise.resolve(this.assets.ensureMesh(base)).then((loaded) => {
+          ent._meshLoadingBase = "";
+          if (loaded?.object && !ent.destroyed && ent._meshName === base) attach(loaded.object);
+        }).catch(() => { ent._meshLoadingBase = ""; });
+      }
       return;
     }
     // 取不到资产就什么都不画。以前这里塞一个青色线框占位盒：一张图里几十个
@@ -3102,9 +3161,56 @@ void main() {
    * "A 用 B、B 又回调 A" 是常见写法；但仍要 warn 一句，
    * 否则调一个 undefined 属性时完全看不出是环造成的。
    */
+  _builtinModule(spec) {
+    const s = String(spec || "").replace(/\\/g, "/");
+    if (/\/(?:_server_bundle|server_bundle)\.js$/i.test(s) || /^_server_bundle\.js$/i.test(s)) {
+      const hash = (v) => {
+        const text = String(v || ""); let h = 2166136261;
+        for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+        return (h >>> 0).toString(36).toUpperCase().padStart(7, "0");
+      };
+      return {
+        jcode: hash,
+        getInviteCode: (entity, id, mode) => {
+          this._inviteCodes = this._inviteCodes || new Map();
+          const who = entity?.player?.userKey || entity?.player?.userId || entity?.id || "player";
+          const key = who + ":" + id, code = hash(key);
+          if (mode === "set") this._inviteCodes.set(key, code);
+          return this._inviteCodes.get(key) || code;
+        },
+      };
+    }
+    if (/\/competition\.js$/i.test(s) || /^competition\.js$/i.test(s)) {
+      return { main: async (entity) => {
+        if (!entity?.player) return;
+        const r = await entity.player.dialog({ type: GameDialogType.SELECT, title: "赛事控制", options: ["创建积分赛", "加入当前赛事", "退出赛事", "查看状态"] });
+        if (!r) return;
+        if (r.index === 0) { this._competition = { name: "本地赛事", players: [entity.id], tick: this.currentTick }; entity.player.directMessage("赛事已创建"); }
+        else if (r.index === 1) { this._competition = this._competition || { name: "本地赛事", players: [], tick: this.currentTick }; if (!this._competition.players.includes(entity.id)) this._competition.players.push(entity.id); entity.player.directMessage("已加入赛事"); }
+        else if (r.index === 2) { if (this._competition) this._competition.players = this._competition.players.filter((id) => id !== entity.id); entity.player.directMessage("已退出赛事"); }
+        else entity.player.directMessage(this._competition ? `当前赛事：${this._competition.name}，${this._competition.players.length} 人` : "当前没有赛事");
+      } };
+    }
+    if (/\/skin\.js$/i.test(s) || /^skin\.js$/i.test(s)) {
+      const colors = [[1,.7,.4],[.4,.8,1],[.8,.4,1],[.5,1,.7],[1,.5,.6],[.9,.9,.5],[.5,.7,1],[1,.6,.3],[.6,1,1],[.9,.6,.8],[.7,.9,.6],[.6,.8,.9],[.9,.7,.7],[.8,.8,1],[.7,1,.8]];
+      const names = ["琥珀","冰蓝","星紫","森绿","绯红","鎏金","苍穹","焰橙","青瓷","樱粉","苔原","深蓝","玫瑰","银翼","薄荷"];
+      return Object.fromEntries(names.map((name, i) => [String(i), {
+        name, type: i % 2, style: [], skinname: "",
+        effect: (entity) => { const c = colors[i]; if (entity?.player?.color?.set) entity.player.color.set(c[0], c[1], c[2], 1); },
+        defaulteffect: (entity) => { if (entity?.player?.color?.set) entity.player.color.set(1, 1, 1, 1); },
+      }]));
+    }
+    return null;
+  }
   _require(from, spec) {
     const resolved = this._resolveModule(from, spec);
     if (!resolved) {
+      const builtin = this._builtinModule(spec);
+      if (builtin) {
+        const key = "\0builtin:" + spec;
+        if (!this._modules.has(key)) this._modules.set(key, { exports: builtin });
+        return this._modules.get(key).exports;
+      }
       const have = (this._scriptTable || []).map((f) => f.name).join("、") || "（这张图没有别的脚本）";
       throw new Error(`require("${spec}") 找不到模块。本图的脚本只有：${have}。`
         + `路径要带相对前缀和扩展名，例如 require("./utils.js")。`);
@@ -3121,6 +3227,8 @@ void main() {
     try {
       const f = (this._scriptTable || []).find((x) => x.name === resolved);
       this._evalScript(resolved, f ? f.code : "", f ? f.entry : null, rec);
+      // 旧官方包把管理员表写成 Admin / ADMIN 两种大小写，模块间按自由变量读取。
+      if (!this._scriptGlobal.Admin && this._scriptGlobal.ADMIN) this._scriptGlobal.Admin = this._scriptGlobal.ADMIN;
     } finally {
       this._moduleLoading.delete(resolved);
     }
@@ -3132,10 +3240,34 @@ void main() {
    * "Unexpected token"。宁可给一句能照着改的话：本实现只支持 CommonJS，
    * 而官方 Arena 服务端规范也正是 CommonJS。
    */
-  _esmSyntax(code) {
-    const s = String(code || "");
-    return /(^|[\n;])\s*(import\s+[\w{*][\s\S]{0,400}?from\s*["']|import\s*\(|import\s*["'])/.test(s)
-      || /(^|[\n;])\s*export\s+(default\s+)?(const|let|var|function|class|async|\{)/.test(s);
+  /** 官方客户端脚本使用 ES module；浏览器里没有 vm.SourceTextModule，
+   *  将项目内 import/export 转成同一套 CommonJS require，保持沙箱边界不变。 */
+  _transformEsm(code) {
+    let s = String(code || ""), exported = [];
+    s = s.replace(/import\s+\{([\s\S]*?)\}\s+from\s+["']([^"']+)["'];?/g, (_, list, spec) => {
+      const names = list.split(",").map((x) => x.trim()).filter(Boolean).map((x) => {
+        const m = /^([\w$]+)\s+as\s+([\w$]+)$/.exec(x);
+        return m ? `${m[1]}: ${m[2]}` : x;
+      });
+      return `const { ${names.join(", ")} } = require(${JSON.stringify(spec)});`;
+    });
+    s = s.replace(/import\s+\*\s+as\s+([\w$]+)\s+from\s+["']([^"']+)["'];?/g, (_, name, spec) => `const ${name} = require(${JSON.stringify(spec)});`);
+    s = s.replace(/import\s+([\w$]+)\s+from\s+["']([^"']+)["'];?/g, (_, name, spec) => `const __esm_${name} = require(${JSON.stringify(spec)}); const ${name} = __esm_${name}.default || __esm_${name};`);
+    s = s.replace(/import\s*["']([^"']+)["'];?/g, (_, spec) => `require(${JSON.stringify(spec)});`);
+    s = s.replace(/export\s*\{([^}]+)\};?/g, (_, list) => {
+      for (const x of list.split(",").map((v) => v.trim()).filter(Boolean)) {
+        const m = /^([\w$]+)(?:\s+as\s+([\w$]+))?$/.exec(x);
+        if (m) exported.push(m[2] ? `${m[2]}: ${m[1]}` : m[1]);
+      }
+      return "";
+    });
+    s = s.replace(/export\s+(async\s+)?function\s+([\w$]+)/g, (_, asyncPart, name) => { exported.push(name); return `${asyncPart || ""}function ${name}`; });
+    s = s.replace(/export\s+(const|let|var)\s+([\w$]+)/g, (_, kind, name) => { exported.push(name); return `${kind} ${name}`; });
+    s = s.replace(/export\s+default\s+([\w$]+)\s*;?/g, (_, name) => { exported.push(`default: ${name}`); return ""; });
+    // 官方客户端总派发器也会收到聊天/按键等字符串事件；未知 id 应忽略而不是调用 undefined。
+    s = s.replace(/\bDealRequest\[e\.id\]\(e\)/g, "(typeof DealRequest[e.id] === 'function' ? DealRequest[e.id](e) : undefined)");
+    if (exported.length) s += `\nmodule.exports = Object.assign(module.exports || {}, { ${exported.join(", ")} });\n`;
+    return s;
   }
 
   /** 编译并执行一个脚本；给了 mod 就按 CommonJS 模块跑（注入 module/exports/require）。 */
@@ -3156,19 +3288,20 @@ void main() {
       consoleDiv(this.hud.console, `[${name}] ${msg}${where}`, "err");
       noteError(`[${name}] ${msg}`);
     };
-    if (this._esmSyntax(code)) {
-      const e = new Error(`${name} 用了 ES module 语法（import / export）。本实现把每个脚本编译成函数体执行，`
-        + `只支持 CommonJS：用 require("./x.js") 取，另一头用 module.exports = { … } 交。`);
-      fail(e);
-      return Promise.reject(e);
-    }
     try {
       // 官方脚本大量在文件顶层直接写 await（`const r = await http.fetch(…)`），
       // 用同步 Function 编译会在第一行 await 就抛 SyntaxError、整个脚本一个字都不执行。
       // 所以按 async 函数体编译；顶层 return 也因此顺带可用。
       const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-      const fn = new AsyncFunction(...keys, String(code) + "\n//# sourceURL=" + encodeURIComponent(name));
-      const p = fn(...vals);
+      const source = this._transformEsm(code);
+      const shared = rt._scriptGlobal || (rt._scriptGlobal = {});
+      const scope = new Proxy(g, {
+        has(target, key) { return key !== Symbol.unscopables && (Reflect.has(target, key) || Reflect.has(shared, key)); },
+        get(target, key) { return Reflect.has(target, key) ? target[key] : shared[key]; },
+        set(target, key, value) { if (Reflect.has(target, key)) target[key] = value; else shared[key] = value; return true; },
+      });
+      const fn = new AsyncFunction(...keys, "__scope", `with (__scope) { return await (async function () {\n${source}\n}).call(__scope.globalThis); }\n//# sourceURL=${encodeURIComponent(name)}`);
+      const p = fn(...vals, scope);
       if (p && typeof p.then === "function") {
         return p.then(() => consoleDiv(this.hud.console, "脚本 " + name + " 运行成功", "ok"), fail);
       }
@@ -3195,6 +3328,7 @@ void main() {
       resolveSrc: (s) => rt._assetUrl(s),
     });
     api.Audio = createAudioClass();
+    if (rt.e.state.meta && rt.e.state.meta.uiTree) api.loadTree(rt.e.state.meta.uiTree);
     this._cliApi = api;
     return api;
   }
@@ -3206,6 +3340,7 @@ void main() {
       GameVector3, GameBounds3, GameRGBColor, GameRGBAColor, GameQuaternion,
       GameCameraMode, GameCameraFreezedAxis, GameInputDirection, GamePlayerMoveState, GamePlayerWalkState,
       GameButtonType, GameDialogType, GameEasing, GameAnimationPlaybackState, GameAnimationDirection,
+      GameEntity, GameAnimation,
       GameAssetType, GameLogLevel, GameBodyPart, SocialType, PointerEventBehavior, ImageDisplayMode, UITextFontFamily,
       sleep, randomPick, getEntityBounds,
       resources: this._resources(), storage: this._storage("storage"), db: this._database(),
@@ -3215,6 +3350,8 @@ void main() {
       analytics: this._analytics(),
       gui: this._gui(),
       process: { env: {}, platform: "browser", version: "dao3-clone" },
+      global: rt._scriptGlobal || (rt._scriptGlobal = {}),
+      globalThis: rt._scriptGlobal || (rt._scriptGlobal = {}),
       __dirname: "/",
       console: {
         clear: () => { const c = rt.hud.console; if (c) c.innerHTML = ""; },
@@ -3280,7 +3417,7 @@ void main() {
     if (!s) return "";
     if (/^(https?:|data:|blob:)/i.test(s)) return s;
     if (/^(https?:|data:|blob:|\/)/i.test(s)) return s;
-    const rel = s.replace(/^\.\//, "");
+    const rel = s.replace(/^\.\//, "").replace(/^snow\//i, "part/");
     const pics = this.assets.pictureNames || [];
     const auds = this.assets.audioNames || [];
     if (/^audio\//i.test(rel) || pics.length === 0 && auds.includes(rel.replace(/^.*[\\/]/, ""))) {
@@ -3364,7 +3501,7 @@ void main() {
     };
     const storage = {
       key: sname,
-      get: async (x) => read(x),
+      get: async (x) => { const v = read(x); return v == null ? null : { key: String(x), value: v }; },
       set: async (x, v) => { write(x, v); },
       update: async (x, fn) => { const cur = read(x); const next = await fn(cur); write(x, next); return next; },
       increment: async (x, by = 1) => { const n = (Number(read(x)) || 0) + by; write(x, n); return n; },
@@ -3537,30 +3674,36 @@ void main() {
     };
   }
   _remoteChannel() {
+    if (this._remoteApi) return this._remoteApi;
     const rt = this;
     const srv = makeChannel(), cli = makeChannel();
-    return {
+    const api = {
       sendClientEvent: (entities, clientEvent) => {
-        cli.fire({ tick: rt.currentTick, entity: Array.isArray(entities) ? entities[0] : entities, args: clientEvent });
+        const payload = clientEvent && typeof clientEvent === "object" ? clientEvent : {};
+        cli.fire(Object.assign({ tick: rt.currentTick, entity: Array.isArray(entities) ? entities[0] : entities, args: clientEvent }, payload));
         return true;
       },
       broadcastClientEvent: (clientEvent) => {
-        cli.fire({ tick: rt.currentTick, entity: rt.playerEntity, args: clientEvent });
+        const payload = clientEvent && typeof clientEvent === "object" ? clientEvent : {};
+        cli.fire(Object.assign({ tick: rt.currentTick, entity: rt.playerEntity, args: clientEvent }, payload));
         return true;
       },
       onClientEvent: cli.on,
       sendServerEvent: (serverEvent) => {
-        srv.fire({ tick: rt.currentTick, entity: rt.playerEntity, args: serverEvent });
+        const payload = serverEvent && typeof serverEvent === "object" ? serverEvent : {};
+        srv.fire(Object.assign({ tick: rt.currentTick, entity: rt.playerEntity, args: serverEvent }, payload));
         return true;
       },
       onServerEvent: srv.on,
       events: {
-        on: cli.on,
-        sub: cli.on,
-        emit: (payload) => { cli.fire({ tick: rt.currentTick, entity: rt.playerEntity, args: payload }); return true; },
+        on: (name, h) => cli.on(h),
+        sub: (name, h) => cli.on(h),
+        emit: (payload) => { const data = payload && typeof payload === "object" ? payload : {}; cli.fire(Object.assign({ tick: rt.currentTick, entity: rt.playerEntity, args: payload }, data)); return true; },
         off: (h) => { const rec = cli.handlers.find((x) => x.h === h); if (rec) rec.active = false; },
       },
     };
+    this._remoteApi = api;
+    return api;
   }
 
   /* ---------------- GameWorld ---------------- */
@@ -3930,11 +4073,11 @@ void main() {
       if (type === GameDialogType.SELECT) {
         const opts = document.createElement("div");
         opts.className = "d-options";
-        (params.options || []).forEach((label) => {
+        (params.options || []).forEach((label, index) => {
           const b = document.createElement("button");
           b.className = "playbtn";
           b.textContent = label;
-          b.onclick = () => finish(String(label));
+          b.onclick = () => finish({ index, value: String(label) });
           opts.appendChild(b);
         });
         box.appendChild(opts);
@@ -4222,13 +4365,13 @@ void main() {
     "encodeURIComponent", "decodeURIComponent", "encodeURI", "decodeURI", "ArrayBuffer", "DataView",
     "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array", "Int32Array", "Uint32Array",
     "Float32Array", "Float64Array", "Proxy", "Reflect",
-    "console", "process", "__dirname", "http", "remoteChannel", "sleep",
+    "console", "process", "global", "globalThis", "__dirname", "http", "remoteChannel", "sleep",
     "setTimeout", "clearTimeout", "setInterval", "clearInterval"];
   static SERVER_GLOBALS = [...GameRuntime.BUILTIN_GLOBALS,
     "world", "voxels", "resources", "storage", "db", "rtc", "analytics", "gui", "randomPick", "getEntityBounds",
     "GameVector3", "GameBounds3", "GameRGBColor", "GameRGBAColor", "GameQuaternion", "GameCameraMode",
     "GameCameraFreezedAxis", "GameInputDirection", "GamePlayerMoveState", "GamePlayerWalkState", "GameButtonType",
-    "GameDialogType", "GameEasing", "GameAnimationPlaybackState", "GameAnimationDirection", "GameAssetType",
+    "GameDialogType", "GameEasing", "GameAnimationPlaybackState", "GameAnimationDirection", "GameEntity", "GameAnimation", "GameAssetType",
     "GameLogLevel", "GameBodyPart", "SocialType"];
   static CLIENT_GLOBALS = [...GameRuntime.BUILTIN_GLOBALS,
     "world", "navigator", "screenWidth", "screenHeight", "ui", "input", "screen", "media", "call", "callAsync",
@@ -4346,7 +4489,7 @@ void main() {
     const now = performance.now();
     for (const [id, t] of [...this._timers]) {
       if (now >= t.at) {
-        try { t.fn(); } catch (err) { consoleDiv(this.hud.console, "定时器错误: " + err.message, "err"); }
+        try { t.fn(); } catch (err) { consoleDiv(this.hud.console, "定时器错误: " + (err.stack || err.message || err), "err"); }
         if (t.repeat) t.at = now + t.repeat;
         else this._timers.delete(id);
       }
@@ -4721,6 +4864,8 @@ void main() {
 
 /* ---------------- prop 工厂（mesh* 系列） ---------------- */
 function propFor(key, ent, rt) {
+  if (key === "color") key = "meshColor";
+  if (key === "scale") key = "meshScale";
   if (key === "mesh") {
     return {
       get: () => ent._meshName || "",

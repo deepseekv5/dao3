@@ -290,6 +290,8 @@ function importFile(file) {
     if (res.groups && res.groups.length) meta.groups = res.groups;
     if (res.meshNames && res.meshNames.length) meta.meshNames = res.meshNames;
     if (res.pictureNames && res.pictureNames.length) meta.pictureNames = res.pictureNames;
+    if (res.assetNames?.lut?.length) meta.lutNames = res.assetNames.lut;
+    if (res.assetNames?.part?.length) meta.partNames = res.assetNames.part;
     if (res.projectCfg && res.projectCfg.player) meta.player = Object.assign({}, res.projectCfg.player, { _units: "official" });
     if (res.projectCfg && res.projectCfg.physics) meta.worldSettings = Object.assign({}, res.projectCfg.physics, { airFriction: res.projectCfg.physics.velocityDamping ?? 0.01 });
     if (res.projectCfg && res.projectCfg.environment) {
@@ -322,6 +324,8 @@ function importFile(file) {
     if (res.mapId) meta.mapId = res.mapId;
     if (res.branchKey) meta.branchKey = res.branchKey;
     if (res.officialVersionControl) meta.officialVersionControl = res.officialVersionControl;
+    if (res.assets) meta.assetIndex = res.assets;
+    if (res.block?.assets) meta.assetsCid = res.block.assets;
     const payload = res.world.toPayload(meta);
     const j = await io.apiSaveWorld(id, payload);
     if (!j.ok) throw new Error(j.error || "保存失败");
@@ -337,22 +341,26 @@ async function saveZipAssets(id, res) {
     ...(res.voxMeshes || []).filter((v) => v.bytes).map((v) => ({ rel: "models/" + v.name + ".vox", bytes: v.bytes })),
     ...(res.vbMeshes || []).filter((v) => v.bytes).map((v) => ({ rel: "models/" + v.name + ".vb", bytes: v.bytes })),
     ...(res.pictureFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
+    ...(res.lutFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
+    ...(res.partFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
     ...(res.audioFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
   ];
-  let mesh = 0, pics = 0, auds = 0; const audioNames = [];
-  for (const f of files) {
-    try {
-      const r = await fetch("/api/world/" + id + "/asset?path=" + encodeURIComponent(f.rel), { method: "POST", body: f.bytes });
-      if (r.ok) { if (f.rel.startsWith("models/")) mesh++; else if (f.rel.startsWith("audio/")) { auds++; audioNames.push(f.rel.replace(/^audio\//, "")); } else pics++; }
-    } catch { }
-  }
-  for (const f of res.meshAssetEntries || []) {
-    try {
-      const bytes = await res.extractEntry(f.entry);
-      const r = await fetch("/api/world/" + id + "/asset?path=" + encodeURIComponent("models/" + f.name + f.ext), { method: "POST", body: bytes });
-      if (r.ok) mesh++;
-    } catch { }
-  }
+  const seen = new Set();
+  const jobs = [
+    ...files,
+    ...(res.meshAssetEntries || []).map((f) => ({ rel: "models/" + f.name + f.ext, entry: f.entry })),
+  ].filter((job) => !seen.has(job.rel) && seen.add(job.rel));
+  let mesh = 0, pics = 0, auds = 0, cursor = 0; const audioNames = [];
+  await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, async () => {
+    while (cursor < jobs.length) {
+      const f = jobs[cursor++];
+      try {
+        const bytes = f.bytes || await res.extractEntry(f.entry);
+        const r = await fetch("/api/world/" + id + "/asset?path=" + encodeURIComponent(f.rel), { method: "POST", body: bytes });
+        if (r.ok) { if (f.rel.startsWith("models/")) mesh++; else if (f.rel.startsWith("audio/")) { auds++; audioNames.push(f.rel.replace(/^audio\//, "")); } else pics++; }
+      } catch { }
+    }
+  }));
   return { assetRoot: mesh ? `/assets/worlds/${id}/models/` : "", pictureRoot: pics ? `/assets/worlds/${id}/` : "", audioRoot: auds ? `/assets/worlds/${id}/audio/` : "", audioNames };
 }
 

@@ -868,6 +868,43 @@ ok("rendering3d=false 冻结最后一帧而非隐藏画布", cliProbe.freeze.pau
 ok("pointerLockEvents 用官方事件名与 isLocked 负载", cliProbe.lockEvent === "change:boolean", cliProbe.lockEvent);
 ok("UiScale 拒绝负值", cliProbe.scaleGuard.kept, JSON.stringify(cliProbe.scaleGuard));
 
+const compatProbe = await page.evaluate(async () => {
+  const g = window.__game, cli = g._client();
+  cli.loadTree({
+    screen: { id: "screen", type: 1, value: { data: { type: "screen", data: { name: "screen" } } } },
+    panel: { id: "panel", parentId: "screen", type: 2, value: { data: { type: "box", data: { name: "panel" } } } },
+    chat: { id: "chat", parentId: "panel", type: 2, value: { data: { type: "input", data: { name: "chat", textContent: "" } } } },
+  });
+  const chat = cli.ui.findChildByName("chat");
+  const remote = g._remoteChannel();
+  let serverEvents = 0, clientEvents = 0;
+  remote.onServerEvent(() => serverEvents++);
+  remote.events.on("client", () => clientEvents++);
+  remote.sendServerEvent({ type: 1 });
+  remote.sendClientEvent(g.playerEntity, { id: 1 });
+  const first = { exports: {} }, second = { exports: {} };
+  await g._evalScript("compat-a.js", "globalThis.__compatShared = 41; module.exports = 1;", null, first);
+  await g._evalScript("compat-b.js", "module.exports = __compatShared + 1;", null, second);
+  const hash = g._builtinModule("./_server_bundle.js");
+  const skins = g._builtinModule("./skin.js");
+  cli.loadTree({});
+  delete g._scriptGlobal.__compatShared;
+  return {
+    inputType: chat?.constructor.name,
+    recursive: !!chat && chat.textContent === "",
+    sameChannel: remote === g._remoteChannel(),
+    serverEvents, clientEvents,
+    sharedGlobal: second.exports === 42,
+    stableCode: hash.jcode("playerfp2") === hash.jcode("playerfp2") && hash.jcode("playerfp2") !== hash.jcode("otherfp2"),
+    skinEffect: typeof skins["0"]?.effect === "function" && typeof skins["0"]?.defaulteffect === "function",
+    competition: typeof g._builtinModule("./competition.js")?.main === "function",
+  };
+});
+ok("官方 UI 树恢复 input 类型并支持递归 findChildByName", compatProbe.inputType === "UiInput" && compatProbe.recursive, JSON.stringify(compatProbe));
+ok("remoteChannel 全局共享且双端事件互通", compatProbe.sameChannel && compatProbe.serverEvents === 1 && compatProbe.clientEvents === 1, JSON.stringify(compatProbe));
+ok("globalThis 写入可作为下一脚本自由变量读取", compatProbe.sharedGlobal, JSON.stringify(compatProbe));
+ok("官方构建模块提供稳定邀请码、赛事与皮肤效果", compatProbe.stableCode && compatProbe.skinEffect && compatProbe.competition, JSON.stringify(compatProbe));
+
 // 官方天气 / 光照参数必须真的改变渲染层状态（以前 22 个键写了没反应）
 const envProbe = await page.evaluate(async () => {
   const g = window.__game, r = g.e.renderer, w = g.world;

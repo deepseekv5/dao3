@@ -12,6 +12,7 @@ import { buildUI } from "./ui.js";
 import { initFeatures, moveSelectedModel, importProject, migratePlayerMeta, placeHeldModel, moveHeldModelTo, rotateHeldModel, dropHeldModel, ensureHeldFromSelection, refreshModelList, refreshScriptFiles, createWorld } from "./features.js";
 import * as bootUi from "./boot-ui.js";
 import * as auth from "./auth.js";
+import { sanitizeModelGeometry } from "./gapi.js";
 
 const worldId = (location.pathname.match(/\/edit\/([a-zA-Z0-9_-]+)/) || [])[1] || "216d665d3ca92bd1b9a2";
 
@@ -124,6 +125,7 @@ async function enterPlay() {
   const assets = {
     audio: state.assets.audio || {}, audioBase: state.meta.audioRoot || "/data/assets/audio/",
     audioNames: state.assets.audioNames || [], meshes: { ...(state.assets.meshes || {}) },
+    ensureMesh: ensureMeshAsset,
     pictureNames: state.assets.pictureNames || state.meta.pictureNames || [],
     lutNames: state.assets.lutNames || [], partNames: state.assets.partNames || [],
   };
@@ -139,7 +141,7 @@ async function enterPlay() {
     game.weatherCycleTicks = (state.terrain.weatherCycleSeconds || 60) * 60;
   }
   game.gameRules = Object.assign({}, game.gameRules, state.meta.gameRules || {});
-  game.start({ scripts: state.scripts || [], assets, player: migratePlayerMeta(state.meta.player) });
+  await game.start({ scripts: state.scripts || [], assets, player: migratePlayerMeta(state.meta.player) });
   try { window.__musicPlayback?.dispose(); } catch { }
   if (state.meta.music && state.meta.music.bgm) {
     import("./music-synth.js").then((m) => {
@@ -392,6 +394,7 @@ async function applySceneModels(meta) {
   }
   renderer._modelStreamCleanup = null;
   suspendModelList(false);
+  sanitizeModelGeometry(renderer.scene);
   renderer.buildModelBatches(state.models);
   refreshModelList();
   ui && ui.refreshTree && ui.refreshTree();
@@ -399,9 +402,13 @@ async function applySceneModels(meta) {
 // 从世界 meta 声明的资产目录加载模型（如赛车模板的 models/*.gltf、VOXA 导出的 .glb），注册进 state.assets.meshes
 let _seedAssetsLoaded = false;
 async function loadSeedAssets(meta) {
+  state.assets = state.assets || { audio: {}, meshes: {}, meshNames: [] };
+  state.assets.audioNames = meta?.audioNames || state.assets.audioNames || [];
+  state.assets.lutNames = meta?.lutNames || state.assets.lutNames || [];
+  state.assets.partNames = meta?.partNames || state.assets.partNames || [];
+  state.assets.pictureNames = meta?.pictureNames || state.assets.pictureNames || [];
   const names = meta && meta.meshNames;
   if (!names || !names.length) return;
-  state.assets = state.assets || { audio: {}, meshes: {}, meshNames: [] };
   state.assets.meshNames = names;
   const root = meta && meta.assetRoot;
   if (!root) {
@@ -410,12 +417,6 @@ async function loadSeedAssets(meta) {
   }
   // 大包的模型只登记名字，点开时再解析。一次并发解析上千个 glTF 会把主线程和内存压垮。
   for (const name of names) if (!state.assets.meshes[name] || !state.assets.meshes[name].object) state.assets.meshes[name] = { lazy: true, scale: 1 };
-  if (!state.assets.audioNames?.length) {
-    try {
-      const r = await fetch("/data/assets/audio/index.json");
-      if (r.ok) state.assets.audioNames = await r.json();
-    } catch {}
-  }
 }
 
 /** 按需加载单个模型（.gltf/.glb/.vox/.vb），并归一到「XZ 居中、底面为原点」。 */
@@ -434,6 +435,7 @@ async function ensureMeshAsset(base) {
       const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, "", res, rej));
       // 官方导出已经把锚点和节点偏移烘进场景：包围盒不是原点时再居中一次，
       // 会把每个模型整体推偏半个尺寸。VOXA 的 pivot 也已经写在节点变换里。
+      sanitizeModelGeometry(gltf.scene);
       return set(gltf.scene);
     } catch { }
   }
@@ -441,7 +443,9 @@ async function ensureMeshAsset(base) {
     const r = await fetch(root + encodeURIComponent(base) + ".bin");
     if (r.ok) {
       const { buildBoxModel } = await import("./box-model.js");
-      return set(buildBoxModel(new Uint8Array(await r.arrayBuffer())));
+      const object = buildBoxModel(new Uint8Array(await r.arrayBuffer()));
+      sanitizeModelGeometry(object);
+      return set(object);
     }
   } catch { }
   const { voxListToModel } = await import("./features.js");

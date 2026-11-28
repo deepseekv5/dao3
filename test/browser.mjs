@@ -69,7 +69,11 @@ export function resolveChromium() {
 }
 
 export function chromeArgs() {
-  return ["--no-sandbox", "--disable-dev-shm-usage", "--autoplay-policy=no-user-gesture-required", "--mute-audio"];
+  const base = ["--no-sandbox", "--disable-dev-shm-usage", "--autoplay-policy=no-user-gesture-required", "--mute-audio"];
+  const gl = process.env.CHROME_GL || (process.platform === "darwin" && process.arch === "arm64" ? "metal" : "swiftshader");
+  return gl === "metal"
+    ? [...base, "--enable-gpu", "--use-gl=angle", "--use-angle=metal"]
+    : [...base, "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
 }
 
 // playwright-core 不是本项目的依赖（运行时零依赖是硬要求），测试自己可移植地找它：

@@ -1437,20 +1437,22 @@ export async function importProject(file) {
   const wid = e.worldId || window.__worldId;
   let stored = 0;
   if (wid) {
-    for (const f of meshFiles) {
-      try {
-        const rel = f.rel || ("models/" + f.name + f.ext);
-        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(rel)}`, { method: "POST", body: f.bytes });
-        if (r.ok) stored++;
-      } catch { /* 单个存不上不该让整次导入失败，下面统一报数 */ }
-    }
-    for (const f of res.meshAssetEntries || []) {
-      try {
-        const bytes = await res.extractEntry(f.entry);
-        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent("models/" + f.name + f.ext)}`, { method: "POST", body: bytes });
-        if (r.ok) stored++;
-      } catch { }
-    }
+    const seen = new Set();
+    const jobs = [
+      ...meshFiles.map((f) => ({ rel: f.rel || ("models/" + f.name + f.ext), bytes: f.bytes })),
+      ...(res.meshAssetEntries || []).map((f) => ({ rel: "models/" + f.name + f.ext, entry: f.entry })),
+    ].filter((job) => !seen.has(job.rel) && seen.add(job.rel));
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, async () => {
+      while (cursor < jobs.length) {
+        const job = jobs[cursor++];
+        try {
+          const bytes = job.bytes || await res.extractEntry(job.entry);
+          const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(job.rel)}`, { method: "POST", body: bytes });
+          if (r.ok) stored++;
+        } catch { }
+      }
+    }));
   }
   if (stored) meta.assetRoot = `/assets/worlds/${wid}/models/`;
   else if ((meta.meshNames || []).length) {
@@ -1460,37 +1462,40 @@ export async function importProject(file) {
     delete meta.assetRoot;
     res.warnings.push(`${meta.meshNames.length} 个网格只有名字、包里没有网格文件（官方部分导出不含网格本体）；这些实体以标记框显示`);
   }
-  let picsStored = 0;
+  let resourceStored = 0, audStored = 0;
   if (wid) {
-    for (const f of res.pictureFiles || []) {
-      try {
-        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(f.rel)}`, { method: "POST", body: f.bytes });
-        if (r.ok) picsStored++;
-      } catch { }
-    }
+    const jobs = [
+      ...(res.pictureFiles || []), ...(res.lutFiles || []), ...(res.partFiles || []),
+      ...(res.audioFiles || []),
+    ];
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(8, jobs.length) }, async () => {
+      while (cursor < jobs.length) {
+        const f = jobs[cursor++];
+        try {
+          const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(f.rel)}`, { method: "POST", body: f.bytes });
+          if (r.ok) { resourceStored++; if (f.rel.startsWith("audio/")) audStored++; }
+        } catch { }
+      }
+    }));
   }
-  if (picsStored) meta.pictureRoot = `/assets/worlds/${wid}/`;
-  let audStored = 0;
-  if (wid) {
-    for (const f of res.audioFiles || []) {
-      try {
-        const r = await fetch(`/api/world/${encodeURIComponent(wid)}/asset?path=${encodeURIComponent(f.rel)}`, { method: "POST", body: f.bytes });
-        if (r.ok) audStored++;
-      } catch { }
-    }
-  }
+  if (resourceStored) meta.pictureRoot = `/assets/worlds/${wid}/`;
   if (audStored) meta.audioRoot = `/assets/worlds/${wid}/audio/`;
   for (const name of meta.meshNames || []) if (!res.meshes[name]) res.meshes[name] = { lazy: true, scale: 1 };
-  e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames };
+  const lutNames = (res.assetNames && res.assetNames.lut) || [];
+  const partNames = (res.assetNames && res.assetNames.part) || [];
+  const pictureNames = (cfg.pictureNames && cfg.pictureNames.length) ? cfg.pictureNames : (res.pictureNames || []);
+  meta.audioNames = audioNames;
+  meta.lutNames = lutNames;
+  meta.partNames = partNames;
+  meta.pictureNames = pictureNames;
+  e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames, lutNames, partNames, pictureNames };
   // 官方资源表（路径 → {hash,type,size}）与它的 CID：代码包面板要靠这两样
   // 才能把"名字下面那个内容地址"显示出来，并按地址把包里没带的文件取回来。
   meta.assetIndex = res.assets || null;
   meta.assetsCid = (res.block && res.block.assets) || null;
   // 按 CID 取回来但还没映射的部分先原样存着，别丢——重映射时不用再联网
   meta.remoteCfg = res.remoteCfg || null;
-  meta.lutNames = (res.assetNames && res.assetNames.lut) || [];
-  meta.partNames = (res.assetNames && res.assetNames.part) || [];
-  meta.pictureNames = (cfg.pictureNames && cfg.pictureNames.length) ? cfg.pictureNames : (res.pictureNames || []);
   // 派生状态必须跟着换。实体标记与场景模型是 state.entities / state.models 驱动的，
   // 而画面上那些标记读的是 state.entities（不是 meta.entities）——
   // 之前只换了 meta，于是导入后画面里没有这张图的实体，模型列表却还是上一张图的。
@@ -1527,12 +1532,7 @@ export async function importProject(file) {
     + (unplaced ? `（${unplaced} 个实体引用的网格不在包里，已用标记框显示）` : "")
     + `\n世界设定：环境${audit.environment ? "✓" : "—"} / 物理${audit.physics ? "✓" : "—"} / 背景音乐${audit.ambientSound ? "✓" : "—"} / ${audit.zones} 个区域`
     + (audit.missing.length ? `\n缺配置：${audit.missing.join("、")}` : "") + warns);
-  // 只有包里真的带脚本才跳到脚本页：导入一张图之后用户想看的是世界，
-  // 而官方 dao3 包经常是空 scripts/（这次就是），硬跳过去等于把成果盖住。
-  if (res.scripts.length) {
-    document.getElementById("scriptScreen").classList.add("show");
-    E.ctx.mode = "script";
-  }
+  // 导入后直接展示世界；脚本列表已就绪，作者需要时再点脚本页，避免大包编辑器遮住场景。
   return true;
 }
 /* ------------------------------ 玩家设置（顶部「玩家」tab） ------------------------------ */

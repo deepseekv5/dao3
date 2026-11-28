@@ -437,6 +437,31 @@ export function eventMatches(filter, ev) {
   return true;
 }
 
+export function sanitizeModelGeometry(root) {
+  let fixed = 0;
+  const fix = (attr) => {
+    if (!attr || !attr.array) return false;
+    let changed = false;
+    for (let i = 0; i < attr.array.length; i++) {
+      const v = attr.array[i];
+      if (Number.isFinite(v)) continue;
+      attr.array[i] = 0; changed = true; fixed++;
+    }
+    if (changed) attr.needsUpdate = true;
+    return changed;
+  };
+  root.traverse((obj) => {
+    const geo = obj.geometry;
+    if (!geo) return;
+    let changed = false;
+    for (const attr of Object.values(geo.attributes || {})) changed = fix(attr) || changed;
+    for (const list of Object.values(geo.morphAttributes || {})) for (const attr of list || []) changed = fix(attr) || changed;
+    changed = fix(geo.index) || changed;
+    if (changed) { geo.computeBoundingSphere(); geo.computeBoundingBox(); }
+  });
+  return fixed;
+}
+
 export function makeChannel() {
   const handlers = [];
   const on = (h) => {
