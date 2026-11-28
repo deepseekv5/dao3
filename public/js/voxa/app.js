@@ -4,7 +4,7 @@ import * as THREE from "../../vendor/three/three.module.js";
 import { VoxaView } from "./view.js";
 import {
   newDoc, newPart, newAnim, newPaletteEntry, addPart, clonePart, serialize, deserialize, stats,
-  setVoxel, eraseVoxel, getVoxel, ensureColor, colorOf, removeUnusedColors, autoCrop, transformVoxels,
+  setVoxel, eraseVoxel, getVoxel, ensureColor, colorOf, removeUnusedColors, autoCrop, removeHiddenVoxels, transformVoxels,
   floodSelect, fillRange, eraseRange, linePoints, faceCells, ensureRoom, extrude, addBone, childBones, removeBone, bindPart,
   groupParts, curAnim, createFrame, SKIN_BONES, MAX_PARTS, MAX_BOX, EASINGS, ANIM_FPS, hexToRgb, rgbToHex, toGLB, importVox,
   parseVoxPalette, refreshPhysics, invalidateIndex, bindDoc, applySkinTemplate, defaultSkinDoc,
@@ -1370,6 +1370,7 @@ class VoxaApp {
     ]));
     host.appendChild(btnRow([
       ["自动裁剪", () => { this.snapshot("裁剪"); autoCrop(p); this.view.rebuild(); this.renderProps(); this.syncSizeBoxes(); }],
+      ["清理内部体素", () => { this.snapshot("清理内部体素"); const n = removeHiddenVoxels(p); this.view.rebuild(); this.renderProps(); this.syncSizeBoxes(); this.tip(n ? `已清理 ${n} 个六面被包围的体素` : "没有可清理的内部体素"); }],
       ["清空部件", () => {
         if (!p.voxels.length) return this.tip("这个部件本来就是空的");
         if (!confirm(`清空部件「${p.name}」？${p.voxels.length} 个体素会被抹掉。`)) return;
@@ -2073,7 +2074,8 @@ class VoxaApp {
   exportGlb() {
     const blob = toGLB(this.doc);
     download(blob, this.doc.name + ".glb");
-    this.toast("已导出 glTF");
+    const s = stats(this.doc);
+    this.toast(`已导出 glTF · ${s.parts} 部件 · ${s.voxels} 体素 · ${s.faces} 面（内部面已剔除）`);
   }
   /** 发布到社区：作品跟着账号走，别人能在广场看到并下载/在 VOXA 里打开。 */
   async publishModel() {

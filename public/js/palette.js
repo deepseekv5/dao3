@@ -47,7 +47,7 @@ export function wirePalette(E) {
   function commands() {
     const out = [];
     const g = (group, title, hint, run) => out.push({ group, title, hint, run });
-    for (const [key, zh] of [["build", "搭建"], ["model", "模型"], ["script", "脚本"], ["blocks", "积木"], ["music", "音乐"], ["ui", "界面"], ["store", "商城"], ["player", "玩家"], ["pack", "代码包"]]) {
+    for (const [key, zh] of [["build", "搭建"], ["model", "模型"], ["script", "脚本"], ["blocks", "积木"], ["music", "音乐"], ["ui", "界面"], ["store", "商城"], ["player", "玩家"], ["world", "世界设定"], ["pack", "代码包"]]) {
       g("切换工作区", `去「${zh}」`, "顶部菜单", click(`.mtab[data-menu="${key}"]`));
     }
     for (const b of document.querySelectorAll("#editToolbar .ft[data-tool]")) {
@@ -56,6 +56,7 @@ export function wirePalette(E) {
     }
     g("视图", "切换网格", "", click("#grid"));
     g("视图", "切换边缘线", "", click("#edges"));
+    g("视图", "性能读数", "FPS / draw calls / 三角形", click("#sbPerf"));
     g("视图", "透视 / 正交", "O", click("#ortho"));
     g("视图", "角色视角编辑", "K", click("#fpEdit"));
     g("视图", "重置视角", "", click("#resetView"));
@@ -85,6 +86,7 @@ export function wirePalette(E) {
     g("选区", "就地复制副本", "Ctrl+D", selOp("duplicateSel", selWhy, hasSel));
     g("选区", "删除选区内体素", "Delete", selOp("deleteSel", selWhy, hasSel));
     g("选区", "清除选区", "Esc", selOp("clearSel", selWhy, hasSel));
+    g("选区", "统计选区内容", "体积 / 实体 / 空气 / 方块种类", selOp("statsSel", selWhy, hasSel));
     g("运行", "运行游戏", "", click("#btnPublish"));
     g("运行", "停止运行", "", () => E.stopPlay && E.stopPlay());
     g("发布与协作", "发布到社区", "", click("#btnShare"));

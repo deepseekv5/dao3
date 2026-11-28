@@ -990,6 +990,7 @@ function addModel(obj, name, assetRef) {
   obj.position.set(ent.pos[0], ent.pos[1], ent.pos[2]);
   e.renderer.models.add(obj);
   e.state.models.push(ent);
+  if (!_suspendList) e.renderer.scheduleModelBatchRefresh?.();
   e.state.selectedModel = ent;
   renderModelList();
   e.toast("已导入模型：" + name);
@@ -1020,6 +1021,7 @@ export function addPlacedModel(d) {
   obj.visible = d.meshInvisible !== true;
   e.renderer.models.add(obj);
   e.state.models.push(ent);
+  if (!_suspendList) e.renderer.scheduleModelBatchRefresh?.();
   renderModelList();
   return ent;
 }
@@ -1034,6 +1036,7 @@ export function removePlacedModel(m) {
   if (!m) return false;
   E.renderer.models.remove(m.object);
   E.state.models = (E.state.models || []).filter((x) => x !== m);
+  E.renderer.scheduleModelBatchRefresh?.();
   if (E.state.selectedModel === m) E.state.selectedModel = null;
   m._destroyed = true;
   renderModelList();
@@ -1267,7 +1270,7 @@ function renderEntProps() {
   chk("可推动", !!m.collision && !m.fixed, (v) => { m.collision = true; m.fixed = !v; if (v) m.gravity = false; });
   chk("受重力", m.gravity, (v) => { m.gravity = v; if (v) m.fixed = false; });
   chk("固定不动", m.fixed, (v) => { m.fixed = v; if (v) m.gravity = false; });
-  chk("显示", m.hidden !== true, (v) => { m.hidden = !v; if (m.object) m.object.visible = v; });
+  chk("显示", m.hidden !== true, (v) => { m.hidden = !v; if (m.object) m.object.visible = v && !m.object.userData.batched; E.renderer.scheduleModelBatchRefresh?.(); });
   const numRow = (label, val, min, max, step, cb) => {
     const r2 = document.createElement("div"); r2.className = "frow"; r2.style.cssText = "display:flex;align-items:center;gap:8px;padding:2px 8px;font-size:11px";
     const lb = document.createElement("label"); lb.textContent = label; lb.style.cssText = "width:56px;color:var(--font-black-minor)"; r2.appendChild(lb);
@@ -1344,15 +1347,14 @@ export async function importProject(file) {
   await io.completeMissingFromBlock(res, { onProgress: (k) => e.toast("正在取回 " + k + "…") });
   const prev = e.state.meta || {};
   const cfg = res.projectCfg || {};
-  const meta = Object.assign(prev, {
+  const meta = {
     name: res.name, displayName: res.name, terrain: e.state.terrain,
-    scripts: res.scripts.length ? res.scripts : (prev.scripts || []),
+    scripts: res.scripts.length ? res.scripts : [],
     entities: res.entities || [], groups: res.groups || [], models: [],
-    meshNames: (res.meshNames && res.meshNames.length) ? res.meshNames : (prev.meshNames || []),
-    mapId: res.mapId || prev.mapId || "",
-    branchKey: res.branchKey || prev.branchKey || "",
-    officialVersionControl: res.officialVersionControl || prev.officialVersionControl || "",
-  });
+    meshNames: (res.meshNames && res.meshNames.length) ? res.meshNames : [],
+    mapId: res.mapId || "", branchKey: res.branchKey || "",
+    officialVersionControl: res.officialVersionControl || "",
+  };
   if (cfg.player) {
     // 认**形状**而不是认数值大小：官方 blob 一定带 allowJump / noClip / cameraType 这类
     // 只有官方才有的键。旧写法是 "walkSpeed > 1 就当旧单位"，可官方中跑速本来就是 0.4，
@@ -1363,7 +1365,7 @@ export async function importProject(file) {
     meta.player = Object.assign({}, cfg.player, { _units: official ? "official" : "legacy" });
   }
   if (cfg.physics) {
-    meta.worldSettings = Object.assign({}, prev.worldSettings, cfg.physics, {
+    meta.worldSettings = Object.assign({}, cfg.physics, {
       airFriction: cfg.physics.airFriction ?? cfg.physics.velocityDamping ?? 0.01,
       useOBB: !!cfg.physics.useOBB,
     });
@@ -1395,7 +1397,7 @@ export async function importProject(file) {
   if (cfg.uiTree) meta.uiTree = cfg.uiTree;
   if (Array.isArray(cfg.uiWidgets) && cfg.uiWidgets.length) meta.ui = cfg.uiWidgets;
   if (Array.isArray(cfg.products)) meta.products = cfg.products;
-  if (cfg.gameRules) meta.gameRules = Object.assign({}, prev.gameRules, cfg.gameRules);
+  if (cfg.gameRules) meta.gameRules = Object.assign({}, cfg.gameRules);
   if (cfg.displayName) { meta.displayName = cfg.displayName; meta.name = cfg.displayName; }
   if (cfg.description != null) meta.description = cfg.description;
   e.state.meta = meta;
@@ -1477,15 +1479,15 @@ export async function importProject(file) {
       } catch { }
     }
   }
-  if (audStored) meta.audioRoot = `/assets/worlds/${wid}/`;
+  if (audStored) meta.audioRoot = `/assets/worlds/${wid}/audio/`;
   for (const name of meta.meshNames || []) if (!res.meshes[name]) res.meshes[name] = { lazy: true, scale: 1 };
   e.state.assets = { audio: res.audio, meshes: res.meshes, meshNames: meta.meshNames, audioNames };
   // 官方资源表（路径 → {hash,type,size}）与它的 CID：代码包面板要靠这两样
   // 才能把"名字下面那个内容地址"显示出来，并按地址把包里没带的文件取回来。
-  meta.assetIndex = res.assets || prev.assetIndex || null;
+  meta.assetIndex = res.assets || null;
   meta.assetsCid = (res.block && res.block.assets) || null;
   // 按 CID 取回来但还没映射的部分先原样存着，别丢——重映射时不用再联网
-  meta.remoteCfg = res.remoteCfg || prev.remoteCfg || null;
+  meta.remoteCfg = res.remoteCfg || null;
   meta.lutNames = (res.assetNames && res.assetNames.lut) || [];
   meta.partNames = (res.assetNames && res.assetNames.part) || [];
   meta.pictureNames = (cfg.pictureNames && cfg.pictureNames.length) ? cfg.pictureNames : (res.pictureNames || []);
@@ -1520,8 +1522,11 @@ export async function importProject(file) {
   // 网格是异步 ensure 的，等摆完再报——否则这个数只能是还没摆之前的错觉
   await (e.modelsReady || Promise.resolve());
   const unplaced = (e.state.entities || []).filter((d) => d.mesh).length;
+  const audit = io.auditOfficialWorldConfig(cfg, meta);
   e.toast(`已导入「${res.name}」· ${meta.entities.length} 实体 / ${res.scripts.length} 脚本 / ${gotMesh} 个网格文件`
-    + (unplaced ? `（${unplaced} 个实体引用的网格不在包里，已用标记框显示）` : "") + warns);
+    + (unplaced ? `（${unplaced} 个实体引用的网格不在包里，已用标记框显示）` : "")
+    + `\n世界设定：环境${audit.environment ? "✓" : "—"} / 物理${audit.physics ? "✓" : "—"} / 背景音乐${audit.ambientSound ? "✓" : "—"} / ${audit.zones} 个区域`
+    + (audit.missing.length ? `\n缺配置：${audit.missing.join("、")}` : "") + warns);
   // 只有包里真的带脚本才跳到脚本页：导入一张图之后用户想看的是世界，
   // 而官方 dao3 包经常是空 scripts/（这次就是），硬跳过去等于把成果盖住。
   if (res.scripts.length) {

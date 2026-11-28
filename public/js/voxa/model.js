@@ -633,6 +633,13 @@ export function exposedFaces(part) {
   }
   return n;
 }
+export function removeHiddenVoxels(part) {
+  const idx = partIndex(part);
+  const keep = part.voxels.filter((v) => NEIGH.some((d) => !idx.has(vkey(v.x + d[0], v.y + d[1], v.z + d[2]))));
+  const removed = part.voxels.length - keep.length;
+  if (removed) { part.voxels = keep; invalidateIndex(part); }
+  return removed;
+}
 /** 轮廓边缘线的顶点缓冲（每两个点一条线段）。判据是"这条棱是不是外边界"：
  *  同一平面上相邻两个面之间那条是内部缝，不画；两个互相垂直的面共用的那条是真棱，要画。
  *  只按"被几个面共用"数、不分平面，会把每条棱都判成内部缝——一个立方体一条线都不剩。 */

@@ -447,6 +447,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
   // ---------- 属性 tab 切换 ----------
   document.querySelectorAll(".pp-ico").forEach((b) => {
     b.onclick = () => {
+      if (b.dataset.tab !== "world") api.stopAmbientPreview?.();
       document.querySelectorAll(".pp-ico").forEach((x) => x.classList.remove("active")); b.classList.add("active");
       document.querySelectorAll(".pp-tab").forEach((t) => t.classList.toggle("hidden", t.dataset.tab !== b.dataset.tab));
     };
@@ -562,6 +563,15 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     }));
     spawnBtns.appendChild(wbtn("使用世界中心最高点", "center", () => { const w = liveWorld(); const sx = Math.floor(w.shape[0]/2), sz = Math.floor(w.shape[2]/2); for (let y=w.shape[1]-1;y>=0;y--) if (w.get(sx,y,sz)) { state.meta.spawnPoint = [sx,y+1,sz]; break; } updateSpawnText(); markDirty(); toast("出生点已设为中心最高点"); }));
     spawnBtns.appendChild(wbtn("清除出生点", "clear", () => { if (!state.meta.spawnPoint) { toast("尚未设置出生点"); return; } state.meta.spawnPoint = null; updateSpawnText(); markDirty(); toast("出生点已清除"); }));
+    spawnBtns.appendChild(wbtn("安全检查出生点", "检查越界、脚部和头部方块并自动抬升", () => {
+      const w = liveWorld(); let p = state.meta.spawnPoint && state.meta.spawnPoint.slice();
+      if (!p) { const x = Math.floor(w.shape[0] / 2), z = Math.floor(w.shape[2] / 2); p = [x, 0, z]; }
+      if (p[0] < 0 || p[2] < 0 || p[0] >= w.shape[0] || p[2] >= w.shape[2]) { toast("出生点 X/Z 越界，已拉回世界中心", true); p[0] = Math.floor(w.shape[0] / 2); p[2] = Math.floor(w.shape[2] / 2); }
+      p[1] = Math.max(0, Math.min(w.shape[1] - 2, Math.round(p[1])));
+      let lifted = 0;
+      while (p[1] < w.shape[1] - 2 && (w.get(p[0], p[1], p[2]) || w.get(p[0], p[1] + 1, p[2]))) { p[1]++; lifted++; }
+      state.meta.spawnPoint = p; updateSpawnText(); markDirty(); toast(lifted ? `出生点已安全抬升 ${lifted} 格` : "出生点安全");
+    }));
     worldTab.appendChild(spawnBtns);
 
     // 时间（官方 arena 用 sunPhase 表达昼夜；这里同时写 terrain.dayNight 以便运行模式沿用）
@@ -591,11 +601,74 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
       rainDensity: 0, snowDensity: 0, drawDistance: 1024, initialWeather: "clear",
     }, state.meta.worldSettings || {});
     state.meta.worldSettings = ws;
+    const worldPresets = {
+      "官方赛车默认": { gravity: -0.1, airFriction: 0.01, useOBB: false, lightMode: "natural", sunFrequency: 0, sunPhase: 0.67, fogUniformDensity: 0, fogStartDistance: 0, fogHeightOffset: -10, fogHeightFalloff: 0, maxFog: 0, rainDensity: 0, snowDensity: 0, drawDistance: 1024, initialWeather: "clear", globalLight: 0.29, gamma: 2.2 },
+      "春日学院": { gravity: -0.1, airFriction: 0.01, fogUniformDensity: 0.002, fogStartDistance: 60, fogHeightOffset: 0, fogHeightFalloff: 1, maxFog: 0.35, rainDensity: 0, snowDensity: 0, sunPhase: 0.25, globalLight: 0.45, initialWeather: "clear", drawDistance: 1024 },
+      "雨夜小镇": { gravity: -0.1, airFriction: 0.01, fogUniformDensity: 0.008, fogStartDistance: 30, fogHeightOffset: 0, fogHeightFalloff: 1.4, maxFog: 0.7, rainDensity: 0.65, rainSpeed: 20, snowDensity: 0, sunPhase: 0.75, globalLight: 0.18, initialWeather: "rain", drawDistance: 768 },
+      "低重力": { gravity: -0.035, airFriction: 0.003, fogUniformDensity: 0.001, maxFog: 0.25, rainDensity: 0, snowDensity: 0, sunPhase: 0.25, initialWeather: "clear" },
+      "无雾远景": { fogUniformDensity: 0, maxFog: 0, fogStartDistance: 0, drawDistance: 2048, rainDensity: 0, snowDensity: 0, initialWeather: "clear" },
+    };
+    const presetTitle = document.createElement("div"); presetTitle.className = "pp-sub"; presetTitle.textContent = "官方/常用预设"; worldTab.appendChild(presetTitle);
+    const presetRow = document.createElement("div"); presetRow.className = "wrowbtn-row";
+    for (const [name, p] of Object.entries(worldPresets)) {
+      const b = wbtn(name, "应用世界设定预设", () => {
+        Object.assign(ws, p);
+        state.terrain.dayNight = p.sunPhase ?? state.terrain.dayNight;
+        state.terrain.weather = p.initialWeather || "clear";
+        const w = { rain: +p.rainDensity || 0, snow: +p.snowDensity || 0, thunder: 0 };
+        if (p.initialWeather === "thunder") { w.rain = .9; w.thunder = .6; }
+        renderer.setWeather(w); applyTerrain(); markDirty(); buildWorldTab(); toast("已应用预设：" + name);
+      });
+      presetRow.appendChild(b);
+    }
+    worldTab.appendChild(presetRow);
+    const settingsActions = document.createElement("div"); settingsActions.className = "wrowbtn-row";
+    settingsActions.appendChild(wbtn("试玩当前设置", "直接进入运行模式", () => enterPlay()));
+    settingsActions.appendChild(wbtn("恢复官方默认", "恢复 GameWorld 默认值", () => {
+      Object.assign(ws, worldPresets["官方赛车默认"]); markDirty(); buildWorldTab(); toast("已恢复官方默认世界设定");
+    }));
+    settingsActions.appendChild(wbtn("导出设置", "下载 world-settings.json", () => {
+      const blob = new Blob([JSON.stringify({ worldSettings: ws, ambientSound: amb, zones: state.meta.zones || [] }, null, 2)], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = (state.meta.name || "world") + ".world-settings.json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    }));
+    settingsActions.appendChild(wbtn("导入设置", "从 world-settings.json 恢复", () => pickFile(".json", async (f) => {
+      try {
+        const j = JSON.parse(await f.text());
+        if (j.worldSettings && typeof j.worldSettings === "object") {
+          const ranges = { gravity: [-.5, .2], airFriction: [0, .02], fogUniformDensity: [0, .02], fogStartDistance: [0, 512], fogHeightOffset: [-64, 64], fogHeightFalloff: [0, 4], maxFog: [0, 1], rainDensity: [0, 1], snowDensity: [0, 1], drawDistance: [64, 2048], sunFrequency: [0, .002], sunPhase: [0, 1], globalLight: [0, 1], gamma: [1, 3] };
+          for (const [k, [a, b]] of Object.entries(ranges)) if (Number.isFinite(+j.worldSettings[k])) j.worldSettings[k] = Math.max(a, Math.min(b, +j.worldSettings[k]));
+          if (!["natural", "manual"].includes(j.worldSettings.lightMode)) delete j.worldSettings.lightMode;
+          if (!["clear", "rain", "snow", "thunder"].includes(j.worldSettings.initialWeather)) delete j.worldSettings.initialWeather;
+          Object.assign(ws, j.worldSettings);
+        }
+        if (j.ambientSound && typeof j.ambientSound === "object") state.meta.ambientSound = j.ambientSound;
+        if (Array.isArray(j.zones)) state.meta.zones = j.zones.filter((z) => z && z.bounds && Array.isArray(z.bounds.min) && Array.isArray(z.bounds.max) && z.bounds.min.length === 3 && z.bounds.max.length === 3 && z.bounds.min.every((v, i) => Number.isFinite(+v) && +v <= +z.bounds.max[i])).map((z) => ({ ...z, id: z.id || "z" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) }));
+        markDirty(); buildWorldTab(); toast("世界设定已导入");
+      } catch (e) { toast("设置导入失败：" + e.message, true); }
+    })));
+    worldTab.appendChild(settingsActions);
+    let previewTimer = 0;
+    const previewWorldSettings = () => {
+      const c = ws.fogColor || { red: .75, green: .82, blue: .9 };
+      const fogHex = "#" + [c.red, c.green, c.blue].map((v) => Math.round(Math.max(0, Math.min(1, +v || 0)) * 255).toString(16).padStart(2, "0")).join("");
+      renderer.setTerrain({ fogColor: fogHex, fogDensity: +ws.fogUniformDensity || 0, fogStartDistance: +ws.fogStartDistance || 0, maxFog: +ws.maxFog || 0, fogHeightOffset: +ws.fogHeightOffset || 0, fogHeightFalloff: +ws.fogHeightFalloff || 0, ambient: ws.globalLight != null ? +ws.globalLight : undefined });
+      renderer.setWeather({ rain: +ws.rainDensity || 0, snow: +ws.snowDensity || 0, thunder: ws.initialWeather === "thunder" ? .6 : 0, cloud: Math.max(+ws.rainDensity || 0, +ws.snowDensity || 0) * .6 });
+      if (ws.drawDistance) { renderer.camera.far = Math.max(512, +ws.drawDistance * 2); renderer.camera.updateProjectionMatrix(); }
+    };
+    const scheduleWorldPreview = () => { clearTimeout(previewTimer); previewTimer = setTimeout(previewWorldSettings, 80); };
     const wnum = (label, min, max, step, key, fmt) => {
       const row = document.createElement("label"); row.className = "trow";
       row.innerHTML = `<span>${label}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${ws[key]}"><em>${fmt ? fmt(ws[key]) : ws[key]}</em>`;
       const inp = row.querySelector("input"), em = row.querySelector("em");
-      inp.oninput = () => { ws[key] = parseFloat(inp.value); em.textContent = fmt ? fmt(ws[key]) : inp.value; markDirty(); };
+      inp.oninput = () => {
+        ws[key] = parseFloat(inp.value); em.textContent = fmt ? fmt(ws[key]) : inp.value;
+        if (key === "rainDensity" || key === "snowDensity") {
+          const levels = state.terrain.weatherLevels || (state.terrain.weatherLevels = { rain: 0, snow: 0, thunder: 0, cloud: 0, wind: 0 });
+          levels[key === "rainDensity" ? "rain" : "snow"] = ws[key];
+          state.terrain.weather = ws[key] > 0 ? (key === "rainDensity" ? "rain" : "snow") : "clear";
+        }
+        markDirty(); scheduleWorldPreview();
+      };
       worldTab.appendChild(row);
     };
     wnum("重力 gravity", -0.5, 0.2, 0.005, "gravity");
@@ -609,6 +682,38 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     wnum("雪密度 snowDensity", 0, 1, 0.01, "snowDensity");
     wnum("绘制距离 drawDistance", 64, 2048, 16, "drawDistance");
     wnum("太阳频率 sunFrequency", 0, 0.002, 0.00002, "sunFrequency", (v) => v.toFixed(5));
+    wnum("太阳相位 sunPhase", 0, 1, 0.01, "sunPhase");
+    wnum("环境亮度 globalLight", 0, 1, 0.01, "globalLight");
+    wnum("伽马 gamma", 1, 3, 0.05, "gamma");
+    wnum("雨速 rainSpeed", 1, 48, 1, "rainSpeed");
+    wnum("雨滴最小 rainSizeLo", 0, 0.5, 0.01, "rainSizeLo");
+    wnum("雨滴最大 rainSizeHi", 0, 0.8, 0.01, "rainSizeHi");
+    wnum("雨扰动 rainInterference", 0, 0.2, 0.01, "rainInterference");
+    wnum("雪速 snowFallSpeed", 0.2, 8, 0.2, "snowFallSpeed");
+    wnum("雪旋 snowSpinSpeed", 0, 4, 0.1, "snowSpinSpeed");
+    wnum("雪滴最小 snowSizeLo", 0, 0.5, 0.01, "snowSizeLo");
+    wnum("雪滴最大 snowSizeHi", 0, 0.8, 0.01, "snowSizeHi");
+    const fogColor = ws.fogColor || { red: 0.75, green: 0.82, blue: 0.9 };
+    ws.fogColor = fogColor;
+    const fcRow = document.createElement("label"); fcRow.className = "trow";
+    const fcHex = "#" + [fogColor.red, fogColor.green, fogColor.blue].map((v) => Math.round(Math.max(0, Math.min(1, +v || 0)) * 255).toString(16).padStart(2, "0")).join("");
+    fcRow.innerHTML = `<span>雾颜色 fogColor</span><input type="color" value="${fcHex}"><em></em>`;
+    fcRow.querySelector("input").oninput = (e) => {
+      const n = parseInt(e.target.value.slice(1), 16);
+      ws.fogColor = { red: ((n >> 16) & 255) / 255, green: ((n >> 8) & 255) / 255, blue: (n & 255) / 255 };
+      markDirty();
+    };
+    worldTab.appendChild(fcRow);
+    const sunVec = Array.isArray(ws.sunDirection) ? ws.sunDirection : [ws.sunDirection?.x || 0, ws.sunDirection?.y || 1, ws.sunDirection?.z || 0];
+    ws.sunDirection = sunVec;
+    const svRow = document.createElement("div"); svRow.className = "ztriple";
+    ["X", "Y", "Z"].forEach((ax, i) => {
+      const em = document.createElement("em"); em.textContent = "日向" + ax; svRow.appendChild(em);
+      const inp = document.createElement("input"); inp.type = "number"; inp.step = "0.1"; inp.value = sunVec[i];
+      inp.onchange = () => { ws.sunDirection[i] = parseFloat(inp.value) || 0; markDirty(); };
+      svRow.appendChild(inp);
+    });
+    worldTab.appendChild(svRow);
     const obbRow = document.createElement("label"); obbRow.className = "trow";
     obbRow.innerHTML = `<span>useOBB（旋转碰撞盒）</span><input type="checkbox" ${ws.useOBB ? "checked" : ""}><em></em>`;
     obbRow.querySelector("input").onchange = (e) => { ws.useOBB = e.target.checked; markDirty(); };
@@ -628,9 +733,12 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
         b.classList.add("active");
         state.terrain.weather = k;
         const w = { rain: 0, snow: 0, thunder: 0 };
-        if (k === "rain") w.rain = 0.75; else if (k === "snow") w.snow = 0.7; else if (k === "thunder") { w.rain = 0.9; w.thunder = 0.6; }
+        if (k === "rain") { if (!(ws.rainDensity > 0)) ws.rainDensity = .75; w.rain = ws.rainDensity; }
+        else if (k === "snow") { if (!(ws.snowDensity > 0)) ws.snowDensity = .7; w.snow = ws.snowDensity; }
+        else if (k === "thunder") { if (!(ws.rainDensity > 0)) ws.rainDensity = .9; w.rain = ws.rainDensity; w.thunder = .6; }
+        state.terrain.weatherLevels = Object.assign(state.terrain.weatherLevels || {}, w);
         renderer.setWeather(w);
-        markDirty();
+        markDirty(); scheduleWorldPreview();
         toast("初始天气：" + lb + "（运行游戏时应用）");
       });
       if (ws.initialWeather === k) b.classList.add("active");
@@ -686,7 +794,20 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
       ambientPreview.play().catch(() => toast("浏览器没有允许播放音频", true));
     });
     const stopBtn = wbtn("停止", "ambient-stop", stopAmbientPreview);
-    ambBtns.appendChild(previewBtn); ambBtns.appendChild(stopBtn); worldTab.appendChild(ambBtns);
+    const scanBtn = wbtn("扫描代码包音频", "从当前世界资产目录重新读取音频文件", async () => {
+      const id = (location.pathname.match(/\/edit\/([a-zA-Z0-9_-]+)/) || [])[1];
+      if (!id) return toast("当前世界没有可用 id", true);
+      try {
+        const r = await fetch(`/api/world/${encodeURIComponent(id)}/asset`);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const j = await r.json();
+        const names = (j.files || []).filter((f) => /^audio\//i.test(f.path)).map((f) => f.path.replace(/^audio\//i, ""));
+        state.assets.audioNames = [...new Set([...(state.assets.audioNames || []), ...names])];
+        if (names.length && !state.meta.audioRoot) state.meta.audioRoot = `/assets/worlds/${id}/audio/`;
+        markDirty(); buildWorldTab(); toast(`已扫描到 ${names.length} 个代码包音频`);
+      } catch (e) { toast("音频扫描失败：" + e.message, true); }
+    });
+    ambBtns.appendChild(previewBtn); ambBtns.appendChild(stopBtn); ambBtns.appendChild(scanBtn); worldTab.appendChild(ambBtns);
     const ambTip = document.createElement("div"); ambTip.className = "muted";
     ambTip.style.cssText = "padding:6px 10px;font-size:11px;line-height:1.7";
     ambTip.textContent = "对应官方 world.ambientSound.sample，进入运行模式后自动循环。脚本仍可在运行时覆盖。";
@@ -776,10 +897,12 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
         const on = document.createElement("input"); on.type = "checkbox"; on.checked = z.enabled !== false;
         on.onchange = () => { z.enabled = on.checked; renderZones(); markDirty(); };
         const loc = document.createElement("button"); loc.textContent = "定位"; loc.title = "镜头移到该区域";
-        loc.onclick = () => { const bb = z.bounds || z; renderer.controls.target.set((bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2); renderer.controls.update(); };
+        loc.onclick = () => { const bb = z.bounds || z; const c = [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2]; const span = Math.max(4, bb.max[0] - bb.min[0], bb.max[1] - bb.min[1], bb.max[2] - bb.min[2]); renderer.controls.target.set(...c); renderer.camera.position.set(c[0] + span * 1.2, c[1] + span, c[2] + span * 1.4); renderer.controls.update(); };
+        const dup = document.createElement("button"); dup.textContent = "复制"; dup.title = "复制区域及其环境覆盖";
+        dup.onclick = () => { const copy = JSON.parse(JSON.stringify(z)); copy.id = "z" + Date.now().toString(36); copy.name = (z.name || "区域") + " 副本"; zs.splice(i + 1, 0, copy); renderZones(); markDirty(); toast("已复制区域"); };
         const del = document.createElement("button"); del.textContent = "删除"; del.className = "zdel";
         del.onclick = () => { zs.splice(i, 1); renderZones(); markDirty(); toast("已删除区域"); };
-        head.appendChild(on); head.appendChild(nm); head.appendChild(loc); head.appendChild(del);
+        head.appendChild(on); head.appendChild(nm); head.appendChild(loc); head.appendChild(dup); head.appendChild(del);
         box.appendChild(head);
         const sel = document.createElement("label"); sel.className = "zrow";
         const slab = document.createElement("span"); slab.textContent = "选择器";
@@ -860,6 +983,14 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
         group("雨覆盖（rain*）", [["启用", "rainEnabled", "", "bool"], ["密度", "rainDensity", "0.05"], ["速度", "rainSpeed", "0.5"], ["尺寸小", "rainSizeLo", "0.01"], ["尺寸大", "rainSizeHi", "0.01"], ["干扰", "rainInterference", "0.01"], ["颜色", "rainColor", "0.05", "colora"], ["方向", "rainDirection", "0.05", "vec"]]);
         group("雪覆盖（snow*）", [["启用", "snowEnabled", "", "bool"], ["密度", "snowDensity", "0.05"], ["尺寸小", "snowSizeLo", "0.01"], ["尺寸大", "snowSizeHi", "0.01"], ["下落速度", "snowFallSpeed", "0.1"], ["旋转速度", "snowSpinSpeed", "0.1"], ["颜色", "snowColor", "0.05", "colora"], ["纹理", "snowTexture", "", "text"]]);
         group("天光覆盖（sky*）", [["启用", "skyEnabled", "", "bool"], ["模式", "skyMode", "", "mode"], ["太阳相位", "skySunPhase", "0.01"], ["日轮频率", "skySunFrequency", "0.0001"], ["月相", "skyLunarPhase", "0.01"], ["太阳方向", "skySunDirection", "0.05", "vec"], ["日光", "skySunLight", "0.05", "color"], ["天顶光", "skyTopLight", "0.05", "color"], ["天底光", "skyBottomLight", "0.05", "color"], ["左侧光", "skyLeftLight", "0.05", "color"], ["右侧光", "skyRightLight", "0.05", "color"], ["前侧光", "skyFrontLight", "0.05", "color"], ["后侧光", "skyBackLight", "0.05", "color"]]);
+        const inherit = document.createElement("button"); inherit.textContent = "继承世界环境"; inherit.title = "把当前世界设定复制为该区域的环境覆盖";
+        inherit.onclick = () => {
+          const map = { fogUniformDensity: "fogDensity", fogStartDistance: "fogStartDistance", fogHeightOffset: "fogHeightOffset", fogHeightFalloff: "fogHeightFalloff", maxFog: "fogMax", fogColor: "fogColor", rainDensity: "rainDensity", rainSpeed: "rainSpeed", rainSizeLo: "rainSizeLo", rainSizeHi: "rainSizeHi", rainInterference: "rainInterference", rainColor: "rainColor", rainDirection: "rainDirection", snowDensity: "snowDensity", snowFallSpeed: "snowFallSpeed", snowSpinSpeed: "snowSpinSpeed", snowSizeLo: "snowSizeLo", snowSizeHi: "snowSizeHi", snowColor: "snowColor", snowTexture: "snowTexture", lightMode: "skyMode", sunPhase: "skySunPhase", sunFrequency: "skySunFrequency", sunDirection: "skySunDirection", sunLight: "skySunLight", skyLeftLight: "skyLeftLight", skyRightLight: "skyRightLight", skyBottomLight: "skyBottomLight", skyTopLight: "skyTopLight", skyFrontLight: "skyFrontLight", skyBackLight: "skyBackLight" };
+          for (const [from, to] of Object.entries(map)) if (ws[from] != null) z[to] = typeof ws[from] === "object" ? JSON.parse(JSON.stringify(ws[from])) : ws[from];
+          z.fogEnabled = z.rainEnabled = z.snowEnabled = z.skyEnabled = true;
+          markDirty(); renderZones(); toast("区域已继承世界环境");
+        };
+        box.appendChild(inherit);
         const tip = document.createElement("div"); tip.className = "zhint";
         tip.textContent = "massScale=0 像重力（与质量无关），1 像风（力除以质量）。";
         box.appendChild(tip);
@@ -893,6 +1024,7 @@ export function buildUI({ state, atlas, world, renderer, history, ctx, save, loa
     worldTab.appendChild(grNote);
     };
     buildWorldTab();
+    api.rebuildWorldTab = buildWorldTab;
     api.onReload(buildWorldTab);
   }
 

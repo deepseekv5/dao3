@@ -2,9 +2,25 @@
 import * as THREE from "../vendor/three/three.module.js";
 import { nightFromElev } from "./sun.js";
 import { OrbitControls } from "../vendor/three/OrbitControls.js";
+import { raycastVoxelWorld } from "./voxel-raycast.js";
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : +v || 0);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+class TypedBuffer {
+  constructor(Type, initial = 4096) { this.Type = Type; this.data = new Type(initial); this.length = 0; }
+  push(...values) {
+    const need = this.length + values.length;
+    if (need > this.data.length) {
+      let cap = Math.max(1, this.data.length) * 2;
+      while (cap < need) cap *= 2;
+      const next = new this.Type(cap); next.set(this.data); this.data = next;
+    }
+    for (let i = 0; i < values.length; i++) this.data[this.length + i] = values[i];
+    this.length = need;
+    return need;
+  }
+  array() { return this.data.subarray(0, this.length); }
+}
 // 官方颜色既可能是 {red,green,blue}(0~1)，也可能是 {r,g,b}，统一成 THREE.Color
 function colorOf(c, fallbackHex) {
   const out = new THREE.Color(fallbackHex);
@@ -293,6 +309,9 @@ export class VoxelRenderer {
     // 网格容器
     this.group = new THREE.Group(); this.scene.add(this.group);
     this.models = new THREE.Group(); this.scene.add(this.models);
+    this._modelBatches = [];
+    this._batchModels = null;
+    this._modelBatchTimer = 0;
     this.edgeGroup = new THREE.Group(); this.scene.add(this.edgeGroup);
     this.chunkMeshes = new Map(); // key -> {opaque,trans,glow}
     this._batches = [];
@@ -652,6 +671,81 @@ vec2 fxTileRect(float t){
     }
     this.rebuildAll();
   }
+  clearModelBatches(restore = true) {
+    clearTimeout(this._modelBatchTimer); this._modelBatchTimer = 0;
+    for (const b of this._modelBatches) {
+      this.models.remove(b.mesh);
+      b.mesh.dispose?.();
+    }
+    this._modelBatches = [];
+    if (restore) for (const m of this._batchModels || []) {
+      if (m.object?.userData?.batched) { m.object.userData.batched = false; m.object.visible = !m.hidden; }
+    }
+  }
+  scheduleModelBatchRefresh() {
+    clearTimeout(this._modelBatchTimer);
+    this._modelBatchTimer = setTimeout(() => {
+      this._modelBatchTimer = 0;
+      if (this._batchModels) this.buildModelBatches(this._batchModels);
+    }, 240);
+  }
+  buildModelBatches(models) {
+    this.clearModelBatches(true);
+    this._batchModels = models || [];
+    const groups = new Map(), meshCount = new Map(), batchedCount = new Map();
+    for (const m of this._batchModels) {
+      if (!m.object || m._destroyed || m.hidden || m.defaultMotionId) continue;
+      const root = m.object;
+      root.updateMatrixWorld(true);
+      const inv = root.matrixWorld.clone().invert();
+      let count = 0;
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        count++;
+        if (o.isSkinnedMesh || o.morphTargetInfluences?.length || Array.isArray(o.material) || o.material.transparent) return;
+        const key = o.geometry.uuid + "|" + o.material.uuid;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({ model: m, local: new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), geometry: o.geometry, material: o.material });
+      });
+      meshCount.set(m, count);
+    }
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (const entries of groups.values()) {
+      if (entries.length < 3) continue;
+      const first = entries[0];
+      const mesh = new THREE.InstancedMesh(first.geometry, first.material, entries.length);
+      mesh.frustumCulled = false;
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.userData.slots = entries;
+      entries.forEach((e, i) => {
+        e.model.object.updateMatrixWorld(true);
+        mesh.setMatrixAt(i, new THREE.Matrix4().multiplyMatrices(e.model.object.matrixWorld, e.local));
+        batchedCount.set(e.model, (batchedCount.get(e.model) || 0) + 1);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      this.models.add(mesh);
+      this._modelBatches.push({ mesh, slots: entries, zero });
+    }
+    for (const m of this._batchModels) if ((meshCount.get(m) || 0) > 0 && batchedCount.get(m) === meshCount.get(m)) {
+      m.object.userData.batched = true; m.object.visible = false;
+    }
+  }
+  updateModelBatches() {
+    if (!this._modelBatches.length) return;
+    const matrix = new THREE.Matrix4();
+    for (const b of this._modelBatches) {
+      for (let i = 0; i < b.slots.length; i++) {
+        const s = b.slots[i], root = s.model.object;
+        if (!root || s.model._destroyed || s.model.hidden) b.mesh.setMatrixAt(i, b.zero);
+        else {
+          root.updateMatrixWorld(true);
+          matrix.multiplyMatrices(root.matrixWorld, s.local);
+          b.mesh.setMatrixAt(i, matrix);
+        }
+      }
+      b.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
   frameCamera() {
     const [X, , Z] = this.world.shape;
     const d = Math.max(X, Z) * 1.5;
@@ -962,11 +1056,11 @@ vec2 fxTileRect(float t){
     if (old) { if (old.batchId != null) old.batch.setVisibleAt(old.batchId, false); if (old.opaque) this.disposeMesh(old.opaque); if (old.trans) this.disposeMesh(old.trans); if (old.water) this.disposeMesh(old.water); if (old.glow) this.disposeMesh(old.glow); if (old.barrier) this.disposeMesh(old.barrier); }
     const w = this.world; if (!w) { this.chunkMeshes.delete(key); return; }
     const A = this.atlas;
-    const pos = [], nor = [], uv = [], idx = [], av = [], col = [];
-    const tpos = [], tnor = [], tuv = [], tidx = [], tav = [], tcol = [];
-    const wpos = [], wnor = [], wuv = [], widx = [], wav = [], wcol = [];
-    const gpos = [], gnor = [], guv = [], gidx = [], gav = [], gcol = [];
-    const bpos = [], bnor = [], buv = [], bidx = [], bav = [];
+    const pos = new TypedBuffer(Float32Array), nor = new TypedBuffer(Float32Array), uv = new TypedBuffer(Float32Array), idx = new TypedBuffer(Uint32Array), av = new TypedBuffer(Float32Array), col = new TypedBuffer(Float32Array);
+    const tpos = new TypedBuffer(Float32Array), tnor = new TypedBuffer(Float32Array), tuv = new TypedBuffer(Float32Array), tidx = new TypedBuffer(Uint32Array), tav = new TypedBuffer(Float32Array), tcol = new TypedBuffer(Float32Array);
+    const wpos = new TypedBuffer(Float32Array), wnor = new TypedBuffer(Float32Array), wuv = new TypedBuffer(Float32Array), widx = new TypedBuffer(Uint32Array), wav = new TypedBuffer(Float32Array), wcol = new TypedBuffer(Float32Array);
+    const gpos = new TypedBuffer(Float32Array), gnor = new TypedBuffer(Float32Array), guv = new TypedBuffer(Float32Array), gidx = new TypedBuffer(Uint32Array), gav = new TypedBuffer(Float32Array), gcol = new TypedBuffer(Float32Array);
+    const bpos = new TypedBuffer(Float32Array), bnor = new TypedBuffer(Float32Array), buv = new TypedBuffer(Float32Array), bidx = new TypedBuffer(Uint32Array), bav = new TypedBuffer(Float32Array);
     const ox = cx * CHUNK, oy = cy * CHUNK, oz = cz * CHUNK;
     let vc = 0, tvc = 0, wvc = 0, gvc = 0, bvc = 0;
     // 顶点 AO + 面朝向烘焙。体素场景"平"的根源不是灯光不够，而是墙角、台阶、
@@ -1072,18 +1166,18 @@ vec2 fxTileRect(float t){
     const build = (P, N, U, I, mat, shadow, AV, C) => {
       if (!P.length) return null;
       const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
-      g.setAttribute("normal", new THREE.Float32BufferAttribute(N, 3));
-      g.setAttribute("uv", new THREE.Float32BufferAttribute(U, 2));
-      g.setAttribute("aAnim", new THREE.Float32BufferAttribute(AV && AV.length ? AV : new Float32Array(P.length / 3 * 4), 4));
+      g.setAttribute("position", new THREE.Float32BufferAttribute(P.array(), 3));
+      g.setAttribute("normal", new THREE.Float32BufferAttribute(N.array(), 3));
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(U.array(), 2));
+      g.setAttribute("aAnim", new THREE.Float32BufferAttribute(AV && AV.length ? AV.array() : new Float32Array(P.length / 3 * 4), 4));
       // 材质开了 vertexColors，就必须给到 color 属性：缺属性时 WebGL 会用常量 (0,0,0)，
       // 整块直接黑掉。所以没有 AO 数据也要填白。
       if (mat.vertexColors) {
         const n = P.length / 3;
-        const arr = C && C.length === n * 3 ? C : new Array(n * 3).fill(1);
+        const arr = C && C.length === n * 3 ? C.array() : new Float32Array(n * 3).fill(1);
         g.setAttribute("color", new THREE.Float32BufferAttribute(arr, 3));
       }
-      g.setIndex(I); g.computeBoundingSphere();
+      g.setIndex(new THREE.BufferAttribute(I.array(), 1)); g.computeBoundingSphere();
       const m = new THREE.Mesh(g, mat); m.castShadow = !!shadow; m.receiveShadow = !!shadow;
       m.userData.chunk = true;
       this.group.add(m); return m;
@@ -1168,23 +1262,15 @@ vec2 fxTileRect(float t){
     }
   }
 
-  // 拾取：返回 { x,y,z, nx,ny,nz } 命中体素与相邻法线；或落在地面 { x,y,z, ground:true }
+  // 拾取：DDA 沿体素格步进，不再遍历所有区块 mesh；返回相邻格与命中面法线。
   pick(ndcX, ndcY) {
     this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.activeCam || this.camera);
-    const meshes = [];
-    for (const m of this.chunkMeshes.values()) if (m.opaque) meshes.push(m.opaque);
-    for (const m of this.chunkMeshes.values()) if (m.trans) meshes.push(m.trans);
-    for (const m of this.chunkMeshes.values()) if (m.water) meshes.push(m.water);
-    for (const m of this.chunkMeshes.values()) if (m.barrier) meshes.push(m.barrier);
-    const hits = this.raycaster.intersectObjects(meshes, false);
-    if (hits.length) {
-      const h = hits[0];
-      const n = h.face.normal;
-      const p = h.point;
-      // 命中体素中心
-      let ix = Math.floor(p.x - n.x * 0.01), iy = Math.floor(p.y - n.y * 0.01), iz = Math.floor(p.z - n.z * 0.01);
-      let ax = Math.floor(p.x + n.x * 0.51), ay = Math.floor(p.y + n.y * 0.51), az = Math.floor(p.z + n.z * 0.51);
-      return { x: ix, y: iy, z: iz, ax, ay, az, nx: n.x, ny: n.y, nz: n.z, point: p, dist: h.distance };
+    if (this.world) {
+      const hit = raycastVoxelWorld(this.world, (id) => {
+        const b = this.atlas.byId(id);
+        return { pickable: !b || b.name !== "barrier" || this._barriersVisible };
+      }, this.raycaster.ray.origin, this.raycaster.ray.direction, { maxDistance: this.activeCam === this._ortho ? 2000 : this.camera.far });
+      if (hit) return hit;
     }
     // 地面
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -1192,7 +1278,7 @@ vec2 fxTileRect(float t){
     if (this.raycaster.ray.intersectPlane(plane, pt)) {
       const gx = Math.floor(pt.x), gz = Math.floor(pt.z);
       if (gx >= 0 && gz >= 0 && gx < this.world.shape[0] && gz < this.world.shape[2])
-        return { x: gx, y: -1, z: gz, ax: gx, ay: 0, az: gz, ground: true, point: pt };
+        return { x: gx, y: -1, z: gz, ax: gx, ay: 0, az: gz, ground: true, point: pt, dist: this.raycaster.ray.origin.distanceTo(pt) };
     }
     return null;
   }
@@ -1347,6 +1433,7 @@ vec2 fxTileRect(float t){
       this.renderer.shadowMap.autoUpdate = false;
       if ((this._shadowFlip = !this._shadowFlip)) this.renderer.shadowMap.needsUpdate = true;
       if (this.onRender) this.onRender(delta);
+      this.updateModelBatches();
       { const c = this.activeCam || this.camera, d = new THREE.Vector3();
         c.getWorldDirection(d);
         this.viewLight.position.copy(c.position).addScaledVector(d, -14).add(new THREE.Vector3(0, 9, 0));

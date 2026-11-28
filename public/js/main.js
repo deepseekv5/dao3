@@ -128,6 +128,7 @@ async function enterPlay() {
     lutNames: state.assets.lutNames || [], partNames: state.assets.partNames || [],
   };
   game.spawnPoint = state.meta.spawnPoint || game.spawnPoint;
+  renderer.clearModelBatches(true);
   if (state.terrain.weatherLevels) {
     state.meta.worldSettings = Object.assign({}, state.meta.worldSettings, {
       rainDensity: state.terrain.weatherLevels.rain || 0,
@@ -180,6 +181,7 @@ function stopPlay() {
   // 退出必须把编辑器自己的可见性重新贴回去，否则作者回到编辑器会发现
   // 5 个检查点凭空消失了。
   for (const m of state.models || []) if (m.object) m.object.visible = !m.hidden;
+  renderer.buildModelBatches(state.models);
   document.getElementById("gameHint")?.classList.remove("show");
   document.activeElement && document.activeElement.blur && document.activeElement.blur();
 }
@@ -242,6 +244,19 @@ document.addEventListener("keydown", (e) => {
   if (k === " ") { e.preventDefault(); }
 });
 
+function selectionStats() {
+  const s = state.selection;
+  if (!s) return toast("先框选一段区域", true);
+  const counts = new Map(); let solid = 0;
+  for (let z = s.min.z; z <= s.max.z; z++) for (let y = s.min.y; y <= s.max.y; y++) for (let x = s.min.x; x <= s.max.x; x++) {
+    const id = world.get(x, y, z);
+    if (id) { solid++; counts.set(id, (counts.get(id) || 0) + 1); }
+  }
+  const volume = (s.max.x - s.min.x + 1) * (s.max.y - s.min.y + 1) * (s.max.z - s.min.z + 1);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id, n]) => `${atlas.byId(id)?.zh || atlas.byId(id)?.name || id} ${n}`).join("、");
+  const msg = `选区 ${volume.toLocaleString()} 格 · 实体 ${solid.toLocaleString()} · 空气 ${(volume - solid).toLocaleString()}${top ? " · " + top : ""}`;
+  toast(msg, true, 5000); return msg;
+}
 function copySel() { if (!state.selection) return; state.clipboard = readSelection(world, state.selection); toast(`已复制 ${state.clipboard.length} 个体素`); }
 function paste() { if (!state.clipboard) return; history.commit(pasteVoxels(world, state.clipboard, 0, 0, 0), "paste"); toast("已粘贴"); }
 function duplicateSel() { if (!state.selection) return; const v = readSelection(world, state.selection); history.commit(pasteVoxels(world, v, 1, 0, 1), "duplicate"); toast("已复制副本"); }
@@ -377,6 +392,7 @@ async function applySceneModels(meta) {
   }
   renderer._modelStreamCleanup = null;
   suspendModelList(false);
+  renderer.buildModelBatches(state.models);
   refreshModelList();
   ui && ui.refreshTree && ui.refreshTree();
 }
@@ -486,6 +502,7 @@ function replaceWorld(w) {
   // state.models 置空，Object3D 还挂在 renderer.models 上，于是新建世界后旧赛车图
   // 的 199 个检查点、车、灯柱全都留在画面里（实测：新地形直接浮在旧赛道上面）。
   // 只 remove 不 dispose：这些几何体在 state.assets.meshes 里被跨放置共享。
+  renderer.clearModelBatches(true);
   while (renderer.models.children.length) renderer.models.remove(renderer.models.children[0]);
   renderer.setWorld(w, state.meta.player && state.meta.player.initialPosition);
   renderer.fpControls.setWorld(world);
@@ -564,6 +581,10 @@ async function boot() {
       r.raycaster.setFromCamera(ndcFromEvent(e), r.activeCam || r.camera);
       const hits = r.raycaster.intersectObjects(r.models.children, true);
       for (const h of hits) {
+        if (h.object.isInstancedMesh) {
+          const slot = h.object.userData.slots?.[h.instanceId];
+          if (slot?.model && !slot.model._destroyed) return { m: slot.model, dist: h.distance };
+        }
         let o = h.object;
         while (o.parent && o.parent !== r.models) o = o.parent;
         if (!o || o.userData?.ghost) continue;
@@ -683,7 +704,7 @@ async function boot() {
   bootUi.stage(74, "正在接线编辑器…");
   // selOps 单独一组：命令面板要能调到剪贴板这几个动作。它们原本只有键盘快捷键，
   // 而快捷键藏在按钮之外的动作，正是面板最容易漏掉的一类（漏了就等于"面板不全"）。
-  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, refreshModelList, ensureMeshAsset, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel } };
+  window.__editor = { state, atlas, world, renderer, history, ctx, ui, applyTerrain, updateStatus, toast, markDirty, save, worldId, enterPlay, stopPlay, collectEntities, refreshScriptFiles, refreshModelList, ensureMeshAsset, selOps: { copySel, paste, duplicateSel, deleteSel, clearSel, statsSel: selectionStats } };
   // 协作要改 history.commit、读 state.scripts，所以必须等 __editor 赋完再挂：
   // 挂早一行就是 mountCollab(undefined)，异常被 catch 咽掉，按钮点了没反应。
   import("./collab.js").then(({ mountCollab }) => {

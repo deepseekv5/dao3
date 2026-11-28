@@ -265,6 +265,20 @@ export function fromOfficialEnvironment(env = {}) {
 }
 // 官方 physics.raw 只有这三个键
 export const toOfficialPhysics = (ws = {}) => ({ gravity: ws.gravity ?? -0.1, useOBB: !!ws.useOBB, velocityDamping: ws.velocityDamping ?? ws.airFriction ?? 0.01 });
+export function auditOfficialWorldConfig(cfg = {}, meta = {}) {
+  const missing = [];
+  if (!cfg.environment) missing.push("environment");
+  if (!cfg.physics) missing.push("physics");
+  if (!cfg.ambientSound?.ambient?.sample) missing.push("ambientSound");
+  if (!Array.isArray(cfg.zones)) missing.push("zones");
+  return {
+    environment: !!cfg.environment, physics: !!cfg.physics,
+    ambientSound: !!meta.ambientSound?.ambient?.sample || !!cfg.ambientSound?.ambient?.sample,
+    zones: Array.isArray(cfg.zones) ? cfg.zones.length : 0,
+    worldSettingsKeys: Object.keys(meta.worldSettings || {}).length,
+    missing,
+  };
+}
 
 // CIDv0（sha2-256 + base58btc）：官方资源哈希就是这个形态，本地没有平台也能算出真实内容哈希
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -383,6 +397,12 @@ export const flattenTree = (j) => Object.values(j || {}).filter((n) => n && n.ty
 // CID。于是"导入成功但 0 个实体"——不是我们解析不出来，是包里没有。
 // 这个函数把缺的那几块按地址取回来。**只在用户明确同意后才调用**：本项目默认不联网。
 const BLOCK_KEYS = ["entitiesTree", "environment", "physics", "player", "zones", "info", "assets", "uiTree", "gamepad", "ambientSound"];
+function uniqueScriptName(name, used) {
+  const base = String(name || "index.js").replace(/\.js$/i, "") + ".js";
+  let out = base, i = 2;
+  while (used.has(out)) out = base.replace(/\.js$/i, "") + "-" + (i++) + ".js";
+  used.add(out); return out;
+}
 
 export async function fetchBlockCid(hash, { signal } = {}) {
   const r = await fetch(`/api/official-block/${encodeURIComponent(hash)}`, { signal });
@@ -866,11 +886,13 @@ export async function importProjectZip(file) {
     if (b.includes("clientindex") || b.includes("client/index")) return 1;
     return 2;
   }
-  const scripts = [];
+  const scripts = [], usedScriptNames = new Set();
   for (const se of scriptEntries) {
     try {
       const code = new TextDecoder().decode(await extract(se));
-      scripts.push({ name: se.name.split("/").pop(), code });
+      const raw = se.name.split("/").pop(), name = uniqueScriptName(raw, usedScriptNames);
+      if (name !== raw) warnings.push("脚本重名已改名: " + se.name + " → " + name);
+      scripts.push({ name, code });
     } catch (err) { warnings.push("脚本读取失败: " + se.name); }
   }
   if (!scripts.length) warnings.push("包内没有 /code/*.js 脚本");
@@ -1205,14 +1227,14 @@ export async function importBoxProject(input) {
     const name = key.split("/").pop();
     audio[name] = buf; audioFiles.push({ rel: "audio/" + name, bytes: buf });
   }
-  const scripts = [];
+  const scripts = [], usedScriptNames = new Set();
   const scriptIndex = typeof project.scriptAssets === "string" ? jb(project.scriptAssets) : project.scriptAssets;
   for (const [key, meta] of Object.entries(scriptIndex || {})) {
     const hash = typeof meta === "string" ? meta : meta?.hash;
     if (!hash) continue;
     const buf = blobs.get(hash); if (!buf) continue;
-    const name = key.split("/").pop();
-    if (/\.js$/i.test(name)) scripts.push({ name, code: new TextDecoder().decode(buf) });
+    const raw = key.split("/").pop();
+    if (/\.js$/i.test(raw)) scripts.push({ name: uniqueScriptName(raw, usedScriptNames), code: new TextDecoder().decode(buf) });
   }
   const cfg = {};
   for (const k of ["player", "physics", "environment", "zones", "uiTree", "ambientSound", "gamepad"]) {

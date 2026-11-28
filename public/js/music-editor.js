@@ -132,6 +132,7 @@ export function openMusicStudio(E) {
         <button class="da-icon" data-act="redo" title="重做 Ctrl+Shift+Z">${icon("redo")}</button>
         <button class="da-btn" data-act="save">${icon("save")}保存</button>
         <button class="da-btn" data-act="wav">${icon("download")}导出 WAV（全曲）</button>
+        <button class="da-btn" data-act="wavloop">${icon("download")}循环 WAV</button>
         <button class="da-btn" data-act="stems">${icon("download")}分轨</button>
         <button class="da-btn" data-act="midi">MIDI</button>
         <button class="da-btn" data-act="export">项目</button>
@@ -273,8 +274,11 @@ export function openMusicStudio(E) {
     lanes.innerHTML = "";
     doc.tracks.forEach((t,i)=>{
       const lane = document.createElement("div"); lane.className = "da-lane"+(i===trackAt?" on":"");
+      const overlaps = new Set(); let lastEnd = -1;
+      for (const c of [...t.clips].sort((a,b)=>a.start-b.start)) { if (c.start < lastEnd) overlaps.add(c.id); lastEnd = Math.max(lastEnd, c.start + c.length); }
       for (const c of t.clips) {
-        const el = document.createElement("div"); el.className = "da-clip"+(c.id===clip()?.id?" sel":""); el.dataset.clip = c.id;
+        const el = document.createElement("div"); el.className = "da-clip"+(c.id===clip()?.id?" sel":"")+(overlaps.has(c.id)?" overlap":""); el.dataset.clip = c.id;
+        el.title = overlaps.has(c.id) ? "与同轨其它片段重叠；播放时两段都会发声" : "";
         el.style.cssText = `left:${c.start/total()*100}%;width:${c.length/total()*100}%;--clip:${t.color}`;
         el.dataset.track=t.id;
         el.innerHTML = `<div class="da-cliptop"><b>${esc(c.name)}</b><span>${c.notes.length}</span></div><canvas class="da-clipmini"></canvas>`;
@@ -359,7 +363,10 @@ export function openMusicStudio(E) {
     const c=$(".da-pianoroll");if(!c)return;const g=c.getContext("2d"),dpr=c._dpr||1,w=c.width/dpr,h=c.height/dpr,cp=clip();if(!cp)return;
     g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);g.fillStyle="#11110f";g.fillRect(0,0,w,h);
     const black=new Set([1,3,6,8,10]),gridW=w-KEY_W,nw=gridW/cp.length;
+    const rootPc=((60+KEYS.findIndex(([k])=>k===doc.key)+(doc.scale==="minor"?9:0))%12+12)%12;
+    const scaleSet=new Set(SCALES[doc.scale].map((x)=>(rootPc+x)%12));
     for(let row=0;row<ROWS;row++){const pitch=HIGH-row,isBlack=black.has(pitch%12),y=PAD_TOP+row*ROW_H;g.fillStyle=isBlack?"#171715":"#20201d";g.fillRect(KEY_W,y,gridW,ROW_H-1);
+      g.fillStyle=scaleSet.has(((pitch%12)+12)%12)?"rgba(227,166,60,.065)":"rgba(217,79,95,.035)";g.fillRect(KEY_W,y,gridW,ROW_H-1);
       if(pitch%12===0){g.fillStyle="#a9a199";g.font="9px ui-monospace,monospace";g.fillText(noteName(pitch),6,y+9);}
       g.fillStyle=isBlack?"#0b0b0a":"#e8e6e1";g.fillRect(0,y,KEY_W,ROW_H);g.strokeStyle="rgba(0,0,0,.2)";g.strokeRect(0,y,KEY_W,ROW_H);
     }
@@ -427,6 +434,7 @@ export function openMusicStudio(E) {
     else if(act==="midi"){const a=document.createElement("a");a.href=URL.createObjectURL(exportMidi(doc));a.download=(doc.name||"music")+".mid";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);toast("MIDI 已导出");}
     else if(act==="close")close();
     else if(act==="wav"){const btn=b;btn.disabled=true;btn.textContent="渲染中…";renderMusicToWav(doc).then((blob)=>{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(doc.name||"music")+".wav";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);toast("WAV 已导出");}).catch((e)=>toast("WAV 导出失败："+e.message,true)).finally(()=>{btn.disabled=false;btn.innerHTML=icon("download")+"导出 WAV（全曲）";});}
+    else if(act==="wavloop"){const btn=b;btn.disabled=true;btn.textContent="渲染中…";renderMusicToWav(doc,{range:"loop"}).then((blob)=>{const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(doc.name||"music")+"-loop.wav";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);toast("循环 WAV 已导出");}).catch((e)=>toast("循环 WAV 导出失败："+e.message,true)).finally(()=>{btn.disabled=false;btn.innerHTML=icon("download")+"循环 WAV";});}
     else if(act==="stems"){const btn=b;btn.disabled=true;setStatus("正在逐轨离线渲染…");(async()=>{const files=[];for(let i=0;i<doc.tracks.length;i++){const t=doc.tracks[i];setStatus(`正在渲染 ${i+1}/${doc.tracks.length}：${t.name}`);const blob=await renderMusicToWav(doc,{trackId:t.id});files.push({name:`${String(i+1).padStart(2,"0")}-${t.name.replace(/[\\/:*?"<>|]/g,"_")}.wav`,data:new Uint8Array(await blob.arrayBuffer())});}const zip=await writeZip(files),a=document.createElement("a");a.href=URL.createObjectURL(new Blob([zip],{type:"application/zip"}));a.download=(doc.name||"music")+"-stems.zip";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),8000);toast(`已导出 ${files.length} 条 WAV 分轨`);})().catch((e)=>toast("分轨导出失败："+e.message,true)).finally(()=>{btn.disabled=false;setStatus("分轨导出完成");});}
   });
 

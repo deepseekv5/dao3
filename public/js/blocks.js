@@ -573,6 +573,8 @@ export function wireBlocks(E) {
     if (mod && ev.key.toLowerCase() === "z") { ev.preventDefault(); return undo(); }
     if (ev.target.matches("input,select")) return;
     if (mod && ev.key.toLowerCase() === "d" && sel) { ev.preventDefault(); return dupe(sel); }
+    if (mod && ev.key === "ArrowUp" && sel) { ev.preventDefault(); return move(sel, -1); }
+    if (mod && ev.key === "ArrowDown" && sel) { ev.preventDefault(); return move(sel, 1); }
     if ((ev.key === "Delete" || ev.key === "Backspace") && sel) { ev.preventDefault(); return remove(sel); }
     if (ev.key === "Escape" && sel) { sel = null; render(); }
   });

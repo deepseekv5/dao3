@@ -311,11 +311,12 @@ function wavFromBuffer(buffer) {
 }
 
 /** 离线渲染：和实时播放共用同一套音符/通道/效果调度，不另写一份“试听很好、导出没声”的逻辑。 */
-export async function renderMusicToWav(doc, { trackId } = {}) {
+export async function renderMusicToWav(doc, { trackId, range = "song" } = {}) {
   const renderDoc = trackId ? { ...doc, metronome: false, tracks: (doc.tracks || []).filter((t) => t.id === trackId) } : doc;
-  // WAV/MIDI/分轨都以“整首作品”为准；循环区间只控制实时试听，避免三种导出时长互相打架。
   const total = Math.max(16, (+renderDoc.bars || 4) * (+renderDoc.beatsPerBar || 4) * 4);
-  const r = { start: 0, end: total };
+  const r = range === "loop" && renderDoc.loop?.enabled
+    ? { start: clamp(Math.round(+renderDoc.loop.start || 0), 0, total - 1), end: clamp(Math.round(+renderDoc.loop.end || total), 1, total) }
+    : { start: 0, end: total };
   const stepSec = 60 / clamp(+renderDoc.bpm || 96, 40, 240) / STEPS_PER_BEAT;
   const duration = Math.max(.2, (r.end - r.start) * stepSec + 1.2);
   const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;

@@ -312,6 +312,7 @@ function importFile(file) {
       if (roots.assetRoot) meta.assetRoot = roots.assetRoot;
       if (roots.pictureRoot) meta.pictureRoot = roots.pictureRoot;
       if (roots.audioRoot) meta.audioRoot = roots.audioRoot;
+      if (roots.audioNames?.length) meta.audioNames = roots.audioNames;
     }
     if (res.projectCfg && res.projectCfg.uiWidgets) meta.ui = res.projectCfg.uiWidgets;
     if (res.projectCfg && res.projectCfg.uiTree) meta.uiTree = res.projectCfg.uiTree;
@@ -338,11 +339,11 @@ async function saveZipAssets(id, res) {
     ...(res.pictureFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
     ...(res.audioFiles || []).map((f) => ({ rel: f.rel, bytes: f.bytes })),
   ];
-  let mesh = 0, pics = 0, auds = 0;
+  let mesh = 0, pics = 0, auds = 0; const audioNames = [];
   for (const f of files) {
     try {
       const r = await fetch("/api/world/" + id + "/asset?path=" + encodeURIComponent(f.rel), { method: "POST", body: f.bytes });
-      if (r.ok) { if (f.rel.startsWith("models/")) mesh++; else if (f.rel.startsWith("audio/")) auds++; else pics++; }
+      if (r.ok) { if (f.rel.startsWith("models/")) mesh++; else if (f.rel.startsWith("audio/")) { auds++; audioNames.push(f.rel.replace(/^audio\//, "")); } else pics++; }
     } catch { }
   }
   for (const f of res.meshAssetEntries || []) {
@@ -352,7 +353,7 @@ async function saveZipAssets(id, res) {
       if (r.ok) mesh++;
     } catch { }
   }
-  return { assetRoot: mesh ? `/assets/worlds/${id}/models/` : "", pictureRoot: pics ? `/assets/worlds/${id}/` : "", audioRoot: auds ? `/assets/worlds/${id}/` : "" };
+  return { assetRoot: mesh ? `/assets/worlds/${id}/models/` : "", pictureRoot: pics ? `/assets/worlds/${id}/` : "", audioRoot: auds ? `/assets/worlds/${id}/audio/` : "", audioNames };
 }
 
 /* ---------------- 新建弹窗 ---------------- */

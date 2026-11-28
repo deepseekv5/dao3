@@ -66,6 +66,7 @@
 .da-lane.on{background-color:rgba(227,166,60,.035)}
 .da-clip{position:absolute;top:6px;bottom:6px;min-width:12px;overflow:hidden;border:1px solid color-mix(in srgb,var(--clip) 70%,#000);border-radius:6px;background:color-mix(in srgb,var(--clip) 22%,#141617);cursor:grab;box-shadow:0 2px 7px rgba(0,0,0,.3) inset}
 .da-clip.sel{border-color:#fff;box-shadow:0 0 0 1px var(--clip),0 5px 14px rgba(0,0,0,.4)}
+.da-clip.overlap{border-color:#e05252;box-shadow:0 0 0 1px rgba(224,82,82,.65),0 5px 14px rgba(0,0,0,.4)}
 .da-cliptop{height:19px;display:flex;align-items:center;gap:5px;padding:0 6px;background:color-mix(in srgb,var(--clip) 58%,#1b1d1e);color:#fff;font-size:8.5px}
 .da-cliptop b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.da-cliptop span{margin-left:auto;opacity:.7;font:8px var(--mono)}
 .da-clipmini{display:block;width:100%;height:calc(100% - 19px)}

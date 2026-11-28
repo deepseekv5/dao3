@@ -1,4 +1,4 @@
-import { applyCompletion, fromOfficialEnvironment, toOfficialPhysics } from "../public/js/io.js";
+import { applyCompletion, fromOfficialEnvironment, toOfficialPhysics, auditOfficialWorldConfig } from "../public/js/io.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => {
@@ -19,6 +19,8 @@ const env = fromOfficialEnvironment({
 });
 ok("官方嵌套环境映射到运行时扁平字段", env.fogUniformDensity === 0.01 && env.fogStartDistance === 20 && env.maxFog === 0.6 && env.rainDensity === 0.25 && env.sunPhase === 0.75, JSON.stringify(env));
 ok("官方物理映射保留 gravity/useOBB/velocityDamping", JSON.stringify(toOfficialPhysics({ gravity: -0.2, useOBB: true, airFriction: 0.02 })) === JSON.stringify({ gravity: -0.2, useOBB: true, velocityDamping: 0.02 }));
+const audit = auditOfficialWorldConfig({ environment: {}, physics: {}, ambientSound: amb, zones: [{}, {}] }, { worldSettings: { gravity: -0.1 } });
+ok("导入对账报告环境/物理/音乐/区域与缺失项", audit.environment && audit.physics && audit.ambientSound && audit.zones === 2 && audit.missing.length === 0, JSON.stringify(audit));
 
 console.log(`\nworld-settings: ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
